@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/fixture-share-receipt-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureShareReceipt.v1" },
+    "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "derivedFromRevision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+    "status": { "const": "SHARING_PENDING" },
+    "statusRevision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "reviewRequestId": { "$ref": "common-v1.schema.json#/$defs/identifier" }
+  },
+  "required": ["schemaVersion", "fixtureSetId", "derivedFromRevision", "revision", "fingerprint", "status", "statusRevision", "reviewRequestId"],
+  "additionalProperties": false
+}

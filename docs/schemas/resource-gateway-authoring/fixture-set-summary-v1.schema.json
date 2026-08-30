@@ -10,7 +10,7 @@
     "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" },
     "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRef" },
     "cases": { "type": "array", "minItems": 1, "items": { "type": "object", "properties": { "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "name": { "$ref": "common-v1.schema.json#/$defs/displayName" } }, "required": ["caseId", "name"], "additionalProperties": false } },
-    "status": { "enum": ["PRIVATE_DRAFT", "SHARING_PENDING", "TEAM_AVAILABLE", "STALE", "REVOKED"] },
+    "status": { "$ref": "common-v1.schema.json#/$defs/fixtureStatus" },
     "statusRevision": { "$ref": "common-v1.schema.json#/$defs/revision" }
   },
   "required": ["schemaVersion", "fixtureSetId", "revision", "fingerprint", "displayName", "subject", "cases", "status", "statusRevision"],

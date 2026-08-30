@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/fixture-share-command-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureShareCommand.v1" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+        "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+        "statusRevision": { "$ref": "common-v1.schema.json#/$defs/revision" }
+      },
+      "required": ["fixtureSetId", "revision", "fingerprint", "statusRevision"],
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "classification": { "enum": ["INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "retentionDays": { "type": "integer", "minimum": 1 },
+        "redaction": {
+          "type": "object",
+          "properties": {
+            "profileVersion": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+            "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "required": ["profileVersion", "paths"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["classification", "retentionDays", "redaction"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schemaVersion", "source", "policy"],
+  "additionalProperties": false
+}

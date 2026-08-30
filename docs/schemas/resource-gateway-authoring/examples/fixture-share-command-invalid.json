@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.fixtureShareCommand.v1","source":{"fixtureSetId":"customer-happy","revision":0,"fingerprint":"not-a-fingerprint","statusRevision":1},"policy":{"classification":"PUBLIC","retentionDays":0,"redaction":{"profileVersion":"","paths":[""]}}}

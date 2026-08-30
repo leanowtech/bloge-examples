@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.apiResourceSaveReceipt.v1","connection":{"connectionId":"customer-service","revision":1},"resource":{"kind":"API_RESOURCE","resourceId":"customer.get-profile","revision":1,"fingerprint":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"projections":{"descriptor":"READY","designContract":"READY","operator":"READY"}}

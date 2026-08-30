@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/reusable-flow-publish-command-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.reusableFlowPublishCommand.v1" },
+    "source": { "$ref": "common-v1.schema.json#/$defs/flowDraftRef" }
+  },
+  "required": ["schemaVersion", "source"],
+  "additionalProperties": false
+}

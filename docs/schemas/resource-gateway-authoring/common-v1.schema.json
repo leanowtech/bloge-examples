@@ -7,6 +7,29 @@
     "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "revision": { "type": "integer", "minimum": 1 },
     "secretRef": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^vault://[A-Za-z0-9][A-Za-z0-9._:/~-]*$" },
+    "headerName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$",
+      "not": { "anyOf": [
+        { "pattern": "^[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
+        { "pattern": "^[Pp][Rr][Oo][Xx][Yy]-[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
+        { "pattern": "^[Pp][Rr][Oo][Xx][Yy]-[Aa][Uu][Tt][Hh][Ee][Nn][Tt][Ii][Cc][Aa][Tt][Ee]$" },
+        { "pattern": "^[Cc][Oo][Oo][Kk][Ii][Ee]$" },
+        { "pattern": "^[Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]$" },
+        { "pattern": "^[Hh][Oo][Ss][Tt]$" },
+        { "pattern": "^[Cc][Oo][Nn][Tt][Ee][Nn][Tt]-[Ll][Ee][Nn][Gg][Tt][Hh]$" },
+        { "pattern": "^[Cc][Oo][Nn][Nn][Ee][Cc][Tt][Ii][Oo][Nn]$" },
+        { "pattern": "^[Kk][Ee][Ee][Pp]-[Aa][Ll][Ii][Vv][Ee]$" },
+        { "pattern": "^[Tt][Ee]$" },
+        { "pattern": "^[Tt][Rr][Aa][Ii][Ll][Ee][Rr]$" },
+        { "pattern": "^[Tt][Rr][Aa][Nn][Ss][Ff][Ee][Rr]-[Ee][Nn][Cc][Oo][Dd][Ii][Nn][Gg]$" },
+        { "pattern": "^[Uu][Pp][Gg][Rr][Aa][Dd][Ee]$" },
+        { "pattern": "^[Ff][Oo][Rr][Ww][Aa][Rr][Dd][Ee][Dd]$" },
+        { "pattern": "^[Xx]-[Ff][Oo][Rr][Ww][Aa][Rr][Dd][Ee][Dd]-.+$" }
+      ] }
+    },
+    "fixtureStatus": { "enum": ["PRIVATE_DRAFT", "SHARING_PENDING", "TEAM_AVAILABLE", "STALE", "REVOKED"] },
     "schemaEnvelope": {
       "type": "object",
       "properties": {
@@ -82,12 +105,7 @@
     "safeHeaderMap": {
       "type": "object",
       "patternProperties": { "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$": { "type": "string", "maxLength": 2048 } },
-      "propertyNames": { "not": { "anyOf": [
-        { "pattern": "^[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
-        { "pattern": "^[Cc][Oo][Oo][Kk][Ii][Ee]$" },
-        { "pattern": "^[Pp][Rr][Oo][Xx][Yy]-[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
-        { "pattern": "^[Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]$" }
-      ] } },
+      "propertyNames": { "$ref": "#/$defs/headerName" },
       "additionalProperties": false
     }
   }

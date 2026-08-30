@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -23,16 +24,22 @@ class AuthoringProtocolSchemaTest {
     private static final Path SCHEMA_ROOT = Path.of("..", "docs", "schemas", "resource-gateway-authoring");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final Map<String, String> FAMILIES = Map.of(
-            "connection", "connection-command-v1.schema.json",
-            "api-resource", "api-resource-command-v1.schema.json",
-            "openapi", "openapi-preview-v1.schema.json",
-            "reusable-flow", "reusable-flow-command-v1.schema.json",
-            "fixture-set", "fixture-set-command-v1.schema.json",
-            "fixture-summary", "fixture-set-summary-v1.schema.json",
-            "simulation-request", "simulation-request-v1.schema.json",
-            "simulation-run", "simulation-run-v1.schema.json",
-            "problem-detail", "problem-detail-v1.schema.json");
+    private static final Map<String, String> FAMILIES = Map.ofEntries(
+            Map.entry("connection", "connection-command-v1.schema.json"),
+            Map.entry("api-resource", "api-resource-command-v1.schema.json"),
+            Map.entry("api-resource-receipt", "api-resource-receipt-v1.schema.json"),
+            Map.entry("openapi", "openapi-preview-v1.schema.json"),
+            Map.entry("reusable-flow", "reusable-flow-command-v1.schema.json"),
+            Map.entry("reusable-flow-publish-command", "reusable-flow-publish-command-v1.schema.json"),
+            Map.entry("reusable-flow-publish-receipt", "reusable-flow-publish-receipt-v1.schema.json"),
+            Map.entry("fixture-set", "fixture-set-command-v1.schema.json"),
+            Map.entry("fixture-share-command", "fixture-share-command-v1.schema.json"),
+            Map.entry("fixture-share-receipt", "fixture-share-receipt-v1.schema.json"),
+            Map.entry("fixture-summary", "fixture-set-summary-v1.schema.json"),
+            Map.entry("fixture-view", "fixture-set-view-v1.schema.json"),
+            Map.entry("simulation-request", "simulation-request-v1.schema.json"),
+            Map.entry("simulation-run", "simulation-run-v1.schema.json"),
+            Map.entry("problem-detail", "problem-detail-v1.schema.json"));
 
     @Test
     void allAuthoringSchemasAreDraft202012StrictAndReferencesResolve() throws Exception {
@@ -58,12 +65,16 @@ class AuthoringProtocolSchemaTest {
             Path examples = SCHEMA_ROOT.resolve("examples");
             List<Path> familyExamples = Files.list(examples)
                     .filter(path -> path.getFileName().toString().startsWith(family.getKey() + "-"))
+                    .filter(path -> !family.getKey().equals("reusable-flow")
+                            || !path.getFileName().toString().contains("publish"))
+                    .filter(path -> !family.getKey().equals("api-resource")
+                            || !path.getFileName().toString().contains("receipt"))
                     .sorted()
                     .toList();
             assertThat(familyExamples).as("goldens for %s", family.getKey()).hasSizeGreaterThanOrEqualTo(3);
-            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("minimal"))).isTrue();
-            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("complete"))).isTrue();
-            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("invalid"))).isTrue();
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("minimal"))).as("minimal %s", family.getKey()).isTrue();
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("complete"))).as("complete %s", family.getKey()).isTrue();
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("invalid"))).as("invalid %s", family.getKey()).isTrue();
             for (Path examplePath : familyExamples) {
                 boolean expectedValid = !examplePath.getFileName().toString().contains("invalid");
                 List<String> errors = new ArrayList<>();
@@ -104,9 +115,31 @@ class AuthoringProtocolSchemaTest {
         JsonNode headers = common.at("/$defs/safeHeaderMap");
         assertThat(validationErrors(headers, MAPPER.createObjectNode().put("Accept", "application/json"), commonPath))
                 .as("ordinary headers remain legal").isEmpty();
-        for (String name : List.of("Authorization", "authorization", "COOKIE", "proxy-authorization", "set-cookie")) {
+        for (String name : List.of("Authorization", "authorization", "COOKIE", "proxy-authorization", "proxy-authenticate",
+                "set-cookie", "Host", "content-length", "Connection", "keep-alive", "TE", "Trailer",
+                "transfer-encoding", "Upgrade", "Forwarded", "X-Forwarded-For", "x-forwarded-host")) {
             assertThat(validationErrors(headers, MAPPER.createObjectNode().put(name, "blocked"), commonPath))
-                    .as("sensitive header %s is blocked", name).isNotEmpty();
+                .as("sensitive header %s is blocked", name).isNotEmpty();
+        }
+
+        JsonNode connection = read(SCHEMA_ROOT.resolve("connection-command-v1.schema.json"));
+        JsonNode apiResource = read(SCHEMA_ROOT.resolve("api-resource-command-v1.schema.json"));
+        for (String name : List.of("authorization", "HOST", "x-forwarded-for")) {
+            ObjectNode apiKey = MAPPER.createObjectNode()
+                    .put("schemaVersion", "bloge.apiConnectionCommand.v1")
+                    .put("displayName", "Orders")
+                    .put("baseUrl", "https://orders.example.com");
+            apiKey.set("auth", MAPPER.createObjectNode().put("kind", "API_KEY").put("headerName", name)
+                    .set("value", MAPPER.createObjectNode().put("mode", "SECRET_REF").put("ref", "vault://orders/key")));
+            assertThat(validationErrors(connection, apiKey, SCHEMA_ROOT.resolve("connection-command-v1.schema.json")))
+                    .as("API key header %s is blocked", name).isNotEmpty();
+
+            ObjectNode binding = MAPPER.createObjectNode()
+                    .put("from", "$.token")
+                    .set("to", MAPPER.createObjectNode().put("location", "HEADER").put("name", name));
+            assertThat(validationErrors(apiResource.at("/$defs/operation/properties/bindings/items"), binding,
+                    SCHEMA_ROOT.resolve("api-resource-command-v1.schema.json")))
+                    .as("API resource header binding %s is blocked", name).isNotEmpty();
         }
 
         JsonNode secretRef = common.at("/$defs/secretRef");
@@ -120,10 +153,95 @@ class AuthoringProtocolSchemaTest {
         }
     }
 
+    @Test
+    void apiResourceReceiptUsesNamedCaseReferencesAndExamplesRemainUnique() throws Exception {
+        Path receiptPath = SCHEMA_ROOT.resolve("api-resource-receipt-v1.schema.json");
+        JsonNode receipt = read(receiptPath);
+        JsonNode valid = read(SCHEMA_ROOT.resolve("examples/api-resource-receipt-complete.json"));
+        assertThat(validationErrors(receipt, valid, receiptPath)).isEmpty();
+        ObjectNode withoutDefaultFixture = (ObjectNode) valid.deepCopy();
+        withoutDefaultFixture.remove("defaultFixture");
+        assertThat(validationErrors(receipt, withoutDefaultFixture, receiptPath)).isEmpty();
+
+        ObjectNode oldShape = (ObjectNode) valid.deepCopy();
+        oldShape.with("defaultFixture").set("caseIds", MAPPER.createArrayNode().add("created"));
+        assertThat(validationErrors(receipt, oldShape, receiptPath)).as("receipt must expose named cases").isNotEmpty();
+
+        JsonNode command = read(SCHEMA_ROOT.resolve("examples/api-resource-complete.json"));
+        List<String> names = new ArrayList<>();
+        command.at("/resource/examples").forEach(example -> names.add(example.path("name").asText()));
+        assertThat(names).doesNotHaveDuplicates();
+        assertThat(command.at("/defaultFixture/exampleNames")).allMatch(name -> names.contains(name.asText()));
+        assertThat(exampleSelectionsAreValid(command)).isTrue();
+
+        ObjectNode duplicateExamplesCommand = (ObjectNode) command.deepCopy();
+        duplicateExamplesCommand.with("resource").withArray("examples")
+                .add(duplicateExamplesCommand.at("/resource/examples/0").deepCopy());
+        assertThat(exampleSelectionsAreValid(duplicateExamplesCommand)).isFalse();
+
+        ObjectNode duplicateCommand = (ObjectNode) command.deepCopy();
+        duplicateCommand.with("defaultFixture").withArray("exampleNames").add(names.get(0));
+        assertThat(exampleSelectionsAreValid(duplicateCommand)).isFalse();
+
+        ObjectNode unknownCommand = (ObjectNode) command.deepCopy();
+        unknownCommand.with("defaultFixture").withArray("exampleNames").add("unknown-example");
+        assertThat(exampleSelectionsAreValid(unknownCommand)).isFalse();
+    }
+
+    @Test
+    void fixtureStatusSummaryAndViewUseOneGovernedVocabulary() throws Exception {
+        Set<String> expected = Set.of("PRIVATE_DRAFT", "SHARING_PENDING", "TEAM_AVAILABLE", "STALE", "REVOKED");
+        JsonNode common = read(SCHEMA_ROOT.resolve("common-v1.schema.json"));
+        assertThat(common.at("/$defs/fixtureStatus/enum")).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrderElementsOf(expected);
+        for (String schemaName : List.of("fixture-set-summary-v1.schema.json", "fixture-set-view-v1.schema.json")) {
+            JsonNode schema = read(SCHEMA_ROOT.resolve(schemaName));
+            assertThat(schema.at("/properties/status/$ref").asText())
+                    .isEqualTo("common-v1.schema.json#/$defs/fixtureStatus");
+        }
+        JsonNode receipt = read(SCHEMA_ROOT.resolve("fixture-set-receipt-v1.schema.json"));
+        assertThat(receipt.at("/properties/status/const").asText()).isEqualTo("PRIVATE_DRAFT");
+        assertThat(read(SCHEMA_ROOT.resolve("examples/fixture-view-complete.json"))).isNotNull();
+    }
+
+    @Test
+    void simulationRunEgressIsAnEvidenceUnionWithoutSensitivePayload() throws Exception {
+        Path schemaPath = SCHEMA_ROOT.resolve("simulation-run-v1.schema.json");
+        JsonNode schema = read(schemaPath);
+        ObjectNode allowed = MAPPER.createObjectNode().put("decision", "ALLOWED_READ").put("attempted", true);
+        allowed.set("resource", MAPPER.createObjectNode().put("kind", "API_RESOURCE").put("resourceId", "customer.get-profile")
+                .put("revision", 1).put("fingerprint", "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"));
+        allowed.set("connection", MAPPER.createObjectNode().put("connectionId", "customer-service").put("revision", 1));
+        allowed.put("authorizationDecisionId", "authz-01").put("outcome", "SUCCEEDED");
+        assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), allowed, schemaPath)).isEmpty();
+        ObjectNode denied = MAPPER.createObjectNode().put("decision", "DENIED").put("attempted", false);
+        denied.set("resource", allowed.get("resource"));
+        denied.put("authorizationDecisionId", "authz-01").put("reasonCode", "POLICY_DENIED");
+        assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), denied, schemaPath)).isEmpty();
+        ObjectNode fixture = MAPPER.createObjectNode().put("decision", "FIXTURE").put("attempted", false);
+        assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), fixture, schemaPath)).isEmpty();
+        JsonNode notAttempted = MAPPER.createObjectNode().put("decision", "NOT_ATTEMPTED").put("attempted", false)
+                .put("reasonCode", "NO_FIXTURE");
+        assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), notAttempted, schemaPath)).isEmpty();
+        ObjectNode sensitive = fixture.deepCopy().put("payload", "secret");
+        assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), sensitive, schemaPath))
+                .as("egress must not carry payload").isNotEmpty();
+    }
+
     private static List<String> validationErrors(JsonNode schema, JsonNode value, Path owner) throws IOException {
         List<String> errors = new ArrayList<>();
         validate(schema, value, owner, "", errors);
         return errors;
+    }
+
+    private static boolean exampleSelectionsAreValid(JsonNode command) {
+        List<String> definedNames = new ArrayList<>();
+        command.at("/resource/examples").forEach(example -> definedNames.add(example.path("name").asText()));
+        List<String> selections = new ArrayList<>();
+        command.at("/defaultFixture/exampleNames").forEach(name -> selections.add(name.asText()));
+        return definedNames.size() == definedNames.stream().distinct().count()
+                && selections.size() == selections.stream().distinct().count()
+                && selections.stream().allMatch(definedNames::contains);
     }
 
     private static void assertStrictObjects(JsonNode node, String location) {
@@ -261,6 +379,13 @@ class AuthoringProtocolSchemaTest {
         }
         if (value.isArray() && schema.has("items")) {
             for (int i = 0; i < value.size(); i++) validate(schema.get("items"), value.get(i), owner, path + "/" + i, errors);
+        }
+        if (value.isArray() && schema.path("uniqueItems").asBoolean(false)) {
+            for (int i = 0; i < value.size(); i++) {
+                for (int j = i + 1; j < value.size(); j++) {
+                    if (value.get(i).equals(value.get(j))) errors.add(path + " uniqueItems");
+                }
+            }
         }
     }
 

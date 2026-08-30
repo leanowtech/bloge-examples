@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.fixtureShareCommand.v1","source":{"fixtureSetId":"loan-eligibility-happy-path","revision":2,"fingerprint":"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","statusRevision":4},"policy":{"classification":"CONFIDENTIAL","retentionDays":90,"redaction":{"profileVersion":"pii-v2","paths":["$.customer.email","$.customer.phone"]}}}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/reusable-flow-publish-receipt-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.reusableFlowPublishReceipt.v1" },
+    "source": { "$ref": "common-v1.schema.json#/$defs/flowDraftRef" },
+    "version": { "$ref": "common-v1.schema.json#/$defs/flowVersionRef" },
+    "catalog": { "const": "AVAILABLE" }
+  },
+  "required": ["schemaVersion", "source", "version", "catalog"],
+  "additionalProperties": false
+}

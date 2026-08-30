@@ -11,7 +11,7 @@
         { "type": "object", "properties": { "kind": { "const": "NONE" } }, "required": ["kind"], "additionalProperties": false },
         { "type": "object", "properties": { "kind": { "const": "BEARER" }, "token": { "$ref": "common-v1.schema.json#/$defs/secretWrite" } }, "required": ["kind", "token"], "additionalProperties": false },
         { "type": "object", "properties": { "kind": { "const": "BASIC" }, "username": { "type": "string", "minLength": 1 }, "password": { "$ref": "common-v1.schema.json#/$defs/secretWrite" } }, "required": ["kind", "username", "password"], "additionalProperties": false },
-        { "type": "object", "properties": { "kind": { "const": "API_KEY" }, "headerName": { "type": "string", "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$" }, "value": { "$ref": "common-v1.schema.json#/$defs/secretWrite" } }, "required": ["kind", "headerName", "value"], "additionalProperties": false }
+        { "type": "object", "properties": { "kind": { "const": "API_KEY" }, "headerName": { "$ref": "common-v1.schema.json#/$defs/headerName" }, "value": { "$ref": "common-v1.schema.json#/$defs/secretWrite" } }, "required": ["kind", "headerName", "value"], "additionalProperties": false }
       ]
     },
     "defaults": {

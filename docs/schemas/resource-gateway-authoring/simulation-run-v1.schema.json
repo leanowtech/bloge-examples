@@ -4,8 +4,16 @@
   "$defs": {
     "node": {
       "type": "object",
-      "properties": { "nodeId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "status": { "enum": ["COMPLETED", "FAILED", "BLOCKED", "SKIPPED"] }, "execution": { "enum": ["REAL", "MOCKED"] }, "fixtureSource": { "enum": ["NONE", "INLINE", "FIXTURE_ASSET", "REPLAY", "APPLY_CASE"] }, "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] }, "egress": { "type": "object", "properties": { "decision": { "enum": ["FIXTURE", "ALLOWED_READ", "DENIED", "NOT_ATTEMPTED", "NOT_APPLICABLE"] } }, "required": ["decision"], "additionalProperties": false } },
+      "properties": { "nodeId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "status": { "enum": ["COMPLETED", "FAILED", "BLOCKED", "SKIPPED"] }, "execution": { "enum": ["REAL", "MOCKED"] }, "fixtureSource": { "enum": ["NONE", "INLINE", "FIXTURE_ASSET", "REPLAY", "APPLY_CASE"] }, "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] }, "egress": { "$ref": "#/$defs/egress" } },
       "required": ["nodeId", "status", "execution", "fixtureSource", "egress"], "additionalProperties": false
+    },
+    "egress": {
+      "oneOf": [
+        { "type": "object", "properties": { "decision": { "enum": ["FIXTURE", "NOT_APPLICABLE"] }, "attempted": { "const": false } }, "required": ["decision", "attempted"], "additionalProperties": false },
+        { "type": "object", "properties": { "decision": { "const": "ALLOWED_READ" }, "attempted": { "const": true }, "resource": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" }, "connection": { "type": "object", "properties": { "connectionId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" } }, "required": ["connectionId", "revision"], "additionalProperties": false }, "authorizationDecisionId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "outcome": { "enum": ["SUCCEEDED", "FAILED"] } }, "required": ["decision", "attempted", "resource", "connection", "authorizationDecisionId", "outcome"], "additionalProperties": false },
+        { "type": "object", "properties": { "decision": { "const": "DENIED" }, "attempted": { "const": false }, "resource": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" }, "authorizationDecisionId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "reasonCode": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["decision", "attempted", "resource", "authorizationDecisionId", "reasonCode"], "additionalProperties": false },
+        { "type": "object", "properties": { "decision": { "const": "NOT_ATTEMPTED" }, "attempted": { "const": false }, "resource": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" }, "reasonCode": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["decision", "attempted", "reasonCode"], "additionalProperties": false }
+      ]
     },
     "verdicts": {
       "type": "object",
