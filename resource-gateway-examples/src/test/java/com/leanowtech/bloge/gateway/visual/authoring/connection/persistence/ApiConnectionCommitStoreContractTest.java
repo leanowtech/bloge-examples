@@ -143,7 +143,7 @@ abstract class ApiConnectionCommitStoreContractTest {
 
     @Test
     void expiredLeaseCannotStageOrCommitAndFailIsAStaleNoOp() {
-        MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
+        MutableClock clock = new MutableClock(Instant.now());
         Clock zoned = clock.withZone(ZoneId.of("Asia/Singapore"));
         assertThat(zoned.getZone()).isEqualTo(ZoneId.of("Asia/Singapore"));
         assertThat(zoned.instant()).isEqualTo(clock.instant());
@@ -159,7 +159,7 @@ abstract class ApiConnectionCommitStoreContractTest {
 
     @Test
     void newerAttemptTakesOverOldStageAndFencesOldLease() {
-        MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
+        MutableClock clock = new MutableClock(Instant.now());
         ApiConnectionCommitStore store = newStore(clock);
         CommandLease old = leaseAt(clock, "takeover", 1, "old-token", SCOPE, "customer", ExpectedRevision.create(), 10);
         CommandLease current = leaseAt(clock, "takeover", 2, "new-token", SCOPE, "customer",
