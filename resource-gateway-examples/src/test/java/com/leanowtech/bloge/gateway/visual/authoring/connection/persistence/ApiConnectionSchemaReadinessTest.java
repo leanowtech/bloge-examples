@@ -187,9 +187,9 @@ class ApiConnectionSchemaReadinessTest {
     }
 
     @Test
-    void pendingLeaseRejectsMismatchedAttemptAndToken() {
+    void pendingLeaseRejectsMismatchedCommandWithMatchingAttemptAndToken() {
         applyMigrations();
-        insertJournalFor("lease-command", "lease-key", "lease-connection", 2, "wrong-attempt");
+        insertJournalFor("lease-command", "lease-key", "lease-connection", 1, "lease-attempt");
         insertJournalFor("revision-command", "revision-key", "lease-connection", 1, "lease-attempt");
         insertIdentity("lease-connection");
         insertRevision("lease-connection", "revision-command", 1, "lease-attempt", "STAGED", "\"lease-etag\"",
@@ -200,7 +200,7 @@ class ApiConnectionSchemaReadinessTest {
                     (tenant_id, project_id, environment_id, connection_id, revision, command_id,
                      attempt_no, attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle,
                      status, lease_until)
-                VALUES ('t', 'p', 'e', 'lease-connection', 1, 'lease-command', 2, 'wrong-attempt',
+                VALUES ('t', 'p', 'e', 'lease-connection', 1, 'lease-command', 1, 'lease-attempt',
                         'token', 'VALUE', 'provider', 'lease', 'opaque', 'PENDING', CURRENT_TIMESTAMP)
                 """))
                 .isInstanceOf(DataIntegrityViolationException.class);
