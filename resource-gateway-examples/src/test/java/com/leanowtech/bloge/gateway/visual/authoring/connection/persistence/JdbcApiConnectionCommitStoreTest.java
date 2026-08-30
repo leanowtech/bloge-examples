@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
     private static final String BASE_URL = "https://customer.example.com";
-    private static final Instant TEST_NOW = Instant.parse("2026-08-30T00:00:00Z");
+    private static final Instant TEST_NOW = Instant.now();
 
     private DataSource dataSource;
     private JdbcTemplate jdbc;

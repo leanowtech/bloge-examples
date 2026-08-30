@@ -34,7 +34,7 @@ abstract class ApiConnectionCommitStoreContractTest {
     private static final AuthoringScope OTHER_SCOPE = new AuthoringScope("other", "project", "dev");
     private static final String BASE_URL = "https://customer.example.com";
     private static final String REQUEST_FINGERPRINT = "sha256:" + "a".repeat(64);
-    private static final Instant TEST_NOW = Instant.parse("2026-08-30T00:00:00Z");
+    private static final Instant TEST_NOW = Instant.now();
 
     /** Factory seam for exercising this matrix against a future JDBC adapter. */
     protected abstract ApiConnectionCommitStore createStore(Clock clock);
