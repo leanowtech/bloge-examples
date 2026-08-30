@@ -405,6 +405,21 @@ abstract class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void failedHigherAttemptCannotTakeOverWithAChangedRequestFingerprint() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease failed = lease("failed-fingerprint-takeover", 1, "failed-token", SCOPE, "customer",
+                ExpectedRevision.create());
+        stage(store, failed, "customer", ExpectedRevision.create(), noneCommand());
+        store.fail(failed);
+        CommandLease changed = new CommandLease(failed.commandId(), 2, "replacement-token", failed.key(),
+                "sha256:" + "b".repeat(64), failed.leaseUntil(), ExpectedRevision.create());
+
+        assertThatThrownBy(() -> stage(store, changed, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+    }
+
+    @Test
     void alteredLeaseFieldsAreFencedEvenWhenTokenCoordinatesMatch() {
         ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("exact", 1, "exact-token", SCOPE, "customer", ExpectedRevision.create());
@@ -436,13 +451,26 @@ abstract class ApiConnectionCommitStoreContractTest {
                 .put("revision", 1).put("fingerprint", "sha256:" + "b".repeat(64));
         body.putObject("projections").put("descriptor", "READY")
                 .put("designContract", "READY").put("operator", "READY");
-        body.putObject("defaultFixture").put("fixtureSetId", "fixtures").put("revision", 1)
-                .put("fingerprint", "sha256:" + "c".repeat(64)).putArray("cases")
-                .addObject().put("exampleName", "happy").put("caseId", "case-1");
         CommandReceipt receipt = new CommandReceipt(ApiResourceSaveReceiptClosure.SCHEMA_VERSION, body,
                 com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(body),
                 "\"outer\"");
         ApiResourceSaveReceiptClosure.require(receipt, "profile", "customer", 1);
+
+        var fixture = body.deepCopy();
+        fixture.putObject("defaultFixture").put("fixtureSetId", "fixtures").put("revision", 1)
+                .put("fingerprint", "sha256:" + "c".repeat(64)).putArray("cases")
+                .addObject().put("exampleName", "happy").put("caseId", "case-1");
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, fixture,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(fixture),
+                "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
+
+        var hugeRevision = body.deepCopy();
+        hugeRevision.with("connection").put("revision", new java.math.BigInteger("9223372036854775808"));
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, hugeRevision,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(hugeRevision),
+                "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
 
         var extra = body.deepCopy().put("unexpected", true);
         assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(

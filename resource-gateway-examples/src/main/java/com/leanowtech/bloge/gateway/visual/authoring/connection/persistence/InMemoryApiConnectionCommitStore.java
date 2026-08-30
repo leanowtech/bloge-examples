@@ -86,7 +86,9 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         }
         CommandLease failedLease = failed.get(commandKey);
         if (failedLease != null) {
-            if (!lease.commandId().equals(failedLease.commandId()) || lease.attemptNo() <= failedLease.attemptNo()) {
+            if (!lease.commandId().equals(failedLease.commandId())
+                    || !lease.requestFingerprint().equals(failedLease.requestFingerprint())
+                    || lease.attemptNo() <= failedLease.attemptNo()) {
                 fail(Code.LEASE_FENCED);
             }
             failed.remove(commandKey);

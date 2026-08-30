@@ -446,7 +446,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         CommittedOuterReceipt committedOuter = requireCommittedOuterReceipt(lease);
         RevisionRow child = committedChildRevision(lease);
         if (child == null) fail(Code.STAGE_MISSING);
-        validateOuterReceipt(outerReceipt, child, lease.key().targetId());
+        validateOuterReceipt(outerReceipt, child, lease, lease.key().targetId());
+        validateResourceReceiptAuthority(new CommandReceipt(committedOuter.schema(), committedOuter.body(),
+                committedOuter.fingerprint(), committedOuter.etag()), child, lease, lease.key().targetId());
         if (outerReceipt == null || !outerReceipt.schemaVersion().equals(committedOuter.schema())
                 || !outerReceipt.body().equals(committedOuter.body())
                 || !outerReceipt.bodyFingerprint().equals(committedOuter.fingerprint())
@@ -490,11 +492,45 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 lease.attemptNo(), lease.attemptToken()).stream().findFirst().orElse(null);
     }
 
-    private static void validateOuterReceipt(
-            CommandReceipt receipt, RevisionRow child, String resourceId) {
+    private void validateOuterReceipt(CommandReceipt receipt, RevisionRow child, CommandLease lease,
+                                      String resourceId) {
         try {
             ApiResourceSaveReceiptClosure.require(receipt, resourceId, child.connectionId(), child.revision());
+            validateResourceReceiptAuthority(receipt, child, lease, resourceId);
         } catch (RuntimeException ex) {
+            fail(Code.INTEGRITY);
+        }
+    }
+
+    private void validateResourceReceiptAuthority(CommandReceipt receipt, RevisionRow child,
+                                                  CommandLease lease, String resourceId) {
+        validateResourceReceiptAuthority(receipt, child.scope(), lease.commandId(), resourceId,
+                child.connectionId(), child.revision());
+    }
+
+    /**
+     * Binds the child receipt's resource reference to the committed resource
+     * row for the exact outer command and authoring scope. A receipt body is
+     * not an authority for its own resource revision or specification digest.
+     */
+    private void validateResourceReceiptAuthority(CommandReceipt receipt, AuthoringScope scope,
+                                                 String commandId, String resourceId,
+                                                 String connectionId, long connectionRevision) {
+        ApiResourceSaveReceiptClosure.require(receipt, resourceId, connectionId, connectionRevision);
+        List<ResourceAuthorityRow> rows = jdbc.query("""
+                        SELECT resource_id, revision, spec_fingerprint
+                          FROM rg_api_resource_revisions
+                         WHERE tenant_id=? AND project_id=? AND environment_id=?
+                           AND command_id=? AND state='COMMITTED'
+                        """, (row, ignored) -> new ResourceAuthorityRow(row.getString(1), row.getLong(2),
+                        row.getString(3)), scope.tenantId(), scope.projectId(), scope.environmentId(), commandId);
+        if (rows.size() != 1) fail(Code.INTEGRITY);
+        ResourceAuthorityRow authority = rows.getFirst();
+        JsonNode resource = receipt.body().get("resource");
+        if (!authority.resourceId().equals(resourceId)
+                || !authority.resourceId().equals(resource.path("resourceId").asText(null))
+                || authority.revision() != resource.path("revision").asLong()
+                || !authority.specFingerprint().equals(resource.path("fingerprint").asText(null))) {
             fail(Code.INTEGRITY);
         }
     }
@@ -735,9 +771,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                     && receipt.equals(mapper.readTree(row.viewJson()));
             boolean resourceReceiptClosure = false;
             if (RESOURCE_RECEIPT_SCHEMA.equals(row.receiptSchema())) {
-                ApiResourceSaveReceiptClosure.require(new CommandReceipt(row.receiptSchema(), receipt,
-                        row.receiptFingerprint(), row.receiptEtag()), journalTarget(row.commandId()),
-                        row.connectionId(), row.revision());
+                validateResourceReceiptAuthority(new CommandReceipt(row.receiptSchema(), receipt,
+                        row.receiptFingerprint(), row.receiptEtag()), row.scope(), row.commandId(),
+                        journalTarget(row.commandId()), row.connectionId(), row.revision());
                 resourceReceiptClosure = true;
             }
             if (view == null || !view.equals(canonicalView)
@@ -888,6 +924,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                               Long expectedRevision) { }
 
     private record CommittedOuterReceipt(String schema, JsonNode body, String fingerprint, String etag) { }
+
+    private record ResourceAuthorityRow(String resourceId, long revision, String specFingerprint) { }
 
     private static RowMapper<JournalRow> journalRowMapper() {
         return (row, ignored) -> new JournalRow(row.getString(1), row.getString(2), row.getString(3),

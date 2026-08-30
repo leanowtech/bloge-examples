@@ -248,8 +248,44 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                  WHERE command_id=? AND status='COMMITTED'
                 """, "bloge.apiResourceSaveReceipt.v1", mapper.writeValueAsString(body),
                 AuthoringFingerprints.of(body), "\"outer-resource-etag\"", resourceLease.commandId());
-        store.publishChild(resourceLease, new CommandReceipt("bloge.apiResourceSaveReceipt.v1", body,
-                AuthoringFingerprints.of(body), "\"outer-resource-etag\""));
+        insertCommittedResourceAuthority(resourceLease, "profile", 1, "sha256:" + "b".repeat(64));
+        CommandReceipt validReceipt = new CommandReceipt("bloge.apiResourceSaveReceipt.v1", body,
+                AuthoringFingerprints.of(body), "\"outer-resource-etag\"");
+
+        ObjectNode alteredRevision = body.deepCopy();
+        alteredRevision.with("resource").put("revision", 2);
+        CommandReceipt alteredRevisionReceipt = new CommandReceipt("bloge.apiResourceSaveReceipt.v1", alteredRevision,
+                AuthoringFingerprints.of(alteredRevision), "\"outer-resource-etag\"");
+        assertThatThrownBy(() -> store.publishChild(resourceLease, alteredRevisionReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        ObjectNode alteredFingerprint = body.deepCopy();
+        alteredFingerprint.with("resource").put("fingerprint", "sha256:" + "c".repeat(64));
+        CommandReceipt alteredFingerprintReceipt = new CommandReceipt("bloge.apiResourceSaveReceipt.v1", alteredFingerprint,
+                AuthoringFingerprints.of(alteredFingerprint), "\"outer-resource-etag\"");
+        assertThatThrownBy(() -> store.publishChild(resourceLease, alteredFingerprintReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        store.publishChild(resourceLease, validReceipt);
+        assertThat(store.publishChild(resourceLease, validReceipt)).isEqualTo(new StoredApiConnection(
+                SCOPE, child.view(), child.metadataFingerprint(), child.strongEtag(), child.commandId()));
+
+        ObjectNode alteredReplay = body.deepCopy();
+        alteredReplay.with("projections").put("operator", "PENDING");
+        CommandReceipt alteredReplayReceipt = new CommandReceipt("bloge.apiResourceSaveReceipt.v1", alteredReplay,
+                AuthoringFingerprints.of(alteredReplay), "\"outer-resource-etag\"");
+        assertThatThrownBy(() -> store.publishChild(resourceLease, alteredReplayReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        CommandLease alteredLease = new CommandLease(resourceLease.commandId(), resourceLease.attemptNo(),
+                resourceLease.attemptToken(), resourceLease.key(), resourceLease.requestFingerprint(),
+                resourceLease.leaseUntil().plusSeconds(1), resourceLease.expectedRevision());
+        assertThatThrownBy(() -> store.publishChild(alteredLease, validReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
 
         assertThat(store.findHead(SCOPE, "customer")).contains(new StoredApiConnection(
                 SCOPE, child.view(), child.metadataFingerprint(), child.strongEtag(), child.commandId()));
@@ -542,6 +578,18 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     private static ApiConnectionCommand noneCommand() {
         return new ApiConnectionCommand("Customer API", BASE_URL, ApiConnectionCommand.Auth.none(),
                 new ApiConnectionCommand.Defaults(5_000, Map.of("Accept", "application/json")));
+    }
+
+    private void insertCommittedResourceAuthority(CommandLease lease, String resourceId, long revision,
+                                                  String specFingerprint) {
+        jdbc.update("""
+                INSERT INTO rg_api_resource_revisions
+                    (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,
+                     spec_fingerprint, connection_id, strong_etag, command_id, attempt_no, attempt_token)
+                VALUES (?, ?, ?, ?, ?, 'COMMITTED', ?, ?, ?, ?, ?, ?, ?)
+                """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), resourceId, revision, "{}", specFingerprint,
+                "customer", "\"resource-etag\"", lease.commandId(), lease.attemptNo(), lease.attemptToken());
     }
 
     private int revisionCount() {
