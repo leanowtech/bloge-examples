@@ -293,7 +293,37 @@ PostgreSQL-mode 与本地 runtime 的聚焦证据，不是 PostgreSQL certificat
 对象页和首次模拟。必须继续保留 Exact Subject、强 ETag/Idempotency、secret-free Problem Detail 与
 投影闭包边界；不能把当前 Store 的聚焦证据写成 HTTP 或 UI 已完成。
 
-## 8. 未关闭风险
+## 8. Iteration 7 — J3 编译器投影与边界验收
+
+日期：2026-08-30。
+
+### 已完成
+
+- `67d8530b4`、`3532ce5a1`、`c45436249`、`6dd104292`：J3 的 Spec + Standards 评审结论为
+  **Accepted**。编译器已为一个 API Resource 创建 3 个 `READY`、精确 subject 的投影；投影通过
+  服务端 `Connection` resolver 解析，并复用共享 Header/API-key policy。URI 解析严格拒绝不合规输入，
+  JSONPath 映射到运行时 dot path，并显式接入 `visualadapter` 边界及 wiring。
+- `FIXTURE_ONLY` 的真实写入路径保持 fail-closed；`MANAGED_WRITE` 在缺少无损 runtime side-effect
+  contract 时仍明确 fail-closed，不能由当前编译证据推导为真实写入已可用。
+
+### 最新验证
+
+协调者独立运行 82 个聚焦测试，全部 `Failures: 0, Errors: 0, Skipped: 0`：
+`ApiResourceModule8`、schema readiness 19、runtime config 7、JDBC mutation 18、claim 10、
+store contract 13、compiler 6、boundary 1。`c45436249` 的隔离 `clean verify` 共 7739 个测试，
+只有 `VisualRuntimeBoundary` 1 个失败且 0 个错误；`6dd104292` 修复后，边界聚焦测试为 1/1 通过。
+这里不把 `6dd104292` 之后未重跑的 full verify 写成全量通过。
+
+### 当前差距评估
+
+本轮只关闭 API Resource 后端权威能力中的一个编译器投影点；按本台账现有权重，完成度从 30% 调整为
+**31%**，当前差距为 **69%**。这不是 HTTP、对象页、真实 PostgreSQL 或全量门禁完成声明。
+
+下一步仍是 `Connection` 元数据、Secret lease、Default Fixture 与 `AuthoringFacade`；随后才进入 API
+Resource 对象页和首次模拟。复合保存必须继续满足 Exact Subject、强 ETag/Idempotency、secret-free
+Problem Detail、投影闭包与 fail-closed side-effect 边界。
+
+## 9. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

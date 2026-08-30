@@ -67,8 +67,12 @@ RG_API_RESOURCE_AUTHORING_ENABLED=true
 
 When enabled, missing migrations or compiler/readiness prerequisites fail startup; the runtime does not
 silently fall back to the in-memory store. J2 covers scoped claim, committed reads, concurrent staging,
-transactional stage/commit/fail, lease fencing, restart-safe history, and tamper rejection. Real PostgreSQL
-certification, the `AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+transactional stage/commit/fail, lease fencing, restart-safe history, and tamper rejection. The opt-in compiler
+resolver/wiring now creates three `READY` exact-subject projections through the server-side `Connection` resolver,
+shared Header/API-key policy, strict URI and JSONPath-to-runtime-dot-path mapping, with an explicit `visualadapter`
+boundary. Missing resolver/readiness prerequisites fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
+real writes until the lossless runtime side-effect contract exists. Real PostgreSQL certification, the
+`AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
