@@ -223,8 +223,7 @@ abstract class ExternalSecretProviderContractTest {
 
     @Test
     void abortIsExactAttemptScopedAndDoesNotInvalidateAnotherAttempt() {
-        var fake = (FakeExternalSecretProviderContractTest.FakeProvider) provider();
-        ExternalSecretProvider provider = fake;
+        ExternalSecretProvider provider = provider();
         SecretOperationContext contextA = context("command-shared", 1, "attempt-a");
         SecretOperationContext contextB = context("command-shared", 2, "attempt-b");
         PreparedExternalSecret preparedA = provider.prepare(contextA, new SecretSource.Reference(
@@ -236,16 +235,12 @@ abstract class ExternalSecretProviderContractTest {
         assertThat(preparedA.leaseId()).isNotEqualTo(preparedB.leaseId());
         assertThat(activeA.activeLocator()).isNotEqualTo(activeB.activeLocator());
 
-        int activateCalls = fake.activateCalls;
-        int abortCalls = fake.abortCalls;
         assertThatThrownBy(() -> provider.activate(contextB, preparedA))
                 .isInstanceOf(ExternalSecretProviderException.class)
                 .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
         assertThatThrownBy(() -> provider.abort(contextB, preparedA))
                 .isInstanceOf(ExternalSecretProviderException.class)
                 .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
-        assertThat(fake.activateCalls).isEqualTo(activateCalls);
-        assertThat(fake.abortCalls).isEqualTo(abortCalls);
         provider.abort(contextA, preparedA);
         assertThatThrownBy(() -> provider.resolve(contextA, new ActiveSecretBinding(
                 provider.providerId(), activeA.activeLocator(), contextA.commandId())))
@@ -257,6 +252,26 @@ abstract class ExternalSecretProviderContractTest {
         }
     }
 
+    @Test
+    void contextFenceRejectsBeforeProviderHooksAreCalled() {
+        TrackingProvider provider = new TrackingProvider();
+        SecretOperationContext first = context("command-shared", 1, "token-a");
+        SecretOperationContext second = context("command-shared", 2, "token-b");
+        PreparedExternalSecret prepared = provider.prepare(first, new SecretSource.Reference(
+                new SecretReference(SCOPE, "vault://tracking")));
+        int activateCalls = provider.activateCalls;
+        int abortCalls = provider.abortCalls;
+
+        assertThatThrownBy(() -> provider.activate(second, prepared))
+                .isInstanceOf(ExternalSecretProviderException.class)
+                .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
+        assertThatThrownBy(() -> provider.abort(second, prepared))
+                .isInstanceOf(ExternalSecretProviderException.class)
+                .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
+        assertThat(provider.activateCalls).isEqualTo(activateCalls);
+        assertThat(provider.abortCalls).isEqualTo(abortCalls);
+    }
+
     private static final class ThrowingPrepareProvider extends ExternalSecretProvider {
         private ThrowingPrepareProvider() { super("throwing"); }
         @Override protected PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source) {
@@ -265,6 +280,32 @@ abstract class ExternalSecretProviderContractTest {
         @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context, PreparedExternalSecret prepared) { throw new UnsupportedOperationException(); }
         @Override protected void doAbort(SecretOperationContext context, PreparedExternalSecret prepared) { }
         @Override protected ResolvedExternalSecret doResolve(SecretOperationContext context, ActiveSecretBinding binding) { throw new UnsupportedOperationException(); }
+    }
+
+    private static final class TrackingProvider extends ExternalSecretProvider {
+        private int activateCalls;
+        private int abortCalls;
+
+        private TrackingProvider() { super("tracking"); }
+
+        @Override protected PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source) {
+            return new PreparedExternalSecret(providerId(), "lease", "opaque", UNTIL, context);
+        }
+
+        @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context,
+                                                                PreparedExternalSecret prepared) {
+            activateCalls++;
+            return new ActivatedExternalSecret(providerId(), prepared.leaseId(), "active");
+        }
+
+        @Override protected void doAbort(SecretOperationContext context, PreparedExternalSecret prepared) {
+            abortCalls++;
+        }
+
+        @Override protected ResolvedExternalSecret doResolve(SecretOperationContext context,
+                                                              ActiveSecretBinding binding) {
+            return new ResolvedExternalSecret(providerId(), new DestroyableSecret("material".toCharArray()));
+        }
     }
 
     private static final class WrongResultProvider extends ExternalSecretProvider {
