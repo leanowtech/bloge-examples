@@ -107,6 +107,65 @@ class JdbcApiResourceCommitStoreMutationTest {
     }
 
     @Test
+    void commitRejectsTamperedSpecFingerprintAndKeepsHeadUnchanged() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        jdbc.update("UPDATE rg_api_resource_revisions SET spec_fingerprint=?", FP2);
+
+        assertThatThrownBy(() -> store.commit(lease, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_resource_revisions", String.class)).isEqualTo("STAGED");
+    }
+
+    @Test
+    void commitRejectsTamperedSpecBodyAndKeepsHeadUnchanged() throws Exception {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        ApiResourceSpec original = staged.resource();
+        ApiResourceSpec tampered = new ApiResourceSpec(original.schemaVersion(), original.resourceId(), original.revision(),
+                original.fingerprint(), "tampered", original.description(), original.connectionId(), original.operation(),
+                original.contract(), original.response(), original.effect(), original.examples(), original.status());
+        jdbc.update("UPDATE rg_api_resource_revisions SET spec_json=?", JSON.writeValueAsString(tampered));
+
+        assertThatThrownBy(() -> store.commit(lease, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+    }
+
+    @Test
+    void commitRejectsTamperedConnectionAndKeepsHeadUnchanged() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_id=?", "other-connection");
+
+        assertThatThrownBy(() -> store.commit(lease, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_resource_revisions", String.class))
+                .isEqualTo("STAGED");
+    }
+
+    @Test
+    void commitRejectsTamperedProjectionBodyAndKeepsHeadUnchanged() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        jdbc.update("UPDATE rg_api_resource_projection_revisions SET descriptor_json=?", "{\"tampered\":true}");
+
+        assertThatThrownBy(() -> store.commit(lease, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+    }
+
+    @Test
     void compilerFailureIsTypedAndLeavesNoStage() {
         JdbcApiResourceCommitStore store = store((scope, resource) -> {
             throw new IllegalStateException("invalid projection");
@@ -161,6 +220,30 @@ class JdbcApiResourceCommitStoreMutationTest {
                 .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
         assertThat(store.claim(KEY, FP2, ExpectedRevision.create())).isInstanceOf(ClaimResult.Conflict.class);
+    }
+
+    @Test
+    void matchingCommittedFailIsIntegrityError() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        store.commit(lease, receipt(staged));
+
+        assertThatThrownBy(() -> store.fail(lease, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void committedCommandReplaysReceiptAfterStoreReopen() {
+        JdbcApiResourceCommitStore first = store();
+        CommandLease lease = acquire(first, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = first.stage(lease, "connection", command("one"));
+        CommandReceipt receipt = first.commit(lease, receipt(staged));
+        JdbcApiResourceCommitStore reopened = store();
+
+        ClaimResult.Replay replay = (ClaimResult.Replay) reopened.claim(KEY, FP1, ExpectedRevision.create());
+        assertThat(replay.receipt()).isEqualTo(receipt);
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
@@ -19,6 +21,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import javax.sql.DataSource;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,6 +32,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.ArrayList;
 
 /**
  * JDBC-backed, transactionally fenced API Resource authoring store.
@@ -90,10 +95,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final ObjectMapper mapper;
-    private final Clock clock;
     private final Duration leaseDuration;
     private final ApiResourceDecisions decisions;
-    @SuppressWarnings("unused")
     private final ApiResourceProjectionCompiler compiler;
 
     /** Creates the seam with all collaborators needed by the complete store. */
@@ -104,7 +107,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
-        this.clock = Objects.requireNonNull(clock, "clock");
+        Objects.requireNonNull(clock, "clock");
         if (leaseDuration == null || leaseDuration.isZero() || leaseDuration.isNegative()) {
             throw new IllegalArgumentException("leaseDuration must be positive");
         }
@@ -293,15 +296,47 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         return new ProjectionDocument(kind, resource.ref(), body, fingerprint, ProjectionDocument.State.READY);
     }
 
+    /** Computes the immutable content digest without invoking CREATE revision semantics. */
     private String specFingerprint(ApiResourceSpec resource) {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("resourceId", resource.resourceId());
+        payload.put("connectionId", resource.connectionId());
+        payload.set("command", mapper.valueToTree(new ApiResourceCommand(
+                resource.displayName(), resource.description(), resource.operation(), resource.contract(),
+                resource.response(), resource.effect(), resource.examples())));
         try {
-            ApiResourceCommand command = new ApiResourceCommand(resource.displayName(), resource.description(),
-                    resource.operation(), resource.contract(), resource.response(), resource.effect(), resource.examples());
-            return decisions.next(Optional.empty(), resource.resourceId(), resource.connectionId(), command,
-                    ExpectedRevision.create()).fingerprint();
-        } catch (RuntimeException ex) {
+            byte[] bytes = canonicalize(payload).toString().getBytes(StandardCharsets.UTF_8);
+            return "sha256:" + hex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (Exception ex) {
             throw new IllegalArgumentException("stored spec fingerprint cannot be verified", ex);
         }
+    }
+
+    private JsonNode canonicalize(JsonNode value) {
+        if (value.isObject()) {
+            ObjectNode result = mapper.createObjectNode();
+            List<String> keys = new ArrayList<>();
+            value.fieldNames().forEachRemaining(keys::add);
+            keys.sort(String::compareTo);
+            for (String key : keys) {
+                result.set(key, canonicalize(value.get(key)));
+            }
+            return result;
+        }
+        if (value.isArray()) {
+            ArrayNode result = mapper.createArrayNode();
+            value.forEach(item -> result.add(canonicalize(item)));
+            return result;
+        }
+        return value;
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder out = new StringBuilder();
+        for (byte value : bytes) {
+            out.append(String.format("%02x", value & 0xff));
+        }
+        return out.toString();
     }
 
     private CommandReceipt receipt(JournalRow row) {
@@ -408,7 +443,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             throw ex;
         }
         if (existing != null) {
-            verifyStaged(lease, existing, next, connectionId);
+            verifiedStage(lease, existing, next, connectionId);
             return stagedValue(lease, existing);
         }
         ReadyApiResourceProjections projections;
@@ -459,15 +494,44 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     }
 
     private ApiResourceSpec committedSpec(AuthoringScope scope, String resourceId) {
-        List<String> json = jdbc.query("SELECT r.spec_json FROM rg_api_resource_heads h JOIN rg_api_resource_revisions r ON r.tenant_id=h.tenant_id AND r.project_id=h.project_id AND r.environment_id=h.environment_id AND r.resource_id=h.resource_id AND r.revision=h.revision AND r.command_id=h.command_id AND r.strong_etag=h.strong_etag AND r.state='COMMITTED' WHERE h.tenant_id=? AND h.project_id=? AND h.environment_id=? AND h.resource_id=?", (rs, n) -> rs.getString(1), scope.tenantId(), scope.projectId(), scope.environmentId(), resourceId);
-        if (json.isEmpty()) return null;
-        try { return mapper.readValue(json.getFirst(), ApiResourceSpec.class); } catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stored head is invalid"); }
+        List<String> json = jdbc.query(
+                "SELECT r.spec_json FROM rg_api_resource_heads h "
+                        + "JOIN rg_api_resource_revisions r ON r.tenant_id=h.tenant_id "
+                        + "AND r.project_id=h.project_id AND r.environment_id=h.environment_id "
+                        + "AND r.resource_id=h.resource_id AND r.revision=h.revision "
+                        + "AND r.command_id=h.command_id AND r.strong_etag=h.strong_etag "
+                        + "AND r.state='COMMITTED' WHERE h.tenant_id=? AND h.project_id=? "
+                        + "AND h.environment_id=? AND h.resource_id=?",
+                (rs, n) -> rs.getString(1), scope.tenantId(), scope.projectId(),
+                scope.environmentId(), resourceId);
+        if (json.isEmpty()) {
+            return null;
+        }
+        try {
+            return mapper.readValue(json.getFirst(), ApiResourceSpec.class);
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stored head is invalid");
+        }
     }
 
     private void requireActive(CommandLease lease) {
-        if (lease == null) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
-        List<ActiveRow> rows = jdbc.query("SELECT command_id, tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key, request_fingerprint, status, attempt_no, attempt_token, lease_until, expected_mode, expected_revision FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE", (rs, n) -> new ActiveRow(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8), rs.getString(9), rs.getString(10), rs.getInt(11), rs.getString(12), timestamp(rs, "lease_until"), rs.getString(14), (Long) rs.getObject(15)), lease.commandId());
-        if (rows.isEmpty()) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        if (lease == null) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+        List<ActiveRow> rows = jdbc.query(
+                "SELECT command_id, tenant_id, project_id, environment_id, actor_id, endpoint, "
+                        + "target_id, idempotency_key, request_fingerprint, status, attempt_no, "
+                        + "attempt_token, lease_until, expected_mode, expected_revision "
+                        + "FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
+                (rs, n) -> new ActiveRow(
+                        rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
+                        rs.getString(9), rs.getString(10), rs.getInt(11), rs.getString(12),
+                        timestamp(rs, "lease_until"), rs.getString(14), (Long) rs.getObject(15)),
+                lease.commandId());
+        if (rows.isEmpty()) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
         ActiveRow r = rows.getFirst();
         boolean coordinate = "PREPARING".equals(r.status()) && r.commandId().equals(lease.commandId()) && r.tenantId().equals(lease.key().scope().tenantId())
                 && r.projectId().equals(lease.key().scope().projectId()) && r.environmentId().equals(lease.key().scope().environmentId())
@@ -476,21 +540,42 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 && r.requestFingerprint().equals(lease.requestFingerprint()) && r.attemptNo() == lease.attemptNo()
                 && r.attemptToken().equals(lease.attemptToken()) && r.expectedMode().equals(expectedMode(lease.expectedRevision()))
                 && Objects.equals(r.expectedRevision(), expectedRevision(lease.expectedRevision()));
-        if (!coordinate) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
-        if (!databaseLeaseIsLive(r.commandId())) throw error(ApiResourceCommitStoreException.Code.LEASE_EXPIRED, "lease expired");
+        if (!coordinate) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+        if (!databaseLeaseIsLive(r.commandId())) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_EXPIRED, "lease expired");
+        }
     }
 
     private StagedRow staged(CommandLease lease) {
         List<StagedRow> rows = jdbc.query("""
-                SELECT r.tenant_id, r.project_id, r.environment_id, r.resource_id, r.revision, r.command_id, r.attempt_no, r.attempt_token, r.spec_json, r.spec_fingerprint, r.connection_id, r.strong_etag,
-                       p.descriptor_json, p.descriptor_fingerprint, p.design_contract_json,
-                       p.design_contract_fingerprint, p.operator_json, p.operator_fingerprint, p.set_fingerprint
-                  FROM rg_api_resource_revisions r JOIN rg_api_resource_projection_revisions p
-                   ON p.tenant_id=r.tenant_id AND p.project_id=r.project_id AND p.environment_id=r.environment_id
-                   AND p.resource_id=r.resource_id AND p.revision=r.revision AND p.command_id=r.command_id
-                   AND p.descriptor_state='READY' AND p.design_contract_state='READY' AND p.operator_state='READY'
-                 WHERE r.command_id=? AND r.attempt_no=? AND r.attempt_token=? AND r.state='STAGED' FOR UPDATE""",
-                (rs, n) -> new StagedRow(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),rs.getLong(5),rs.getString(6),rs.getInt(7),rs.getString(8),rs.getString(9), rs.getString(10), rs.getString(11), rs.getString(12), rs.getString(13), rs.getString(14), rs.getString(15), rs.getString(16), rs.getString(17), rs.getString(18), rs.getString(19)),
+                SELECT r.tenant_id, r.project_id, r.environment_id, r.resource_id,
+                       r.revision, r.command_id, r.attempt_no, r.attempt_token,
+                       r.spec_json, r.spec_fingerprint, r.connection_id, r.strong_etag,
+                       p.descriptor_json, p.descriptor_fingerprint, p.descriptor_state,
+                       p.design_contract_json, p.design_contract_fingerprint, p.design_contract_state,
+                       p.operator_json, p.operator_fingerprint, p.operator_state, p.set_fingerprint
+                  FROM rg_api_resource_revisions r
+                  JOIN rg_api_resource_projection_revisions p
+                    ON p.tenant_id = r.tenant_id
+                   AND p.project_id = r.project_id
+                   AND p.environment_id = r.environment_id
+                   AND p.resource_id = r.resource_id
+                   AND p.revision = r.revision
+                   AND p.command_id = r.command_id
+                 WHERE r.command_id = ?
+                   AND r.attempt_no = ?
+                   AND r.attempt_token = ?
+                   AND r.state = 'STAGED'
+                 FOR UPDATE""",
+                (rs, n) -> new StagedRow(
+                        rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getLong(5), rs.getString(6), rs.getInt(7), rs.getString(8),
+                        rs.getString(9), rs.getString(10), rs.getString(11), rs.getString(12),
+                        rs.getString(13), rs.getString(14), rs.getString(15), rs.getString(16),
+                        rs.getString(17), rs.getString(18), rs.getString(19), rs.getString(20),
+                        rs.getString(21), rs.getString(22)),
                 lease.commandId(), lease.attemptNo(), lease.attemptToken());
         return rows.stream().findFirst().orElse(null);
     }
@@ -498,45 +583,108 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private StagedApiResource stagedValue(CommandLease lease, StagedRow row) {
         try {
             ApiResourceSpec resource = mapper.readValue(row.specJson(), ApiResourceSpec.class);
-            return new StagedApiResource(lease, resource,
-                    new ReadyApiResourceProjections(projection(ProjectionDocument.Kind.DESCRIPTOR, resource, row.descriptorJson(), row.descriptorFingerprint()), projection(ProjectionDocument.Kind.DESIGN_CONTRACT, resource, row.designJson(), row.designFingerprint()), projection(ProjectionDocument.Kind.OPERATOR, resource, row.operatorJson(), row.operatorFingerprint())), row.etag());
-        } catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged resource is invalid"); }
+            ReadyApiResourceProjections projections = new ReadyApiResourceProjections(
+                    projection(ProjectionDocument.Kind.DESCRIPTOR, resource,
+                            row.descriptorJson(), row.descriptorFingerprint()),
+                    projection(ProjectionDocument.Kind.DESIGN_CONTRACT, resource,
+                            row.designJson(), row.designFingerprint()),
+                    projection(ProjectionDocument.Kind.OPERATOR, resource,
+                            row.operatorJson(), row.operatorFingerprint()));
+            return new StagedApiResource(lease, resource, projections, row.etag());
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged resource is invalid");
+        }
     }
 
-    private record StagedRow(String tenantId,String projectId,String environmentId,String resourceId,long revision,String commandId,int attemptNo,String attemptToken,String specJson, String specFingerprint, String connectionId, String etag,
-                             String descriptorJson, String descriptorFingerprint, String designJson, String designFingerprint,
-                             String operatorJson, String operatorFingerprint, String setFingerprint) { }
+    private record StagedRow(
+            String tenantId,
+            String projectId,
+            String environmentId,
+            String resourceId,
+            long revision,
+            String commandId,
+            int attemptNo,
+            String attemptToken,
+            String specJson,
+            String specFingerprint,
+            String connectionId,
+            String etag,
+            String descriptorJson,
+            String descriptorFingerprint,
+            String descriptorState,
+            String designJson,
+            String designFingerprint,
+            String designState,
+            String operatorJson,
+            String operatorFingerprint,
+            String operatorState,
+            String setFingerprint) {
+    }
 
-    private void verifyStaged(CommandLease lease, StagedRow r, ApiResourceSpec expected, String connectionId) {
+    /**
+     * Verifies every persisted staged relationship before it can be returned or
+     * committed. The expected resource is produced by the decision engine, so
+     * an update never trusts a fingerprint recomputed as a CREATE operation.
+     */
+    private ApiResourceSpec verifiedStage(CommandLease lease, StagedRow r,
+                                          ApiResourceSpec expected, String connectionId) {
         try {
             ApiResourceSpec actual = mapper.readValue(r.specJson(), ApiResourceSpec.class);
             ReadyApiResourceProjections p = new ReadyApiResourceProjections(
                     projection(ProjectionDocument.Kind.DESCRIPTOR, actual, r.descriptorJson(), r.descriptorFingerprint()),
                     projection(ProjectionDocument.Kind.DESIGN_CONTRACT, actual, r.designJson(), r.designFingerprint()),
                     projection(ProjectionDocument.Kind.OPERATOR, actual, r.operatorJson(), r.operatorFingerprint()));
-            if (!r.tenantId().equals(lease.key().scope().tenantId()) || !r.projectId().equals(lease.key().scope().projectId()) || !r.environmentId().equals(lease.key().scope().environmentId())
-                    || !r.resourceId().equals(lease.key().targetId()) || r.revision() != expected.revision() || !r.commandId().equals(lease.commandId())
-                    || r.attemptNo()!=lease.attemptNo() || !r.attemptToken().equals(lease.attemptToken()) || !r.connectionId().equals(connectionId)
-                    || !r.specFingerprint().equals(expected.fingerprint()) || !r.specFingerprint().equals(specFingerprint(actual))
-                    || !r.setFingerprint().equals(projectionSetFingerprint(actual, p)))
+            if (!r.tenantId().equals(lease.key().scope().tenantId())
+                    || !r.projectId().equals(lease.key().scope().projectId())
+                    || !r.environmentId().equals(lease.key().scope().environmentId())
+                    || !r.resourceId().equals(lease.key().targetId())
+                    || r.revision() != expected.revision()
+                    || !r.commandId().equals(lease.commandId())
+                    || r.attemptNo() != lease.attemptNo()
+                    || !r.attemptToken().equals(lease.attemptToken())
+                    || !r.connectionId().equals(connectionId)
+                    || !actual.equals(expected)
+                    || !r.specFingerprint().equals(expected.fingerprint())
+                    || !r.setFingerprint().equals(projectionSetFingerprint(actual, p))) {
                 throw new IllegalArgumentException("staged integrity drift");
+            }
+            if (!ProjectionDocument.State.READY.name().equals(r.descriptorState())
+                    || !ProjectionDocument.State.READY.name().equals(r.designState())
+                    || !ProjectionDocument.State.READY.name().equals(r.operatorState())) {
+                throw new IllegalArgumentException("staged projection state drift");
+            }
+            if (r.etag() == null || r.etag().isBlank()) {
+                throw new IllegalArgumentException("staged etag drift");
+            }
             verifyProjections(actual, p);
-        } catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged resource is invalid"); }
+            return actual;
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged resource is invalid");
+        }
     }
 
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
 
     private static void verifyProjections(ApiResourceSpec resource, ReadyApiResourceProjections projections) {
-        if (projections == null || !resource.ref().equals(projections.subject())) throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift");
+        if (projections == null || !resource.ref().equals(projections.subject())) {
+            throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift");
+        }
         for (ProjectionDocument document : new ProjectionDocument[]{projections.descriptor(), projections.designContract(), projections.operator()}) {
-            if (document.state() != ProjectionDocument.State.READY || !AuthoringFingerprints.of(document.body()).equals(document.fingerprint())) throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection integrity drift");
+            if (document.state() != ProjectionDocument.State.READY
+                    || !AuthoringFingerprints.of(document.body()).equals(document.fingerprint())) {
+                throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID,
+                        "projection integrity drift");
+            }
         }
     }
 
     @Override
     public CommandReceipt commit(CommandLease lease, CommandReceipt finalReceipt) {
-        try { return transactions.execute(status -> commitInTransaction(lease, finalReceipt)); }
-        catch (ApiResourceCommitStoreException ex) { throw ex; }
+        try {
+            return transactions.execute(status -> commitInTransaction(lease, finalReceipt));
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        }
         catch (DataAccessException ex) {
             throw error(isCommitRace(ex) ? ApiResourceCommitStoreException.Code.CAS_MISMATCH
                     : ApiResourceCommitStoreException.Code.INTEGRITY, "commit persistence failed");
@@ -556,37 +704,78 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         return message.contains("lock") || message.contains("deadlock") || message.contains("serialization");
     }
 
-    private CommandReceipt commitInTransaction(CommandLease lease, CommandReceipt receipt) {
-        requireActive(lease); StagedRow s = staged(lease);
-        if (s == null) throw error(ApiResourceCommitStoreException.Code.STAGE_MISSING, "staged resource is missing");
-        ApiResourceSpec resource;
-        try { resource = mapper.readValue(s.specJson(), ApiResourceSpec.class); }
-        catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged spec is invalid"); }
-        validateReceipt(receipt, s.etag());
+    /** Replays the decision seam for a stored command without using CREATE fingerprinting. */
+    private ApiResourceSpec expectedStageSpec(CommandLease lease, ApiResourceSpec actual) {
+        ApiResourceCommand command = new ApiResourceCommand(actual.displayName(), actual.description(),
+                actual.operation(), actual.contract(), actual.response(), actual.effect(), actual.examples());
         try {
-            ReadyApiResourceProjections p = new ReadyApiResourceProjections(
-                    projection(ProjectionDocument.Kind.DESCRIPTOR, resource, s.descriptorJson(), s.descriptorFingerprint()),
-                    projection(ProjectionDocument.Kind.DESIGN_CONTRACT, resource, s.designJson(), s.designFingerprint()),
-                    projection(ProjectionDocument.Kind.OPERATOR, resource, s.operatorJson(), s.operatorFingerprint()));
-            verifyProjections(resource, p);
-            if (!s.setFingerprint().equals(projectionSetFingerprint(resource, p))) throw new IllegalArgumentException();
-        } catch (ApiResourceCommitStoreException ex) { throw ex; }
-        catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "staged projections are invalid"); }
-        jdbc.query("SELECT revision FROM rg_api_resource_revisions WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? ORDER BY revision, command_id FOR UPDATE", (rs,n)->rs.getLong(1), lease.key().scope().tenantId(),lease.key().scope().projectId(),lease.key().scope().environmentId(),lease.key().targetId());
-        List<HeadRow> heads = jdbc.query("SELECT revision, command_id, strong_etag FROM rg_api_resource_heads WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? FOR UPDATE", (rs,n)->new HeadRow(rs.getLong(1), rs.getString(2), rs.getString(3)), lease.key().scope().tenantId(),lease.key().scope().projectId(),lease.key().scope().environmentId(),lease.key().targetId());
-        if ((lease.expectedRevision() instanceof ExpectedRevision.Create && !heads.isEmpty()) || (lease.expectedRevision() instanceof ExpectedRevision.Match m && (heads.isEmpty() || heads.getFirst().revision()!=m.revision()))) throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH,"head revision changed");
-        if (jdbc.update("UPDATE rg_api_resource_revisions SET state='COMMITTED' WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? AND revision=? AND command_id=? AND state='STAGED'",s.tenantId(),s.projectId(),s.environmentId(),s.resourceId(),s.revision(),s.commandId()) != 1) throw error(ApiResourceCommitStoreException.Code.INTEGRITY,"stage state changed");
+            return decisions.next(Optional.ofNullable(committedSpec(lease.key().scope(), lease.key().targetId())),
+                    lease.key().targetId(), actual.connectionId(), command, lease.expectedRevision());
+        } catch (ApiResourceAuthoringException ex) {
+            if (ex.code() == ApiResourceAuthoringException.Code.ALREADY_EXISTS
+                    || ex.code() == ApiResourceAuthoringException.Code.NOT_FOUND
+                    || ex.code() == ApiResourceAuthoringException.Code.CAS_MISMATCH) {
+                throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH, "head revision changed");
+            }
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged spec is invalid");
+        }
+    }
+
+    private CommandReceipt commitInTransaction(CommandLease lease, CommandReceipt receipt) {
+        requireActive(lease);
+        StagedRow staged = staged(lease);
+        if (staged == null) {
+            throw error(ApiResourceCommitStoreException.Code.STAGE_MISSING, "staged resource is missing");
+        }
+        ApiResourceSpec resource;
+        try {
+            resource = mapper.readValue(staged.specJson(), ApiResourceSpec.class);
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged spec is invalid");
+        }
+        validateReceipt(receipt, staged.etag());
+        jdbc.query(
+                "SELECT revision FROM rg_api_resource_revisions "
+                        + "WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? "
+                        + "ORDER BY revision, command_id FOR UPDATE",
+                (rs, n) -> rs.getLong(1), lease.key().scope().tenantId(),
+                lease.key().scope().projectId(), lease.key().scope().environmentId(),
+                lease.key().targetId());
+        List<HeadRow> heads = jdbc.query(
+                "SELECT revision, command_id, strong_etag FROM rg_api_resource_heads "
+                        + "WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? FOR UPDATE",
+                (rs, n) -> new HeadRow(rs.getLong(1), rs.getString(2), rs.getString(3)),
+                lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().targetId());
+        if ((lease.expectedRevision() instanceof ExpectedRevision.Create && !heads.isEmpty())
+                || (lease.expectedRevision() instanceof ExpectedRevision.Match match
+                && (heads.isEmpty() || heads.getFirst().revision() != match.revision()))) {
+            throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH, "head revision changed");
+        }
+        ApiResourceSpec expected = expectedStageSpec(lease, resource);
+        verifiedStage(lease, staged, expected, resource.connectionId());
+        if (jdbc.update(
+                "UPDATE rg_api_resource_revisions SET state='COMMITTED' "
+                        + "WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? "
+                        + "AND revision=? AND command_id=? AND state='STAGED'",
+                staged.tenantId(), staged.projectId(), staged.environmentId(), staged.resourceId(),
+                staged.revision(), staged.commandId()) != 1) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage state changed");
+        }
         if (jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?, updated_at=CURRENT_TIMESTAMP WHERE command_id=? AND status='PREPARING' AND attempt_no=? AND attempt_token=?",
-                receipt.schemaVersion(), json(receipt.body()), receipt.bodyFingerprint(), receipt.strongEtag(), lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
+                receipt.schemaVersion(), json(receipt.body()), receipt.bodyFingerprint(), receipt.strongEtag(),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "command journal state changed");
         }
         if (heads.isEmpty()) {
             if (jdbc.update("INSERT INTO rg_api_resource_heads (tenant_id,project_id,environment_id,resource_id,revision,command_id,strong_etag) VALUES (?,?,?,?,?,?,?)",
-                    s.tenantId(), s.projectId(), s.environmentId(), s.resourceId(), s.revision(), s.commandId(), s.etag()) != 1) {
+                    staged.tenantId(), staged.projectId(), staged.environmentId(), staged.resourceId(),
+                    staged.revision(), staged.commandId(), staged.etag()) != 1) {
                 throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "head insert failed");
             }
         } else if (jdbc.update("UPDATE rg_api_resource_heads SET revision=?, command_id=?, strong_etag=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? AND revision=? AND revision_state='COMMITTED'",
-                s.revision(), s.commandId(), s.etag(), s.tenantId(), s.projectId(), s.environmentId(), s.resourceId(), heads.getFirst().revision()) != 1) {
+                staged.revision(), staged.commandId(), staged.etag(), staged.tenantId(), staged.projectId(),
+                staged.environmentId(), staged.resourceId(), heads.getFirst().revision()) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "head update failed");
         }
         return receipt;
@@ -594,23 +783,67 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     @Override
     public void fail(CommandLease lease, CommandFailureCode failureCode) {
-        if (lease == null) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED,"lease is fenced");
-        if (failureCode == null) throw error(ApiResourceCommitStoreException.Code.INTEGRITY,"failure code is required");
-        try { transactions.executeWithoutResult(status -> {
-            List<JournalRow> rows = jdbc.query("SELECT "+JOURNAL_COLUMNS+" FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",journalRowMapper(),lease.commandId());
-            if (rows.isEmpty()) return; JournalRow j=rows.getFirst();
-            if (!j.attemptToken().equals(lease.attemptToken()) || j.attemptNo() != lease.attemptNo()) return;
-            if ("COMMITTED".equals(j.status())) throw error(ApiResourceCommitStoreException.Code.INTEGRITY,"committed command cannot fail");
-            requireActive(lease);
-            jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id=? AND attempt_no=? AND attempt_token=? AND state='STAGED'",lease.commandId(),lease.attemptNo(),lease.attemptToken());
-            if (jdbc.update("UPDATE rg_authoring_command_journal SET status='FAILED', receipt_schema=NULL, receipt_json=NULL, receipt_fingerprint=NULL, receipt_etag=NULL, failure_code=?, updated_at=CURRENT_TIMESTAMP WHERE command_id=? AND status='PREPARING' AND attempt_no=? AND attempt_token=?",
-                    failureCode.value(), lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
-                throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "command journal state changed");
-            }
-        }); } catch (ApiResourceCommitStoreException ex) { throw ex; }
-        catch (DataAccessException ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "fail persistence failed"); }
+        if (lease == null) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+        if (failureCode == null) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "failure code is required");
+        }
+        try {
+            transactions.executeWithoutResult(status -> {
+                List<JournalRow> rows = jdbc.query(
+                        "SELECT " + JOURNAL_COLUMNS + " FROM rg_authoring_command_journal "
+                                + "WHERE command_id=? FOR UPDATE",
+                        journalRowMapper(), lease.commandId());
+                if (rows.isEmpty()) {
+                    return;
+                }
+                JournalRow journal = rows.getFirst();
+                if (!journal.attemptToken().equals(lease.attemptToken())
+                        || journal.attemptNo() != lease.attemptNo()) {
+                    return;
+                }
+                if ("COMMITTED".equals(journal.status())) {
+                    throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                            "committed command cannot fail");
+                }
+                requireActive(lease);
+                jdbc.update(
+                        "DELETE FROM rg_api_resource_revisions "
+                                + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "
+                                + "AND state='STAGED'",
+                        lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                if (jdbc.update(
+                        "UPDATE rg_authoring_command_journal SET status='FAILED', "
+                                + "receipt_schema=NULL, receipt_json=NULL, receipt_fingerprint=NULL, "
+                                + "receipt_etag=NULL, failure_code=?, updated_at=CURRENT_TIMESTAMP "
+                                + "WHERE command_id=? AND status='PREPARING' AND attempt_no=? "
+                                + "AND attempt_token=?",
+                        failureCode.value(), lease.commandId(), lease.attemptNo(),
+                        lease.attemptToken()) != 1) {
+                    throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "command journal state changed");
+                }
+            });
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        } catch (DataAccessException ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "fail persistence failed");
+        }
     }
 
-    private String json(JsonNode node) { try { return mapper.writeValueAsString(node); } catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY,"receipt serialization failed"); } }
-    private static void validateReceipt(CommandReceipt r,String etag) { if(r==null || !etag.equals(r.strongEtag()) || !AuthoringFingerprints.of(r.body()).equals(r.bodyFingerprint())) throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID,"receipt is invalid"); }
+    private String json(JsonNode node) {
+        try {
+            return mapper.writeValueAsString(node);
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "receipt serialization failed");
+        }
+    }
+
+    private static void validateReceipt(CommandReceipt receipt, String etag) {
+        if (receipt == null
+                || !etag.equals(receipt.strongEtag())
+                || !AuthoringFingerprints.of(receipt.body()).equals(receipt.bodyFingerprint())) {
+            throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID, "receipt is invalid");
+        }
+    }
 }
