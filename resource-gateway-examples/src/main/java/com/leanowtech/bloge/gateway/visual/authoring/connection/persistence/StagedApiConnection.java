@@ -15,7 +15,8 @@ public final class StagedApiConnection {
     private final String strongEtag;
 
     /** Creates an invisible immutable stage with scope and etag closure checks. */
-    StagedApiConnection(CommandLease lease, ApiConnectionSpec spec, ExpectedRevision connectionExpected, String strongEtag) {
+    public StagedApiConnection(CommandLease lease, ApiConnectionSpec spec,
+                               ExpectedRevision connectionExpected, String strongEtag) {
         this.lease = Objects.requireNonNull(lease, "lease");
         this.spec = Objects.requireNonNull(spec, "spec");
         this.connectionExpected = Objects.requireNonNull(connectionExpected, "connectionExpected");
@@ -41,12 +42,21 @@ public final class StagedApiConnection {
     ApiConnectionSpec spec() { return spec; }
 
     private static String requireEtag(String value) {
-        if (value == null || value.length() < 3 || value.length() > 256
-                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'
-                || value.startsWith("W/")) {
+        if (!isStrongHttpEtag(value)) {
             throw new IllegalArgumentException("strongEtag is invalid");
         }
         return value;
+    }
+
+    /** Stricter HTTP-safe closure, even if an older database check is wider. */
+    private static boolean isStrongHttpEtag(String value) {
+        if (value == null || value.length() < 3 || value.length() > 256
+                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') return false;
+        for (int i = 1; i < value.length() - 1; i++) {
+            char c = value.charAt(i);
+            if (c != '!' && (c < '#' || c > '~')) return false;
+        }
+        return true;
     }
 
     private static boolean connectionExpectedRevisionMismatch(ExpectedRevision expected, int revision) {

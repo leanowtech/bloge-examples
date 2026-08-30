@@ -15,7 +15,12 @@ import java.util.Optional;
  * deliberately does not claim or resolve secrets itself.
  */
 public interface ApiConnectionCommitStore {
-    /** Stages an invisible revision after applying pure authority decisions. */
+    /**
+     * Stages an invisible revision after applying pure authority decisions.
+     * {@code API_CONNECTION_SAVE} requires exact target and expected-revision
+     * equality; nested {@code API_RESOURCE_SAVE} accepts a different resource
+     * target but permits only a child {@link ExpectedRevision.Create} CAS.
+     */
     StagedApiConnection stage(CommandLease lease, String connectionId, ExpectedRevision connectionExpected,
                               ApiConnectionCommand command,
                               PreparedSecretBinding... prepared);

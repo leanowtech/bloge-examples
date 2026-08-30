@@ -2,11 +2,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -141,8 +144,12 @@ abstract class ApiConnectionCommitStoreContractTest {
     @Test
     void expiredLeaseCannotStageOrCommitAndFailIsAStaleNoOp() {
         MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
+        Clock zoned = clock.withZone(ZoneId.of("Asia/Singapore"));
+        assertThat(zoned.getZone()).isEqualTo(ZoneId.of("Asia/Singapore"));
+        assertThat(zoned.instant()).isEqualTo(clock.instant());
         ApiConnectionCommitStore store = newStore(clock);
-        CommandLease live = leaseAt(clock, "expiry", 1, "expiry-token", SCOPE, "customer", ExpectedRevision.create(), 1);
+        CommandLease live = leaseAt(clock, "expiry", 1, "expiry-token", SCOPE, "customer",
+                ExpectedRevision.create(), 1);
         stage(store, live, "customer", ExpectedRevision.create(), noneCommand());
         clock.advanceSeconds(2);
         store.fail(live);
@@ -155,14 +162,17 @@ abstract class ApiConnectionCommitStoreContractTest {
         MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
         ApiConnectionCommitStore store = newStore(clock);
         CommandLease old = leaseAt(clock, "takeover", 1, "old-token", SCOPE, "customer", ExpectedRevision.create(), 1);
-        CommandLease current = leaseAt(clock, "takeover", 2, "new-token", SCOPE, "customer", ExpectedRevision.create(), 30);
+        CommandLease current = leaseAt(clock, "takeover", 2, "new-token", SCOPE, "customer",
+                ExpectedRevision.create(), 30);
         stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
 
-        assertThatThrownBy(() -> stage(store, current, "customer", ExpectedRevision.create(), renamedCommand("Current")))
+        assertThatThrownBy(() -> stage(store, current, "customer", ExpectedRevision.create(),
+                renamedCommand("Current")))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
         clock.advanceSeconds(2);
-        StagedApiConnection replacement = stage(store, current, "customer", ExpectedRevision.create(), renamedCommand("Current"));
+        StagedApiConnection replacement = stage(store, current, "customer", ExpectedRevision.create(),
+                renamedCommand("Current"));
         store.fail(old);
 
         assertThatThrownBy(() -> store.commit(old))
@@ -214,14 +224,16 @@ abstract class ApiConnectionCommitStoreContractTest {
         ApiConnectionCommand bearer = new ApiConnectionCommand("Customer API", BASE_URL,
                 ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
                 new ApiConnectionCommand.Defaults(5000, Map.of()));
-        CommandLease secretCreate = lease("secret-create", 1, "secret-token", SCOPE, "customer", ExpectedRevision.create());
+        CommandLease secretCreate = lease("secret-create", 1, "secret-token", SCOPE, "customer",
+                ExpectedRevision.create());
         stage(store, secretCreate, "customer", ExpectedRevision.create(), bearer, prepared);
         store.commit(secretCreate);
 
         ApiConnectionCommand keep = new ApiConnectionCommand("Customer API", BASE_URL,
                 ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.keepExisting()),
                 new ApiConnectionCommand.Defaults(5000, Map.of()));
-        CommandLease secretUpdate = lease("secret-update", 1, "secret-update-token", SCOPE, "customer", ExpectedRevision.match(1));
+        CommandLease secretUpdate = lease("secret-update", 1, "secret-update-token", SCOPE, "customer",
+                ExpectedRevision.match(1));
         StagedApiConnection updated = stage(store, secretUpdate, "customer", ExpectedRevision.match(1), keep);
 
         assertThat(updated.view().auth().configured()).isTrue();
@@ -245,7 +257,8 @@ abstract class ApiConnectionCommitStoreContractTest {
     void errorsAndStringFormsDoNotLeakEndpointOrSecretData() {
         ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("redaction", 1, "redaction-token", SCOPE, "customer", ExpectedRevision.create());
-        StagedApiConnection staged = stage(store, lease, "customer", ExpectedRevision.create(), new ApiConnectionCommand("Customer API",
+        StagedApiConnection staged = stage(store, lease, "customer", ExpectedRevision.create(),
+                new ApiConnectionCommand("Customer API",
                 BASE_URL, ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("secret-value")),
                 new ApiConnectionCommand.Defaults(5000, Map.of())) ,
                 new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://redacted/token")));
@@ -320,6 +333,24 @@ abstract class ApiConnectionCommitStoreContractTest {
         assertThat(error.toString()).doesNotContain(BASE_URL, "secret-value", "vault://");
     }
 
+    @Test
+    void valueObjectsRejectWeakAndUnsafeEtagsButAcceptShortAndMaximumSafeTags() {
+        CommandLease lease = lease("etag", 1, "etag-token", SCOPE, "customer", ExpectedRevision.create());
+        ApiConnectionSpec spec = new ApiConnectionDecisions().next(SCOPE, Optional.empty(), "customer",
+                noneCommand(), ExpectedRevision.create());
+        for (String invalid : new String[]{"W/\"x\"", "\"a\n\"", "\"a\"b\""}) {
+            assertThatThrownBy(() -> new StagedApiConnection(lease, spec, ExpectedRevision.create(), invalid))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new StoredApiConnection(SCOPE, spec.view(), spec.fingerprint(), invalid,
+                    lease.commandId())).isInstanceOf(IllegalArgumentException.class);
+        }
+        new StagedApiConnection(lease, spec, ExpectedRevision.create(), "\"x\"");
+        new StoredApiConnection(SCOPE, spec.view(), spec.fingerprint(), "\"x\"", lease.commandId());
+        String maximum = "\"" + "x".repeat(254) + "\"";
+        new StagedApiConnection(lease, spec, ExpectedRevision.create(), maximum);
+        new StoredApiConnection(SCOPE, spec.view(), spec.fingerprint(), maximum, lease.commandId());
+    }
+
     private static ApiConnectionCommand noneCommand() {
         return new ApiConnectionCommand("Customer API", BASE_URL, ApiConnectionCommand.Auth.none(),
                 new ApiConnectionCommand.Defaults(5000, Map.of("Accept", "application/json")));
@@ -355,9 +386,11 @@ abstract class ApiConnectionCommitStoreContractTest {
 
     private static final class MutableClock extends Clock {
         private Instant instant;
-        private MutableClock(Instant instant) { this.instant = instant; }
-        @Override public ZoneId getZone() { return ZoneId.of("UTC"); }
-        @Override public Clock withZone(ZoneId zone) { return this; }
+        private final ZoneId zone;
+        private MutableClock(Instant instant) { this(instant, ZoneId.of("UTC")); }
+        private MutableClock(Instant instant, ZoneId zone) { this.instant = instant; this.zone = zone; }
+        @Override public ZoneId getZone() { return zone; }
+        @Override public Clock withZone(ZoneId zone) { return new MutableClock(instant, zone); }
         @Override public Instant instant() { return instant; }
         private void advanceSeconds(long seconds) { instant = instant.plusSeconds(seconds); }
     }

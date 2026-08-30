@@ -58,9 +58,17 @@ public final class StoredApiConnection {
         return value;
     }
     private static String requireEtag(String value) {
-        if (value == null || value.length() < 3 || value.length() > 256
-                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'
-                || value.startsWith("W/")) throw new IllegalArgumentException("strongEtag is invalid");
+        if (!isStrongHttpEtag(value)) throw new IllegalArgumentException("strongEtag is invalid");
         return value;
+    }
+    /** Stricter HTTP-safe closure, even if an older database check is wider. */
+    private static boolean isStrongHttpEtag(String value) {
+        if (value == null || value.length() < 3 || value.length() > 256
+                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') return false;
+        for (int i = 1; i < value.length() - 1; i++) {
+            char c = value.charAt(i);
+            if (c != '!' && (c < '#' || c > '~')) return false;
+        }
+        return true;
     }
 }
