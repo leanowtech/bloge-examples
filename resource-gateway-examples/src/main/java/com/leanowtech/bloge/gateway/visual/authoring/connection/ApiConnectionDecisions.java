@@ -68,8 +68,9 @@ public final class ApiConnectionDecisions {
         ApiConnectionSpec next = new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId,
                 current == null ? 1 : current.revision() + 1, "", command.displayName(), command.baseUrl(),
                 resolved.kind(), resolved.username(), resolved.apiKeyHeader(), defaults, resolved.bindings());
+        String metadataFingerprint = canonicalFingerprint(next);
         return new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId, next.revision(),
-                fingerprint(next), next.displayName(), next.baseUrl(), next.authKind(), next.username(),
+                metadataFingerprint, next.displayName(), next.baseUrl(), next.authKind(), next.username(),
                 next.apiKeyHeader(), next.defaults(), next.secretBindings());
     }
 
@@ -85,6 +86,24 @@ public final class ApiConnectionDecisions {
                                   String connectionId, ApiConnectionCommand command,
                                   ExpectedRevision expected) {
         return next(scope, currentValue, connectionId, command, expected, new PreparedSecretBinding[0]);
+    }
+
+    /** @param spec authority snapshot @return deterministic persisted metadata fingerprint */
+    public String fingerprint(ApiConnectionSpec spec) {
+        if (spec == null) invalid("connection spec is required");
+        ObjectNode body = mapper.createObjectNode();
+        body.put("connectionId", spec.connectionId());
+        body.put("displayName", spec.displayName());
+        body.put("baseUrl", spec.baseUrl());
+        body.put("authKind", spec.authKind());
+        if (spec.username() != null) body.put("username", spec.username());
+        if (spec.apiKeyHeader() != null) body.put("apiKeyHeader", spec.apiKeyHeader());
+        body.set("defaults", mapper.valueToTree(spec.defaults()));
+        ObjectNode bindings = mapper.createObjectNode();
+        spec.secretBindings().entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> bindings.put(entry.getKey(), entry.getValue().ref()));
+        body.set("secretBindings", bindings);
+        return AuthoringFingerprints.of(body);
     }
 
     private void validateCommand(ApiConnectionCommand command) {
@@ -179,7 +198,7 @@ public final class ApiConnectionDecisions {
         return result;
     }
 
-    private String fingerprint(ApiConnectionSpec spec) {
+    private String canonicalFingerprint(ApiConnectionSpec spec) {
         ObjectNode body = mapper.createObjectNode();
         body.put("connectionId", spec.connectionId());
         body.put("displayName", spec.displayName());

@@ -471,7 +471,55 @@ Facade、HTTP 或生产 PostgreSQL 能力已完成，更不意味着 broader goa
 
 本轮只完成 V003 schema/readiness 的 hardening；由于没有 production store 的聚焦最终 Maven 证据，不增加 broader goal 完成度，仍为 **35%**，当前差距为 **65%**。
 
-## 14. 未关闭风险
+## 14. Iteration 14 — J3-B1b Connection JDBC authoritative store 窄闭环
+
+日期：2026-08-30。
+
+### 已完成
+
+- 新增 `JdbcApiConnectionCommitStore`，继续遵守窄接口：exact lease journal fencing、invisible staged
+  revision、head/history CAS、安全 strong ETag、committed receipt integrity、scope-exact reads，以及
+  transaction 内 revision/head/binding/journal 同步提交。
+- secret 路径只持久化 opaque handle、slot、source mode、provider id 和 command lease expiry；commit 把
+  pending lease 原子转换为 active binding 并删除 pending row。JDBC 专用 `failSecretLease` /
+  `cleanupSecretLease` 只处理 exact pending/abort-required row；本实现不声称生产 Vault。
+- `ApiConnectionSpec.restore`、metadata fingerprint 重算和 staged value equality 支持跨 package JDBC
+  reconstruction 与 same-attempt replay；接口没有重新加入 claim/replay 泄漏。
+- 新增 `JdbcApiConnectionCommitStoreTest`：继承 Connection store contract，并补充 pending lease
+  invisibility/redaction、原子 activation、abort/cleanup、并发 head CAS、committed history 和 scope
+  isolation。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiConnectionCommitStoreContractTest,InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,ApiConnectionSchemaReadinessTest' \
+  test -DfailIfNoTests=false
+
+InMemoryApiConnectionCommitStoreTest: 19/19
+JdbcApiConnectionCommitStoreTest: 24/24
+ApiConnectionSchemaReadinessTest: 21/21
+Results: Tests run: 64, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+以上 JDBC 证据来自 H2 `MODE=PostgreSQL` 和注入测试时钟；不能扩写为真实 PostgreSQL certification。
+生产 Vault/provider activation、故障恢复演练、Facade、HTTP、full `clean verify` 和真实 PostgreSQL lane
+仍未运行或未实现。共享工作树中的 frontend 与 PendingSecretStore 未提交修改不属于本窄切片证据。
+
+### 当前差距评估
+
+本轮完成 Connection JDBC store 的聚焦权威提交、读取与 durable pending-lease 语义；按本台账同一 broader
+goal 口径，完成度由 **35%** 保守调整为 **37%**，当前差距为 **63%**。这不代表生产 secret provider、真实
+PostgreSQL、Facade、HTTP、UI 或 broader 3% gap 已完成。
+
+### 未实现边界
+
+- 真实 PostgreSQL migration/certification、跨实例 CAS 演练和 full `clean verify` 未运行。
+- 生产 Vault/provider lease activate/abort/recovery、PendingSecretStore 集成和故障注入闭环未接入。
+- `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 与 UI 尚未接入。
+
+## 15. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

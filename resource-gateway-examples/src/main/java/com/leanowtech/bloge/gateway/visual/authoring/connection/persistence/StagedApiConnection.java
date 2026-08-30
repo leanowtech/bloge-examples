@@ -69,4 +69,30 @@ public final class StagedApiConnection {
         return "StagedApiConnection[connectionId=" + spec.connectionId() + ", revision="
                 + spec.revision() + ", metadataFingerprint=" + spec.fingerprint() + "]";
     }
+
+    @Override public boolean equals(Object other) {
+        if (!(other instanceof StagedApiConnection that)) return false;
+        return lease.equals(that.lease) && connectionExpected.equals(that.connectionExpected)
+                && strongEtag.equals(that.strongEtag) && specEquals(spec, that.spec);
+    }
+    @Override public int hashCode() {
+        return Objects.hash(lease, connectionExpected, strongEtag, spec.schemaVersion(), spec.scope(),
+                spec.connectionId(), spec.revision(), spec.fingerprint(), spec.displayName(), spec.baseUrl(),
+                spec.authKind(), spec.username(), spec.apiKeyHeader(), spec.defaults(), spec.secretBindings());
+    }
+
+    private static boolean specEquals(ApiConnectionSpec left, ApiConnectionSpec right) {
+        return left.schemaVersion().equals(right.schemaVersion())
+                && left.scope().equals(right.scope())
+                && left.connectionId().equals(right.connectionId())
+                && left.revision() == right.revision()
+                && left.fingerprint().equals(right.fingerprint())
+                && left.displayName().equals(right.displayName())
+                && left.baseUrl().equals(right.baseUrl())
+                && left.authKind().equals(right.authKind())
+                && Objects.equals(left.username(), right.username())
+                && Objects.equals(left.apiKeyHeader(), right.apiKeyHeader())
+                && Objects.equals(left.defaults(), right.defaults())
+                && left.secretBindings().equals(right.secretBindings());
+    }
 }

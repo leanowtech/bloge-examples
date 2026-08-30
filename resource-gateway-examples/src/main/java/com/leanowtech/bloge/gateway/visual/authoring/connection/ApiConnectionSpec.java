@@ -45,6 +45,28 @@ public final class ApiConnectionSpec {
         this.secretBindings = Map.copyOf(new LinkedHashMap<>(secretBindings == null ? Map.of() : secretBindings));
     }
 
+    /**
+     * Restores a persisted authority snapshot while preserving its stored
+     * fingerprint for a separate canonical-integrity check by the repository.
+     * The fingerprint is format-checked here but is not trusted as proof of
+     * the reconstructed fields.
+     *
+     * @param fingerprint deterministic fingerprint persisted with the revision
+     * @return restored immutable authority snapshot
+     */
+    public static ApiConnectionSpec restore(String schemaVersion, AuthoringScope scope, String connectionId,
+                                            int revision, String fingerprint, String displayName, String baseUrl,
+                                            String authKind, String username, String apiKeyHeader,
+                                            ApiConnectionCommand.Defaults defaults,
+                                            Map<String, SecretReference> secretBindings) {
+        if (fingerprint == null || !fingerprint.matches("sha256:[0-9a-f]{64}")
+                || revision < 1 || displayName == null || baseUrl == null || authKind == null) {
+            throw new IllegalArgumentException("connection authority fields are invalid");
+        }
+        return new ApiConnectionSpec(schemaVersion, scope, connectionId, revision, fingerprint, displayName,
+                baseUrl, authKind, username, apiKeyHeader, defaults, secretBindings);
+    }
+
     /** @return authority schema version */
     public String schemaVersion() { return schemaVersion; }
     /** @return authenticated scope */
