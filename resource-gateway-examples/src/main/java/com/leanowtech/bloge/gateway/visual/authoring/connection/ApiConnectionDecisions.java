@@ -11,9 +11,10 @@ import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Pure Connection authority: validation, CAS, opaque secret binding and fingerprinting. */
+/** Pure Connection authority: validation, CAS, secret-slot authorization and fingerprinting. */
 public final class ApiConnectionDecisions {
     private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]*$");
     private static final int MAX_URL_LENGTH = 2048;
@@ -67,11 +68,11 @@ public final class ApiConnectionDecisions {
         ApiConnectionCommand.Defaults defaults = effectiveDefaults(command.defaults());
         ApiConnectionSpec next = new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId,
                 current == null ? 1 : current.revision() + 1, "", command.displayName(), command.baseUrl(),
-                resolved.kind(), resolved.username(), resolved.apiKeyHeader(), defaults, resolved.bindings());
+                resolved.kind(), resolved.username(), resolved.apiKeyHeader(), defaults, resolved.secretSlots());
         String metadataFingerprint = canonicalFingerprint(next);
         return new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId, next.revision(),
                 metadataFingerprint, next.displayName(), next.baseUrl(), next.authKind(), next.username(),
-                next.apiKeyHeader(), next.defaults(), next.secretBindings());
+                next.apiKeyHeader(), next.defaults(), next.secretSlots());
     }
 
     /** Alias with current value first, matching other authoring decisions. */
@@ -99,10 +100,7 @@ public final class ApiConnectionDecisions {
         if (spec.username() != null) body.put("username", spec.username());
         if (spec.apiKeyHeader() != null) body.put("apiKeyHeader", spec.apiKeyHeader());
         body.set("defaults", mapper.valueToTree(spec.defaults()));
-        ObjectNode bindings = mapper.createObjectNode();
-        spec.secretBindings().entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> bindings.put(entry.getKey(), entry.getValue().ref()));
-        body.set("secretBindings", bindings);
+        body.set("secretSlots", mapper.valueToTree(spec.secretSlots()));
         return AuthoringFingerprints.of(body);
     }
 
@@ -157,34 +155,29 @@ public final class ApiConnectionDecisions {
 
     private ResolvedAuth resolveAuth(AuthoringScope scope, ApiConnectionSpec current,
                                      ApiConnectionCommand.Auth auth, Map<String, PreparedSecretBinding> staged) {
-        if (auth instanceof ApiConnectionCommand.Auth.None) return new ResolvedAuth("NONE", null, null, Map.of());
+        if (auth instanceof ApiConnectionCommand.Auth.None) return new ResolvedAuth("NONE", null, null, Set.of());
         String kind = auth.kind();
         String username = auth instanceof ApiConnectionCommand.Auth.Basic basic ? basic.username() : null;
         String apiKeyHeader = auth instanceof ApiConnectionCommand.Auth.ApiKey apiKey ? apiKey.headerName() : null;
         ApiConnectionCommand.SecretWrite write = secretWrite(auth);
         String slot = slot(auth);
-        SecretReference reference;
         if (write instanceof ApiConnectionCommand.SecretWrite.KeepExisting) {
             if (current == null || !kind.equals(current.authKind())
                     || (apiKeyHeader != null && !apiKeyHeader.equalsIgnoreCase(current.apiKeyHeader()))) {
                 invalid("KEEP_EXISTING requires a compatible existing auth");
             }
-            reference = current.secretBindings().get(slot);
-            if (reference == null) invalid("KEEP_EXISTING requires an existing secret");
+            if (!current.secretSlots().contains(slot)) invalid("KEEP_EXISTING requires an existing secret");
         } else if (write instanceof ApiConnectionCommand.SecretWrite.Value) {
             PreparedSecretBinding binding = staged.get(slot);
             if (binding == null) invalid("VALUE requires a prepared secret binding");
-            reference = binding.reference();
         } else if (write instanceof ApiConnectionCommand.SecretWrite.SecretRef secretRef) {
             PreparedSecretBinding authorized = staged.get(slot);
             if (authorized == null || !scope.equals(authorized.reference().scope())
                     || !secretRef.ref().equals(authorized.reference().ref())) notFound();
-            reference = authorized.reference();
         } else {
             invalid("secret write is unsupported");
-            return null;
         }
-        return new ResolvedAuth(kind, username, apiKeyHeader, Map.of(slot, reference));
+        return new ResolvedAuth(kind, username, apiKeyHeader, Set.of(slot));
     }
 
     private Map<String, PreparedSecretBinding> staged(AuthoringScope scope, PreparedSecretBinding[] bindings) {
@@ -207,10 +200,7 @@ public final class ApiConnectionDecisions {
         if (spec.username() != null) body.put("username", spec.username());
         if (spec.apiKeyHeader() != null) body.put("apiKeyHeader", spec.apiKeyHeader());
         body.set("defaults", mapper.valueToTree(spec.defaults()));
-        ObjectNode bindings = mapper.createObjectNode();
-        spec.secretBindings().entrySet().stream().sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> bindings.put(entry.getKey(), entry.getValue().ref()));
-        body.set("secretBindings", bindings);
+        body.set("secretSlots", mapper.valueToTree(spec.secretSlots()));
         return AuthoringFingerprints.of(body);
     }
 
@@ -262,5 +252,5 @@ public final class ApiConnectionDecisions {
     }
 
     private record ResolvedAuth(String kind, String username, String apiKeyHeader,
-                                Map<String, SecretReference> bindings) { }
+                                Set<String> secretSlots) { }
 }

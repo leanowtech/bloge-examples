@@ -108,7 +108,7 @@ class ApiConnectionAuthorityTest {
         ApiConnectionSpec first = decisions.next(SCOPE, Optional.empty(), "customer", create,
                 ExpectedRevision.create(), staged);
         assertThat(first.revision()).isEqualTo(1);
-        assertThat(first.secretBindings()).containsEntry("token", staged.reference());
+        assertThat(first.secretSlots()).containsExactly("token");
         assertThat(first.view().auth().kind()).isEqualTo("BEARER");
         assertThat(first.view().auth().configured()).isTrue();
         assertThat(JSON.valueToTree(first.view()).toString()).doesNotContain("vault", "token", "do-not-persist");
@@ -119,7 +119,7 @@ class ApiConnectionAuthorityTest {
         ApiConnectionSpec second = decisions.next(SCOPE, Optional.of(first), "customer", update,
                 ExpectedRevision.match(1));
         assertThat(second.revision()).isEqualTo(2);
-        assertThat(second.secretBindings()).isEqualTo(first.secretBindings());
+        assertThat(second.secretSlots()).containsExactly("token");
         assertThatThrownBy(() -> decisions.next(SCOPE, Optional.of(second), "customer", update,
                 ExpectedRevision.match(1))).isInstanceOf(ApiConnectionAuthoringException.class)
                 .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.CAS_MISMATCH);
@@ -240,6 +240,79 @@ class ApiConnectionAuthorityTest {
                         "https://customer.example.com", new ApiConnectionCommand.Defaults(6000, Map.of())),
                 ExpectedRevision.match(1));
         assertThat(defaultsChanged.fingerprint()).isNotEqualTo(first.fingerprint());
+    }
+
+    @Test
+    void fingerprintsIgnoreSecretReferencesButIncludeEveryAuthoritySlotAndMetadataField() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        ApiConnectionSpec first = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(
+                new ApiConnectionCommand.Auth.Bearer(ApiConnectionCommand.SecretWrite.secretRef(
+                        "vault://one/token"))), ExpectedRevision.create(), new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://one/token")));
+        ApiConnectionSpec anotherReference = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs",
+                command(new ApiConnectionCommand.Auth.Bearer(ApiConnectionCommand.SecretWrite.secretRef(
+                        "vault://two/token"))), ExpectedRevision.create(), new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://two/token")));
+        assertThat(anotherReference.fingerprint()).isEqualTo(first.fingerprint());
+
+        ApiConnectionSpec basic = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(
+                new ApiConnectionCommand.Auth.Basic("alice", ApiConnectionCommand.SecretWrite.value("password"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("password",
+                        new SecretReference(SCOPE, "vault://basic/password")));
+        ApiConnectionSpec renamed = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(
+                new ApiConnectionCommand.Auth.Basic("bob", ApiConnectionCommand.SecretWrite.value("password"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("password",
+                        new SecretReference(SCOPE, "vault://basic/other")));
+        ApiConnectionSpec apiKey = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", ApiConnectionCommand.SecretWrite.value("key"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("value",
+                        new SecretReference(SCOPE, "vault://key/value")));
+        ApiConnectionSpec otherApiKeyHeader = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Other-Key", ApiConnectionCommand.SecretWrite.value("key"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("value",
+                        new SecretReference(SCOPE, "vault://key/other")));
+        assertThat(renamed.fingerprint()).isNotEqualTo(basic.fingerprint());
+        assertThat(apiKey.fingerprint()).isNotEqualTo(basic.fingerprint());
+        assertThat(otherApiKeyHeader.fingerprint()).isNotEqualTo(apiKey.fingerprint());
+        assertThat(first.secretSlots()).containsExactly("token");
+        assertThat(basic.secretSlots()).containsExactly("password");
+        assertThat(apiKey.secretSlots()).containsExactly("value");
+    }
+
+    @Test
+    void authorityNeverExposesSecretReferencesOrProviderLocators() throws Exception {
+        ApiConnectionSpec spec = new ApiConnectionDecisions().next(SCOPE, Optional.empty(), "redacted", command(
+                new ApiConnectionCommand.Auth.Bearer(ApiConnectionCommand.SecretWrite.secretRef(
+                        "vault://private/provider-token"))), ExpectedRevision.create(),
+                new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://private/provider-token")));
+        assertThat(spec.toString()).doesNotContain("vault", "provider-token");
+        assertThat(spec.view().toString()).doesNotContain("vault", "provider-token");
+        assertThat(JSON.valueToTree(spec).toString()).doesNotContain("vault", "provider-token");
+        assertThat(spec.secretBindings().get("token").ref()).isNotEqualTo("vault://private/provider-token");
+        assertThat(JSON.valueToTree(spec.view()).toString()).doesNotContain("vault", "provider-token");
+    }
+
+    @Test
+    void keepExistingRequiresTheExactSlotAndCompatibleAuthHeader() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        ApiConnectionSpec bearer = decisions.next(SCOPE, Optional.empty(), "keep-guards", command(
+                new ApiConnectionCommand.Auth.Bearer(ApiConnectionCommand.SecretWrite.value("token"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("token",
+                        new SecretReference(SCOPE, "vault://keep/token")));
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.of(bearer), "keep-guards", command(
+                new ApiConnectionCommand.Auth.Basic("alice", ApiConnectionCommand.SecretWrite.keepExisting())),
+                ExpectedRevision.match(1))).isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
+
+        ApiConnectionSpec key = decisions.next(SCOPE, Optional.empty(), "keep-key", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", ApiConnectionCommand.SecretWrite.value("key"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("value",
+                        new SecretReference(SCOPE, "vault://keep/key")));
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.of(key), "keep-key", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Other-Key",
+                        ApiConnectionCommand.SecretWrite.keepExisting())), ExpectedRevision.match(1)))
+                .isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
     }
 
     @Test
