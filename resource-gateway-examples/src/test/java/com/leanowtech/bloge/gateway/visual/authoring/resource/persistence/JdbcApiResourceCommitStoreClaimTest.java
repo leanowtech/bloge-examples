@@ -117,6 +117,33 @@ class JdbcApiResourceCommitStoreClaimTest {
     }
 
     @Test
+    void constructorRejectsMismatchedDataSources() {
+        DataSource other = new DriverManagerDataSource(dataSourceUrl(), "sa", "");
+        assertThatThrownBy(() -> new JdbcApiResourceCommitStore(jdbc,
+                new TransactionTemplate(new DataSourceTransactionManager(other)), JSON, clock,
+                Duration.ofSeconds(1), new ApiResourceDecisions(), (scope, resource) -> null))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void coordinateDimensionsAreIndependent() {
+        List<CommandKey> keys = List.of(
+                KEY,
+                new CommandKey(new AuthoringScope("other", "project", "dev"), "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k1"),
+                new CommandKey(SCOPE, "other-actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k1"),
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "other-profile", "k1"),
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "other-key"));
+        for (CommandKey key : keys) assertThat(store().claim(key, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()))
+                .isInstanceOf(ClaimResult.Acquired.class);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_authoring_command_journal", Integer.class)).isEqualTo(keys.size());
+    }
+
+    private String dataSourceUrl() {
+        try { return dataSource.getConnection().getMetaData().getURL(); }
+        catch (Exception ex) { throw new IllegalStateException(ex); }
+    }
+
+    @Test
     void concurrentFirstClaimsProduceOneAcquiredAndOneBusy() throws Exception {
         String url = dataSource.getConnection().getMetaData().getURL();
         DataSource sharedLeft = new DriverManagerDataSource(url, "sa", "");
@@ -157,6 +184,17 @@ class JdbcApiResourceCommitStoreClaimTest {
         ApiResourceSpec spec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
         insertCommitted(spec, JSON.createObjectNode().put("kind", "DESCRIPTOR"), JSON.createObjectNode().put("kind", "DESIGN_CONTRACT"), JSON.createObjectNode().put("kind", "OPERATOR"));
         jdbc.update("UPDATE rg_authoring_command_journal SET receipt_etag='\"tampered\"' WHERE command_id='cmd-read'");
+        assertThatThrownBy(() -> store().findHead(SCOPE, "profile"))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void unknownSpecSchemaAndStatusFailClosed() throws Exception {
+        ApiResourceSpec spec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        insertCommitted(spec, JSON.createObjectNode().put("kind", "DESCRIPTOR"), JSON.createObjectNode().put("kind", "DESIGN_CONTRACT"), JSON.createObjectNode().put("kind", "OPERATOR"));
+        String json = JSON.writeValueAsString(spec).replace(ApiResourceSpec.SCHEMA_VERSION, "unknown.schema");
+        jdbc.update("UPDATE rg_api_resource_revisions SET spec_json=? WHERE resource_id='profile'", json);
         assertThatThrownBy(() -> store().findHead(SCOPE, "profile"))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);

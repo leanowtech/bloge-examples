@@ -11,10 +11,12 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -57,6 +59,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                AND p.design_contract_state = 'READY' AND p.operator_state = 'READY'
               JOIN rg_authoring_command_journal j
                 ON j.command_id = r.command_id AND j.status = 'COMMITTED'
+               AND j.tenant_id = r.tenant_id AND j.project_id = r.project_id
+               AND j.environment_id = r.environment_id AND j.target_id = r.resource_id
+               AND j.endpoint = 'API_RESOURCE_SAVE'
             WHERE h.tenant_id = ? AND h.project_id = ? AND h.environment_id = ? AND h.resource_id = ?
             """;
     private static final String REVISION_READ_JOIN = """
@@ -74,6 +79,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                AND p.design_contract_state = 'READY' AND p.operator_state = 'READY'
               JOIN rg_authoring_command_journal j
                 ON j.command_id = r.command_id AND j.status = 'COMMITTED'
+               AND j.tenant_id = r.tenant_id AND j.project_id = r.project_id
+               AND j.environment_id = r.environment_id AND j.target_id = r.resource_id
+               AND j.endpoint = 'API_RESOURCE_SAVE'
              WHERE r.tenant_id = ? AND r.project_id = ? AND r.environment_id = ?
                AND r.resource_id = ? AND r.revision = ? AND r.state = 'COMMITTED'
             """;
@@ -101,6 +109,19 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         this.leaseDuration = leaseDuration;
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
+        if (!(transactions.getTransactionManager() instanceof DataSourceTransactionManager manager)
+                || jdbc.getDataSource() != manager.getDataSource()) {
+            throw new IllegalArgumentException("jdbc and transaction manager must share the same DataSource");
+        }
+    }
+
+    /** Creates a store whose JDBC and transaction collaborators share one DataSource. */
+    public JdbcApiResourceCommitStore(DataSource dataSource, ObjectMapper mapper, Clock clock,
+                                      Duration leaseDuration, ApiResourceDecisions decisions,
+                                      ApiResourceProjectionCompiler compiler) {
+        this(new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource")),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mapper, clock,
+                leaseDuration, decisions, compiler);
     }
 
     /** Claims a scoped idempotency coordinate, including lease recovery fencing. */
@@ -220,6 +241,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         try {
             ApiResourceSpec resource = mapper.readValue(row.specJson(), ApiResourceSpec.class);
             if (!row.resourceId().equals(resource.resourceId()) || row.revision() != resource.revision()
+                    || !ApiResourceSpec.SCHEMA_VERSION.equals(resource.schemaVersion())
+                    || !ApiResourceSpec.DRAFT.equals(resource.status())
                     || !row.specFingerprint().equals(resource.fingerprint())
                     || !row.specFingerprint().equals(specFingerprint(resource))
                     || !row.connectionId().equals(resource.connectionId())) {
