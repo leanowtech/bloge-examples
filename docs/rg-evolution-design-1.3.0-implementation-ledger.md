@@ -1,6 +1,6 @@
 # Resource Gateway 1.3.0 Implementation Ledger
 
-Updated: 2026-08-28
+Updated: 2026-08-30
 Source of truth: `docs/rg-evolution-design-1.3.0.md`
 Branch: `codex/bloge-dag-workbench2`
 
@@ -81,6 +81,8 @@ browser test class `50/50`.
 
 | Gate | Result |
 | --- | --- |
+| Current code gate at `6dd104292` | `mvn -f resource-gateway-examples/pom.xml clean verify -Pfrontend` in a detached clean worktree: `7,739` tests; failures `0`, errors `0`, skips `0`; `BUILD SUCCESS` at `2026-08-30 14:49 +08` (15:25). `12e2d3b84` differs from this code gate only by documentation files. |
+| Focused API Resource boundary gate at `6dd104292` | 8 classes / 82 tests; failures `0`, errors `0`, skips `0`, including `VisualRuntimeBoundaryTest` `1/1`. |
 | `mvn -f resource-gateway-examples/pom.xml clean verify -Pfrontend` | `7,649` tests; failures `0`, errors `0`, skips `0`; `BUILD SUCCESS` at `2026-08-28 21:59 +08` (20:31). |
 | Frontend i18n gate | `39` checks passed. |
 | Frontend UX gate | `51` checks passed. |
@@ -89,6 +91,11 @@ browser test class `50/50`.
 | AuthorCanvas startup closure | `348.17 KiB`, `21` files, within the `350 KiB` budget. |
 | Browser focused chain | `1/1`. |
 | Browser test class | `50/50`. |
+
+The current gate's browser class result is included above: 50 tests, 0 failures,
+0 errors, and 0 skips. The earlier bundle-size row remains the last explicitly
+recorded measurement; the current TypeScript/Vite/bundle portion of the
+`-Pfrontend` profile completed successfully.
 
 ## Key implementation commits
 
@@ -118,6 +125,18 @@ fixture targeting), `08984dc4a` (server Return fixture targeting),
 Return fixture compilation), and `3ed315351` (frontend Return fixture
 compilation).
 
+The following post-acceptance commits are simple-authoring hardening and
+operability work, not new 1.3.0 acceptance requirements:
+
+| Commit | Change |
+| --- | --- |
+| `122eaa383` | Wire the opt-in API Resource authoring runtime. |
+| `023dfb193` | Record JDBC authoring J2 documentation. |
+| `67d8530b4` | Clean up JDBC authoring quality. |
+| `3532ce5a1` | Compile API resource projections. |
+| `c45436249` | Harden API resource projection boundaries. |
+| `6dd104292` | Keep the projection compiler behind the adapter boundary. |
+
 ## Residuals and follow-up
 
 These items are explicit residuals, not blockers for the accepted 1.3.0 chain:
@@ -132,6 +151,10 @@ These items are explicit residuals, not blockers for the accepted 1.3.0 chain:
 3. The external working-tree modification to
    `resource-gateway-examples/src/main/frontend/src/fixture-asset/GraphNodeFixtureControls.tsx`
    is outside this ledger update and is not included in this commit.
+4. The uncommitted simple-authoring Connection source/test files and generated
+   `.jqwik-database` in the shared worktree are in-flight work outside this
+   1.3.0 evidence boundary; they are deliberately excluded from this gate and
+   commit.
 
 ## Assessment
 
