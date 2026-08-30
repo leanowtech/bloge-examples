@@ -70,11 +70,10 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         commandOwners.putIfAbsent(batch.lease().commandLease().commandId(), authority);
     }
 
-    @Override public synchronized Optional<PendingSecretBatch> findExact(CommandLease lease,
-                                                                           ConnectionRevisionCoordinate coordinate) {
-        if (lease == null || coordinate == null || !matches(lease, coordinate)) return Optional.empty();
-        Entry entry = entries.get(key(new PendingSecretLease(lease, coordinate, lease.expectedRevision())));
-        return entry == null ? Optional.empty() : Optional.of(entry.batch);
+    @Override public synchronized Optional<PendingSecretBatch> findExact(PendingSecretLease lease) {
+        if (lease == null) return Optional.empty();
+        Entry entry = entries.get(key(lease));
+        return entry == null || !entry.batch.lease().equals(lease) ? Optional.empty() : Optional.of(entry.batch);
     }
 
     @Override public synchronized void commitBindings(PendingSecretBatch batch,
@@ -312,11 +311,6 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                 activeOwners.remove(bindingKey);
             }
         }
-    }
-
-    private static boolean matches(CommandLease lease, ConnectionRevisionCoordinate coordinate) {
-        return coordinate.scope().equals(lease.key().scope())
-                && coordinate.connectionId().equals(lease.key().targetId());
     }
 
     private static AttemptKey key(PendingSecretLease lease) {

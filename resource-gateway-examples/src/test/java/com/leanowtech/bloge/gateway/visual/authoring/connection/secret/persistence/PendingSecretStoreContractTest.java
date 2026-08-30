@@ -37,7 +37,7 @@ public abstract class PendingSecretStoreContractTest {
         PendingSecretBatch batch = batch(lease("one", 1, "one-token", NOW.plusSeconds(60)), "token");
         PendingSecretStore store = newStore(fixedClock());
         store.stage(batch);
-        assertThat(store.findExact(batch.lease().commandLease(), batch.lease().coordinate())).contains(batch);
+        assertThat(store.findExact(batch.lease())).contains(batch);
         assertThat(store.findActive(batch.lease().coordinate(), "token")).isEmpty();
     }
 
@@ -62,7 +62,7 @@ public abstract class PendingSecretStoreContractTest {
                 .isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.ACTIVATION_MISMATCH);
         assertThat(store.findActive(batch.lease().coordinate(), "token")).isEmpty();
-        assertThat(store.findExact(lease, batch.lease().coordinate())).contains(batch);
+        assertThat(store.findExact(batch.lease())).contains(batch);
     }
 
     @Test void wrongProviderOrLeaseActivationIsRejected() {
@@ -84,7 +84,7 @@ public abstract class PendingSecretStoreContractTest {
         store.stage(batch);
         store.commitBindings(batch, List.of(activation("token", "c-token", "active-token"),
                 activation("password", "c-token", "active-password")));
-        assertThat(store.findExact(lease, batch.lease().coordinate())).isEmpty();
+        assertThat(store.findExact(batch.lease())).isEmpty();
         assertThat(store.findActive(batch.lease().coordinate(), "token")).contains(new ActiveSecretBinding(
                 "provider:one", "active-token", "commit"));
         assertThat(store.findActive(batch.lease().coordinate(), "password")).isPresent();
@@ -162,7 +162,7 @@ public abstract class PendingSecretStoreContractTest {
         PendingSecretBatch batch = batch(lease, "token");
         store.stage(batch);
         CommandLease stale = lease("fence", 2, "stale", NOW.plusSeconds(60));
-        assertThat(store.findExact(stale, batch.lease().coordinate())).isEmpty();
+        assertThat(store.findExact(new PendingSecretLease(stale, batch.lease().coordinate(), stale.expectedRevision()))).isEmpty();
         assertThatThrownBy(() -> store.markAbortRequired(new PendingSecretLease(stale, batch.lease().coordinate(), stale.expectedRevision())))
                 .isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_FENCED);
@@ -201,6 +201,8 @@ public abstract class PendingSecretStoreContractTest {
                 ExpectedRevision.create()), List.of(new PendingSecretOperation.Prepared("token",
                 SecretSourceMode.VALUE, prepared)));
         store.stage(batch);
+        assertThat(store.findExact(batch.lease())).contains(batch);
+        assertThat(store.findExact(new PendingSecretLease(outer, child, ExpectedRevision.match(1)))).isEmpty();
         store.commitBindings(batch, List.of(activation("token", "nested-token", "nested-active")));
         assertThat(store.findActive(child, "token")).isPresent();
 
@@ -241,7 +243,7 @@ public abstract class PendingSecretStoreContractTest {
         SecretAbortCandidate candidate = store.claimRecoveryDue(10).getFirst();
         store.completeAbort(candidate);
         store.completeAbort(candidate);
-        assertThat(store.findExact(live.lease().commandLease(), live.lease().coordinate())).isEmpty();
+        assertThat(store.findExact(live.lease())).isEmpty();
     }
 
     @Test void explicitAbortMayFenceAnExpiredExactLeaseAndIsIdempotent() {
@@ -269,7 +271,7 @@ public abstract class PendingSecretStoreContractTest {
         clock.advanceSeconds(6);
         SecretAbortCandidate candidate = store.claimRecoveryDue(1).getFirst();
         store.completeAbort(candidate);
-        assertThat(store.findExact(lease, batch.lease().coordinate())).isEmpty();
+        assertThat(store.findExact(batch.lease())).isEmpty();
     }
 
     @Test void abortCandidateMustBeExactAndOnlyAbortRequired() {

@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActiveSecretBinding;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.util.List;
 import java.util.Optional;
@@ -18,8 +17,8 @@ public interface PendingSecretStore {
     /** Atomically stages every slot, or rejects a partial, drifted, or expired batch. */
     void stage(PendingSecretBatch batch);
 
-    /** Finds one exact command attempt and coordinate, never a nearby retry. */
-    Optional<PendingSecretBatch> findExact(CommandLease lease, ConnectionRevisionCoordinate coordinate);
+    /** Finds one exact complete lease, including child CAS and coordinate, never a nearby retry. */
+    Optional<PendingSecretBatch> findExact(PendingSecretLease lease);
 
     /** Commits all activation outputs atomically and clears the pending batch. */
     void commitBindings(PendingSecretBatch batch, List<ActivatedSecretSlot> activated);
