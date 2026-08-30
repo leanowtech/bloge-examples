@@ -226,19 +226,12 @@ abstract class ApiConnectionCommitStoreContractTest {
                 new ApiConnectionCommand.Defaults(5000, Map.of()));
         CommandLease secretCreate = lease("secret-create", 1, "secret-token", SCOPE, "customer",
                 ExpectedRevision.create());
-        stage(store, secretCreate, "customer", ExpectedRevision.create(), bearer, prepared);
-        store.commit(secretCreate);
-
-        ApiConnectionCommand keep = new ApiConnectionCommand("Customer API", BASE_URL,
-                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.keepExisting()),
-                new ApiConnectionCommand.Defaults(5000, Map.of()));
-        CommandLease secretUpdate = lease("secret-update", 1, "secret-update-token", SCOPE, "customer",
-                ExpectedRevision.match(1));
-        StagedApiConnection updated = stage(store, secretUpdate, "customer", ExpectedRevision.match(1), keep);
-
-        assertThat(updated.view().auth().configured()).isTrue();
-        assertThat(new ObjectMapper().writeValueAsString(updated.view()))
-                .doesNotContain("vault://team/customer-token", "one-time-secret", "secret");
+        StagedApiConnection staged = stage(store, secretCreate, "customer", ExpectedRevision.create(), bearer, prepared);
+        assertThat(staged.view().auth().configured()).isTrue();
+        assertThatThrownBy(() -> store.commit(secretCreate))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        store.fail(secretCreate);
     }
 
     @Test
@@ -299,7 +292,38 @@ abstract class ApiConnectionCommitStoreContractTest {
         CommandLease resourceLease = leaseWithTarget("composite", 1, "composite-token", SCOPE, "profile",
                 AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(999));
         stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-        assertThat(store.commit(resourceLease).view().revision()).isEqualTo(1);
+        assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+    }
+
+    @Test
+    void nestedCommitMustUseExplicitChildSeamAndDoesNotPublishAConnectionReceipt() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease resourceLease = leaseWithTarget("nested-child", 1, "nested-child-token", SCOPE,
+                "profile", AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(7));
+        stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+
+        assertThatThrownBy(() -> store.commit(resourceLease))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+    }
+
+    @Test
+    void higherAttemptCannotTakeOverWithAChangedRequestFingerprint() {
+        MutableClock clock = new MutableClock(TEST_NOW);
+        ApiConnectionCommitStore store = newStore(clock);
+        CommandLease old = leaseAt(clock, "fingerprint-takeover", 1, "old-token", SCOPE, "customer",
+                ExpectedRevision.create(), 1);
+        stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
+        clock.advanceSeconds(2);
+        CommandLease changed = new CommandLease("fingerprint-takeover", 2, "new-token",
+                old.key(), "sha256:" + "b".repeat(64), clock.instant().plusSeconds(30),
+                ExpectedRevision.create());
+        assertThatThrownBy(() -> stage(store, changed, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
     }
 
     @Test

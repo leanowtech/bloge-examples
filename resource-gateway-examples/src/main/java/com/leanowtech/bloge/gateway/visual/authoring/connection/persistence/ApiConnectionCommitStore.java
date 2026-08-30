@@ -28,6 +28,16 @@ public interface ApiConnectionCommitStore {
     /** Promotes the exact live stage and returns its committed payload-free view. */
     StoredApiConnection commit(CommandLease lease);
 
+    /**
+     * Promotes a Connection child of an outer resource save without closing
+     * the shared command journal or creating a Connection receipt. The outer
+     * facade owns that composite finalization boundary.
+     *
+     * @param lease exact live {@code API_RESOURCE_SAVE} lease
+     * @return the locally committed child view, not a published receipt
+     */
+    StoredApiConnection commitChild(CommandLease lease);
+
     /** Fenced failure removes only the exact live stage; stale failures are no-ops. */
     void fail(CommandLease lease);
 

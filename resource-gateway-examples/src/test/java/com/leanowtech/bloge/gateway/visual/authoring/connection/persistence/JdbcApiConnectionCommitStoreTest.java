@@ -58,7 +58,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
-    void pendingSecretLeaseIsInvisibleRedactedAndAtomicallyActivated() throws Exception {
+    void pendingSecretLeaseIsInvisibleAndPreparedHandleIsNotPublishedAsBinding() throws Exception {
         JdbcApiConnectionCommitStore store = jdbcStore();
         PreparedSecretBinding prepared = new PreparedSecretBinding("token",
                 new SecretReference(SCOPE, "vault://team/customer-token"));
@@ -80,15 +80,13 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 "SELECT opaque_handle FROM rg_api_connection_pending_secret_leases", String.class))
                 .doesNotContain("one-time-secret");
 
-        store.commit(lease);
-
-        assertThat(bindingCount()).isOne();
-        assertThat(pendingCount()).isZero();
-        assertThat(jdbc.queryForObject("SELECT active_locator FROM rg_api_connection_secret_bindings",
-                String.class)).isEqualTo("vault://team/customer-token");
-        assertThat(store.findHead(SCOPE, "customer").orElseThrow().view().auth().configured()).isTrue();
-        assertThat(new ObjectMapper().writeValueAsString(store.findHead(SCOPE, "customer").orElseThrow().view()))
-                .doesNotContain("vault://team/customer-token", "one-time-secret");
+        assertThatThrownBy(() -> store.commit(lease))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        assertThat(bindingCount()).isZero();
+        assertThat(pendingCount()).isOne();
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_api_connection_pending_secret_leases",
+                String.class)).isEqualTo("ABORT_REQUIRED");
     }
 
     @Test

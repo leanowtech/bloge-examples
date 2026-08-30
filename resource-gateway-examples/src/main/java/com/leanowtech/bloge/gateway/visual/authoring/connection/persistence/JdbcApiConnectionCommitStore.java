@@ -109,11 +109,17 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                                                    ApiConnectionCommand command,
                                                    PreparedSecretBinding[] prepared) {
         ensureJournal(lease);
+        RevisionRow existing = stagedRevision(lease);
+        if (existing != null) {
+            ApiConnectionSpec base = connectionExpected instanceof ExpectedRevision.Match match
+                    ? committedSpecAt(lease.key().scope(), connectionId, match.revision()) : null;
+            ApiConnectionSpec next = nextSpec(lease.key().scope(), base, connectionId, command,
+                    connectionExpected, prepared);
+            return validateExistingStage(lease, connectionId, connectionExpected, next, existing);
+        }
         ApiConnectionSpec current = committedSpec(lease.key().scope(), connectionId);
         ApiConnectionSpec next = nextSpec(lease.key().scope(), current, connectionId, command,
                 connectionExpected, prepared);
-        RevisionRow existing = stagedRevision(lease);
-        if (existing != null) return validateExistingStage(lease, connectionId, connectionExpected, next, existing);
 
         deleteCommandStages(lease.commandId());
         insertIdentity(lease.key().scope(), connectionId);
@@ -136,13 +142,18 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
                 key.idempotencyKey()).stream().findFirst().orElse(null);
         if (prior == null) {
+            requireIncomingLeaseLive(lease);
             insertJournal(lease);
             return;
         }
-        if (sameLease(prior, lease)) return;
+        if (sameLease(prior, lease)) {
+            requireIncomingLeaseLive(lease);
+            return;
+        }
         boolean sameCommand = prior.commandId().equals(lease.commandId());
         boolean higherAttempt = lease.attemptNo() > prior.attemptNo();
         boolean takeoverAllowed = sameCommand && higherAttempt
+                && prior.requestFingerprint().equals(lease.requestFingerprint())
                 && !"COMMITTED".equals(prior.status())
                 && !prior.leaseUntil().isAfter(databaseNow());
         if (!takeoverAllowed) fail(Code.LEASE_FENCED);
@@ -195,6 +206,10 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 && prior.leaseUntil().equals(lease.leaseUntil())
                 && prior.expectedMode().equals(expectedMode(lease.expectedRevision()))
                 && Objects.equals(prior.expectedRevision(), expectedRevision(lease.expectedRevision()));
+    }
+
+    private void requireIncomingLeaseLive(CommandLease lease) {
+        if (!lease.leaseUntil().isAfter(databaseNow())) fail(Code.LEASE_EXPIRED);
     }
 
     private static void requireConnectionLeaseShape(CommandLease lease, String connectionId,
@@ -381,15 +396,45 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private Instant databaseNow() {
-        return clock.instant();
+        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", (row, ignored) -> timestamp(row, 1));
+    }
+
+    /**
+     * A prepared locator is not an active provider binding. Until an outer
+     * secret coordinator supplies an explicit activation result, leave the
+     * row recoverable and refuse to publish it as a Connection binding.
+     */
+    private void rejectUnactivatedSecrets(CommandLease lease) {
+        Integer pending = jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PENDING'
+                        """, Integer.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (pending == null || pending == 0) return;
+        try {
+            transactions.executeWithoutResult(status -> {
+                requireLiveJournal(lease, true);
+                jdbc.update("""
+                                UPDATE rg_api_connection_pending_secret_leases SET status='ABORT_REQUIRED',
+                                       updated_at=CURRENT_TIMESTAMP
+                                 WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PENDING'
+                                """, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+            });
+        } catch (ApiConnectionCommitStoreException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw persistenceFailure(ex);
+        }
+        fail(Code.INTEGRITY);
     }
 
     /** {@inheritDoc} */
     @Override
     public StoredApiConnection commit(CommandLease lease) {
         requireLease(lease);
+        if (lease.key().endpoint() != AuthoringEndpoint.API_CONNECTION_SAVE) fail(Code.INTEGRITY);
+        rejectUnactivatedSecrets(lease);
         try {
-            return requireResult(transactions.execute(status -> commitInTransaction(lease)));
+            return requireResult(transactions.execute(status -> commitInTransaction(lease, false)));
         } catch (ApiConnectionCommitStoreException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -397,7 +442,25 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         }
     }
 
-    private StoredApiConnection commitInTransaction(CommandLease lease) {
+    /**
+     * Commits only a nested Connection metadata revision. The outer resource
+     * facade remains responsible for the shared journal and composite receipt.
+     */
+    @Override
+    public StoredApiConnection commitChild(CommandLease lease) {
+        requireLease(lease);
+        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
+        rejectUnactivatedSecrets(lease);
+        try {
+            return requireResult(transactions.execute(status -> commitInTransaction(lease, true)));
+        } catch (ApiConnectionCommitStoreException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw persistenceFailure(ex);
+        }
+    }
+
+    private StoredApiConnection commitInTransaction(CommandLease lease, boolean child) {
         requireLiveJournal(lease, true);
         RevisionRow staged = stagedRevision(lease);
         if (staged == null) fail(Code.STAGE_MISSING);
@@ -447,25 +510,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 staged.connectionId(), staged.revision(), lease.commandId()) != 1) {
             fail(Code.CAS_MISMATCH);
         }
-        for (PendingSecretLease secret : pending) {
-            if (jdbc.update("""
-                            INSERT INTO rg_api_connection_secret_bindings
-                                (tenant_id, project_id, environment_id, connection_id, revision, slot,
-                                 provider_id, active_locator, command_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, staged.tenantId(), staged.projectId(), staged.environmentId(),
-                    secret.connectionId(), staged.revision(), secret.slot(), secret.providerId(),
-                    secret.opaqueHandle(), lease.commandId()) != 1) {
-                fail(Code.INTEGRITY);
-            }
-        }
-        if (jdbc.update("""
-                        DELETE FROM rg_api_connection_pending_secret_leases
-                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PENDING'
-                        """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != pending.size()) {
-            fail(Code.INTEGRITY);
-        }
-        if (jdbc.update("""
+        if (!child && jdbc.update("""
                         UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?,
                              receipt_json=?, receipt_fingerprint=?, receipt_etag=?, failure_code=NULL,
                              updated_at=CURRENT_TIMESTAMP
@@ -710,6 +755,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         } catch (Exception ex) {
             throw persistenceFailure(ex);
         }
+    }
+
+    /** Reads the exact CAS base so a replay does not depend on a newer head. */
+    private ApiConnectionSpec committedSpecAt(AuthoringScope scope, String connectionId, long revision) {
+        String sql = "SELECT " + BASE_REVISION_COLUMNS + ", NULL, NULL, NULL, NULL"
+                + " FROM rg_api_connection_revisions r JOIN rg_authoring_command_journal j"
+                + " ON j.command_id=r.command_id AND j.status='COMMITTED'"
+                + " WHERE r.tenant_id=? AND r.project_id=? AND r.environment_id=?"
+                + " AND r.connection_id=? AND r.revision=? AND r.state='COMMITTED'";
+        List<RevisionRow> rows = jdbc.query(sql, revisionRowMapper(), scope.tenantId(), scope.projectId(),
+                scope.environmentId(), connectionId, revision);
+        if (rows.isEmpty()) return null;
+        RevisionRow row = rows.getFirst();
+        Map<String, SecretReference> refs = new LinkedHashMap<>();
+        bindingRows(scope, connectionId, row.revision()).forEach(binding -> refs.put(binding.slot(),
+                new SecretReference(scope, binding.activeLocator())));
+        return restoreSpec(row, refs);
     }
 
     private ApiConnectionCommand restoreCommand(RevisionRow row, List<PendingSecretLease> leases) {

@@ -69,6 +69,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
                 fail(Code.LEASE_FENCED);
             } else {
                 if (!currentLease.commandId().equals(lease.commandId())
+                        || !currentLease.requestFingerprint().equals(lease.requestFingerprint())
                         || lease.attemptNo() <= currentLease.attemptNo()) fail(Code.LEASE_FENCED);
                 removeStage(currentLease);
                 active.remove(commandKey);
@@ -119,6 +120,25 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     /** {@inheritDoc} */
     @Override
     public synchronized StoredApiConnection commit(CommandLease lease) {
+        if (lease != null && lease.key() != null && lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+            fail(Code.INTEGRITY);
+        }
+        return commitInternal(lease, true);
+    }
+
+    /**
+     * Commits only the Connection child of a composite resource command. The
+     * reference adapter has no outer journal, so the child is returned to the
+     * caller but is intentionally not published through the read-side head.
+     */
+    @Override
+    public synchronized StoredApiConnection commitChild(CommandLease lease) {
+        requireLease(lease);
+        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
+        return commitInternal(lease, false);
+    }
+
+    private StoredApiConnection commitInternal(CommandLease lease, boolean publish) {
         requireLease(lease);
         CommandLease currentLease = active.get(lease.key());
         if (currentLease == null) {
@@ -133,8 +153,19 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.spec().connectionId());
         StoredApiConnection current = heads.get(key);
         checkExpected(current, staged.connectionExpected());
+        if (!staged.spec().secretBindings().isEmpty()) {
+            removeStage(lease);
+            active.remove(lease.key());
+            failed.put(lease.key(), lease);
+            fail(Code.INTEGRITY);
+        }
         StoredApiConnection stored = new StoredApiConnection(key.scope, staged.view(), staged.metadataFingerprint(),
                 staged.strongEtag(), lease.commandId());
+        if (!publish) {
+            stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
+            active.remove(lease.key());
+            return stored;
+        }
         heads.put(key, stored);
         RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
         history.put(revisionKey, stored);
