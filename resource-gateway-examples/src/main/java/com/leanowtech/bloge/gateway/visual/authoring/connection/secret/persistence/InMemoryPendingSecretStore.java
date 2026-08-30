@@ -28,6 +28,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     private final Map<AttemptKey, Entry> entries = new HashMap<>();
     private final Map<AttemptKey, Completion> completed = new HashMap<>();
     private final Map<CommandAttemptKey, AttemptKey> attemptOwners = new HashMap<>();
+    private final Map<String, CommandAuthority> commandOwners = new HashMap<>();
     private final Map<BindingKey, ActiveSecretBinding> active = new HashMap<>();
     private final Map<BindingKey, AttemptKey> activeOwners = new HashMap<>();
 
@@ -55,18 +56,24 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         CommandAttemptKey attempt = attemptKey(batch.lease());
         AttemptKey owner = attemptOwners.get(attempt);
         if (owner != null && !owner.equals(key)) throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        CommandAuthority authority = authority(batch.lease());
+        CommandAuthority commandOwner = commandOwners.get(batch.lease().commandLease().commandId());
+        if (commandOwner != null && !commandOwner.equals(authority)) {
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
         Map<String, ActiveSecretBinding> retained = snapshotRetained(batch);
         Instant now = clock.instant();
         Instant deadline = effectiveDeadline(batch);
         if (!deadline.isAfter(now)) throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
         entries.put(key, new Entry(batch, retained, State.PENDING, deadline, now));
         attemptOwners.put(attempt, key);
+        commandOwners.putIfAbsent(batch.lease().commandLease().commandId(), authority);
     }
 
     @Override public synchronized Optional<PendingSecretBatch> findExact(CommandLease lease,
                                                                            ConnectionRevisionCoordinate coordinate) {
         if (lease == null || coordinate == null || !matches(lease, coordinate)) return Optional.empty();
-        Entry entry = entries.get(key(new PendingSecretLease(lease, coordinate)));
+        Entry entry = entries.get(key(new PendingSecretLease(lease, coordinate, lease.expectedRevision())));
         return entry == null ? Optional.empty() : Optional.of(entry.batch);
     }
 
@@ -196,12 +203,32 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         if (batch == null) throw failure(PendingSecretStoreException.Code.INTEGRITY);
         PendingSecretLease lease = batch.lease();
         CommandLease command = lease.commandLease();
-        if (command.expectedRevision() instanceof ExpectedRevision.Create create) {
+        ExpectedRevision connectionExpected = lease.connectionExpected();
+        if (command.key().endpoint() == com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_CONNECTION_SAVE
+                && !command.key().targetId().equals(lease.coordinate().connectionId())) {
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        if (command.key().endpoint() == com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_RESOURCE_SAVE) {
+            if (!(connectionExpected instanceof ExpectedRevision.Create)
+                    || lease.coordinate().revision() != 1
+                    || batch.operations().stream().anyMatch(operation -> operation instanceof PendingSecretOperation.Retained)) {
+                throw failure(PendingSecretStoreException.Code.INTEGRITY);
+            }
+        }
+        if (command.key().endpoint() != com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_CONNECTION_SAVE
+                && command.key().endpoint() != com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_RESOURCE_SAVE) {
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        if (!connectionExpected.equals(command.expectedRevision())
+                && command.key().endpoint() != com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_RESOURCE_SAVE) {
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        if (connectionExpected instanceof ExpectedRevision.Create) {
             if (lease.coordinate().revision() != 1 || batch.operations().stream()
                     .anyMatch(operation -> operation instanceof PendingSecretOperation.Retained)) {
                 throw failure(PendingSecretStoreException.Code.INTEGRITY);
             }
-        } else if (command.expectedRevision() instanceof ExpectedRevision.Match match) {
+        } else if (connectionExpected instanceof ExpectedRevision.Match match) {
             if (lease.coordinate().revision() != match.revision() + 1) {
                 throw failure(PendingSecretStoreException.Code.INTEGRITY);
             }
@@ -302,6 +329,12 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         return new CommandAttemptKey(command.commandId(), command.attemptNo(), command.attemptToken());
     }
 
+    private static CommandAuthority authority(PendingSecretLease lease) {
+        CommandLease command = lease.commandLease();
+        return new CommandAuthority(command.key(), command.requestFingerprint(), lease.coordinate(),
+                lease.connectionExpected());
+    }
+
     private static PendingSecretStoreException failure(PendingSecretStoreException.Code code) {
         return new PendingSecretStoreException(code);
     }
@@ -309,6 +342,9 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     private record AttemptKey(ConnectionRevisionCoordinate coordinate, String commandId, int attemptNo,
                               String attemptToken) { }
     private record CommandAttemptKey(String commandId, int attemptNo, String attemptToken) { }
+    private record CommandAuthority(com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey key,
+                                    String requestFingerprint, ConnectionRevisionCoordinate coordinate,
+                                    ExpectedRevision connectionExpected) { }
     private record BindingKey(ConnectionRevisionCoordinate coordinate, String slot) { }
     private record Entry(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained, State state,
                          Instant effectiveDeadline, Instant updatedAt) { }
