@@ -151,6 +151,10 @@ class ApiConnectionSchemaReadinessTest {
                     "\"url-etag\"", baseUrl))
                     .isInstanceOf(DataIntegrityViolationException.class);
         }
+        insertRevision("url-connection", "url-command", 1, "url-attempt", "STAGED", "\"url-etag\"",
+                "https://example.com/users/@me");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions WHERE connection_id = 'url-connection'",
+                Integer.class)).isEqualTo(1);
     }
 
     @Test
@@ -185,9 +189,10 @@ class ApiConnectionSchemaReadinessTest {
     @Test
     void pendingLeaseRejectsMismatchedAttemptAndToken() {
         applyMigrations();
-        insertJournalFor("lease-command", "lease-key", "lease-connection", 1, "lease-attempt");
+        insertJournalFor("lease-command", "lease-key", "lease-connection", 2, "wrong-attempt");
+        insertJournalFor("revision-command", "revision-key", "lease-connection", 1, "lease-attempt");
         insertIdentity("lease-connection");
-        insertRevision("lease-connection", "lease-command", 1, "lease-attempt", "STAGED", "\"lease-etag\"",
+        insertRevision("lease-connection", "revision-command", 1, "lease-attempt", "STAGED", "\"lease-etag\"",
                 "https://example.com/lease");
 
         assertThatThrownBy(() -> jdbc.update("""

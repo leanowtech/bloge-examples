@@ -84,8 +84,8 @@ public final class ApiConnectionSchemaReadiness {
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag"));
         requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_state_etag_uq",
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag", "state"));
-        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
-                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "attempt_no", "attempt_token"));
+            requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
+                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "attempt_no", "attempt_token"));
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
             requirePrimaryKey(metadata, "rg_api_connection_identities", "rg_api_connection_identities_pk",
@@ -123,7 +123,7 @@ public final class ApiConnectionSchemaReadiness {
                     "rg_api_connection_pending_secret_leases_revision_fk", "rg_api_connection_revisions", List.of(
                             pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
                             pair("environment_id", "environment_id"), pair("connection_id", "connection_id"),
-                            pair("revision", "revision"), pair("command_id", "command_id"),
+                            pair("revision", "revision"),
                             pair("attempt_no", "attempt_no"), pair("attempt_token", "attempt_token")));
             requireForeignKey(metadata, "rg_api_connection_secret_bindings",
                     "rg_api_connection_secret_bindings_command_fk", "rg_authoring_command_journal",
@@ -217,13 +217,12 @@ public final class ApiConnectionSchemaReadiness {
             Short actualDeleteRule = null;
             try (ResultSet rows = metadata.getImportedKeys(null, null, candidate)) {
                 while (rows.next()) {
-                    if (keyName == null || normalize(expected).equals(normalize(rows.getString("FK_NAME")))) {
-                        keyName = rows.getString("FK_NAME");
-                        actualTarget = rows.getString("PKTABLE_NAME");
-                        actualDeleteRule = rows.getShort("DELETE_RULE");
-                        actual.put(rows.getShort("KEY_SEQ"), pair(rows.getString("FKCOLUMN_NAME"),
-                                rows.getString("PKCOLUMN_NAME")));
-                    }
+                    if (!normalize(expected).equals(normalize(rows.getString("FK_NAME")))) continue;
+                    keyName = rows.getString("FK_NAME");
+                    actualTarget = rows.getString("PKTABLE_NAME");
+                    actualDeleteRule = rows.getShort("DELETE_RULE");
+                    actual.put(rows.getShort("KEY_SEQ"), pair(rows.getString("FKCOLUMN_NAME"),
+                            rows.getString("PKCOLUMN_NAME")));
                 }
             }
             if (normalize(expected).equals(normalize(keyName))
