@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -14,17 +15,23 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
  * Small reference implementation of the pending-secret protocol.
  * It is useful for contract tests and local reasoning, not as a durable store.
  */
 public final class InMemoryPendingSecretStore implements PendingSecretStore {
+    private static final Duration DEFAULT_CLAIM_TTL = Duration.ofSeconds(30);
     private enum State { PENDING, ABORT_REQUIRED }
     private enum TerminalOutcome { COMMITTED, ABORTED }
     private final Clock clock;
+    private final Supplier<String> claimTokens;
+    private final Duration claimTtl;
     private final Map<AttemptKey, Entry> entries = new HashMap<>();
     private final Map<AttemptKey, Completion> completed = new HashMap<>();
     private final Map<CommandAttemptKey, AttemptKey> attemptOwners = new HashMap<>();
@@ -37,7 +44,15 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
 
     /** Creates a store with an injected clock so recovery boundaries are deterministic. */
     public InMemoryPendingSecretStore(Clock clock) {
+        this(clock, () -> UUID.randomUUID().toString(), DEFAULT_CLAIM_TTL);
+    }
+
+    /** Creates a reference store with deterministic recovery claims for tests. */
+    public InMemoryPendingSecretStore(Clock clock, Supplier<String> claimTokens, Duration claimTtl) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
+        this.claimTokens = claimTokens == null ? () -> UUID.randomUUID().toString() : claimTokens;
+        this.claimTtl = claimTtl == null || claimTtl.isNegative() || claimTtl.isZero()
+                ? DEFAULT_CLAIM_TTL : claimTtl;
     }
 
     @Override public synchronized void stage(PendingSecretBatch batch) {
@@ -65,7 +80,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         Instant now = clock.instant();
         Instant deadline = effectiveDeadline(batch);
         if (!deadline.isAfter(now)) throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
-        entries.put(key, new Entry(batch, retained, State.PENDING, deadline, now));
+        entries.put(key, new Entry(batch, retained, State.PENDING, deadline, now, null, null));
         attemptOwners.put(attempt, key);
         commandOwners.putIfAbsent(batch.lease().commandLease().commandId(), authority);
     }
@@ -131,7 +146,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         active.putAll(writes);
         for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, key);
         entries.remove(key);
-        completed.put(key, new Completion(batch, outputs, proof, TerminalOutcome.COMMITTED));
+        completed.put(key, new Completion(batch, outputs, proof, TerminalOutcome.COMMITTED, null));
         return proof;
     }
 
@@ -146,14 +161,15 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         Entry entry = requireEntry(lease);
         if (entry.state == State.ABORT_REQUIRED) return;
         entries.put(key, new Entry(entry.batch, entry.retained, State.ABORT_REQUIRED,
-                entry.effectiveDeadline, clock.instant()));
+                entry.effectiveDeadline, clock.instant(), entry.claimToken, entry.claimUntil));
     }
 
     @Override public synchronized List<SecretAbortCandidate> claimRecoveryDue(int attemptLimit) {
         if (attemptLimit < 1) throw failure(PendingSecretStoreException.Code.INTEGRITY);
         Instant now = clock.instant();
         List<Entry> due = entries.values().stream()
-                .filter(entry -> entry.state == State.ABORT_REQUIRED || !entry.effectiveDeadline.isAfter(now))
+                .filter(entry -> (entry.state == State.ABORT_REQUIRED || !entry.effectiveDeadline.isAfter(now))
+                        && (entry.claimUntil == null || !entry.claimUntil.isAfter(now)))
                 .sorted(Comparator.comparing((Entry e) -> e.state == State.ABORT_REQUIRED ? 0 : 1)
                         .thenComparing(e -> e.effectiveDeadline)
                         .thenComparing(e -> e.updatedAt)
@@ -165,11 +181,12 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         List<SecretAbortCandidate> result = new ArrayList<>();
         for (Entry entry : due) {
             AttemptKey key = key(entry.batch.lease());
-            Entry claimed = entry.state == State.ABORT_REQUIRED ? entry
-                    : new Entry(entry.batch, entry.retained, State.ABORT_REQUIRED,
-                    entry.effectiveDeadline, now);
+            String token = claimTokens.get();
+            if (token == null || token.isBlank()) throw failure(PendingSecretStoreException.Code.INTEGRITY);
+            Entry claimed = new Entry(entry.batch, entry.retained, State.ABORT_REQUIRED,
+                    entry.effectiveDeadline, now, token, now.plus(claimTtl));
             entries.put(key, claimed);
-            result.add(new SecretAbortCandidate(claimed.batch));
+            result.add(new SecretAbortCandidate(claimed.batch, token));
         }
         return List.copyOf(result);
     }
@@ -180,17 +197,21 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         AttemptKey key = key(lease);
         Completion done = completed.get(key);
         if (done != null) {
-            if (done.outcome == TerminalOutcome.ABORTED && done.batch.equals(candidate.batch())) return;
+            if (done.outcome == TerminalOutcome.ABORTED && done.batch.equals(candidate.batch())
+                    && Objects.equals(done.claimToken, candidate.recoveryClaimToken())) return;
             if (done.outcome == TerminalOutcome.COMMITTED) throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
         Entry entry = requireEntry(lease);
-        if (entry.state != State.ABORT_REQUIRED || !entry.batch.equals(candidate.batch())) {
+        if (entry.state != State.ABORT_REQUIRED || !entry.batch.equals(candidate.batch())
+                || candidate.recoveryClaimToken() == null
+                || !candidate.recoveryClaimToken().equals(entry.claimToken)
+                || entry.claimUntil == null || !entry.claimUntil.isAfter(clock.instant())) {
             throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
         }
         removeBindings(entry, key);
         entries.remove(key);
-        completed.put(key, new Completion(entry.batch, List.of(), null, TerminalOutcome.ABORTED));
+        completed.put(key, new Completion(entry.batch, List.of(), null, TerminalOutcome.ABORTED, entry.claimToken));
     }
 
     @Override public synchronized Optional<ActiveSecretBinding> findActive(ConnectionRevisionCoordinate coordinate,
@@ -365,8 +386,8 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                                     ExpectedRevision connectionExpected) { }
     private record BindingKey(ConnectionRevisionCoordinate coordinate, String slot) { }
     private record Entry(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained, State state,
-                         Instant effectiveDeadline, Instant updatedAt) { }
+                         Instant effectiveDeadline, Instant updatedAt, String claimToken, Instant claimUntil) { }
     private record Completion(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs,
                               FinalizedSecretSlots proof,
-                              TerminalOutcome outcome) { }
+                              TerminalOutcome outcome, String claimToken) { }
 }

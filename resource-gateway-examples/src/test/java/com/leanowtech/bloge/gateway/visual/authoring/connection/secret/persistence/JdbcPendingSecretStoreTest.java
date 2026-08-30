@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Focused H2/PostgreSQL-mode evidence for the durable pending-secret protocol. */
 class JdbcPendingSecretStoreTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
-    private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
+    private static final Instant NOW = Instant.now();
     private DataSource dataSource;
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
@@ -46,6 +46,7 @@ class JdbcPendingSecretStoreTest {
         migrate("db/postgresql/V20260830_003__api_connection_secret_staging.sql");
         migrate("db/postgresql/V20260830_004__connection_metadata_authority.sql");
         migrate("db/postgresql/V20260830_005__pending_secret_store_protocol.sql");
+        migrate("db/postgresql/V20260830_006__pending_secret_store_hardening.sql");
     }
 
     @AfterEach
@@ -108,6 +109,75 @@ class JdbcPendingSecretStoreTest {
         store.completeAbort(candidate);
         assertThat(store.findExact(batch.lease())).isEmpty();
         assertThat(store.claimRecoveryDue(1)).isEmpty();
+    }
+
+    @Test
+    void recoveryClaimIsExclusiveAndReclaimFencesStaleWorker() {
+        JdbcPendingSecretStore firstStore = store();
+        JdbcPendingSecretStore secondStore = store();
+        PendingSecretBatch batch = batch(lease("reclaim", 1, "reclaim-token", NOW.plusSeconds(60)), "token", "password");
+        seed(batch); firstStore.stage(batch);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id=?", "reclaim");
+
+        SecretAbortCandidate first = firstStore.claimRecoveryDue(1).getFirst();
+        assertThat(secondStore.claimRecoveryDue(1)).isEmpty();
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET recovery_claim_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id=?", "reclaim");
+        SecretAbortCandidate reclaimed = secondStore.claimRecoveryDue(1).getFirst();
+        assertThat(reclaimed.recoveryClaimToken()).isNotEqualTo(first.recoveryClaimToken());
+        assertThatThrownBy(() -> firstStore.completeAbort(first)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+        secondStore.completeAbort(reclaimed);
+        secondStore.completeAbort(reclaimed);
+    }
+
+    @Test
+    void stageUsesDatabaseTimeForAlreadyExpiredProviderReceipt() {
+        JdbcPendingSecretStore store = store();
+        PendingSecretBatch batch = batch(lease("db-expired", 1, "db-expired-token", Instant.now().minusSeconds(30)), "token");
+        seed(batch);
+        assertThatThrownBy(() -> store.stage(batch)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_EXPIRED);
+    }
+
+    @Test
+    void restoreKeepsProviderPurposeAndRejectsRequestFingerprintDrift() {
+        JdbcPendingSecretStore store = store();
+        CommandLease lease = lease("context", 1, "context-token", NOW.plusSeconds(60));
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "resource-save-child",
+                "connection", 3, lease.commandId(), lease.attemptNo(), lease.attemptToken(), "token");
+        PendingSecretBatch batch = new PendingSecretBatch(new PendingSecretLease(lease,
+                new ConnectionRevisionCoordinate(SCOPE, "connection", 3), lease.expectedRevision()),
+                List.of(new PendingSecretOperation.Prepared("token", SecretSourceMode.VALUE,
+                        new PreparedExternalSecret("provider:one", lease.attemptToken(), "opaque-context",
+                                lease.leaseUntil(), context))));
+        seed(batch); store.stage(batch);
+        assertThat(store.findExact(batch.lease())).contains(batch);
+
+        CommandLease drifted = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(), lease.key(),
+                "sha256:" + "c".repeat(64), lease.leaseUntil(), lease.expectedRevision());
+        assertThat(store.findExact(new PendingSecretLease(drifted, batch.lease().coordinate(), batch.lease().connectionExpected())))
+                .isEmpty();
+    }
+
+    @Test
+    void rowDeadlineIsEarlierOfCommandAndProviderExpiryWhileReceiptRoundTrips() {
+        JdbcPendingSecretStore store = store();
+        CommandLease lease = lease("deadline", 1, "deadline-token", NOW.plusSeconds(5));
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "connection-save",
+                "connection", 3, lease.commandId(), lease.attemptNo(), lease.attemptToken(), "token");
+        Instant providerExpiry = NOW.plusSeconds(60);
+        PendingSecretBatch batch = new PendingSecretBatch(new PendingSecretLease(lease,
+                new ConnectionRevisionCoordinate(SCOPE, "connection", 3), lease.expectedRevision()),
+                List.of(new PendingSecretOperation.Prepared("token", SecretSourceMode.VALUE,
+                        new PreparedExternalSecret("provider:one", lease.attemptToken(), "opaque-deadline",
+                                providerExpiry, context))));
+        seed(batch); store.stage(batch);
+        assertThat(store.findExact(batch.lease())).contains(batch);
+        assertThat(jdbc.queryForObject("SELECT lease_until FROM rg_api_connection_pending_secret_leases"
+                + " WHERE command_id=?", java.sql.Timestamp.class, "deadline").toInstant())
+                .isBefore(providerExpiry);
     }
 
     @Test

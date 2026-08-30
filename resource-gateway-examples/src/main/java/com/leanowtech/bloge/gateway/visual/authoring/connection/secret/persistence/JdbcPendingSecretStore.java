@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.ResultSet;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -45,9 +47,11 @@ import java.util.stream.Collectors;
 public final class JdbcPendingSecretStore implements PendingSecretStore {
     private static final String TABLE = "rg_api_connection_pending_secret_leases";
     private static final String OUTCOMES = "rg_api_connection_pending_secret_outcomes";
+    private static final Duration RECOVERY_CLAIM_TTL = Duration.ofSeconds(30);
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final Clock clock;
+    private final String recoveryClaimOwner = UUID.randomUUID().toString();
 
     /** Creates a store whose JDBC template and transaction manager share one data source. */
     public JdbcPendingSecretStore(JdbcTemplate jdbc, TransactionTemplate transactions, Clock clock) {
@@ -81,15 +85,22 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             if (journal.sameAuthority(lease, coordinate(batch))) fail(PendingSecretStoreException.Code.LEASE_FENCED);
             fail(PendingSecretStoreException.Code.INTEGRITY);
         }
-        if (!journal.live(clock.instant())) fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
+        Instant databaseNow = databaseNow();
+        if (!journal.live(databaseNow)) fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
         List<Row> existing = rows(lease, true);
         if (!existing.isEmpty()) {
-            if (restore(batch.lease(), existing).equals(batch)) return;
+            if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
+            PendingSecretBatch stored = restore(existing);
+            if (stored.equals(batch)) return;
             fail(PendingSecretStoreException.Code.INTEGRITY);
         }
         if (outcome(lease) != null) fail(PendingSecretStoreException.Code.INTEGRITY);
         Map<String, ActiveSecretBinding> retained = retained(batch);
         for (PendingSecretOperation operation : batch.operations()) {
+            if (operation instanceof PendingSecretOperation.Prepared prepared
+                    && !prepared.prepared().leaseUntil().isAfter(databaseNow)) {
+                fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
+            }
             insertRow(batch, operation, retained.get(operation.slot()));
         }
     }
@@ -99,7 +110,11 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         if (lease == null) return Optional.empty();
         try {
             List<Row> rows = rows(lease, false);
-            return rows.isEmpty() ? Optional.empty() : Optional.of(restore(lease, rows));
+            if (rows.isEmpty()) return Optional.empty();
+            Journal journal = journal(lease, false);
+            if (!journal.exact(lease)) return Optional.empty();
+            PendingSecretBatch stored = restore(rows);
+            return stored.lease().equals(lease) ? Optional.of(stored) : Optional.empty();
         } catch (RuntimeException failure) {
             return Optional.empty();
         }
@@ -188,6 +203,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
         if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
+        if (!restore(rows).lease().equals(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (rows.stream().anyMatch(row -> !"ABORT_REQUIRED".equals(row.status())
                 && !"PENDING".equals(row.status()))) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
         jdbc.update("UPDATE " + TABLE + " SET status='ABORT_REQUIRED', updated_at=CURRENT_TIMESTAMP"
@@ -199,14 +215,13 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     @Override public List<SecretAbortCandidate> claimRecoveryDue(int attemptLimit) {
         if (attemptLimit < 1) fail(PendingSecretStoreException.Code.INTEGRITY);
         return execute(() -> {
-            Instant now = clock.instant();
+            Instant now = databaseNow();
             List<BatchKey> keys = jdbc.query("""
                     SELECT command_id, attempt_no, attempt_token
                       FROM rg_api_connection_pending_secret_leases
                      GROUP BY command_id, attempt_no, attempt_token
-                     HAVING MIN(lease_until) <= ? OR MIN(CASE WHEN status='ABORT_REQUIRED'
-                                                               THEN lease_until ELSE NULL END) IS NOT NULL
-                     ORDER BY MIN(CASE WHEN status='ABORT_REQUIRED' THEN 0 ELSE 1 END),
+                     HAVING MIN(lease_until) <= ? OR SUM(CASE WHEN status='ABORT_REQUIRED' THEN 1 ELSE 0 END) = COUNT(*)
+                    ORDER BY MIN(CASE WHEN status='ABORT_REQUIRED' THEN 0 ELSE 1 END),
                               MIN(lease_until), command_id, attempt_no, attempt_token, MIN(updated_at)
                     """, (row, ignored) -> new BatchKey(row.getString(1), row.getInt(2), row.getString(3)),
                     timestamp(now));
@@ -215,12 +230,24 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 if (result.size() >= attemptLimit) break;
                 List<Row> rows = rows(key, true);
                 if (rows.isEmpty()) continue;
+                if (rows.stream().anyMatch(row -> !sameClaim(rows, row))) {
+                    fail(PendingSecretStoreException.Code.INTEGRITY);
+                }
                 boolean due = rows.stream().allMatch(row -> "ABORT_REQUIRED".equals(row.status()))
-                        || rows.stream().allMatch(row -> !row.leaseUntil().isAfter(now));
+                        || rows.stream().anyMatch(row -> !row.leaseUntil().isAfter(now));
                 if (!due) continue;
-                jdbc.update("UPDATE " + TABLE + " SET status='ABORT_REQUIRED', updated_at=CURRENT_TIMESTAMP"
-                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", key.commandId(), key.attemptNo(), key.attemptToken());
-                result.add(new SecretAbortCandidate(restore(rows)));
+                Row first = rows.getFirst();
+                if (first.recoveryClaimUntil() != null && first.recoveryClaimUntil().isAfter(now)) continue;
+                String token = UUID.randomUUID().toString();
+                Instant claimUntil = now.plus(RECOVERY_CLAIM_TTL);
+                int updated = jdbc.update("UPDATE " + TABLE + " SET status='ABORT_REQUIRED', recovery_claim_owner=?,"
+                                + " recovery_claim_token=?, recovery_claim_until=?, updated_at=CURRENT_TIMESTAMP"
+                                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?"
+                                + " AND (recovery_claim_until IS NULL OR recovery_claim_until <= ?)",
+                        recoveryClaimOwner, token, timestamp(claimUntil), key.commandId(), key.attemptNo(),
+                        key.attemptToken(), timestamp(now));
+                if (updated != rows.size()) continue;
+                result.add(new SecretAbortCandidate(restore(rows), token));
             }
             return List.copyOf(result);
         });
@@ -233,17 +260,22 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     }
 
     private void completeAbortInTransaction(SecretAbortCandidate candidate) {
+        if (candidate.recoveryClaimToken() == null) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
         PendingSecretLease lease = candidate.batch().lease();
         Outcome done = outcome(lease);
         if (done != null) {
-            if ("ABORTED".equals(done.outcome()) && done.fingerprint().equals(fingerprint(candidate.batch(), List.of()))) return;
+            if ("ABORTED".equals(done.outcome()) && done.fingerprint().equals(fingerprint(candidate.batch(), List.of()))
+                    && candidate.recoveryClaimToken().equals(done.recoveryClaimToken())) return;
             if ("COMMITTED".equals(done.outcome())) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
             fail(PendingSecretStoreException.Code.INTEGRITY);
         }
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
-        if (!restore(lease, rows).equals(candidate.batch())) fail(PendingSecretStoreException.Code.LEASE_FENCED);
-        if (!rows.stream().allMatch(row -> "ABORT_REQUIRED".equals(row.status()))) {
+        PendingSecretBatch stored = restore(rows);
+        if (!stored.equals(candidate.batch())) fail(PendingSecretStoreException.Code.LEASE_FENCED);
+        if (!rows.stream().allMatch(row -> "ABORT_REQUIRED".equals(row.status()))
+                || rows.stream().anyMatch(row -> !candidate.recoveryClaimToken().equals(row.recoveryClaimToken())
+                || row.recoveryClaimUntil() == null || !row.recoveryClaimUntil().isAfter(databaseNow()))) {
             fail(PendingSecretStoreException.Code.RECOVERY_STATE);
         }
         String fingerprint = fingerprint(candidate.batch(), List.of());
@@ -252,9 +284,9 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 scope(candidate.batch()).tenantId(), scope(candidate.batch()).projectId(), scope(candidate.batch()).environmentId(),
                 coordinate(candidate.batch()).connectionId(), coordinate(candidate.batch()).revision(), lease.commandLease().commandId());
         jdbc.update("INSERT INTO " + OUTCOMES
-                        + " (command_id, attempt_no, attempt_token, outcome, outcome_fingerprint, slots_csv) VALUES (?, ?, ?, 'ABORTED', ?, ?)",
+                        + " (command_id, attempt_no, attempt_token, outcome, outcome_fingerprint, slots_csv, recovery_claim_token) VALUES (?, ?, ?, 'ABORTED', ?, ?, ?)",
                 lease.commandLease().commandId(), lease.commandLease().attemptNo(), lease.commandLease().attemptToken(),
-                fingerprint, slotsCsv(candidate.batch().operations()));
+                fingerprint, slotsCsv(candidate.batch().operations()), candidate.recoveryClaimToken());
         deleteRows(lease);
     }
 
@@ -282,10 +314,11 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         }
         List<Row> rows = rows(batch.lease(), requirePending);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
-        PendingSecretBatch stored = restore(batch.lease(), rows);
+        PendingSecretBatch stored = restore(rows);
         if (!stored.equals(batch)) fail(PendingSecretStoreException.Code.INTEGRITY);
+        if (!stored.lease().equals(batch.lease())) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (rows.stream().anyMatch(row -> !"PENDING".equals(row.status()))) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
-        if (rows.stream().anyMatch(row -> !row.leaseUntil().isAfter(clock.instant()))) fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
+        if (rows.stream().anyMatch(row -> !row.leaseUntil().isAfter(databaseNow()))) fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
         validateActivation(batch, outputs);
         return proof(batch, batch.operations().stream().map(PendingSecretOperation::slot).toList());
     }
@@ -321,21 +354,31 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private void insertRow(PendingSecretBatch batch, PendingSecretOperation operation, ActiveSecretBinding retained) {
         PendingSecretLease lease = batch.lease();
         PreparedExternalSecret prepared = operation instanceof PendingSecretOperation.Prepared p ? p.prepared() : null;
-        String sentinel = "__retained__";
-        Instant until = prepared == null ? lease.commandLease().leaseUntil() : prepared.leaseUntil();
+        SecretOperationContext context = prepared == null ? null : prepared.context();
+        Instant until = prepared == null || lease.commandLease().leaseUntil().compareTo(prepared.leaseUntil()) <= 0
+                ? lease.commandLease().leaseUntil() : prepared.leaseUntil();
         ConnectionRevisionCoordinate source = operation instanceof PendingSecretOperation.Retained r ? r.source() : null;
         jdbc.update("INSERT INTO " + TABLE + " (tenant_id, project_id, environment_id, connection_id, revision,"
                         + " command_id, attempt_no, attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle,"
-                        + " status, lease_until, source_tenant_id, source_project_id, source_environment_id, source_connection_id, source_revision)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)",
+                        + " status, lease_until, provider_lease_until, source_tenant_id, source_project_id, source_environment_id, source_connection_id, source_revision,"
+                        + " child_expected_mode, child_expected_revision, context_tenant_id, context_project_id, context_environment_id,"
+                        + " context_actor_id, context_purpose, context_connection_id, context_revision, context_command_id,"
+                        + " context_attempt_no, context_attempt_token)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 scope(batch).tenantId(), scope(batch).projectId(), scope(batch).environmentId(), coordinate(batch).connectionId(),
                 coordinate(batch).revision(), lease.commandLease().commandId(), lease.commandLease().attemptNo(),
                 lease.commandLease().attemptToken(), operation.slot(), operation.mode().name(),
-                prepared == null ? sentinel : prepared.providerId(), prepared == null ? sentinel : prepared.leaseId(),
-                prepared == null ? sentinel : prepared.opaqueLocator(), timestamp(until),
+                prepared == null ? null : prepared.providerId(), prepared == null ? null : prepared.leaseId(),
+                prepared == null ? null : prepared.opaqueLocator(), timestamp(until),
+                prepared == null ? null : timestamp(prepared.leaseUntil()),
                 source == null ? null : source.scope().tenantId(), source == null ? null : source.scope().projectId(),
                 source == null ? null : source.scope().environmentId(), source == null ? null : source.connectionId(),
-                source == null ? null : source.revision());
+                source == null ? null : source.revision(), mode(lease.connectionExpected()), revision(lease.connectionExpected()),
+                context == null ? null : context.scope().tenantId(), context == null ? null : context.scope().projectId(),
+                context == null ? null : context.scope().environmentId(), context == null ? null : context.actorId(),
+                context == null ? null : context.purpose(), context == null ? null : context.connectionId(),
+                context == null ? null : context.revision(), context == null ? null : context.commandId(),
+                context == null ? null : context.attemptNo(), context == null ? null : context.attemptToken());
     }
 
     private List<Row> rows(PendingSecretLease lease, boolean lock) {
@@ -345,20 +388,21 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
 
     private List<Row> rows(BatchKey key, boolean lock) {
         return jdbc.query("SELECT tenant_id, project_id, environment_id, connection_id, revision, command_id, attempt_no,"
-                        + " attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle, status, lease_until,"
-                        + " source_tenant_id, source_project_id, source_environment_id, source_connection_id, source_revision"
+                        + " attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle, status, lease_until, provider_lease_until,"
+                        + " source_tenant_id, source_project_id, source_environment_id, source_connection_id, source_revision,"
+                        + " child_expected_mode, child_expected_revision, recovery_claim_owner, recovery_claim_token, recovery_claim_until,"
+                        + " context_tenant_id, context_project_id, context_environment_id, context_actor_id, context_purpose,"
+                        + " context_connection_id, context_revision, context_command_id, context_attempt_no, context_attempt_token"
                         + " FROM " + TABLE + " WHERE command_id=? AND attempt_no=? AND attempt_token=?"
                         + (lock ? " FOR UPDATE" : ""), this::row, key.commandId(), key.attemptNo(), key.attemptToken());
-    }
-
-    private PendingSecretBatch restore(PendingSecretLease lease, List<Row> rows) {
-        return restoreWithLease(lease, rows);
     }
 
     private PendingSecretBatch restore(List<Row> rows) {
         Row first = rows.getFirst();
         Journal journal = journal(new BatchKey(first.commandId(), first.attemptNo(), first.attemptToken()), false);
-        return restoreWithLease(journal.lease(first), rows);
+        PendingSecretLease lease = journal.lease(first);
+        if (rows.stream().anyMatch(row -> !lease.equals(journal.lease(row)))) fail(PendingSecretStoreException.Code.INTEGRITY);
+        return restoreWithLease(lease, rows);
     }
 
     private PendingSecretBatch restoreWithLease(PendingSecretLease lease, List<Row> rows) {
@@ -369,12 +413,13 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                         new AuthoringScope(row.sourceTenant(), row.sourceProject(), row.sourceEnvironment()),
                         row.sourceConnection(), row.sourceRevision()));
             }
-            SecretOperationContext context = new SecretOperationContext(lease.coordinate().scope(),
-                    journal(lease, false).actorId, "connection-save", lease.coordinate().connectionId(),
-                    lease.coordinate().revision(), lease.commandLease().commandId(), lease.commandLease().attemptNo(),
-                    lease.commandLease().attemptToken(), row.slot());
+            if (row.contextPurpose() == null || row.contextRevision() == null) fail(PendingSecretStoreException.Code.INTEGRITY);
+            SecretOperationContext context = new SecretOperationContext(new AuthoringScope(row.contextTenant(),
+                    row.contextProject(), row.contextEnvironment()), row.contextActorId(), row.contextPurpose(),
+                    row.contextConnectionId(), row.contextRevision(), row.contextCommandId(), row.contextAttemptNo(),
+                    row.contextAttemptToken(), row.slot());
             return new PendingSecretOperation.Prepared(row.slot(), SecretSourceMode.valueOf(row.sourceMode()),
-                    new PreparedExternalSecret(row.providerId(), row.leaseId(), row.opaqueHandle(), row.leaseUntil(), context));
+                    new PreparedExternalSecret(row.providerId(), row.leaseId(), row.opaqueHandle(), row.providerLeaseUntil(), context));
         }).map(operation -> (PendingSecretOperation) operation).toList();
         return new PendingSecretBatch(lease, operations);
     }
@@ -396,9 +441,9 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     }
 
     private Outcome outcome(PendingSecretLease lease) {
-        return jdbc.query("SELECT outcome, outcome_fingerprint, slots_csv FROM " + OUTCOMES
+        return jdbc.query("SELECT outcome, outcome_fingerprint, slots_csv, recovery_claim_token FROM " + OUTCOMES
                         + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", (row, ignored) ->
-                        new Outcome(row.getString(1), row.getString(2), row.getString(3)),
+                        new Outcome(row.getString(1), row.getString(2), row.getString(3), row.getString(4)),
                 lease.commandLease().commandId(), lease.commandLease().attemptNo(), lease.commandLease().attemptToken())
                 .stream().findFirst().orElse(null);
     }
@@ -432,18 +477,57 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     }
 
     private static String fingerprint(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs) {
-        StringBuilder value = new StringBuilder(batch.lease().toString());
+        StringBuilder value = new StringBuilder();
+        append(value, batch.lease().coordinate().scope().tenantId());
+        append(value, batch.lease().coordinate().scope().projectId());
+        append(value, batch.lease().coordinate().scope().environmentId());
+        append(value, batch.lease().coordinate().connectionId());
+        append(value, Long.toString(batch.lease().coordinate().revision()));
+        CommandLease command = batch.lease().commandLease();
+        append(value, command.commandId());
+        append(value, Integer.toString(command.attemptNo()));
+        append(value, command.attemptToken());
+        append(value, command.key().scope().tenantId());
+        append(value, command.key().scope().projectId());
+        append(value, command.key().scope().environmentId());
+        append(value, command.key().actorId());
+        append(value, command.key().endpoint().name());
+        append(value, command.key().targetId());
+        append(value, command.key().idempotencyKey());
+        append(value, command.requestFingerprint());
+        append(value, command.leaseUntil().toString());
+        append(value, mode(command.expectedRevision()));
+        append(value, Objects.toString(revision(command.expectedRevision()), ""));
+        append(value, mode(batch.lease().connectionExpected()));
+        append(value, Objects.toString(revision(batch.lease().connectionExpected()), ""));
         for (PendingSecretOperation operation : batch.operations()) {
-            value.append('|').append(operation.slot()).append('|').append(operation.mode());
+            append(value, operation.slot());
+            append(value, operation.mode().name());
             if (operation instanceof PendingSecretOperation.Prepared prepared) {
-                value.append('|').append(prepared.prepared().providerId()).append('|').append(prepared.prepared().leaseId())
-                        .append('|').append(prepared.prepared().opaqueLocator()).append('|').append(prepared.prepared().leaseUntil());
-            } else if (operation instanceof PendingSecretOperation.Retained retained) value.append('|').append(retained.source());
+                PreparedExternalSecret p = prepared.prepared();
+                append(value, p.providerId()); append(value, p.leaseId()); append(value, p.opaqueLocator());
+                append(value, p.leaseUntil().toString());
+                SecretOperationContext c = p.context();
+                append(value, c.scope().tenantId()); append(value, c.scope().projectId()); append(value, c.scope().environmentId());
+                append(value, c.actorId()); append(value, c.purpose()); append(value, c.connectionId());
+                append(value, Long.toString(c.revision())); append(value, c.commandId());
+                append(value, Integer.toString(c.attemptNo())); append(value, c.attemptToken()); append(value, c.slot());
+            } else if (operation instanceof PendingSecretOperation.Retained retained) {
+                append(value, retained.source().scope().tenantId()); append(value, retained.source().scope().projectId());
+                append(value, retained.source().scope().environmentId()); append(value, retained.source().connectionId());
+                append(value, Long.toString(retained.source().revision()));
+            }
         }
-        for (ActivatedSecretSlot output : outputs) value.append('|').append(output.slot()).append('|')
-                .append(output.activated().providerId()).append('|').append(output.activated().leaseId())
-                .append('|').append(output.activated().activeLocator());
-        return "sha256:" + HexFormat.of().formatHex(digest(value.toString()));
+        for (ActivatedSecretSlot output : outputs) {
+            append(value, output.slot()); append(value, output.activated().providerId());
+            append(value, output.activated().leaseId()); append(value, output.activated().activeLocator());
+        }
+        return "sha256:" + HexFormat.of().formatHex(digest(value.toString())).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static void append(StringBuilder target, String value) {
+        String safe = Objects.requireNonNull(value, "fingerprint value");
+        target.append(safe.length()).append(':').append(safe);
     }
 
     private static byte[] digest(String value) {
@@ -515,20 +599,39 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private AuthoringScope scope(PendingSecretBatch batch) { return batch.lease().coordinate().scope(); }
     private ConnectionRevisionCoordinate coordinate(PendingSecretBatch batch) { return batch.lease().coordinate(); }
     private java.sql.Timestamp timestamp(Instant instant) { return java.sql.Timestamp.from(instant); }
+    private Instant databaseNow() {
+        java.sql.Timestamp now = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", java.sql.Timestamp.class);
+        return Objects.requireNonNull(now, "database clock").toInstant();
+    }
+    private static boolean sameClaim(List<Row> rows, Row row) {
+        Row first = rows.getFirst();
+        return Objects.equals(first.recoveryClaimOwner(), row.recoveryClaimOwner())
+                && Objects.equals(first.recoveryClaimToken(), row.recoveryClaimToken())
+                && Objects.equals(first.recoveryClaimUntil(), row.recoveryClaimUntil());
+    }
     private Row row(ResultSet rs, int ignored) throws java.sql.SQLException { return new Row(rs); }
 
     private record BatchKey(String commandId, int attemptNo, String attemptToken) { }
-    private record Outcome(String outcome, String fingerprint, String slots) { }
+    private record Outcome(String outcome, String fingerprint, String slots, String recoveryClaimToken) { }
     private record Row(String tenant, String project, String environment, String connectionId, long revision,
                        String commandId, int attemptNo, String attemptToken, String slot, String sourceMode,
                        String providerId, String leaseId, String opaqueHandle, String status, Instant leaseUntil,
-                       String sourceTenant, String sourceProject, String sourceEnvironment, String sourceConnection,
-                       Long sourceRevision) {
+                       Instant providerLeaseUntil, String sourceTenant, String sourceProject, String sourceEnvironment, String sourceConnection,
+                       Long sourceRevision, String childExpectedMode, Long childExpectedRevision,
+                       String recoveryClaimOwner, String recoveryClaimToken, Instant recoveryClaimUntil,
+                       String contextTenant, String contextProject, String contextEnvironment, String contextActorId,
+                       String contextPurpose, String contextConnectionId, Long contextRevision, String contextCommandId,
+                       Integer contextAttemptNo, String contextAttemptToken) {
         Row(ResultSet rs) throws java.sql.SQLException { this(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
                 rs.getLong(5), rs.getString(6), rs.getInt(7), rs.getString(8), rs.getString(9), rs.getString(10),
                 rs.getString(11), rs.getString(12), rs.getString(13), rs.getString(14), rs.getTimestamp(15).toInstant(),
-                rs.getString(16), rs.getString(17), rs.getString(18), rs.getString(19),
-                rs.getObject(20, Long.class)); }
+                rs.getTimestamp(16) == null ? null : rs.getTimestamp(16).toInstant(),
+                rs.getString(17), rs.getString(18), rs.getString(19), rs.getString(20), rs.getObject(21, Long.class),
+                rs.getString(22), rs.getObject(23, Long.class), rs.getString(24), rs.getString(25),
+                rs.getTimestamp(26) == null ? null : rs.getTimestamp(26).toInstant(),
+                rs.getString(27), rs.getString(28), rs.getString(29), rs.getString(30), rs.getString(31),
+                rs.getString(32), rs.getObject(33, Long.class), rs.getString(34), rs.getObject(35, Integer.class),
+                rs.getString(36)); }
     }
     private final class Journal {
         private final String tenant, project, environment, actorId, endpoint, targetId, idempotency, requestFingerprint;
@@ -558,7 +661,9 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         boolean live(Instant now) { return leaseUntil.isAfter(now); }
         PendingSecretLease lease(Row row) { AuthoringScope s = new AuthoringScope(tenant, project, environment);
             CommandKey key = new CommandKey(s, actorId, AuthoringEndpoint.valueOf(endpoint), targetId, idempotency);
-            ExpectedRevision expected = "CREATE".equals(expectedMode) ? ExpectedRevision.create() : ExpectedRevision.match(expectedRevision);
+            if (row.childExpectedMode() == null) fail(PendingSecretStoreException.Code.INTEGRITY);
+            ExpectedRevision expected = "CREATE".equals(row.childExpectedMode()) ? ExpectedRevision.create()
+                    : ExpectedRevision.match(row.childExpectedRevision());
             return new PendingSecretLease(new CommandLease(commandId, attemptNo, attemptToken, key, requestFingerprint, leaseUntil, expected),
                     new ConnectionRevisionCoordinate(s, row.connectionId(), row.revision()), expected); }
     }

@@ -351,6 +351,25 @@ public abstract class PendingSecretStoreContractTest {
                 .isEqualTo("b-single");
     }
 
+    @Test void recoveryClaimIsExclusiveAndExpiredClaimIsFencedAfterReclaim() {
+        MutableClock clock = new MutableClock(NOW);
+        PendingSecretStore store = newStore(clock);
+        PendingSecretBatch batch = batch(lease("claim", 1, "claim-token", NOW.plusSeconds(5)), "token", "password");
+        store.stage(batch);
+        clock.advanceSeconds(6);
+
+        SecretAbortCandidate first = store.claimRecoveryDue(10).getFirst();
+        assertThat(store.claimRecoveryDue(10)).isEmpty();
+        clock.advanceSeconds(31);
+        SecretAbortCandidate reclaimed = store.claimRecoveryDue(10).getFirst();
+        assertThat(reclaimed.recoveryClaimToken()).isNotEqualTo(first.recoveryClaimToken());
+        assertThatThrownBy(() -> store.completeAbort(first)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+        store.completeAbort(reclaimed);
+        store.completeAbort(reclaimed);
+        assertThat(store.findExact(batch.lease())).isEmpty();
+    }
+
     @Test void twoAttemptsSameRevisionDoNotCrossAbort() {
         PendingSecretStore store = newStore(fixedClock());
         CommandLease first = lease("same-command", 1, "first", NOW.plusSeconds(60));
