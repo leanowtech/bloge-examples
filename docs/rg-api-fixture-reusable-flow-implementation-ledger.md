@@ -161,7 +161,53 @@ BUILD SUCCESS
 显式 PostgreSQL lane 都能复现 scoped CAS、Journal replay 和 staged invisibility，才能把 production storage
 计为完成；内存 monitor 不是生产原子性证据。
 
-## 5. 未关闭风险
+## 5. Iteration 4 — Authoring Schema Migration 与 Readiness
+
+日期：2026-08-30。
+
+### 已完成
+
+- `33450d742`：新增四张 API Resource authoring 持久化表及 fail-closed schema readiness 原型。
+- `74537af49`、`33e50b33d`：补齐 attempt fencing、`COMMITTED` revision + `READY` Projection head
+  闭包、带时区时间戳、精确 PK/UQ/FK/index 有序列元数据检查，以及错误约束重建和 takeover 负向测试。
+- `f662fbd2d`：将所有 fingerprint 数据库约束收紧为 `sha256:` 加 64 位小写十六进制，关闭空格与
+  混合字符绕过；failure code 与 Java bounded value contract 保持一致。
+
+Migration 同时在 H2 PostgreSQL mode 与 PostgreSQL 方言边界内使用 `TEXT`、`VARCHAR`、
+`TIMESTAMP WITH TIME ZONE` 和可移植 `CHECK`。Readiness 只读检查 schema，不在 Repository 或启动门禁中执行
+DDL。当前证据证明 H2 PostgreSQL-mode migration 与约束合同；它不等价于真实 PostgreSQL certification，
+也不证明尚未实现的 JDBC store 或生产 runtime wiring。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceAuthoringSchemaReadinessTest test
+ApiResourceAuthoringSchemaReadinessTest: 18 tests
+Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+协调者在 `f662fbd2d` 前的最终代码内容上独立串行复验。Spec review 与 Standards review 均为
+Accepted；审查发现的同名错误对象、列序、attempt token、旧 STAGED takeover、非法 fingerprint 和 failure
+code 反例均已修复并重新验证。
+
+### 当前差距评估
+
+| 目标能力 | 已证明 |
+| --- | ---: |
+| Wire Schema family | 10 / 10 |
+| API Resource 后端权威、复合保存与投影闭包 | 8 / 18（领域权威、commit protocol、正式 migration/readiness；未含 JDBC/Facade） |
+| 文档与当前聚焦门禁 | 4 / 7 |
+| 其余运行与 UI 能力 | 0 / 65 |
+| **当前完成度** | **22%** |
+| **当前差距** | **78%** |
+
+下一步实现同一 `ApiResourceCommitStore` contract 的 JDBC adapter，并在正式 migration 上证明重启、跨实例
+并发 CAS、Journal replay、staged invisibility 和原子 commit。随后才进入 `AuthoringFacade`、Connection/Secret
+与 Default Fixture 复合保存。
+
+## 6. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
