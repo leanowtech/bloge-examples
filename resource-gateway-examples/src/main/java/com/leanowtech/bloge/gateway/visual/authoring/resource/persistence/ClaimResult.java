@@ -6,8 +6,12 @@ public sealed interface ClaimResult permits ClaimResult.Acquired, ClaimResult.Re
     record Acquired(CommandLease lease, boolean resumed) implements ClaimResult { }
     /** Already committed receipt for the same request fingerprint. */
     record Replay(CommandReceipt receipt) implements ClaimResult { }
-    /** A different live attempt owns the coordinate. */
-    record Busy(java.time.Instant leaseUntil) implements ClaimResult { }
+    /** A different live attempt owns the coordinate; retry after this instant. */
+    record Busy(java.time.Instant retryAt) implements ClaimResult {
+        public Busy {
+            java.util.Objects.requireNonNull(retryAt, "retryAt");
+        }
+    }
     /** Same coordinate was used with a different request fingerprint. */
     record Conflict(String message) implements ClaimResult { }
 }

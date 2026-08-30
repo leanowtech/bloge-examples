@@ -5,13 +5,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCom
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandFailureCode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
@@ -33,8 +30,9 @@ import java.util.Optional;
  * composition continues to use the Resource store directly and is outside
  * this Connection-only facade.</p>
  */
-public final class JdbcApiConnectionAuthoringStore implements ApiConnectionAuthoringStore {
-    private final ApiResourceCommitStore claims;
+public final class JdbcApiConnectionAuthoringStore
+        implements ApiConnectionAuthoringStore, ApiConnectionCommitStore {
+    private final AuthoringCommandClaimStore claims;
     private final ApiConnectionCommitStore connections;
 
     /**
@@ -43,27 +41,22 @@ public final class JdbcApiConnectionAuthoringStore implements ApiConnectionAutho
      * @param dataSource shared JDBC source for claims and Connection rows
      * @param mapper canonical JSON mapper
      * @param leaseDuration command claim lease duration
-     * @param resourceDecisions resource claim decision dependency
-     * @param compiler resource projection compiler used by the shared claim store
      * @param connectionDecisions Connection authority decisions
      * @param clock database-facing wall-clock dependency
      */
     public JdbcApiConnectionAuthoringStore(DataSource dataSource, ObjectMapper mapper,
-                                           Duration leaseDuration, ApiResourceDecisions resourceDecisions,
-                                           ApiResourceProjectionCompiler compiler,
-                                           ApiConnectionDecisions connectionDecisions, Clock clock) {
+                                           Duration leaseDuration, ApiConnectionDecisions connectionDecisions,
+                                           Clock clock) {
         Objects.requireNonNull(dataSource, "dataSource");
         Objects.requireNonNull(mapper, "mapper");
         Objects.requireNonNull(leaseDuration, "leaseDuration");
-        Objects.requireNonNull(resourceDecisions, "resourceDecisions");
-        Objects.requireNonNull(compiler, "compiler");
         Objects.requireNonNull(connectionDecisions, "connectionDecisions");
         Objects.requireNonNull(clock, "clock");
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
         TransactionTemplate transactions = new TransactionTemplate(
                 new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource));
-        this.claims = new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore(
-                jdbc, transactions, mapper, leaseDuration, resourceDecisions, compiler);
+        this.claims = new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcAuthoringCommandClaimStore(
+                jdbc, transactions, mapper, leaseDuration);
         this.connections = new JdbcApiConnectionCommitStore(jdbc, transactions, mapper, connectionDecisions, clock);
     }
 

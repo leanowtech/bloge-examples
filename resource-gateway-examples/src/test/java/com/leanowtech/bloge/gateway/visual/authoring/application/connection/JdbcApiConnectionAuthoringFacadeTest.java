@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.JdbcApiConnectionAuthoringStore;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -48,10 +46,10 @@ class JdbcApiConnectionAuthoringFacadeTest {
             new ResourceDatabasePopulator(new ClassPathResource(migration)).execute(dataSource);
         }
         ApiConnectionDecisions decisions = new ApiConnectionDecisions();
-        ApiResourceProjectionCompiler unusedCompiler = (scope, resource) -> null;
-        var store = new JdbcApiConnectionAuthoringStore(dataSource, new ObjectMapper(), Duration.ofSeconds(30),
-                new ApiResourceDecisions(), unusedCompiler, decisions, Clock.systemUTC());
-        var facade = new ApiConnectionAuthoringFacade(store, decisions);
+        ObjectMapper mapper = new ObjectMapper();
+        var store = new JdbcApiConnectionAuthoringStore(dataSource, mapper, Duration.ofSeconds(30),
+                decisions, Clock.systemUTC());
+        var facade = new ApiConnectionAuthoringFacade(store, decisions, mapper);
         var request = new ApiConnectionAuthoringRequest(SCOPE, "actor", "customer", "jdbc-key",
                 ApiConnectionAuthoringPrecondition.create(),
                 new ApiConnectionCommand("Customer API", "https://customer.example.com",

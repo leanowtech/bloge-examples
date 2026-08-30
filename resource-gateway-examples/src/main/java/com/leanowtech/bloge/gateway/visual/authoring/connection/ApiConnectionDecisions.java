@@ -112,12 +112,18 @@ public final class ApiConnectionDecisions {
      * @param connectionId path target
      * @param command command whose non-secret authority is fingerprinted
      * @return canonical {@code sha256:} fingerprint
+     * @throws ApiConnectionAuthoringException when the command is not an
+     *         Auth.None command; credential-bearing commands belong to the
+     *         secret coordinator and are never fingerprinted here
      */
     public String requestFingerprint(AuthoringScope scope, String connectionId,
                                      ApiConnectionCommand command) {
         requireScope(scope);
         requireIdentifier(connectionId, "connectionId");
         validateCommand(command);
+        if (!(command.auth() instanceof ApiConnectionCommand.Auth.None)) {
+            invalid("request fingerprint supports Auth.None only");
+        }
         ObjectNode body = mapper.createObjectNode();
         body.put("schemaVersion", ApiConnectionCommand.SCHEMA_VERSION);
         body.put("connectionId", connectionId);

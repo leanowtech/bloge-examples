@@ -36,11 +36,12 @@ import static com.leanowtech.bloge.gateway.visual.authoring.connection.persisten
  * pure decision engine can validate it; this store never retains or activates
  * a provider reference.
  */
-public final class InMemoryApiConnectionCommitStore implements ApiConnectionAuthoringStore {
+public final class InMemoryApiConnectionCommitStore
+        implements ApiConnectionAuthoringStore, ApiConnectionCommitStore {
     private final Clock clock;
     private final ApiConnectionDecisions decisions;
     private final Duration leaseDuration;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final ObjectMapper mapper;
     private final Map<ConnectionKey, StoredApiConnection> heads = new HashMap<>();
     private final Map<RevisionKey, StoredApiConnection> history = new HashMap<>();
     private final Map<RevisionKey, ApiConnectionSpec> committedSpecs = new HashMap<>();
@@ -63,23 +64,35 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionAuth
 
     /** Creates a store using UTC wall-clock time and default decisions. */
     public InMemoryApiConnectionCommitStore() {
-        this(Clock.systemUTC(), new ApiConnectionDecisions(), Duration.ofSeconds(30));
+        this(Clock.systemUTC(), new ApiConnectionDecisions(), Duration.ofSeconds(30), new ObjectMapper());
     }
 
     /** Creates a store with injectable time and pure authority decisions. */
     public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions) {
-        this(clock, decisions, Duration.ofSeconds(30));
+        this(clock, decisions, Duration.ofSeconds(30), new ObjectMapper());
     }
 
     /** Creates a shared claim/lifecycle model with an injectable lease duration. */
     public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions,
                                             Duration leaseDuration) {
+        this(clock, decisions, leaseDuration, new ObjectMapper());
+    }
+
+    /**
+     * Creates a shared claim/lifecycle model with an explicit receipt mapper.
+     * The facade must use the same mapper configuration when it validates a
+     * replay body; otherwise a naming strategy or registered module could
+     * make an otherwise valid receipt appear tampered.
+     */
+    public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions,
+                                            Duration leaseDuration, ObjectMapper mapper) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         if (leaseDuration == null || leaseDuration.isZero() || leaseDuration.isNegative()) {
             throw new IllegalArgumentException("leaseDuration must be positive");
         }
         this.leaseDuration = leaseDuration;
+        this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
     }
 
     /** Claims an API connection command in the same state holder used by stage and commit. */
@@ -345,18 +358,35 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionAuth
     @Override public synchronized void fail(CommandLease lease) {
         if (lease == null) return;
         CommandLease current = active.get(lease.key());
-        if (current == null || !current.equals(lease)) return;
-        if (!current.leaseUntil().isAfter(clock.instant())) return;
-        removeStage(current);
-        active.remove(lease.key());
-        failed.put(lease.key(), current);
-        failedAttempts.put(new StageKey(lease.commandId(), lease.attemptToken()), current);
         Journal journal = journals.get(lease.key());
-        if (journal != null && journal.status() == JournalStatus.PREPARING
-                && journal.lease().equals(lease)) {
-            journals.put(lease.key(), new Journal(JournalStatus.FAILED, journal.requestFingerprint(),
-                    journal.expectedRevision(), lease, null));
+        // The lower-level commit contract also permits manually supplied
+        // leases without a command claim. Preserve its exact active-stage
+        // failure semantics while the lifecycle facade uses the journal
+        // branch below for a pre-stage CAS failure.
+        if (journal == null) {
+            if (current == null || !current.equals(lease)
+                    || !lease.leaseUntil().isAfter(clock.instant())) return;
+            removeStage(lease);
+            active.remove(lease.key());
+            failed.put(lease.key(), lease);
+            failedAttempts.put(new StageKey(lease.commandId(), lease.attemptToken()), lease);
+            return;
         }
+        // A stage CAS can fail before it creates an active/stage entry. The
+        // claim is still live and must be terminalized, or the next identical
+        // request incorrectly observes BUSY forever. Exact journal equality
+        // fences an old cleanup call after takeover and leaves another attempt
+        // untouched.
+        if (journal == null || journal.status() != JournalStatus.PREPARING
+                || !journal.lease().equals(lease)
+                || !lease.leaseUntil().isAfter(clock.instant())) return;
+        if (current != null && !current.equals(lease)) return;
+        removeStage(lease);
+        if (current != null) active.remove(lease.key());
+        failed.put(lease.key(), lease);
+        failedAttempts.put(new StageKey(lease.commandId(), lease.attemptToken()), lease);
+        journals.put(lease.key(), new Journal(JournalStatus.FAILED, journal.requestFingerprint(),
+                journal.expectedRevision(), lease, null));
     }
 
     /** {@inheritDoc} */

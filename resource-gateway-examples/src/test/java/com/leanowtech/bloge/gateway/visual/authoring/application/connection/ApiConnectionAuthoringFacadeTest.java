@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
@@ -20,6 +22,7 @@ import static org.mockito.Mockito.verify;
 class ApiConnectionAuthoringFacadeTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
     private static final String BASE_URL = "https://customer.example.com";
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
     void createAndSameKeyCreateReplayReturnExactPayloadFreeReceipt() {
@@ -60,6 +63,19 @@ class ApiConnectionAuthoringFacadeTest {
     }
 
     @Test
+    void unknownEtagForAnExistingTargetIsCasMismatch() {
+        var facade = facade();
+        facade.save(request("create", "customer", "known", ApiConnectionAuthoringPrecondition.create(),
+                command("Customer API")));
+
+        assertThatThrownBy(() -> facade.save(request("update", "customer", "unknown-tag",
+                ApiConnectionAuthoringPrecondition.matchStrongEtag("\"not-the-current-tag\""),
+                command("Customer v2"))))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+    }
+
+    @Test
     void changedNonSecretPayloadWithTheSameKeyIsConflict() {
         var facade = facade();
         ApiConnectionAuthoringRequest first = request("create", "customer", "key-conflict",
@@ -73,9 +89,48 @@ class ApiConnectionAuthoringFacadeTest {
     }
 
     @Test
+    void failedStageCasIsTerminalizedSoARepeatedRequestIsCasMismatchNotBusy() {
+        var store = new InMemoryApiConnectionCommitStore(Clock.systemUTC(),
+                new ApiConnectionDecisions(), java.time.Duration.ofSeconds(30), JSON);
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), JSON);
+        // A Create claim can be acquired even though a head was concurrently
+        // established before stage. The decision layer then rejects the stale
+        // create before an active stage exists.
+        facade.save(request("seed", "customer", "seed-key", ApiConnectionAuthoringPrecondition.create(),
+                command("Customer API")));
+        ApiConnectionAuthoringRequest stale = request("stale", "customer", "stale-key",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API"));
+
+        assertThatThrownBy(() -> facade.save(stale))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+        assertThatThrownBy(() -> facade.save(stale))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+    }
+
+    @Test
+    void replayUsesTheConfiguredStoreMapper() {
+        ObjectMapper mapper = new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        var decisions = new ApiConnectionDecisions(mapper);
+        var store = new InMemoryApiConnectionCommitStore(Clock.systemUTC(), decisions,
+                java.time.Duration.ofSeconds(30), mapper);
+        var facade = new ApiConnectionAuthoringFacade(store, decisions, mapper);
+        ApiConnectionAuthoringRequest request = request("custom-mapper", "customer", "custom-mapper-key",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API"));
+
+        ApiConnectionAuthoringResult first = facade.save(request);
+        ApiConnectionAuthoringResult replay = facade.save(request);
+
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.view()).isEqualTo(first.view());
+        assertThat(replay.strongEtag()).isEqualTo(first.strongEtag());
+    }
+
+    @Test
     void malformedEtagAndInvalidCommandDoNotConsumeAClaim() {
         var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
-        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), JSON);
 
         assertThatThrownBy(() -> facade.save(request("bad-etag", "customer", "key-bad-etag",
                 ApiConnectionAuthoringPrecondition.matchStrongEtag("W/\"weak\""), command("Customer API"))))
@@ -95,7 +150,7 @@ class ApiConnectionAuthoringFacadeTest {
     @Test
     void unsupportedCredentialCapabilityIsRejectedWithoutClaimOrSecretLeak() {
         var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
-        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), JSON);
         String secret = "do-not-leak-secret";
         ApiConnectionCommand command = new ApiConnectionCommand("Customer API", BASE_URL,
                 ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value(secret)));
@@ -123,7 +178,7 @@ class ApiConnectionAuthoringFacadeTest {
                 com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.STAGE_MISSING))
                 .when(store).stage(any(), any(), any(), any(),
                         org.mockito.ArgumentMatchers.any(com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding[].class));
-        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), JSON);
 
         assertThatThrownBy(() -> facade.save(request("failure", "customer", "key",
                 ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
@@ -132,9 +187,37 @@ class ApiConnectionAuthoringFacadeTest {
         verify(store).fail(lease);
     }
 
+    @Test
+    void expiredLeaseIsBusyWhileFencedLeaseIsCasMismatch() {
+        for (var codeAndExpected : Map.of(
+                com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_EXPIRED,
+                ApiConnectionAuthoringFailure.Code.BUSY,
+                com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_FENCED,
+                ApiConnectionAuthoringFailure.Code.CAS_MISMATCH).entrySet()) {
+            var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
+            var lease = new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease(
+                    "command-" + codeAndExpected.getKey(), 1, "token", new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey(
+                            SCOPE, "actor", com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_CONNECTION_SAVE,
+                            "customer", "key"), "sha256:" + "b".repeat(64), java.time.Instant.now().plusSeconds(30),
+                    com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+            org.mockito.Mockito.when(store.claim(any(), any(), any()))
+                    .thenReturn(new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(lease, false));
+            org.mockito.Mockito.doThrow(new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException(
+                    codeAndExpected.getKey())).when(store).stage(any(), any(), any(), any(),
+                    org.mockito.ArgumentMatchers.any(com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding[].class));
+            var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), JSON);
+
+            assertThatThrownBy(() -> facade.save(request("lease", "customer", "key",
+                    ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
+                    .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                    .extracting("code").isEqualTo(codeAndExpected.getValue());
+        }
+    }
+
     private static ApiConnectionAuthoringFacade facade() {
         return new ApiConnectionAuthoringFacade(new InMemoryApiConnectionCommitStore(
-                Clock.systemUTC(), new ApiConnectionDecisions()));
+                Clock.systemUTC(), new ApiConnectionDecisions(), java.time.Duration.ofSeconds(30), JSON),
+                new ApiConnectionDecisions(), JSON);
     }
 
     private static ApiConnectionAuthoringRequest request(String actor, String connectionId, String key,

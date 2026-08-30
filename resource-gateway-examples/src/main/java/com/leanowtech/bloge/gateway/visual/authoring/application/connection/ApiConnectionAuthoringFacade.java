@@ -46,18 +46,11 @@ public final class ApiConnectionAuthoringFacade {
     private final ApiConnectionDecisions decisions;
     private final ObjectMapper mapper;
 
-    /** Creates a facade with a fresh pure decision engine and canonical mapper. */
-    public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store) {
-        this(store, new ApiConnectionDecisions(), new ObjectMapper());
-    }
-
-    /** Creates a facade over one lifecycle-complete store. */
-    public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store,
-                                       ApiConnectionDecisions decisions) {
-        this(store, decisions, new ObjectMapper());
-    }
-
-    /** Creates a facade with explicitly shared pure collaborators. */
+    /**
+     * Creates a facade with explicitly shared pure collaborators. The mapper
+     * must be the same configured mapper used by the lifecycle store when it
+     * serializes receipt bodies; replay validation is intentionally exact.
+     */
     public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store,
                                        ApiConnectionDecisions decisions,
                                        ObjectMapper mapper) {
@@ -106,11 +99,6 @@ public final class ApiConnectionAuthoringFacade {
         }
     }
 
-    /** Alias suitable for application callers that name the operation author. */
-    public ApiConnectionAuthoringResult author(ApiConnectionAuthoringRequest request) {
-        return save(request);
-    }
-
     private Preflight preflight(ApiConnectionAuthoringRequest request) {
         if (request == null || request.scope() == null || request.command() == null
                 || request.precondition() == null || !validIdentifier(request.actorId(), 256)
@@ -139,11 +127,25 @@ public final class ApiConnectionAuthoringFacade {
             } catch (RuntimeException ex) {
                 throw mapFailure(ex);
             }
-            if (historical.isEmpty()) throw failure(ApiConnectionAuthoringFailure.Code.NOT_FOUND);
-            return new Preflight(request.scope(), request.connectionId(), historical.get(), match.strongEtag());
+            if (historical.isEmpty()) {
+                // An existing target with an unknown historical tag is an
+                // optimistic-concurrency miss, not a missing resource. This
+                // distinction lets callers retry with a freshly read tag.
+                try {
+                    if (store.findHead(request.scope(), request.connectionId()).isPresent()) {
+                        throw failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                    }
+                } catch (ApiConnectionAuthoringFailure ex) {
+                    throw ex;
+                } catch (RuntimeException ex) {
+                    throw mapFailure(ex);
+                }
+                throw failure(ApiConnectionAuthoringFailure.Code.NOT_FOUND);
+            }
+            return new Preflight(request.scope(), request.connectionId(), historical.get());
         }
         if (request.precondition() instanceof ApiConnectionAuthoringPrecondition.Create) {
-            return new Preflight(request.scope(), request.connectionId(), null, null);
+            return new Preflight(request.scope(), request.connectionId(), null);
         }
         throw failure(ApiConnectionAuthoringFailure.Code.VALIDATION);
     }
@@ -169,26 +171,18 @@ public final class ApiConnectionAuthoringFacade {
         var scope = preflight.scope();
         var connectionId = preflight.connectionId();
         var requestedRevision = preflight.historical() == null ? null : preflight.historical().view().revision();
-        var historical = preflight.historical();
-        if (historical == null) {
-            try {
-                historical = store.findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag()).orElse(null);
-            } catch (RuntimeException ex) {
-                throw mapFailure(ex);
-            }
-        } else {
-            // For an update the precondition ETag identifies the input
-            // revision; the receipt ETag identifies the newly committed
-            // output revision. Resolve that output independently so replay
-            // remains valid after the current head advances.
-            try {
-                historical = store.findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag()).orElse(null);
-            } catch (RuntimeException ex) {
-                throw mapFailure(ex);
-            }
-            if (historical == null) throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
+        // For an update the precondition ETag identifies the input revision;
+        // the receipt ETag identifies the newly committed output revision.
+        // Resolve that output independently so replay remains valid after the
+        // current head advances. Create replay follows the same exact lookup.
+        com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection historical;
+        try {
+            historical = store.findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag()).orElse(null);
+        } catch (RuntimeException ex) {
+            throw mapFailure(ex);
         }
-        if (historical == null || !scope.equals(historical.scope())
+        if (historical == null) throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
+        if (!scope.equals(historical.scope())
                 || !connectionId.equals(historical.view().connectionId())) {
             throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
         }
@@ -229,14 +223,16 @@ public final class ApiConnectionAuthoringFacade {
         }
         if (ex instanceof ApiConnectionCommitStoreException failure) {
             return switch (failure.code()) {
-                case LEASE_FENCED, LEASE_EXPIRED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_FENCED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
                 case STAGE_MISSING -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
                 case INTEGRITY -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
             };
         }
         if (ex instanceof ApiResourceCommitStoreException failure) {
             return switch (failure.code()) {
-                case LEASE_FENCED, LEASE_EXPIRED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_FENCED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
                 default -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
             };
         }
@@ -251,6 +247,5 @@ public final class ApiConnectionAuthoringFacade {
     private record Preflight(
             AuthoringScope scope,
             String connectionId,
-            com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection historical,
-            String requestedEtag) { }
+            com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection historical) { }
 }
