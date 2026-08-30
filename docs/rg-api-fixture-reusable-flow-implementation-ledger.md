@@ -115,7 +115,53 @@ BUILD SUCCESS
 私有 Default Fixture staging、三份持久化 `READY` Projection 和 readiness/migration。现有 Registry 以进程内
 cache 为权威且无 CAS，不能直接拼接进 `AuthoringFacade` 冒充原子提交。
 
-## 4. 未关闭风险
+## 4. Iteration 3 — Scoped Commit Protocol
+
+日期：2026-08-30。
+
+### 已完成
+
+- `17edddc52`：新增 `ApiResourceCommitStore` 深 seam、Scope/Command/Lease/Projection 值对象、
+  Journal 状态机与内存 contract reference。
+- `01ccaddfc`：关闭跨实例共享 State 锁、真实并发提交、Busy token 泄漏、Decision 反向依赖、
+  Projection 独立指纹、上层 Receipt 所有权和 Compiler Scope 问题。
+- `d659d1c86`：以 bounded `CommandFailureCode` 收紧失败 Journal；统一 null/stale lease 错误，移除测试
+  fingerprint 自动修正，并恢复可审计格式和 JavaDoc。
+
+状态机已证明同一 command coordinate 的 claim、live busy、过期 takeover、attempt fencing、same-payload
+replay、different-payload conflict、不可见 staging、commit 前二次 CAS、fail cleanup 和跨 store 实例竞争。
+`Busy` 不返回 fencing token；takeover 保留 command ID、增加 attempt number 并轮换 token。三份 Projection
+分别验证 canonical body fingerprint，并共同绑定精确 Resource Subject。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceModuleTest,ApiResourceCommitStoreContractTest test
+ApiResourceModuleTest: 8 tests
+ApiResourceCommitStoreContractTest: 13 tests
+Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+协调者在 `d659d1c86` 后独立串行复验；Standards 与 Spec 双审查均 Accepted。
+
+### 当前差距评估
+
+| 目标能力 | 已证明 |
+| --- | ---: |
+| Wire Schema family | 10 / 10 |
+| API Resource 后端权威、复合保存与投影闭包 | 6 / 18（领域权威 + commit protocol；未含 JDBC/Facade） |
+| 文档与当前聚焦门禁 | 4 / 7 |
+| 其余运行与 UI 能力 | 0 / 65 |
+| **当前完成度** | **20%** |
+| **当前差距** | **80%** |
+
+下一步以同一 contract 实现 JDBC adapter、四张正式 migration 表和 fail-fast readiness。只有 H2 正常门禁与
+显式 PostgreSQL lane 都能复现 scoped CAS、Journal replay 和 staged invisibility，才能把 production storage
+计为完成；内存 monitor 不是生产原子性证据。
+
+## 5. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
