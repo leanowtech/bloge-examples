@@ -55,6 +55,9 @@ public interface ApiConnectionCommitStore {
      * Publishes a previously committed nested child after the outer resource
      * receipt has been durably committed. The receipt is the visibility fence;
      * a child must never become readable from a partially committed resource.
+     * Implementations without a shared resource journal treat the supplied
+     * receipt as already authorized by the outer resource store and validate
+     * its complete canonical closure; they do not attempt to prove durability.
      */
     StoredApiConnection publishChild(CommandLease lease, CommandReceipt outerReceipt);
 

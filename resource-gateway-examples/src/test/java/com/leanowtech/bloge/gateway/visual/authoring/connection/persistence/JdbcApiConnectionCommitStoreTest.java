@@ -236,7 +236,12 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
 
         ObjectNode body = mapper.createObjectNode();
+        body.put("schemaVersion", "bloge.apiResourceSaveReceipt.v1");
         body.putObject("connection").put("connectionId", "customer").put("revision", 1);
+        body.putObject("resource").put("kind", "API_RESOURCE").put("resourceId", "profile")
+                .put("revision", 1).put("fingerprint", "sha256:" + "b".repeat(64));
+        body.putObject("projections").put("descriptor", "READY")
+                .put("designContract", "READY").put("operator", "READY");
         jdbc.update("""
                 UPDATE rg_authoring_command_journal
                    SET receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
@@ -268,6 +273,28 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThat(store.findHead(SCOPE, "customer")).isEmpty();
         assertThat(store.findRevision(SCOPE, "customer", 1)).isEmpty();
         assertThat(revisionCount()).isZero();
+    }
+
+    @Test
+    void failChildCleansOnlyExactRowsAndLeavesTheOuterJournalToResourceStore() throws Exception {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = new CommandLease("nested-fail-child", 1, "nested-fail-child-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
+                        "key-nested-fail-child"), "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30),
+                ExpectedRevision.match(7));
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        commitChild(store, lease);
+        CommandLease altered = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(),
+                lease.key(), "sha256:" + "b".repeat(64), lease.leaseUntil(), lease.expectedRevision());
+        assertThatThrownBy(() -> store.failChild(altered)).isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        assertThat(revisionCount()).isEqualTo(1);
+        store.failChild(lease);
+        assertThat(revisionCount()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_heads WHERE command_id=?",
+                Integer.class, lease.commandId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("PREPARING");
     }
 
     @Test

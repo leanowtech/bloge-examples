@@ -17,8 +17,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persisten
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretOperation;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.SecretSourceMode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import org.junit.jupiter.api.Test;
@@ -355,6 +357,38 @@ abstract class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void nestedChildReservesItsConnectionCoordinateBeforeOuterPublication() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease childLease = leaseWithTarget("nested-reservation", 1, "nested-reservation-token", SCOPE,
+                "profile", AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(7));
+        stage(store, childLease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection child = commitChild(store, childLease);
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+
+        CommandLease competing = lease("nested-reservation-competing", 1, "nested-reservation-competing-token",
+                SCOPE, "customer", ExpectedRevision.create());
+        boolean stagedCompeting = true;
+        try {
+            stage(store, competing, "customer", ExpectedRevision.create(), renamedCommand("Competing"));
+        } catch (ApiConnectionCommitStoreException ex) {
+            stagedCompeting = false;
+            assertThat(ex.code()).isEqualTo(ApiConnectionCommitStoreException.Code.CAS_MISMATCH);
+        }
+        if (stagedCompeting) {
+            assertThatThrownBy(() -> store.commit(competing))
+                    .isInstanceOf(ApiConnectionCommitStoreException.class)
+                    .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.CAS_MISMATCH);
+        }
+
+        store.failChild(childLease);
+        if (!stagedCompeting) {
+            stage(store, competing, "customer", ExpectedRevision.create(), renamedCommand("Competing"));
+        }
+        assertThat(store.commit(competing).view().displayName()).isEqualTo("Competing");
+        assertThat(child.view().revision()).isEqualTo(1);
+    }
+
+    @Test
     void higherAttemptCannotTakeOverWithAChangedRequestFingerprint() {
         MutableClock clock = new MutableClock(TEST_NOW);
         ApiConnectionCommitStore store = newStore(clock);
@@ -391,6 +425,42 @@ abstract class ApiConnectionCommitStoreContractTest {
         assertThatThrownBy(() -> stage(store, lease, "customer", ExpectedRevision.create(), noneCommand()))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+    }
+
+    @Test
+    void resourceReceiptClosureRequiresTheCompleteCanonicalBody() {
+        ObjectMapper mapper = new ObjectMapper();
+        var body = mapper.createObjectNode().put("schemaVersion", ApiResourceSaveReceiptClosure.SCHEMA_VERSION);
+        body.putObject("connection").put("connectionId", "customer").put("revision", 1);
+        body.putObject("resource").put("kind", "API_RESOURCE").put("resourceId", "profile")
+                .put("revision", 1).put("fingerprint", "sha256:" + "b".repeat(64));
+        body.putObject("projections").put("descriptor", "READY")
+                .put("designContract", "READY").put("operator", "READY");
+        body.putObject("defaultFixture").put("fixtureSetId", "fixtures").put("revision", 1)
+                .put("fingerprint", "sha256:" + "c".repeat(64)).putArray("cases")
+                .addObject().put("exampleName", "happy").put("caseId", "case-1");
+        CommandReceipt receipt = new CommandReceipt(ApiResourceSaveReceiptClosure.SCHEMA_VERSION, body,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(body),
+                "\"outer\"");
+        ApiResourceSaveReceiptClosure.require(receipt, "profile", "customer", 1);
+
+        var extra = body.deepCopy().put("unexpected", true);
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, extra,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(extra),
+                "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
+        var drift = body.deepCopy();
+        drift.with("connection").put("connectionId", "other");
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, drift,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(drift),
+                "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
+        var notReady = body.deepCopy();
+        notReady.with("projections").put("operator", "PENDING");
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, notReady,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(notReady),
+                "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

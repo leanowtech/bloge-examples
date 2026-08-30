@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
@@ -425,7 +426,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     /** Removes a child committed inside an outer transaction when that workflow aborts. */
     @Override
     public void failChild(CommandLease lease) {
-        if (lease == null || lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) return;
+        if (lease == null) return;
+        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
         try {
             if (TransactionSynchronizationManager.isActualTransactionActive()) {
                 requireAmbientTransaction();
@@ -444,7 +446,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         CommittedOuterReceipt committedOuter = requireCommittedOuterReceipt(lease);
         RevisionRow child = committedChildRevision(lease);
         if (child == null) fail(Code.STAGE_MISSING);
-        validateOuterReceipt(outerReceipt, child);
+        validateOuterReceipt(outerReceipt, child, lease.key().targetId());
         if (outerReceipt == null || !outerReceipt.schemaVersion().equals(committedOuter.schema())
                 || !outerReceipt.body().equals(committedOuter.body())
                 || !outerReceipt.bodyFingerprint().equals(committedOuter.fingerprint())
@@ -460,12 +462,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                         SELECT COUNT(*) FROM rg_authoring_command_journal
                          WHERE command_id=? AND tenant_id=? AND project_id=? AND environment_id=?
                            AND actor_id=? AND endpoint=? AND target_id=? AND idempotency_key=?
-                           AND request_fingerprint=? AND attempt_no=? AND attempt_token=?
+                           AND request_fingerprint=? AND attempt_no=? AND attempt_token=? AND lease_until=?
                            AND expected_mode=? AND expected_revision IS NOT DISTINCT FROM ?
                         """, Long.class, lease.commandId(), key.scope().tenantId(), key.scope().projectId(),
                 key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
                 key.idempotencyKey(), lease.requestFingerprint(), lease.attemptNo(), lease.attemptToken(),
-                expectedMode(lease.expectedRevision()), expectedRevision(lease.expectedRevision()));
+                timestamp(lease.leaseUntil()), expectedMode(lease.expectedRevision()), expectedRevision(lease.expectedRevision()));
         if (exact == null || exact == 0) fail(Code.LEASE_FENCED);
         List<CommittedOuterReceipt> rows = jdbc.query("""
                         SELECT receipt_schema, receipt_json, receipt_fingerprint, receipt_etag
@@ -489,13 +491,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private static void validateOuterReceipt(
-            CommandReceipt receipt, RevisionRow child) {
-        if (receipt == null || !RESOURCE_RECEIPT_SCHEMA.equals(receipt.schemaVersion())) fail(Code.INTEGRITY);
-        JsonNode connection = receipt.body().path("connection");
-        if (!connection.isObject() || !connection.path("connectionId").isTextual()
-                || !child.connectionId().equals(connection.path("connectionId").asText())
-                || !connection.path("revision").canConvertToLong()
-                || child.revision() != connection.path("revision").asLong()) fail(Code.INTEGRITY);
+            CommandReceipt receipt, RevisionRow child, String resourceId) {
+        try {
+            ApiResourceSaveReceiptClosure.require(receipt, resourceId, child.connectionId(), child.revision());
+        } catch (RuntimeException ex) {
+            fail(Code.INTEGRITY);
+        }
     }
 
     private JsonNode parseJson(String value) {
@@ -511,17 +512,20 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         String status = jdbc.query("SELECT status FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
                 (row, ignored) -> row.getString(1), lease.commandId()).stream().findFirst().orElse(null);
         if (status == null || "COMMITTED".equals(status) || "FAILED".equals(status)) return;
+        Long exactChild = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                Long.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (exactChild == null || exactChild == 0) return;
         requireLiveJournal(lease, false);
-        if (jdbc.update("DELETE FROM rg_api_connection_heads WHERE command_id=?", lease.commandId()) < 0
-                || jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
-                + "AND attempt_token=? AND state IN ('STAGED','COMMITTED')", lease.commandId(), lease.attemptNo(),
-                lease.attemptToken()) < 0) fail(Code.INTEGRITY);
-        if (jdbc.update("""
-                        UPDATE rg_authoring_command_journal SET status='FAILED', receipt_schema=NULL,
-                             receipt_json=NULL, receipt_fingerprint=NULL, receipt_etag=NULL,
-                             failure_code='INTERNAL', updated_at=CURRENT_TIMESTAMP
-                         WHERE command_id=? AND status='PREPARING'
-                        """, lease.commandId()) != 1) fail(Code.INTEGRITY);
+        if (jdbc.update("DELETE FROM rg_api_connection_heads WHERE tenant_id=? AND project_id=? "
+                + "AND environment_id=? AND command_id=? AND revision_state='COMMITTED'",
+                lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.commandId()) < 0
+                || jdbc.update("DELETE FROM rg_api_connection_revisions WHERE tenant_id=? AND project_id=? "
+                + "AND environment_id=? AND command_id=? AND attempt_no=? AND attempt_token=? "
+                + "AND state IN ('STAGED','COMMITTED')", lease.key().scope().tenantId(),
+                lease.key().scope().projectId(), lease.key().scope().environmentId(), lease.commandId(),
+                lease.attemptNo(), lease.attemptToken()) < 0) fail(Code.INTEGRITY);
     }
 
     private void requireAmbientTransaction() {
@@ -729,13 +733,13 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             boolean receiptClosure = RECEIPT_SCHEMA.equals(row.receiptSchema())
                     && row.receiptEtag().equals(row.strongEtag())
                     && receipt.equals(mapper.readTree(row.viewJson()));
-            JsonNode receiptConnection = receipt.path("connection");
-            boolean resourceReceiptClosure = RESOURCE_RECEIPT_SCHEMA.equals(row.receiptSchema())
-                    && receiptConnection.isObject()
-                    && receiptConnection.path("connectionId").isTextual()
-                    && row.connectionId().equals(receiptConnection.path("connectionId").asText())
-                    && receiptConnection.path("revision").canConvertToLong()
-                    && row.revision() == receiptConnection.path("revision").asLong();
+            boolean resourceReceiptClosure = false;
+            if (RESOURCE_RECEIPT_SCHEMA.equals(row.receiptSchema())) {
+                ApiResourceSaveReceiptClosure.require(new CommandReceipt(row.receiptSchema(), receipt,
+                        row.receiptFingerprint(), row.receiptEtag()), journalTarget(row.commandId()),
+                        row.connectionId(), row.revision());
+                resourceReceiptClosure = true;
+            }
             if (view == null || !view.equals(canonicalView)
                     || !ApiConnectionSpec.SCHEMA_VERSION.equals(authority.schemaVersion())
                     || !row.fingerprint().equals(decisions.fingerprint(authority))
@@ -752,6 +756,14 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         } catch (Exception ex) {
             throw persistenceFailure(ex);
         }
+    }
+
+    private String journalTarget(String commandId) {
+        String target = jdbc.query("SELECT target_id FROM rg_authoring_command_journal "
+                        + "WHERE command_id=? AND status='COMMITTED'",
+                (row, ignored) -> row.getString(1), commandId).stream().findFirst().orElse(null);
+        if (target == null) fail(Code.INTEGRITY);
+        return target;
     }
 
     private ApiConnectionSpec committedSpec(AuthoringScope scope, String connectionId) {

@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBi
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
@@ -39,10 +40,16 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private final Map<StageKey, StagedApiConnection> stages = new HashMap<>();
     /** Children are committed atomically with the outer command but hidden until its receipt publishes. */
     private final Map<StageKey, StoredApiConnection> unpublishedChildren = new HashMap<>();
+    /** Pending child heads reserve the exact connection coordinate without making it readable. */
+    private final Map<ConnectionKey, StoredApiConnection> pendingHeads = new HashMap<>();
+    private final Map<StageKey, CommandLease> unpublishedChildLeases = new HashMap<>();
     /** Published children keyed by the exact attempt, so replay never guesses a resource coordinate. */
     private final Map<StageKey, StoredApiConnection> publishedChildren = new HashMap<>();
+    private final Map<StageKey, CommandLease> publishedChildLeases = new HashMap<>();
+    private final Map<StageKey, CommandReceipt> publishedChildReceipts = new HashMap<>();
     private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
     private final Map<CommandKey, CommandLease> failed = new HashMap<>();
+    private final Map<StageKey, CommandLease> failedAttempts = new HashMap<>();
 
     /** Creates a store using UTC wall-clock time and default decisions. */
     public InMemoryApiConnectionCommitStore() { this(Clock.systemUTC(), new ApiConnectionDecisions()); }
@@ -63,6 +70,8 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         if (connectionId == null || connectionId.isBlank() || connectionExpected == null) fail(Code.INTEGRITY);
         requireLeaseShape(lease, connectionId, connectionExpected);
         CommandKey commandKey = lease.key();
+        StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
+        if (failedAttempts.containsKey(stageKey)) fail(Code.LEASE_FENCED);
         CommandLease currentLease = active.get(commandKey);
         if (currentLease != null) {
             if (currentLease.equals(lease)) requireStoredLeaseLive(currentLease);
@@ -84,7 +93,6 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         }
         if (currentLease == null || !currentLease.equals(lease)) requireIncomingLeaseLive(lease);
 
-        StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
         StagedApiConnection prior = stages.get(stageKey);
         ApiConnectionSpec base = prior == null ? currentSpec(lease.key().scope(), connectionId)
                 : stageBases.get(stageKey);
@@ -140,26 +148,53 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         if (child == null) {
             child = publishedChildren.get(stageKey);
             if (child == null) fail(Code.STAGE_MISSING);
+            if (!lease.equals(publishedChildLeases.get(stageKey))) fail(Code.LEASE_FENCED);
+            validateOuterReceipt(lease, outerReceipt, child);
+            if (!outerReceipt.equals(publishedChildReceipts.get(stageKey))) fail(Code.INTEGRITY);
+            return child;
         }
-        validateOuterReceipt(outerReceipt, child);
+        if (!lease.equals(unpublishedChildLeases.get(stageKey))) fail(Code.LEASE_FENCED);
+        validateOuterReceipt(lease, outerReceipt, child);
         ConnectionKey key = new ConnectionKey(child.scope(), child.view().connectionId());
         StoredApiConnection current = heads.get(key);
         if (current != null && !current.equals(child)) fail(Code.CAS_MISMATCH);
         heads.put(key, child);
         history.put(new RevisionKey(key, child.view().revision()), child);
         unpublishedChildren.remove(stageKey);
+        unpublishedChildLeases.remove(stageKey);
+        pendingHeads.remove(key);
         publishedChildren.put(stageKey, child);
+        publishedChildLeases.put(stageKey, lease);
+        publishedChildReceipts.put(stageKey, outerReceipt);
         return child;
     }
 
     /** {@inheritDoc} */
     @Override
     public synchronized void failChild(CommandLease lease) {
-        if (lease == null || lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) return;
+        if (lease == null) return;
+        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
         StageKey key = new StageKey(lease.commandId(), lease.attemptToken());
-        unpublishedChildren.remove(key);
+        CommandLease stagedLease = unpublishedChildLeases.get(key);
+        if (stagedLease == null) {
+            stagedLease = stages.get(key) == null ? null : stages.get(key).lease();
+        }
+        if (stagedLease != null && !stagedLease.equals(lease)) fail(Code.LEASE_FENCED);
+        CommandLease publishedLease = publishedChildLeases.get(key);
+        if (publishedLease != null && !publishedLease.equals(lease)) fail(Code.LEASE_FENCED);
+        if (publishedLease != null) return;
+        if (stagedLease == null && publishedLease == null && !unpublishedChildren.containsKey(key)) return;
+        StoredApiConnection child = unpublishedChildren.remove(key);
+        if (child != null) {
+            pendingHeads.remove(new ConnectionKey(child.scope(), child.view().connectionId()));
+            committedSpecs.remove(new RevisionKey(new ConnectionKey(child.scope(), child.view().connectionId()),
+                    child.view().revision()));
+        }
+        unpublishedChildLeases.remove(key);
         removeStage(lease);
         if (active.get(lease.key()) != null && active.get(lease.key()).equals(lease)) active.remove(lease.key());
+        failed.put(lease.key(), lease);
+        failedAttempts.put(key, lease);
     }
 
     private StoredApiConnection commitInternal(CommandLease lease, FinalizedSecretSlots finalized, boolean child) {
@@ -173,6 +208,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         if (!currentLease.equals(lease)) fail(Code.LEASE_FENCED);
         requireStoredLeaseLive(currentLease);
         StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
+        if (failedAttempts.containsKey(stageKey)) fail(Code.LEASE_FENCED);
         StagedApiConnection staged = stages.get(stageKey);
         if (staged == null) fail(Code.STAGE_MISSING);
         validateFinalizedSlots(staged, finalized);
@@ -180,12 +216,15 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.view().connectionId());
         StoredApiConnection current = heads.get(key);
         checkExpected(current, staged.connectionExpected());
+        if (pendingHeads.containsKey(key)) fail(Code.CAS_MISMATCH);
         ApiConnectionSpec spec = staged.spec();
         StoredApiConnection stored = new StoredApiConnection(key.scope, spec.view(), decisions.fingerprint(spec),
                 staged.strongEtag(), lease.commandId());
         RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
         if (child) {
             unpublishedChildren.put(stageKey, stored);
+            pendingHeads.put(key, stored);
+            unpublishedChildLeases.put(stageKey, lease);
         } else {
             heads.put(key, stored);
             history.put(revisionKey, stored);
@@ -214,13 +253,13 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
                 || !finalized.slots().equals(Set.of(slotFor(staged.view().auth().kind()))))) fail(Code.INTEGRITY);
     }
 
-    private static void validateOuterReceipt(CommandReceipt receipt, StoredApiConnection child) {
-        if (receipt == null || !"bloge.apiResourceSaveReceipt.v1".equals(receipt.schemaVersion())) fail(Code.INTEGRITY);
-        var connection = receipt.body().path("connection");
-        if (!connection.isObject() || !connection.path("connectionId").isTextual()
-                || !child.view().connectionId().equals(connection.path("connectionId").asText())
-                || !connection.path("revision").canConvertToLong()
-                || child.view().revision() != connection.path("revision").asLong()) fail(Code.INTEGRITY);
+    private static void validateOuterReceipt(CommandLease lease, CommandReceipt receipt, StoredApiConnection child) {
+        try {
+            ApiResourceSaveReceiptClosure.require(receipt, lease.key().targetId(), child.view().connectionId(),
+                    child.view().revision());
+        } catch (RuntimeException ex) {
+            fail(Code.INTEGRITY);
+        }
     }
 
     /** {@inheritDoc} */
@@ -232,6 +271,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         removeStage(current);
         active.remove(lease.key());
         failed.put(lease.key(), current);
+        failedAttempts.put(new StageKey(lease.commandId(), lease.attemptToken()), current);
     }
 
     /** {@inheritDoc} */
