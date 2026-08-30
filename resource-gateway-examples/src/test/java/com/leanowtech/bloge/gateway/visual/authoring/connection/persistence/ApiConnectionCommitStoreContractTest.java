@@ -6,8 +6,16 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDec
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.PreparedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.SecretOperationContext;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ConnectionRevisionCoordinate;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.InMemoryPendingSecretStore;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretBatch;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretLease;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretOperation;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.SecretSourceMode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -253,18 +261,18 @@ abstract class ApiConnectionCommitStoreContractTest {
         assertThatThrownBy(() -> store.commit(lease))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
-        FinalizedSecretSlots wrongCoordinate = new FinalizedSecretSlots(
-                new ConnectionRevisionCoordinate(SCOPE, "other", 1), Set.of("token"));
+        FinalizedSecretSlots wrongCoordinate = proofFor(lease, new ConnectionRevisionCoordinate(SCOPE, "other", 1),
+                ExpectedRevision.create(), "token");
         assertThatThrownBy(() -> store.commit(lease, wrongCoordinate))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
-        FinalizedSecretSlots wrongSlot = new FinalizedSecretSlots(
-                new ConnectionRevisionCoordinate(SCOPE, "customer", 1), Set.of("password"));
+        FinalizedSecretSlots wrongSlot = proofFor(lease, new ConnectionRevisionCoordinate(SCOPE, "customer", 1),
+                ExpectedRevision.create(), "password");
         assertThatThrownBy(() -> store.commit(lease, wrongSlot))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
-        FinalizedSecretSlots proof = new FinalizedSecretSlots(
-                new ConnectionRevisionCoordinate(SCOPE, "customer", 1), Set.of("token"));
+        FinalizedSecretSlots proof = proofFor(lease, new ConnectionRevisionCoordinate(SCOPE, "customer", 1),
+                ExpectedRevision.create(), "token");
         StoredApiConnection committed = store.commit(lease, proof);
         assertThat(committed.view().auth().configured()).isTrue();
         assertThat(store.findHead(SCOPE, "customer")).contains(committed);
@@ -328,7 +336,7 @@ abstract class ApiConnectionCommitStoreContractTest {
         CommandLease resourceLease = leaseWithTarget("composite", 1, "composite-token", SCOPE, "profile",
                 AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(999));
         stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-        assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
+        assertThat(commitChild(store, resourceLease).view().revision()).isEqualTo(1);
     }
 
     @Test
@@ -341,7 +349,9 @@ abstract class ApiConnectionCommitStoreContractTest {
         assertThatThrownBy(() -> store.commit(resourceLease))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
-        assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
+        StoredApiConnection child = commitChild(store, resourceLease);
+        assertThat(child.view().revision()).isEqualTo(1);
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
     }
 
     @Test
@@ -423,6 +433,34 @@ abstract class ApiConnectionCommitStoreContractTest {
                                              String connectionId, ExpectedRevision expected,
                                              ApiConnectionCommand command, PreparedSecretBinding... prepared) {
         return store.stage(lease, connectionId, expected, command, prepared);
+    }
+
+    /** JDBC children must be invoked by the outer transaction; in-memory needs no wrapper. */
+    protected StoredApiConnection commitChild(ApiConnectionCommitStore store, CommandLease lease) {
+        return store.commitChild(lease);
+    }
+
+
+    /** Mints proofs only through the pending-secret store, mirroring production authority boundaries. */
+    private static FinalizedSecretSlots proofFor(CommandLease commandLease,
+                                                 ConnectionRevisionCoordinate coordinate,
+                                                 ExpectedRevision connectionExpected, String slot) {
+        InMemoryPendingSecretStore pending = new InMemoryPendingSecretStore(Clock.fixed(TEST_NOW, ZoneId.of("UTC")));
+        CommandLease proofCommand = coordinate.connectionId().equals(commandLease.key().targetId())
+                ? commandLease
+                : leaseWithTarget(commandLease.commandId(), commandLease.attemptNo(), commandLease.attemptToken(),
+                SCOPE, coordinate.connectionId(), AuthoringEndpoint.API_CONNECTION_SAVE, connectionExpected);
+        PendingSecretLease lease = new PendingSecretLease(proofCommand, coordinate, connectionExpected);
+        SecretOperationContext context = new SecretOperationContext(SCOPE, proofCommand.key().actorId(),
+                "API_CONNECTION_SAVE", coordinate.connectionId(), coordinate.revision(), commandLease.commandId(),
+                proofCommand.attemptNo(), proofCommand.attemptToken(), slot);
+        PreparedExternalSecret prepared = new PreparedExternalSecret("provider:test", proofCommand.attemptToken(),
+                "opaque-" + slot, TEST_NOW.plusSeconds(30), context);
+        PendingSecretBatch batch = new PendingSecretBatch(lease,
+                List.of(new PendingSecretOperation.Prepared(slot, SecretSourceMode.VALUE, prepared)));
+        pending.stage(batch);
+        return pending.prepareFinalization(batch, List.of(new com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot(
+                slot, new ActivatedExternalSecret("provider:test", proofCommand.attemptToken(), "active-" + slot))));
     }
 
     private ApiConnectionCommitStore newStore(Clock clock) {

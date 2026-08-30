@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBi
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
@@ -36,6 +37,10 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private final Map<RevisionKey, ApiConnectionSpec> committedSpecs = new HashMap<>();
     private final Map<CommandKey, CommandLease> active = new HashMap<>();
     private final Map<StageKey, StagedApiConnection> stages = new HashMap<>();
+    /** Children are committed atomically with the outer command but hidden until its receipt publishes. */
+    private final Map<StageKey, StoredApiConnection> unpublishedChildren = new HashMap<>();
+    /** Published children keyed by the exact attempt, so replay never guesses a resource coordinate. */
+    private final Map<StageKey, StoredApiConnection> publishedChildren = new HashMap<>();
     private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
     private final Map<CommandKey, CommandLease> failed = new HashMap<>();
 
@@ -125,6 +130,38 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         return commitInternal(lease, finalized, true);
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public synchronized StoredApiConnection publishChild(CommandLease lease, CommandReceipt outerReceipt) {
+        requireLease(lease);
+        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
+        StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
+        StoredApiConnection child = unpublishedChildren.get(stageKey);
+        if (child == null) {
+            child = publishedChildren.get(stageKey);
+            if (child == null) fail(Code.STAGE_MISSING);
+        }
+        validateOuterReceipt(outerReceipt, child);
+        ConnectionKey key = new ConnectionKey(child.scope(), child.view().connectionId());
+        StoredApiConnection current = heads.get(key);
+        if (current != null && !current.equals(child)) fail(Code.CAS_MISMATCH);
+        heads.put(key, child);
+        history.put(new RevisionKey(key, child.view().revision()), child);
+        unpublishedChildren.remove(stageKey);
+        publishedChildren.put(stageKey, child);
+        return child;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized void failChild(CommandLease lease) {
+        if (lease == null || lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) return;
+        StageKey key = new StageKey(lease.commandId(), lease.attemptToken());
+        unpublishedChildren.remove(key);
+        removeStage(lease);
+        if (active.get(lease.key()) != null && active.get(lease.key()).equals(lease)) active.remove(lease.key());
+    }
+
     private StoredApiConnection commitInternal(CommandLease lease, FinalizedSecretSlots finalized, boolean child) {
         requireLease(lease);
         if (child != (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE)) fail(Code.INTEGRITY);
@@ -139,15 +176,20 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         StagedApiConnection staged = stages.get(stageKey);
         if (staged == null) fail(Code.STAGE_MISSING);
         validateFinalizedSlots(staged, finalized);
+        if (!staged.metadataFingerprint().equals(decisions.fingerprint(staged.spec()))) fail(Code.INTEGRITY);
         ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.view().connectionId());
         StoredApiConnection current = heads.get(key);
         checkExpected(current, staged.connectionExpected());
         ApiConnectionSpec spec = staged.spec();
         StoredApiConnection stored = new StoredApiConnection(key.scope, spec.view(), decisions.fingerprint(spec),
                 staged.strongEtag(), lease.commandId());
-        heads.put(key, stored);
         RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
-        history.put(revisionKey, stored);
+        if (child) {
+            unpublishedChildren.put(stageKey, stored);
+        } else {
+            heads.put(key, stored);
+            history.put(revisionKey, stored);
+        }
         committedSpecs.put(revisionKey, spec);
         stages.remove(stageKey);
         stageBases.remove(stageKey);
@@ -165,10 +207,20 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         boolean secretStage = !staged.view().auth().kind().equals("NONE");
         if (secretStage && finalized == null) fail(Code.INTEGRITY);
         if (!secretStage && finalized != null) fail(Code.INTEGRITY);
-        if (finalized != null && (!finalized.coordinate().scope().equals(staged.lease().key().scope())
+        if (finalized != null && (!finalized.lease().commandLease().equals(staged.lease())
+                || !finalized.coordinate().scope().equals(staged.lease().key().scope())
                 || !finalized.coordinate().connectionId().equals(staged.view().connectionId())
                 || finalized.coordinate().revision() != staged.view().revision()
                 || !finalized.slots().equals(Set.of(slotFor(staged.view().auth().kind()))))) fail(Code.INTEGRITY);
+    }
+
+    private static void validateOuterReceipt(CommandReceipt receipt, StoredApiConnection child) {
+        if (receipt == null || !"bloge.apiResourceSaveReceipt.v1".equals(receipt.schemaVersion())) fail(Code.INTEGRITY);
+        var connection = receipt.body().path("connection");
+        if (!connection.isObject() || !connection.path("connectionId").isTextual()
+                || !child.view().connectionId().equals(connection.path("connectionId").asText())
+                || !connection.path("revision").canConvertToLong()
+                || child.view().revision() != connection.path("revision").asLong()) fail(Code.INTEGRITY);
     }
 
     /** {@inheritDoc} */

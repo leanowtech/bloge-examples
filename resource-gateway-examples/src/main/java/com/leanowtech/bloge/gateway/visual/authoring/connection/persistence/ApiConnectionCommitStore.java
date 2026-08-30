@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBi
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.util.Optional;
@@ -49,6 +50,16 @@ public interface ApiConnectionCommitStore {
 
     /** Promotes a nested Connection child with a locator-free finalized-slot proof. */
     StoredApiConnection commitChild(CommandLease lease, FinalizedSecretSlots finalized);
+
+    /**
+     * Publishes a previously committed nested child after the outer resource
+     * receipt has been durably committed. The receipt is the visibility fence;
+     * a child must never become readable from a partially committed resource.
+     */
+    StoredApiConnection publishChild(CommandLease lease, CommandReceipt outerReceipt);
+
+    /** Removes an unpublished nested child for the exact command attempt. */
+    void failChild(CommandLease lease);
 
     /** Fenced failure removes only the exact live stage; stale failures are no-ops. */
     void fail(CommandLease lease);

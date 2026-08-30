@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
@@ -59,8 +60,15 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         migrate("db/postgresql/V20260830_001__api_resource_authoring.sql");
         migrate("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql");
         migrate("db/postgresql/V20260830_003__api_connection_secret_staging.sql");
+        migrate("db/postgresql/V20260830_004__connection_metadata_authority.sql");
         return new JdbcApiConnectionCommitStore(dataSource, new ObjectMapper(),
                 new ApiConnectionDecisions(), clock);
+    }
+
+    @Override
+    protected StoredApiConnection commitChild(ApiConnectionCommitStore store, CommandLease lease) {
+        return new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                .execute(status -> store.commitChild(lease));
     }
 
     @Test
@@ -105,6 +113,23 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThatThrownBy(() -> new JdbcApiConnectionCommitStore(
                 (DataSource) null, mapper, decisions, clock))
                 .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void directChildCommitOutsideAnAmbientMatchingTransactionIsRejected() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease resourceLease = new CommandLease("child-outside-tx", 1, "child-outside-tx-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
+                        "key-child-outside-tx"), "sha256:" + "a".repeat(64), databaseNow().plusSeconds(30),
+                ExpectedRevision.match(7));
+        store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+
+        assertThatThrownBy(() -> store.commitChild(resourceLease))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions WHERE command_id=? AND state='STAGED'",
+                Integer.class, resourceLease.commandId())).isEqualTo(1);
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
     }
 
     @Test
@@ -173,7 +198,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-        StoredApiConnection committed = store.commitChild(resourceLease);
+        StoredApiConnection committed = commitChild(store, resourceLease);
 
         assertThat(committed.view().revision()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT state FROM rg_api_connection_revisions WHERE command_id=?",
@@ -195,16 +220,31 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-        StoredApiConnection child = store.commitChild(resourceLease);
+        StoredApiConnection child = commitChild(store, resourceLease);
         ObjectMapper mapper = new ObjectMapper();
-        ObjectNode body = mapper.createObjectNode().put("connectionId", "customer").put("revision", 1);
-        String receiptJson = mapper.writeValueAsString(body);
+        ObjectNode fakeBody = mapper.createObjectNode().put("connectionId", "customer").put("revision", 1);
         jdbc.update("""
                 UPDATE rg_authoring_command_journal
                    SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
                  WHERE command_id=? AND status='PREPARING'
-                """, "bloge.apiResourceSaveReceipt.v1", receiptJson,
+                """, "bloge.apiResourceSaveReceipt.v1", mapper.writeValueAsString(fakeBody),
+                AuthoringFingerprints.of(fakeBody), "\"outer-resource-etag\"", resourceLease.commandId());
+        assertThatThrownBy(() -> store.publishChild(resourceLease, new CommandReceipt(
+                "bloge.apiResourceSaveReceipt.v1", fakeBody, AuthoringFingerprints.of(fakeBody),
+                "\"outer-resource-etag\"")))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        ObjectNode body = mapper.createObjectNode();
+        body.putObject("connection").put("connectionId", "customer").put("revision", 1);
+        jdbc.update("""
+                UPDATE rg_authoring_command_journal
+                   SET receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
+                 WHERE command_id=? AND status='COMMITTED'
+                """, "bloge.apiResourceSaveReceipt.v1", mapper.writeValueAsString(body),
                 AuthoringFingerprints.of(body), "\"outer-resource-etag\"", resourceLease.commandId());
+        store.publishChild(resourceLease, new CommandReceipt("bloge.apiResourceSaveReceipt.v1", body,
+                AuthoringFingerprints.of(body), "\"outer-resource-etag\""));
 
         assertThat(store.findHead(SCOPE, "customer")).contains(new StoredApiConnection(
                 SCOPE, child.view(), child.metadataFingerprint(), child.strongEtag(), child.commandId()));
@@ -220,8 +260,8 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
         outer.executeWithoutResult(status -> {
-            store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-            store.commitChild(resourceLease);
+        store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+        commitChild(store, resourceLease);
             status.setRollbackOnly();
         });
 
