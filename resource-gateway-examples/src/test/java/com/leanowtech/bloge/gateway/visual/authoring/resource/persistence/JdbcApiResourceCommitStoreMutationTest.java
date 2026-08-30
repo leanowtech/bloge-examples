@@ -14,6 +14,7 @@ import javax.sql.DataSource;
 import java.time.*;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
+import java.util.concurrent.*;
 
 /** Mutation-focused JDBC coverage: durable stage, atomic commit, fencing and failure cleanup. */
 class JdbcApiResourceCommitStoreMutationTest {
@@ -53,7 +54,35 @@ class JdbcApiResourceCommitStoreMutationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isZero();
     }
 
+    @Test void stageIsIdempotentAndTamperFailsClosed() {
+        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); StagedApiResource a=s.stage(l,"connection",command("one"));
+        assertThat(s.stage(l,"connection",command("one")).strongEtag()).isEqualTo(a.strongEtag());
+        assertThat(jdbc.queryForObject("SELECT set_fingerprint FROM rg_api_resource_projection_revisions",String.class)).isNotEqualTo(AuthoringFingerprints.of(JSON.createObjectNode()));
+        jdbc.update("UPDATE rg_api_resource_projection_revisions SET set_fingerprint=?",fp.replace('1','2'));
+        assertThatThrownBy(()->s.stage(l,"connection",command("one"))).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test void validationIsPreservedAndConcurrencyMapsToCas() {
+        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create());
+        assertThatThrownBy(()->s.stage(l,"connection",command(""))).isInstanceOf(ApiResourceAuthoringException.class).extracting("code").isEqualTo(ApiResourceAuthoringException.Code.VALIDATION);
+    }
+
+    @Test void forgedLeaseAndReceiptMismatchAreRejected() {
+        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); StagedApiResource a=s.stage(l,"connection",command("one"));
+        CommandLease f=new CommandLease(l.commandId(),l.attemptNo(),l.attemptToken(),l.key(),l.requestFingerprint(),clock.instant().plus(Duration.ofDays(1)),ExpectedRevision.match(9));
+        assertThatThrownBy(()->s.commit(f,null)).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
+        JsonNode b=JSON.createObjectNode().put("result","profile"); assertThatThrownBy(()->new CommandReceipt("r",b,fp,a.strongEtag())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->s.commit(l,new CommandReceipt("r",b,AuthoringFingerprints.of(b),"\"wrong\""))).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.RECEIPT_INVALID);
+    }
+
+    @Test void failCleansStageAndWritesFailedJournal() {
+        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); s.stage(l,"connection",command("one")); s.fail(l,CommandFailureCode.INTERNAL);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal",String.class)).isEqualTo("FAILED"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions",Integer.class)).isZero();
+        assertThatThrownBy(()->s.fail(null,CommandFailureCode.INTERNAL)).isInstanceOf(ApiResourceCommitStoreException.class); assertThatThrownBy(()->s.fail(l,null)).isInstanceOf(ApiResourceCommitStoreException.class);
+    }
+
     private JdbcApiResourceCommitStore store() { return new JdbcApiResourceCommitStore(jdbc, new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource())), JSON, clock, Duration.ofSeconds(1), new ApiResourceDecisions(), (s, r) -> projections(r)); }
+    private JdbcApiResourceCommitStore store(ApiResourceDecisions d, ApiResourceProjectionCompiler c) { return new JdbcApiResourceCommitStore(jdbc,new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource())),JSON,clock,Duration.ofSeconds(1),d,c); }
     private CommandLease acquire(JdbcApiResourceCommitStore s, CommandKey k, ExpectedRevision e) { return ((ClaimResult.Acquired)s.claim(k, fp, e)).lease(); }
     private static CommandReceipt receipt(StagedApiResource s) { JsonNode b = JSON.createObjectNode().put("result", s.resource().resourceId()); return new CommandReceipt("test.receipt.v1", b, AuthoringFingerprints.of(b), s.strongEtag()); }
     private static ReadyApiResourceProjections projections(ApiResourceSpec r) { return new ReadyApiResourceProjections(doc(ProjectionDocument.Kind.DESCRIPTOR,r),doc(ProjectionDocument.Kind.DESIGN_CONTRACT,r),doc(ProjectionDocument.Kind.OPERATOR,r)); }
