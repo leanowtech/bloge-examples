@@ -38,7 +38,10 @@ import java.util.stream.Collectors;
 /**
  * PostgreSQL/H2-compatible durable implementation of {@link PendingSecretStore}.
  *
- * <p>The store persists provider preparation metadata as opaque handles only.
+ * <p>V001 through V010 migrations must be installed before this adapter is
+ * constructed. V009 retains immutable command-attempt authority and V010
+ * binds Connection revision/binding provenance to exact attempts. The store
+ * persists provider preparation metadata as opaque handles only.
  * Provider lifecycle calls are deliberately outside this class and outside the
  * JDBC transaction. Stage, preparation, recovery selection, and abort
  * compensation may each own a local store transaction. {@link

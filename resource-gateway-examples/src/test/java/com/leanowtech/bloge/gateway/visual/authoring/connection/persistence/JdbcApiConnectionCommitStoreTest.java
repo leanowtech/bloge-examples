@@ -130,11 +130,30 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
             jdbc.update("UPDATE rg_authoring_command_attempts SET status='COMMITTED'"
                             + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
                     lease.commandId(), lease.attemptNo(), lease.attemptToken());
-            jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?"
-                            + ", receipt_json=?, receipt_fingerprint=?, receipt_etag=?"
-                            + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
-                    "bloge.apiConnectionView.v1", viewJson, AuthoringFingerprints.of(view), child.strongEtag(),
-                    lease.commandId(), lease.attemptNo(), lease.attemptToken());
+            if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+                ObjectNode body = new ObjectMapper().createObjectNode();
+                body.put("schemaVersion", "bloge.apiResourceSaveReceipt.v1");
+                body.putObject("connection").put("connectionId", child.view().connectionId())
+                        .put("revision", child.view().revision());
+                body.putObject("resource").put("kind", "API_RESOURCE")
+                        .put("resourceId", lease.key().targetId()).put("revision", 1)
+                        .put("fingerprint", "sha256:" + "b".repeat(64));
+                body.putObject("projections").put("descriptor", "READY")
+                        .put("designContract", "READY").put("operator", "READY");
+                jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?"
+                                + ", receipt_json=?, receipt_fingerprint=?, receipt_etag=?"
+                                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                        "bloge.apiResourceSaveReceipt.v1", body.toString(), AuthoringFingerprints.of(body),
+                        child.strongEtag(), lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                insertCommittedResourceAuthority(lease, lease.key().targetId(), 1,
+                        "sha256:" + "b".repeat(64));
+            } else {
+                jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?"
+                                + ", receipt_json=?, receipt_fingerprint=?, receipt_etag=?"
+                                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                        "bloge.apiConnectionView.v1", viewJson, AuthoringFingerprints.of(view), child.strongEtag(),
+                        lease.commandId(), lease.attemptNo(), lease.attemptToken());
+            }
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
         }
@@ -203,6 +222,39 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions WHERE command_id=? AND state='STAGED'",
                 Integer.class, resourceLease.commandId())).isEqualTo(1);
         assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+    }
+
+    @Test
+    void childOnlyRetriesUnbindTheirFenceBeforeTheNextTransaction() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = new CommandLease("child-fence-retry", 1, "child-fence-retry-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
+                        "key-child-fence-retry"), "sha256:" + "a".repeat(64), databaseNow().plusSeconds(30),
+                ExpectedRevision.match(7));
+        seedOuterJournal(lease);
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+
+        for (int retry = 0; retry < 2; retry++) {
+            assertThatThrownBy(() -> transaction.execute(status -> {
+                store.commitChild(lease);
+                return null;
+            })).isInstanceOf(ApiConnectionCommitStoreException.class)
+                    .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+            assertThat(store.childCommitFenceBoundForCurrentTransaction()).isFalse();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions"
+                    + " WHERE command_id=? AND state='STAGED'", Integer.class, lease.commandId())).isOne();
+        }
+
+        StoredApiConnection committed = transaction.execute(status -> {
+            StoredApiConnection child = store.commitChild(lease);
+            markOuterCommitted(lease, child);
+            return child;
+        });
+
+        assertThat(committed).isNotNull();
+        assertThat(store.childCommitFenceBoundForCurrentTransaction()).isFalse();
+        assertThat(store.findHead(SCOPE, "customer")).contains(committed);
     }
 
     @Test
@@ -457,6 +509,30 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void resourceSaveChildReadRejectsAConnectionViewReceipt() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease resourceLease = new CommandLease("resource-receipt-endpoint", 1,
+                "resource-receipt-endpoint-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
+                        "key-resource-receipt-endpoint"), "sha256:" + "a".repeat(64),
+                TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
+        seedOuterJournal(resourceLease);
+        store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection child = commitChild(store, resourceLease);
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode view = mapper.valueToTree(child.view());
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET receipt_schema=?, receipt_json=?,"
+                        + " receipt_fingerprint=?, receipt_etag=? WHERE command_id=?",
+                "bloge.apiConnectionView.v1", view.toString(), AuthoringFingerprints.of(view), child.strongEtag(),
+                resourceLease.commandId());
+
+        assertThatThrownBy(() -> store.findHead(SCOPE, "customer"))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
     void childHeadAndRevisionRollbackWithTheOuterResourceTransaction() {
         JdbcApiConnectionCommitStore store = jdbcStore();
         TransactionTemplate outer = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -668,6 +744,52 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void duplicateCommittedProvenanceForOneLogicalRevisionFailsClosed() throws Exception {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease base = lease("duplicate-base", "duplicate-base-token", "customer",
+                ExpectedRevision.create());
+        store.stage(base, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(base);
+
+        CommandLease first = lease("duplicate-first", "duplicate-first-token", "customer",
+                ExpectedRevision.match(1));
+        CommandLease second = lease("duplicate-second", "duplicate-second-token", "customer",
+                ExpectedRevision.match(1));
+        ApiConnectionCommand update = renamedCommand("Customer duplicate");
+        store.stage(first, "customer", ExpectedRevision.match(1), update);
+        store.stage(second, "customer", ExpectedRevision.match(1), update);
+        store.commit(first);
+
+        CommandLease probe = lease("duplicate-probe", "duplicate-probe-token", "customer",
+                ExpectedRevision.match(2));
+        store.stage(probe, "customer", ExpectedRevision.match(2), renamedCommand("Customer probe"));
+
+        String secondView = jdbc.queryForObject("SELECT view_json FROM rg_api_connection_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", String.class,
+                second.commandId(), second.attemptNo(), second.attemptToken());
+        jdbc.update("UPDATE rg_api_connection_revisions SET state='COMMITTED'"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=? AND state='STAGED'",
+                second.commandId(), second.attemptNo(), second.attemptToken());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET status='COMMITTED'"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                second.commandId(), second.attemptNo(), second.attemptToken());
+        jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?,"
+                        + " receipt_json=?, receipt_fingerprint=?, receipt_etag=?"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                "bloge.apiConnectionView.v1", secondView,
+                AuthoringFingerprints.of(new ObjectMapper().readTree(secondView)),
+                jdbc.queryForObject("SELECT strong_etag FROM rg_api_connection_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", String.class,
+                        second.commandId(), second.attemptNo(), second.attemptToken()),
+                second.commandId(), second.attemptNo(), second.attemptToken());
+
+        assertThatThrownBy(() -> store.stage(probe, "customer", ExpectedRevision.match(2),
+                renamedCommand("Customer probe")))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
     void committedReadRejectsAnUnknownReceiptSchema() {
         JdbcApiConnectionCommitStore store = jdbcStore();
         CommandLease lease = lease("receipt-schema", "receipt-schema-token", "customer",
@@ -766,6 +888,9 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
 
     private void insertCommittedResourceAuthority(CommandLease lease, String resourceId, long revision,
                                                   String specFingerprint) {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", Integer.class,
+                lease.commandId(), lease.attemptNo(), lease.attemptToken()) > 0) return;
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,

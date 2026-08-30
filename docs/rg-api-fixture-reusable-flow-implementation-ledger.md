@@ -533,6 +533,47 @@ PostgreSQL、Facade、HTTP、UI 或 broader 3% gap 已完成。
   secret-free Problem Detail 也仍未实现。
 - 共享工作树中的 `GraphNodeFixtureControls.tsx` 修改不属于本目标提交，必须继续隔离。
 
+## 17. Iteration 16 — Final JDBC protocol review closure
+
+日期：2026-08-31。
+
+### 已完成
+
+- JDBC Connection 的 child fence holder 按事务精确注册，并在 `afterCompletion` 只解绑本事务安装的
+  holder；同一线程连续两次 child-only 失败后，后续合法 outer coordinator transaction 仍可提交。
+- Resource `fail` 对已补偿的 `FAILED` attempt 重新锁定 journal → exact attempt，并校验完整 immutable
+  authority（Scope、actor、endpoint、target、idempotency、request fingerprint、outer expected
+  mode/revision、lease、attempt token/status）后才删除 exact stage。pending rows 存在时保持零变更；普通
+  重复 fail 仍 fenced。takeover 仅删除无 pending/outcome/binding provenance 的 abandoned nested child
+  stage，并保留可供恢复的历史 child。
+- Connection committed receipt closure 绑定 endpoint：`API_RESOURCE_SAVE` 仅接受 canonical
+  `bloge.apiResourceSaveReceipt.v1` 与 exact Resource authority；`API_CONNECTION_SAVE` 走 Connection
+  receipt 分支。historical read、committed child/spec 和 outer receipt 对 exact attempt provenance
+  要求恰好一行，重复候选 fail closed。
+- 观察 seam 的证据边界已更正：observer 发生在候选选择后、任何 claim 写入前，异常只证明 claim 未发生，
+  不宣称事务回滚。Facade、HTTP、UI 与真实 PostgreSQL certification 仍未验收。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=JdbcApiConnectionCommitStoreTest,JdbcPendingSecretStoreTest,\
+JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest,\
+PendingSecretStoreSchemaReadinessTest test -DfailIfNoTests=false
+
+JdbcApiConnectionCommitStoreTest: 44/44
+JdbcPendingSecretStoreTest: 32/32
+JdbcApiResourceCommitStoreClaimTest: 11/11
+JdbcApiResourceCommitStoreMutationTest: 23/23
+PendingSecretStoreSchemaReadinessTest: 8/8
+Tests run: 118, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+上述证据来自 H2 `MODE=PostgreSQL`、独立 JDBC connections 与注入测试时钟；它不替代真实 PostgreSQL
+锁/隔离级别、Secret Provider、Facade、HTTP、UI 或 full `clean verify` 证据。生产默认 recovery observer
+为 no-op。受保护的 frontend 文件和两份 reusable-flow 计划/评审文档不属于本轮提交。
+
 ## 16. Iteration 15 — Durable child publication and cross-store recovery closure
 
 日期：2026-08-31。
@@ -547,8 +588,8 @@ PostgreSQL、Facade、HTTP、UI 或 broader 3% gap 已完成。
   exact pending-secret rows 存在时保持零变更，补偿 terminalize 后仅清理 exact FAILED Resource stage，
   不复活或改写 journal。
 - Resource 与 Pending 当前/恢复路径遵守 journal → immutable attempt → connection identity/revision/head /
-  binding → pending 的统一锁序。包级测试 observer 只用于在候选选择与 claim 间建立确定性屏障，并证明
-  claimed-first retry、observer 异常 rollback 以及跨 store 同 command interleaving；生产默认是 no-op。
+  binding → pending 的统一锁序。包级测试 observer 只用于在候选选择与 claim 间建立确定性屏障；注入异常
+  发生在任何 claim 写入前，因此只证明候选未被改动，而不是事务回滚。生产默认是 no-op。
 
 ### 最新验证与证据边界
 

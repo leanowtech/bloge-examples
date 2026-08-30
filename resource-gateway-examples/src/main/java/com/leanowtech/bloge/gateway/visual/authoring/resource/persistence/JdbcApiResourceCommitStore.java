@@ -37,9 +37,13 @@ import java.util.function.Consumer;
 /**
  * JDBC-backed, transactionally fenced API Resource authoring store.
  *
- * <p>All mutations require the exact persisted PREPARING attempt.  V001 through
- * V010 migrations must be installed before this class is constructed; this
- * repository intentionally never applies or falls back from migrations.</p>
+ * <p>V001 through V010 migrations must be installed before this class is
+ * constructed; this repository intentionally never applies or falls back from
+ * migrations. V009 stores immutable command-attempt authority and V010 binds
+ * Connection provenance to the exact attempt. Current stage, commit, and
+ * failure mutations require the exact current {@code PREPARING} attempt;
+ * recovery may inspect a historical {@code PREPARING} or {@code SUPERSEDED}
+ * attempt under the journal-to-attempt lock order.</p>
  */
 public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore {
     private static final String JOURNAL_COLUMNS = "tenant_id, project_id, environment_id, actor_id, endpoint, target_id, "
@@ -220,6 +224,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             // Keep the expired attempt immutable. Its pending-secret rows may
             // still need recovery after this current-journal pointer advances.
             supersedeAttempt(prior);
+            deleteAbandonedNestedConnectionStage(prior);
             insertAttempt(incoming, now);
             jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND attempt_no = ? "
                     + "AND attempt_token = ? AND state = 'STAGED'", commandId, prior.attemptNo(), prior.attemptToken());
@@ -234,6 +239,41 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     OffsetDateTime.ofInstant(now, ZoneOffset.UTC), commandId);
         }
         return new ClaimResult.Acquired(incoming, resumed);
+    }
+
+    /**
+     * Removes an uncommitted nested Connection revision when takeover leaves
+     * no provider, outcome, or active-binding provenance to recover. The
+     * caller already holds the journal and exact prior attempt locks; child
+     * writers acquire those locks in the same order, so this check cannot race
+     * a new mutation for the superseded attempt.
+     */
+    private void deleteAbandonedNestedConnectionStage(JournalRow prior) {
+        String commandId = prior.commandId();
+        int attemptNo = prior.attemptNo();
+        String attemptToken = prior.attemptToken();
+        Long pending = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
+                commandId, attemptNo, attemptToken);
+        Long outcomes = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_outcomes "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
+                commandId, attemptNo, attemptToken);
+        Long bindings = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_secret_bindings "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
+                commandId, attemptNo, attemptToken);
+        if (positive(pending) || positive(outcomes) || positive(bindings)) return;
+
+        // Heads reference revisions, so remove the exact provisional head
+        // first. V010 makes both predicates attempt-inclusive.
+        jdbc.update("DELETE FROM rg_api_connection_heads WHERE command_id=? AND attempt_no=? "
+                        + "AND attempt_token=?", commandId, attemptNo, attemptToken);
+        jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
+                        + "AND attempt_token=? AND state IN ('STAGED', 'COMMITTED')", commandId, attemptNo,
+                attemptToken);
+    }
+
+    private static boolean positive(Long value) {
+        return value != null && value > 0;
     }
 
     /** Closes an expired current attempt before the mutable journal points at its replacement. */
@@ -305,7 +345,12 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 : new Object[]{scope.tenantId(), scope.projectId(), scope.environmentId(), resourceId, revision};
         try {
             List<StoredRow> rows = jdbc.query(sql, storedRowMapper(), args);
-            return rows.stream().findFirst().map(this::stored);
+            if (rows.isEmpty()) return Optional.empty();
+            if (rows.size() != 1) {
+                throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                        "committed resource provenance is ambiguous");
+            }
+            return Optional.of(stored(rows.getFirst()));
         } catch (DataAccessException ex) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "read persistence failed");
         }
@@ -317,9 +362,14 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 + "AND endpoint = ? AND target_id = ? AND idempotency_key = ?"
                 + (forUpdate ? " FOR UPDATE" : "");
         try {
-            return jdbc.query(sql, journalRowMapper(), key.scope().tenantId(), key.scope().projectId(),
+            List<JournalRow> rows = jdbc.query(sql, journalRowMapper(), key.scope().tenantId(), key.scope().projectId(),
                     key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
-                    key.idempotencyKey()).stream().findFirst().orElse(null);
+                    key.idempotencyKey());
+            if (rows.size() > 1) {
+                throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                        "authoring coordinate has ambiguous journal provenance");
+            }
+            return rows.isEmpty() ? null : rows.getFirst();
         } catch (EmptyResultDataAccessException ex) {
             return null;
         }
@@ -615,6 +665,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         if (json.isEmpty()) {
             return null;
         }
+        if (json.size() != 1) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                    "committed resource head provenance is ambiguous");
+        }
         try {
             return mapper.readValue(json.getFirst(), ApiResourceSpec.class);
         } catch (Exception ex) {
@@ -637,7 +691,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                         rs.getString(9), rs.getString(10), rs.getInt(11), rs.getString(12),
                         timestamp(rs, "lease_until"), rs.getString(14), (Long) rs.getObject(15)),
                 lease.commandId());
-        if (rows.isEmpty()) {
+        if (rows.isEmpty() || rows.size() > 1) {
             throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
         }
         ActiveRow r = rows.getFirst();
@@ -692,6 +746,79 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         }
     }
 
+    /**
+     * Revalidates the complete immutable authority for compensation that has
+     * already terminalized an exact attempt. This deliberately locks the
+     * attempt after the caller's journal lock and rejects any changed lease,
+     * scope, endpoint, key, fingerprint, or expected revision.
+     */
+    private void requireExactFailedAttempt(CommandLease lease) {
+        List<ActiveRow> journals = jdbc.query(
+                "SELECT command_id, tenant_id, project_id, environment_id, actor_id, endpoint, "
+                        + "target_id, idempotency_key, request_fingerprint, status, attempt_no, "
+                        + "attempt_token, lease_until, expected_mode, expected_revision "
+                        + "FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
+                (rs, n) -> new ActiveRow(
+                        rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8),
+                        rs.getString(9), rs.getString(10), rs.getInt(11), rs.getString(12),
+                        timestamp(rs, "lease_until"), rs.getString(14), (Long) rs.getObject(15)),
+                lease.commandId());
+        if (journals.size() != 1 || !matchesAuthority(journals.getFirst(), lease, "FAILED")) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+
+        List<AttemptAuthority> attempts = jdbc.query("""
+                SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                       idempotency_key, request_fingerprint, status, attempt_no, attempt_token,
+                       lease_until, expected_mode, expected_revision
+                  FROM rg_authoring_command_attempts
+                 WHERE command_id=? AND attempt_no=? AND attempt_token=?
+                 FOR UPDATE
+                """, (rs, n) -> new AttemptAuthority(
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5),
+                rs.getString(6), rs.getString(7), rs.getString(8), rs.getString(9), rs.getInt(10),
+                rs.getString(11), timestamp(rs, 12), rs.getString(13), (Long) rs.getObject(14)),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (attempts.size() != 1 || !matchesAuthority(attempts.getFirst(), lease, "FAILED")) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+    }
+
+    private static boolean matchesAuthority(ActiveRow row, CommandLease lease, String status) {
+        return status.equals(row.status()) && row.commandId().equals(lease.commandId())
+                && row.tenantId().equals(lease.key().scope().tenantId())
+                && row.projectId().equals(lease.key().scope().projectId())
+                && row.environmentId().equals(lease.key().scope().environmentId())
+                && row.actorId().equals(lease.key().actorId())
+                && row.endpoint().equals(lease.key().endpoint().name())
+                && row.targetId().equals(lease.key().targetId())
+                && row.idempotencyKey().equals(lease.key().idempotencyKey())
+                && row.requestFingerprint().equals(lease.requestFingerprint())
+                && row.attemptNo() == lease.attemptNo()
+                && row.attemptToken().equals(lease.attemptToken())
+                && row.leaseUntil().equals(lease.leaseUntil())
+                && row.expectedMode().equals(expectedMode(lease.expectedRevision()))
+                && Objects.equals(row.expectedRevision(), expectedRevision(lease.expectedRevision()));
+    }
+
+    private static boolean matchesAuthority(AttemptAuthority row, CommandLease lease, String status) {
+        return status.equals(row.status())
+                && row.tenantId().equals(lease.key().scope().tenantId())
+                && row.projectId().equals(lease.key().scope().projectId())
+                && row.environmentId().equals(lease.key().scope().environmentId())
+                && row.actorId().equals(lease.key().actorId())
+                && row.endpoint().equals(lease.key().endpoint().name())
+                && row.targetId().equals(lease.key().targetId())
+                && row.idempotencyKey().equals(lease.key().idempotencyKey())
+                && row.requestFingerprint().equals(lease.requestFingerprint())
+                && row.attemptNo() == lease.attemptNo()
+                && row.attemptToken().equals(lease.attemptToken())
+                && row.leaseUntil().equals(lease.leaseUntil())
+                && row.expectedMode().equals(expectedMode(lease.expectedRevision()))
+                && Objects.equals(row.expectedRevision(), expectedRevision(lease.expectedRevision()));
+    }
+
     private StagedRow staged(CommandLease lease) {
         List<StagedRow> rows = jdbc.query("""
                 SELECT r.tenant_id, r.project_id, r.environment_id, r.resource_id,
@@ -721,7 +848,11 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                         rs.getString(17), rs.getString(18), rs.getString(19), rs.getString(20),
                         rs.getString(21), rs.getString(22)),
                 lease.commandId(), lease.attemptNo(), lease.attemptToken());
-        return rows.stream().findFirst().orElse(null);
+        if (rows.size() > 1) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                    "staged resource provenance is ambiguous");
+        }
+        return rows.isEmpty() ? null : rows.getFirst();
     }
 
     private StagedApiResource stagedValue(CommandLease lease, StagedRow row) {
@@ -978,6 +1109,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     // Pending-secret compensation may have terminalized this
                     // exact attempt first.  Remove only its staged resource
                     // row; never reopen or rewrite a newer journal attempt.
+                    requireExactFailedAttempt(lease);
                     int removed = jdbc.update("DELETE FROM rg_api_resource_revisions "
                                     + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "
                                     + "AND state='STAGED'",

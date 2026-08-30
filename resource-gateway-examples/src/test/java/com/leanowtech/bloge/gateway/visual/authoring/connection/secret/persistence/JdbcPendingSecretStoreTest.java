@@ -449,7 +449,7 @@ class JdbcPendingSecretStoreTest {
     }
 
     @Test
-    void recoveryCandidateObserverFailureRollsBackTheClaim() {
+    void recoveryCandidateObserverFailureLeavesClaimUnchangedBeforeMutation() {
         PendingSecretBatch batch = batch(lease("recovery-observer-failure", 1,
                 "recovery-observer-failure-token", NOW.plusSeconds(60)), "token");
         seed(batch);

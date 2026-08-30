@@ -300,6 +300,33 @@ class JdbcApiResourceCommitStoreMutationTest {
     }
 
     @Test
+    void failedCleanupRequiresTheCompleteImmutableAttemptAuthority() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        store.stage(lease, "connection", command("one"));
+
+        jdbc.update("UPDATE rg_authoring_command_attempts SET status='FAILED'"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        jdbc.update("UPDATE rg_authoring_command_journal SET status='FAILED', failure_code='INTERNAL'"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+
+        CommandLease alteredLease = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(),
+                lease.key(), lease.requestFingerprint(), lease.leaseUntil().plusSeconds(1),
+                lease.expectedRevision());
+        assertThatThrownBy(() -> store.fail(alteredLease, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=?",
+                Integer.class, lease.commandId())).isOne();
+
+        store.fail(lease, CommandFailureCode.INTERNAL);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=?",
+                Integer.class, lease.commandId())).isZero();
+    }
+
+    @Test
     void resourceFailAndPendingRecoveryUseOneCrossStoreJournalFirstOrder() throws Exception {
         JdbcApiResourceCommitStore resource = store();
         JdbcApiConnectionCommitStore connection = new JdbcApiConnectionCommitStore(
@@ -450,6 +477,55 @@ class JdbcApiResourceCommitStoreMutationTest {
     }
 
     @Test
+    void takeoverDeletesAProviderlessSupersededNestedConnectionStage() {
+        JdbcApiResourceCommitStore resource = store();
+        JdbcApiConnectionCommitStore connection = new JdbcApiConnectionCommitStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                new ApiConnectionDecisions(), Clock.systemUTC());
+        CommandLease old = acquire(resource, KEY, ExpectedRevision.create(), FP1);
+        resource.stage(old, "connection", command("one"));
+        connection.stage(old, "connection", ExpectedRevision.create(), connectionCommand());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=? AND state='STAGED'", Integer.class,
+                old.commandId(), old.attemptNo(), old.attemptToken())).isOne();
+
+        expire(old);
+        ClaimResult.Acquired replacement = (ClaimResult.Acquired) resource.claim(KEY, FP1, ExpectedRevision.create());
+
+        assertThat(replacement.resumed()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", Integer.class,
+                old.commandId(), old.attemptNo(), old.attemptToken())).isZero();
+    }
+
+    @Test
+    void takeoverRetainsNestedConnectionStageUntilPendingCompensation() {
+        JdbcApiResourceCommitStore resource = store();
+        JdbcApiConnectionCommitStore connection = new JdbcApiConnectionCommitStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                new ApiConnectionDecisions(), Clock.systemUTC());
+        JdbcPendingSecretStore pending = new JdbcPendingSecretStore(jdbc.getDataSource(), Clock.systemUTC());
+        CommandLease old = acquire(resource, KEY, ExpectedRevision.create(), FP1);
+        resource.stage(old, "connection", command("one"));
+        connection.stage(old, "connection", ExpectedRevision.create(), secretCommand(),
+                new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://team/token")));
+        PendingSecretBatch batch = pendingBatch(old);
+        pending.stage(batch);
+        pending.markAbortRequired(batch.lease());
+        expire(old);
+
+        resource.claim(KEY, FP1, ExpectedRevision.create());
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", Integer.class,
+                old.commandId(), old.attemptNo(), old.attemptToken())).isOne();
+        pending.completeAbort(pending.claimRecoveryDue(1).getFirst());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions"
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", Integer.class,
+                old.commandId(), old.attemptNo(), old.attemptToken())).isZero();
+    }
+
+    @Test
     void twoIndependentConnectionsHaveOneCommitWinnerAndRollbackLoser() throws Exception {
         DataSource leftDataSource = new DriverManagerDataSource(url, "sa", "");
         DataSource rightDataSource = new DriverManagerDataSource(url, "sa", "");
@@ -548,6 +624,11 @@ class JdbcApiResourceCommitStoreMutationTest {
                 new ApiResourceCommand.Response(new ApiResourceCommand.HttpStatus(List.of(200)), null),
                 ApiResourceCommand.Effect.READ_ONLY,
                 List.of(new ApiResourceCommand.Example("one", value, value)));
+    }
+
+    private static ApiConnectionCommand connectionCommand() {
+        return new ApiConnectionCommand("Connection", "https://customer.example.com",
+                ApiConnectionCommand.Auth.none(), new ApiConnectionCommand.Defaults(5_000, Map.of()));
     }
 
     private static ApiConnectionCommand secretCommand() {

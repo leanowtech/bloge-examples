@@ -162,15 +162,20 @@ the `AuthoringFacade`, HTTP endpoints, and the authoring UI remain unaccepted.
 The current follow-up closure adds exact attempt predicates to every staged-to-committed
 revision transition and committed historical read. A JDBC Connection child is provisional
 until a transaction synchronization proves the exact outer Resource journal and immutable
-attempt are both `COMMITTED`; a child-only transaction therefore rolls back. Resource
-failure refuses to remove its stage while exact pending-secret rows remain; pending
-compensation may terminalize the attempt first, after which Resource performs only the
-exact `FAILED` stage cleanup. Recovery and current mutation paths follow one journal ->
-attempt -> connection identity/revision/binding/pending lock order, with H2 two-connection
-interleaving tests for rollback, recovery retry, and observer-failure rollback. The latest
-focused closure evidence is 104/104 green (41 Connection, 11 Resource claim, 20 Resource
-mutation, and 32 PendingSecretStore tests), still H2 `MODE=PostgreSQL` only; no claim of
-real PostgreSQL certification, Facade, HTTP, or UI acceptance is made.
+attempt are both `COMMITTED`; a child-only transaction therefore rolls back, and the
+transaction-scoped fence is unbound after completion. Resource failure refuses to remove
+its stage while exact pending-secret rows remain; pending compensation may terminalize the
+attempt first, after which Resource performs only the exact `FAILED` stage cleanup after
+rechecking the complete immutable authority. Resource takeover removes an abandoned
+providerless nested child stage but retains rows needed for pending-secret recovery.
+Recovery and current mutation paths follow one journal -> attempt -> connection
+identity/revision/binding/pending lock order. The recovery observer is a package-private
+pre-mutation test seam; an injected observer failure leaves the claim untouched because no
+claim mutation has started. Connection receipt closure is endpoint-bound, and ambiguous
+historical provenance fails closed. The latest focused closure evidence is 118/118 green
+(44 Connection, 11 Resource claim, 23 Resource mutation, 32 PendingSecretStore, and 8
+schema-readiness tests), still H2 `MODE=PostgreSQL` only; no claim of real PostgreSQL
+certification, Facade, HTTP, or UI acceptance is made.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
