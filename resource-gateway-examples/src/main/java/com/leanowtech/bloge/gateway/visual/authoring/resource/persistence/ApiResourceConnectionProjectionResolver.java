@@ -1,10 +1,12 @@
 package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceTransportSafetyPolicy;
+
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Locale;
-import java.util.Set;
 
 /**
  * Read-only seam for resolving non-secret Connection metadata during projection.
@@ -25,22 +27,43 @@ public interface ApiResourceConnectionProjectionResolver {
     Optional<ConnectionMetadata> resolve(AuthoringScope scope, String connectionId);
 
     /** Non-secret Connection metadata needed by a runtime descriptor. */
-    record ConnectionMetadata(String baseUrl, Map<String, String> defaultHeaders, Duration timeout) {
-        private static final Set<String> CREDENTIAL_HEADERS = Set.of(
-                "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key");
+    record ConnectionMetadata(String baseUrl, Map<String, String> defaultHeaders, Duration timeout,
+                              String apiKeyHeader) {
+        /** Backward-compatible metadata constructor without an API-key header. */
+        public ConnectionMetadata(String baseUrl, Map<String, String> defaultHeaders, Duration timeout) {
+            this(baseUrl, defaultHeaders, timeout, "");
+        }
+
         /** Validates that metadata cannot smuggle credentials or an unbounded URL. */
         public ConnectionMetadata {
-            if (baseUrl == null || !(baseUrl.startsWith("http://") || baseUrl.startsWith("https://"))
-                    || baseUrl.contains("@") || baseUrl.length() > 2048) {
+            validateBaseUrl(baseUrl);
+            ApiResourceTransportSafetyPolicy.requireSafeApiKeyHeader(apiKeyHeader);
+            apiKeyHeader = apiKeyHeader == null ? "" : apiKeyHeader.trim();
+            defaultHeaders = defaultHeaders == null ? Map.of() : Map.copyOf(defaultHeaders);
+            ApiResourceTransportSafetyPolicy.requireSafeDefaults(defaultHeaders, apiKeyHeader);
+            timeout = timeout == null ? Duration.ofSeconds(30) : timeout;
+            if (timeout.isZero() || timeout.isNegative()) {
+                throw new IllegalArgumentException("connection timeout must be positive");
+            }
+        }
+
+        private static void validateBaseUrl(String baseUrl) {
+            if (baseUrl == null || baseUrl.length() > 2048
+                    || baseUrl.chars().anyMatch(character -> Character.isISOControl(character)
+                    || Character.isWhitespace(character))) {
                 throw new IllegalArgumentException("connection baseUrl is invalid");
             }
-            defaultHeaders = defaultHeaders == null ? Map.of() : Map.copyOf(defaultHeaders);
-            if (defaultHeaders.keySet().stream().anyMatch(key -> key == null || key.isBlank()
-                    || CREDENTIAL_HEADERS.contains(key.toLowerCase(Locale.ROOT)))) {
-                throw new IllegalArgumentException("connection defaults must not contain credentials");
+            try {
+                URI uri = new URI(baseUrl);
+                String scheme = uri.getScheme();
+                if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                        || uri.getHost() == null || uri.getUserInfo() != null
+                        || uri.getQuery() != null || uri.getFragment() != null || uri.isOpaque()) {
+                    throw new IllegalArgumentException("connection baseUrl is invalid");
+                }
+            } catch (URISyntaxException exception) {
+                throw new IllegalArgumentException("connection baseUrl is invalid", exception);
             }
-            timeout = timeout == null ? Duration.ofSeconds(30) : timeout;
-            if (timeout.isZero() || timeout.isNegative()) throw new IllegalArgumentException("connection timeout must be positive");
         }
     }
 }

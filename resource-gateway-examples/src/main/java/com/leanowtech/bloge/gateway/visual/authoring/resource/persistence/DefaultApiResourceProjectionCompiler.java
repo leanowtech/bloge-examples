@@ -7,15 +7,12 @@ import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceTransportSafetyPolicy;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import com.leanowtech.bloge.gateway.visualadapter.ResourceRegistryVisualAdapter;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.stereotype.Component;
-
-import java.time.Duration;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,17 +32,11 @@ import java.util.regex.Pattern;
  * discard the attempted stage.  This is the projection seam used by the
  * opt-in authoring runtime.</p>
  */
-@Component
-@ConditionalOnBean(ApiResourceConnectionProjectionResolver.class)
 public final class DefaultApiResourceProjectionCompiler implements ApiResourceProjectionCompiler {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Pattern RESOURCE_ID = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$");
     private static final Pattern INPUT_PATH = Pattern.compile("^\\$\\.[A-Za-z0-9_-]+$");
-    private static final Pattern HEADER = Pattern.compile("^[A-Za-z0-9!#$%&'*+.^_`|~-]+$");
-    private static final Set<String> RESERVED_HEADERS = Set.of(
-            "authorization", "proxy-authorization", "proxy-authenticate", "cookie", "set-cookie",
-            "host", "content-length", "connection", "keep-alive", "te", "trailer",
-            "transfer-encoding", "upgrade", "forwarded");
+    private static final Pattern OUTPUT_PATH = Pattern.compile("^\\$(?:\\.[A-Za-z0-9_-]+)*$");
     private final ApiResourceConnectionProjectionResolver connections;
 
     /**
@@ -83,8 +74,8 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
                 .resolve(scope, resource.connectionId())
                 .orElseThrow(() -> new IllegalArgumentException("connection projection is unavailable"));
         return new ResourceDescriptor(resource.resourceId(), join(connection.baseUrl(), operation.path()), operation.method(),
-                connection.defaultHeaders(), null, connection.timeout(), mapping(operation.bindings()),
-                response(resource.response()), resource.response().outputPath(),
+                connection.defaultHeaders(), null, connection.timeout(), mapping(operation.bindings(), connection.apiKeyHeader()),
+                response(resource.response()), runtimePayloadPath(resource.response().outputPath()),
                 null);
     }
 
@@ -92,7 +83,7 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
         return baseUrl.replaceAll("/+$", "") + "/" + path.replaceFirst("^/+", "");
     }
 
-    private static ParameterMapping mapping(List<ApiResourceCommand.Binding> bindings) {
+    private static ParameterMapping mapping(List<ApiResourceCommand.Binding> bindings, String apiKeyHeader) {
         Map<String, String> path = new LinkedHashMap<>();
         Map<String, String> query = new LinkedHashMap<>();
         Map<String, String> headers = new LinkedHashMap<>();
@@ -108,7 +99,15 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
             switch (location) {
                 case "PATH" -> path.put(name, expression);
                 case "QUERY" -> query.put(name, expression);
-                case "HEADER" -> headers.put(name, expression);
+                case "HEADER" -> {
+                    ApiResourceTransportSafetyPolicy.requireAllowedHeaderName(name);
+                    if (!apiKeyHeader.isBlank()
+                            && ApiResourceTransportSafetyPolicy.normalize(apiKeyHeader)
+                            .equals(ApiResourceTransportSafetyPolicy.normalize(name))) {
+                        throw new IllegalArgumentException("resource header conflicts with api-key header");
+                    }
+                    headers.put(name, expression);
+                }
                 case "BODY" -> body = expression;
                 default -> throw new IllegalArgumentException("unsupported binding location: " + location);
             }
@@ -143,6 +142,17 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
         return JSON.convertValue(value, Object.class);
     }
 
+    /** Converts the authority JSONPath to the dot path consumed by PayloadExtractor. */
+    private static String runtimePayloadPath(String outputPath) {
+        if (outputPath == null || outputPath.isBlank() || "$".equals(outputPath)) {
+            return null;
+        }
+        if (!OUTPUT_PATH.matcher(outputPath).matches()) {
+            throw new IllegalArgumentException("response outputPath is invalid");
+        }
+        return outputPath.substring(2);
+    }
+
     private static ResourceDesignContract designContract(ApiResourceSpec resource) {
         Map<String, Object> examples = new LinkedHashMap<>();
         for (ApiResourceCommand.Example example : resource.examples()) {
@@ -173,7 +183,8 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
                 configSchema(), capabilities, OperatorDefinition.Policy.unrestricted(),
                 new OperatorDefinition.Lowering("resource-descriptor", "httpResource",
                         Map.of("resourceId", resource.resourceId(), "payloadPath",
-                                resource.response().outputPath() == null ? "" : resource.response().outputPath(),
+                                runtimePayloadPath(resource.response().outputPath()) == null ? ""
+                                        : runtimePayloadPath(resource.response().outputPath()),
                                 "method", resource.operation().method())), List.of());
     }
 
@@ -239,9 +250,7 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
                 throw new IllegalArgumentException("resource binding target is invalid");
             }
             if ("BODY".equals(location) && ++bodies > 1) throw new IllegalArgumentException("multiple BODY bindings");
-            if ("HEADER".equals(location) && (!HEADER.matcher(name).matches()
-                    || RESERVED_HEADERS.contains(name.toLowerCase(Locale.ROOT))
-                    || name.toLowerCase(Locale.ROOT).startsWith("x-forwarded-"))) {
+            if ("HEADER".equals(location) && !ApiResourceTransportSafetyPolicy.isAllowedHeaderName(name)) {
                 throw new IllegalArgumentException("resource binding header is reserved");
             }
         }
@@ -255,6 +264,7 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
                 || body.values().stream().anyMatch(Objects::isNull))) {
             throw new IllegalArgumentException("body match success is incomplete");
         }
+        runtimePayloadPath(response.outputPath());
         if (resource.effect() instanceof ApiResourceCommand.Effect.ManagedWrite) {
             throw new IllegalArgumentException(
                     "MANAGED_WRITE projection is unsupported until the runtime side-effect contract is lossless");

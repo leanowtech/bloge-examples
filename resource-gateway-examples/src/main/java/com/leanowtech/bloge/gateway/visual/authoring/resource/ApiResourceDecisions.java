@@ -20,11 +20,9 @@ import java.util.regex.Pattern;
 /** Stateless, injectable API Resource decision engine: validation, CAS, revision and fingerprint. */
 public final class ApiResourceDecisions {
     private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]*$");
-    private static final Pattern HEADER_TOKEN = Pattern.compile("^[A-Za-z0-9!#$%&'*+.^_`|~-]+$");
     private static final Pattern OPERATION_PATH = Pattern.compile("^/[A-Za-z0-9._~:/{}-]*$");
     private static final Pattern JSON_PATH = Pattern.compile("^\\$\\.[A-Za-z0-9_-]+$");
     private static final Pattern FINGERPRINT = Pattern.compile("^sha256:[0-9a-f]{64}$");
-    private static final Set<String> RESERVED_HEADERS = Set.of("authorization", "proxy-authorization", "proxy-authenticate", "cookie", "set-cookie", "host", "content-length", "connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade", "forwarded");
     private static final Set<String> SUPPORTED_TYPES = Set.of("string", "integer", "number", "boolean", "object");
     private final ObjectMapper mapper;
 
@@ -164,7 +162,10 @@ public final class ApiResourceDecisions {
     }
 
     private void validateManagedWrite(ApiResourceCommand.Effect.ManagedWrite managed) {
-        if (managed.receipt() == null || !validHeader(managed.idempotencyHeader())) invalid("managed write idempotency and receipt contract is required");
+        if (managed.receipt() == null
+                || !ApiResourceTransportSafetyPolicy.isAllowedHeaderName(managed.idempotencyHeader())) {
+            invalid("managed write idempotency and receipt contract is required");
+        }
         ApiResourceCommand.Effect.Receipt receipt = managed.receipt();
         if (!validJsonPath(receipt.idPath()) || !validJsonPath(receipt.statusPath()) || receipt.succeededValues().isEmpty() || receipt.failedValues().isEmpty() || receipt.succeededValues().stream().anyMatch(java.util.Objects::isNull) || receipt.failedValues().stream().anyMatch(java.util.Objects::isNull)) invalid("managed write receipt contract is invalid");
         ApiResourceCommand.Effect.Reconciliation reconciliation = managed.reconciliation();
@@ -210,11 +211,10 @@ public final class ApiResourceDecisions {
             default -> false;
         };
     }
-    private void validateHeader(String header) { if (!validHeader(header)) invalid("header is reserved or invalid"); }
-    private boolean validHeader(String header) {
-        String lower = header == null ? "" : header.toLowerCase(java.util.Locale.ROOT);
-        return header != null && HEADER_TOKEN.matcher(header).matches()
-                && !RESERVED_HEADERS.contains(lower) && !lower.startsWith("x-forwarded-");
+    private void validateHeader(String header) {
+        if (!ApiResourceTransportSafetyPolicy.isAllowedHeaderName(header)) {
+            invalid("header is reserved or invalid");
+        }
     }
     private static boolean validJsonPath(String path) { return path != null && path.matches("^\\$[A-Za-z0-9._~:/{}-]*$"); }
     private static boolean validIdentifier(String value) { return value != null && value.length() <= 128 && IDENTIFIER.matcher(value).matches(); }

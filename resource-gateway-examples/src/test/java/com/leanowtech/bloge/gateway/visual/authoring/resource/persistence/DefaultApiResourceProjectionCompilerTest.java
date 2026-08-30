@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
@@ -37,7 +38,7 @@ class DefaultApiResourceProjectionCompilerTest {
         assertThat(descriptor.parameterMapping().headerExpressions()).containsEntry("X-Trace", "ctx.params.traceId");
         assertThat(descriptor.parameterMapping().bodyExpression()).isEqualTo("ctx.params.payload");
         assertThat(descriptor.responseProtocol()).isEqualTo(new ResponseProtocol.StatusCodes(java.util.Set.of(200, 201)));
-        assertThat(descriptor.payloadPath()).isEqualTo("$.data");
+        assertThat(descriptor.payloadPath()).isEqualTo("data");
 
         assertReadyAndExactSubject(projections);
         assertThat(projections.designContract().body().get("requestSchema").get("schema").get("properties")
@@ -84,6 +85,19 @@ class DefaultApiResourceProjectionCompilerTest {
     }
 
     @Test
+    void mapsRootAndNestedOutputPathsToPayloadExtractorSemantics() {
+        ResourceDescriptor root = descriptorForOutputPath(null);
+        ResourceDescriptor explicitRoot = descriptorForOutputPath("$");
+        ResourceDescriptor nested = descriptorForOutputPath("$.data.profile");
+        assertThat(root.payloadPath()).isNull();
+        assertThat(explicitRoot.payloadPath()).isNull();
+        assertThat(nested.payloadPath()).isEqualTo("data.profile");
+        assertThat(new PayloadExtractor(JSON).extract(
+                "{\"data\":{\"profile\":{\"id\":7}}}", nested.payloadPath()))
+                .isEqualTo(Map.of("id", 7));
+    }
+
+    @Test
     void projectionBodiesAreDefensiveAndFingerprintsAreDerivedFromCanonicalBodies() {
         ReadyApiResourceProjections projections = compiler().compile(SCOPE,
                 resource(new ApiResourceCommand.Effect.ReadOnly(), new ApiResourceCommand.HttpStatus(List.of(200))));
@@ -92,6 +106,18 @@ class DefaultApiResourceProjectionCompilerTest {
         assertThat(projections.descriptor().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.descriptor().body()));
         assertThat(projections.designContract().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.designContract().body()));
         assertThat(projections.operator().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.operator().body()));
+    }
+
+    @Test
+    void rejectsApiKeyCollisionsInDefaultsAndResourceBindings() {
+        assertThatThrownBy(() -> compilerWithConnection("X-Trace", Map.of("X-Default", "one"))
+                .compile(SCOPE, resource(new ApiResourceCommand.Effect.ReadOnly(),
+                        new ApiResourceCommand.HttpStatus(List.of(200)))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("api-key");
+        assertThatThrownBy(() -> compilerWithConnection("X-Trace", Map.of())
+                .compile(SCOPE, resource(new ApiResourceCommand.Effect.ReadOnly(),
+                        new ApiResourceCommand.HttpStatus(List.of(200)))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("api-key");
     }
 
     @Test
@@ -112,7 +138,18 @@ class DefaultApiResourceProjectionCompilerTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("connection projection");
         assertThatThrownBy(() -> new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
                 "https://api.example.test", Map.of("Authorization", "secret"), Duration.ofSeconds(1)))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("credentials");
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("reserved");
+        assertThatThrownBy(() -> new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
+                "https://api.example.test?secret=1", Map.of(), Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
+                "https://api.example.test", Map.of("X-Forwarded-For", "x"), Duration.ofSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
+                "https://api.example.test", Map.of("X-API-Key", "static-secret"), Duration.ofSeconds(1), "X-API-Key"))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("api-key");
+        assertThatThrownBy(() -> compiler().compile(SCOPE, resourceWithOutputPath("$.data..profile")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("outputPath");
     }
 
     private static void assertReadyAndExactSubject(ReadyApiResourceProjections projections) {
@@ -144,9 +181,14 @@ class DefaultApiResourceProjectionCompilerTest {
     }
 
     private static DefaultApiResourceProjectionCompiler compiler() {
+        return compilerWithConnection("", Map.of("X-Default", "one"));
+    }
+
+    private static DefaultApiResourceProjectionCompiler compilerWithConnection(String apiKeyHeader,
+                                                                                 Map<String, String> defaults) {
         return new DefaultApiResourceProjectionCompiler((scope, connectionId) -> Optional.of(
                 new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
-                        "https://api.example.test", Map.of("X-Default", "one"), Duration.ofSeconds(10))));
+                        "https://api.example.test", defaults, Duration.ofSeconds(10), apiKeyHeader)));
     }
 
     private static ApiResourceSpec resourceAt(String path, ApiResourceCommand.Effect effect) {
@@ -162,5 +204,19 @@ class DefaultApiResourceProjectionCompilerTest {
         return new ApiResourceSpec(source.schemaVersion(), source.resourceId(), source.revision(), source.fingerprint(),
                 source.displayName(), source.description(), source.connectionId(), operation, source.contract(),
                 source.response(), source.effect(), source.examples(), source.status());
+    }
+
+    private static ResourceDescriptor descriptorForOutputPath(String outputPath) {
+        return JSON.convertValue(compiler().compile(SCOPE, resourceWithOutputPath(outputPath)).descriptor().body(),
+                ResourceDescriptor.class);
+    }
+
+    private static ApiResourceSpec resourceWithOutputPath(String outputPath) {
+        ApiResourceSpec source = resource(new ApiResourceCommand.Effect.ReadOnly(),
+                new ApiResourceCommand.HttpStatus(List.of(200)));
+        return new ApiResourceSpec(source.schemaVersion(), source.resourceId(), source.revision(), source.fingerprint(),
+                source.displayName(), source.description(), source.connectionId(), source.operation(), source.contract(),
+                new ApiResourceCommand.Response(source.response().success(), outputPath), source.effect(),
+                source.examples(), source.status());
     }
 }

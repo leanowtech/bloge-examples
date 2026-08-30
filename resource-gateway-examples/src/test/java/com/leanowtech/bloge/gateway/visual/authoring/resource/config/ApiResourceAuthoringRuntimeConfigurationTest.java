@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceAuthoringSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,8 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                 .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
                 .withBean(PlatformTransactionManager.class,
                         () -> new DataSourceTransactionManager(dataSource))
+                .withBean(ApiResourceConnectionProjectionResolver.class,
+                        () -> (scope, connectionId) -> java.util.Optional.empty())
                 .withBean(ApiResourceProjectionCompiler.class,
                         () -> (scope, resource) -> null)
                 .run(context -> {
@@ -54,12 +57,30 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
     }
 
     @Test
+    void enabledRuntimeCreatesDefaultCompilerWhenConnectionResolverIsPresent() {
+        DataSource dataSource = readyDataSource();
+        runner.withPropertyValues("gateway.authoring.api-resource.enabled=true")
+                .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
+                .withBean(PlatformTransactionManager.class,
+                        () -> new DataSourceTransactionManager(dataSource))
+                .withBean(ApiResourceConnectionProjectionResolver.class,
+                        () -> (scope, connectionId) -> java.util.Optional.empty())
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(ApiResourceProjectionCompiler.class);
+                    assertThat(context).hasSingleBean(ApiResourceCommitStore.class);
+                });
+    }
+
+    @Test
     void enabledRuntimeFailsWhenSchemaWasNotInstalled() {
         DataSource dataSource = dataSource();
         runner.withPropertyValues("gateway.authoring.api-resource.enabled=true")
                 .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
                 .withBean(PlatformTransactionManager.class,
                         () -> new DataSourceTransactionManager(dataSource))
+                .withBean(ApiResourceConnectionProjectionResolver.class,
+                        () -> (scope, connectionId) -> java.util.Optional.empty())
                 .withBean(ApiResourceProjectionCompiler.class,
                         () -> (scope, resource) -> null)
                 .run(context -> assertThat(context).hasFailed());
@@ -75,7 +96,7 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasFailed();
                     assertThat(context.getStartupFailure())
-                            .hasMessageContaining("ApiResourceProjectionCompiler");
+                            .hasStackTraceContaining("ApiResourceConnectionProjectionResolver");
                 });
     }
 
@@ -105,6 +126,8 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                 .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
                 .withBean(PlatformTransactionManager.class,
                         () -> new DataSourceTransactionManager(dataSource))
+                .withBean(ApiResourceConnectionProjectionResolver.class,
+                        () -> (scope, connectionId) -> java.util.Optional.empty())
                 .withBean(ApiResourceProjectionCompiler.class,
                         () -> (scope, resource) -> null)
                 .withBean(ApiResourceCommitStore.class, () -> customStore)
