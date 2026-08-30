@@ -60,7 +60,6 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     private final TransactionTemplate transactions;
     private final ObjectMapper mapper;
     private final ApiConnectionDecisions decisions;
-    private final Clock clock;
 
     /** Creates a store whose JDBC and transaction collaborators share one source. */
     public JdbcApiConnectionCommitStore(JdbcTemplate jdbc, TransactionTemplate transactions,
@@ -70,12 +69,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
         this.decisions = Objects.requireNonNull(decisions, "decisions");
-        this.clock = Objects.requireNonNull(clock, "clock");
+        Objects.requireNonNull(clock, "clock");
         DataSource jdbcSource = jdbc.getDataSource();
-        if (jdbcSource != null
-                && transactions.getTransactionManager() instanceof DataSourceTransactionManager manager
-                && manager.getDataSource() != jdbcSource) {
-            throw new IllegalArgumentException("JDBC and transaction DataSources must be identical");
+        DataSource transactionSource = transactions.getTransactionManager()
+                instanceof DataSourceTransactionManager manager ? manager.getDataSource() : null;
+        if (jdbcSource == null || transactionSource == null || transactionSource != jdbcSource) {
+            throw new IllegalArgumentException("jdbc and transaction manager must share the same DataSource");
         }
     }
 
@@ -270,9 +269,18 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         }
     }
 
+    /**
+     * Removes only abandoned staged metadata after takeover. Secret rows are
+     * deliberately not deleted here: a pending or abort-required provider
+     * lease must be compensated through its exact attempt before a command can
+     * be retried, otherwise a higher attempt could orphan external credentials.
+     */
     private void deleteCommandStages(String commandId) {
-        if (jdbc.update("DELETE FROM rg_api_connection_pending_secret_leases WHERE command_id=?", commandId) < 0
-                || jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND state='STAGED'",
+        Long pending = jdbc.queryForObject("SELECT COUNT(*) "
+                + "FROM rg_api_connection_pending_secret_leases "
+                + "WHERE command_id=? AND status IN ('PENDING', 'ABORT_REQUIRED')", Long.class, commandId);
+        if (pending != null && pending > 0) fail(Code.LEASE_FENCED);
+        if (jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND state='STAGED'",
                 commandId) < 0) {
             fail(Code.INTEGRITY);
         }
@@ -398,10 +406,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private Instant databaseNow() {
-        Instant database = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", (row, ignored) -> timestamp(row, 1));
-        // The database is the lower-bound authority; the injected clock may only make
-        // a lease fail sooner, which keeps deterministic tests from weakening expiry.
-        return database.isAfter(clock.instant()) ? database : clock.instant();
+        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", (row, ignored) -> timestamp(row, 1));
     }
 
     /**
@@ -694,6 +699,17 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                                    AND status='ABORT_REQUIRED'
                                 """, lease.commandId(), lease.attemptNo(), lease.attemptToken(), slot) != 1) {
                     fail(Code.STAGE_MISSING);
+                }
+                Long remaining = jdbc.queryForObject("SELECT COUNT(*) "
+                        + "FROM rg_api_connection_pending_secret_leases "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "
+                        + "AND status IN ('PENDING', 'ABORT_REQUIRED')", Long.class,
+                        lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                if (remaining != null && remaining == 0
+                        && jdbc.update("DELETE FROM rg_api_connection_revisions "
+                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=? AND state='STAGED'",
+                        lease.commandId(), lease.attemptNo(), lease.attemptToken()) < 0) {
+                    fail(Code.INTEGRITY);
                 }
             });
         } catch (ApiConnectionCommitStoreException ex) {

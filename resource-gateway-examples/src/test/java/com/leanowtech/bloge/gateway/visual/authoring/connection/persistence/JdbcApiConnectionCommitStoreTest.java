@@ -16,8 +16,14 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Clock;
@@ -96,6 +102,146 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThat(pendingCount()).isOne();
         assertThat(jdbc.queryForObject("SELECT status FROM rg_api_connection_pending_secret_leases",
                 String.class)).isEqualTo("ABORT_REQUIRED");
+    }
+
+    @Test
+    void constructorRequiresAnExactDataSourceTransactionManager() {
+        DataSource jdbcSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:constructor-jdbc-" + System.nanoTime() + ";MODE=PostgreSQL", "sa", "");
+        DataSource otherSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:constructor-other-" + System.nanoTime() + ";MODE=PostgreSQL", "sa", "");
+        ObjectMapper mapper = new ObjectMapper();
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        Clock clock = Clock.systemUTC();
+
+        assertThatThrownBy(() -> new JdbcApiConnectionCommitStore(
+                new JdbcTemplate(jdbcSource),
+                new TransactionTemplate(new DataSourceTransactionManager(otherSource)),
+                mapper, decisions, clock))
+                .isInstanceOf(IllegalArgumentException.class);
+        PlatformTransactionManager nonJdbcManager = new PlatformTransactionManager() {
+            @Override
+            public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void commit(TransactionStatus status) throws TransactionException {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void rollback(TransactionStatus status) throws TransactionException {
+                throw new UnsupportedOperationException();
+            }
+        };
+        assertThatThrownBy(() -> new JdbcApiConnectionCommitStore(
+                new JdbcTemplate(jdbcSource), new TransactionTemplate(nonJdbcManager),
+                mapper, decisions, clock))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new JdbcApiConnectionCommitStore(
+                new JdbcTemplate(), new TransactionTemplate(new DataSourceTransactionManager(jdbcSource)),
+                mapper, decisions, clock))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new JdbcApiConnectionCommitStore(
+                (DataSource) null, mapper, decisions, clock))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void databaseClockDoesNotLetAnAheadJvmClockExpireALiveLease() {
+        Clock ahead = Clock.fixed(Instant.parse("2099-01-01T00:00:00Z"), ZoneId.of("UTC"));
+        JdbcApiConnectionCommitStore store = (JdbcApiConnectionCommitStore) createStore(ahead);
+        Instant databaseNow = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP",
+                (row, ignored) -> row.getTimestamp(1).toInstant());
+        CommandLease lease = new CommandLease("database-clock", 1, "database-clock-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
+                        "customer", "key-database-clock"), "sha256:" + "a".repeat(64),
+                databaseNow.plusSeconds(30), ExpectedRevision.create());
+
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("PREPARING");
+    }
+
+    @Test
+    void expiredTakeoverNeverDeletesAbortRequiredSecretRowsAndCleanupRemovesOnlyItsStage() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        PreparedSecretBinding prepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/takeover-token"));
+        ApiConnectionCommand bearer = new ApiConnectionCommand("Secret API", BASE_URL,
+                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                new ApiConnectionCommand.Defaults(5_000, Map.of()));
+        CommandLease original = lease("abort-required-takeover", "abort-required-token", "customer",
+                ExpectedRevision.create());
+        store.stage(original, "customer", ExpectedRevision.create(), bearer, prepared);
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
+                + "WHERE command_id=?", original.commandId());
+        Instant expiredUntil = jdbc.queryForObject(
+                "SELECT lease_until FROM rg_authoring_command_journal WHERE command_id=?",
+                (row, ignored) -> row.getTimestamp(1).toInstant(), original.commandId());
+        CommandLease expired = new CommandLease(original.commandId(), original.attemptNo(), original.attemptToken(),
+                original.key(), original.requestFingerprint(), expiredUntil, original.expectedRevision());
+        CommandLease takeover = new CommandLease(original.commandId(), 2, "takeover-token", original.key(),
+                original.requestFingerprint(), TEST_NOW.plusSeconds(60), original.expectedRevision());
+
+        assertThatThrownBy(() -> store.stage(takeover, "customer", ExpectedRevision.create(), bearer, prepared))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        assertThat(pendingCount()).isOne();
+        store.failSecretLease(expired, "token");
+        assertThatThrownBy(() -> store.stage(takeover, "customer", ExpectedRevision.create(), bearer, prepared))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_api_connection_pending_secret_leases",
+                String.class)).isEqualTo("ABORT_REQUIRED");
+        store.cleanupSecretLease(expired, "token");
+
+        assertThat(pendingCount()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions "
+                + "WHERE command_id=? AND state='STAGED'", Integer.class, original.commandId())).isZero();
+    }
+
+    /** Uses SQL to advance H2's observable clock; production expiry remains DB-clock-only. */
+    @Test
+    @Override
+    void expiredLeaseCannotStageOrCommitAndFailIsAStaleNoOp() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        Instant databaseNow = databaseNow();
+        CommandLease live = leaseWithUntil("expiry", "expiry-token", databaseNow.plusSeconds(10));
+        store.stage(live, "customer", ExpectedRevision.create(), noneCommand());
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
+                + "WHERE command_id=?", live.commandId());
+        Instant expiredUntil = databaseLeaseUntil(live.commandId());
+        CommandLease expired = withLeaseUntil(live, expiredUntil);
+        store.fail(expired);
+        assertThatThrownBy(() -> store.commit(expired)).isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_EXPIRED);
+    }
+
+    /** Uses SQL to expire the staged attempt so the JDBC contract is deterministic without a JVM clock. */
+    @Test
+    @Override
+    void newerAttemptTakesOverOldStageAndFencesOldLease() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        Instant databaseNow = databaseNow();
+        CommandLease old = leaseWithUntil("takeover", "old-token", databaseNow.plusSeconds(10));
+        CommandLease current = new CommandLease("takeover", 2, "new-token", old.key(), old.requestFingerprint(),
+                databaseNow.plusSeconds(30), ExpectedRevision.create());
+        store.stage(old, "customer", ExpectedRevision.create(), noneCommand());
+        assertThatThrownBy(() -> store.stage(current, "customer", ExpectedRevision.create(),
+                renamedCommand("Current"))).isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
+                + "WHERE command_id=?", old.commandId());
+        StagedApiConnection replacement = store.stage(current, "customer", ExpectedRevision.create(),
+                renamedCommand("Current"));
+        store.fail(withLeaseUntil(old, databaseLeaseUntil(old.commandId())));
+        assertThatThrownBy(() -> store.commit(old)).isInstanceOf(ApiConnectionCommitStoreException.class);
+        assertThat(store.commit(current)).isEqualTo(new StoredApiConnection(SCOPE, replacement.view(),
+                replacement.metadataFingerprint(), replacement.strongEtag(), current.commandId()));
     }
 
     @Test
@@ -354,6 +500,33 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_CONNECTION_SAVE,
                 connectionId, "key-" + commandId), "sha256:" + "a".repeat(64),
                 TEST_NOW.plusSeconds(30), expected);
+    }
+
+    private Instant databaseNow() {
+        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP",
+                (row, ignored) -> row.getTimestamp(1).toInstant());
+    }
+
+    private Instant databaseLeaseUntil(String commandId) {
+        return jdbc.queryForObject("SELECT lease_until FROM rg_authoring_command_journal WHERE command_id=?",
+                (row, ignored) -> row.getTimestamp(1).toInstant(), commandId);
+    }
+
+    private static CommandLease leaseWithUntil(String commandId, String token, Instant until) {
+        return new CommandLease(commandId, 1, token,
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
+                        "customer", "key-" + commandId), "sha256:" + "a".repeat(64), until,
+                ExpectedRevision.create());
+    }
+
+    private static ApiConnectionCommand renamedCommand(String displayName) {
+        return new ApiConnectionCommand(displayName, BASE_URL, ApiConnectionCommand.Auth.none(),
+                new ApiConnectionCommand.Defaults(5_000, Map.of()));
+    }
+
+    private static CommandLease withLeaseUntil(CommandLease lease, Instant until) {
+        return new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(), lease.key(),
+                lease.requestFingerprint(), until, lease.expectedRevision());
     }
 
     private static ApiConnectionCommand noneCommand() {
