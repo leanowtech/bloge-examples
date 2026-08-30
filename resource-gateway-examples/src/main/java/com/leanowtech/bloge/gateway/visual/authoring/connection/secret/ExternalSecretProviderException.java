@@ -10,6 +10,7 @@ public final class ExternalSecretProviderException extends RuntimeException {
         /** Provider could not resolve an active binding. */ RESOLVE_FAILED,
         /** Reference or operation scope was not authorized. */ UNAUTHORIZED,
         /** Provider rejected an expired or otherwise unusable lease. */ EXPIRED,
+        /** Active provider locator is no longer available. */ NOT_FOUND,
         /** Operation input did not satisfy the provider contract. */ INVALID_REQUEST
     }
     private final Code code;
