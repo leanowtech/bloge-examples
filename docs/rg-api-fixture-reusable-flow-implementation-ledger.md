@@ -447,7 +447,25 @@ Facade、HTTP 或生产 PostgreSQL 能力已完成，更不意味着 broader goa
 - `PendingSecretStore`、JDBC Secret store 和生产 Vault/provider 集成尚未实现；当前没有本地 AES/JDBC provider。
 - `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 与 UI 尚未接入；full `clean verify` 与真实 PostgreSQL lane 未运行。
 
-## 13. 未关闭风险
+## 13. Iteration 13 — V003 hardening 与 readiness 语义收紧
+
+日期：2026-08-30。
+
+### 已完成
+
+- `d4d57c5d6`、`eb3c40540`、`19a5c8a1f`：收紧 V003 的 active binding 与 pending lease 约束，并使 readiness 检查在 H2 与 PostgreSQL 表达之间保持可移植且 fail-closed。
+- active binding 只允许通过精确外键指向 `COMMITTED` revision；pending lease 只允许 `PENDING` 或 `ABORT_REQUIRED` 状态；恢复索引固定为确定性的七列顺序。
+- readiness 对 H2 的 `IN` 与 PostgreSQL 的 `ANY` 以及安全 cast 语义等价形式予以接受；额外、错误或会改变语义的 cast 仍 fail-closed。
+
+### 最新验证与证据边界
+
+`d4d57c5d6` 后的初始 `ApiConnectionSchemaReadinessTest` 为 **19/19 green**，发生在后续语义变更之前。`eb3c40540` 与 `19a5c8a1f` 的最新语义提交有独立 `javac`/helper 检查，Spec 评审为 **Accepted**，P0/P1/P2 均为 0；但最新 Maven 聚焦复跑因并发的未提交 Connection/JDBC 编译错误受阻。真实 PostgreSQL lane 仍未运行。
+
+### 当前差距评估
+
+本轮只完成 V003 schema/readiness 的 hardening；由于没有 production store 的聚焦最终 Maven 证据，不增加 broader goal 完成度，仍为 **35%**，当前差距为 **65%**。
+
+## 14. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

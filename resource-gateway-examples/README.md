@@ -103,6 +103,15 @@ is 13/13 green, and Spec plus Standards review is Accepted with P0/P1/P2 all at 
 seam: `PendingSecretStore`, JDBC/production Vault providers, `AuthoringFacade`, HTTP endpoints, UI, full
 `clean verify`, and real PostgreSQL are not implemented; there is no local AES/JDBC provider.
 
+The subsequent V003 hardening commits `d4d57c5d6`, `eb3c40540`, and `19a5c8a1f` constrain active bindings to an
+exact foreign key targeting only a `COMMITTED` revision, constrain pending leases to `PENDING` or `ABORT_REQUIRED`,
+and fix a deterministic seven-column recovery index. Readiness semantically accepts H2 `IN` and PostgreSQL `ANY`
+forms plus safe casts, while failing closed on extra, wrong, or semantic-changing casts. The initial focused
+`ApiConnectionSchemaReadinessTest` after `d4d57c5d6` was 19/19 green before the semantic changes; the latest
+semantic commits have independent `javac`/helper checks and static Spec review Accepted with P0/P1/P2 all at zero.
+The latest Maven focused rerun was blocked by unrelated concurrent uncommitted Connection/JDBC compile errors, and
+real PostgreSQL was not run. This hardening does not increase the broader completion estimate beyond 35%.
+
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than
