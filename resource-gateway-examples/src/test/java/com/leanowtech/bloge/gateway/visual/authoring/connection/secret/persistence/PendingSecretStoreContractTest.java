@@ -107,7 +107,7 @@ public abstract class PendingSecretStoreContractTest {
     @Test void keepExistingCopiesLocatorAndBindsNewCommand() {
         PendingSecretStore store = newStore(fixedClock());
         CommandLease lease = lease("keep", 1, "keep-token", NOW.plusSeconds(60));
-        CommandLease oldLease = lease("old-command", 1, "old-token", NOW.plusSeconds(60));
+        CommandLease oldLease = leaseAtRevision("old-command", 1, "old-token", NOW.plusSeconds(60), 2);
         PendingSecretBatch old = batchForRevision(oldLease, 2, "token");
         store.stage(old);
         store.commitBindings(old, List.of(activation("token", "old-token", "old-active")));
@@ -117,6 +117,43 @@ public abstract class PendingSecretStoreContractTest {
         store.commitBindings(batch, List.of());
         assertThat(store.findActive(batch.lease().coordinate(), "token")).contains(
                 new ActiveSecretBinding("provider:one", "old-active", "keep"));
+    }
+
+    @Test void keepOnlyBatchRejectsProviderOutputAndAbortAfterCommit() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandLease oldLease = leaseAtRevision("keep-old", 1, "old-token", NOW.plusSeconds(60), 2);
+        PendingSecretBatch old = batchForRevision(oldLease, 2, "token");
+        store.stage(old);
+        store.commitBindings(old, List.of(activation("token", "old-token", "old-active")));
+        CommandLease lease = lease("keep-negative", 1, "keep-negative-token", NOW.plusSeconds(60));
+        PendingSecretBatch batch = new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3)),
+                List.of(new PendingSecretOperation.Retained("token", coordinate(lease, 2))));
+        store.stage(batch);
+        assertThatThrownBy(() -> store.commitBindings(batch,
+                List.of(activation("token", "keep-negative-token", "unexpected"))))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.ACTIVATION_MISMATCH);
+        store.commitBindings(batch, List.of());
+        assertThatThrownBy(() -> store.markAbortRequired(batch.lease()))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+    }
+
+    @Test void createAndWrongCasCannotUseKeepExisting() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandLease create = leaseAtRevision("create", 1, "create-token", NOW.plusSeconds(60), 1);
+        PendingSecretBatch createKeep = new PendingSecretBatch(new PendingSecretLease(create, coordinate(create, 1)),
+                List.of(new PendingSecretOperation.Retained("token",
+                        new ConnectionRevisionCoordinate(SCOPE, "connection", 1))));
+        assertThatThrownBy(() -> store.stage(createKeep)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
+        CommandKey wrongKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
+                "connection", "idempotency-wrong-cas");
+        CommandLease wrongCas = new CommandLease("wrong-cas", 1, "wrong-cas-token", wrongKey,
+                "fingerprint-wrong-cas", NOW.plusSeconds(60), ExpectedRevision.match(1));
+        PendingSecretBatch wrongBatch = batchForRevision(wrongCas, 3, "token");
+        assertThatThrownBy(() -> store.stage(wrongBatch)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
     }
 
     @Test void staleLeaseCannotReadOrMutateExactAttempt() {
@@ -129,6 +166,18 @@ public abstract class PendingSecretStoreContractTest {
         assertThatThrownBy(() -> store.markAbortRequired(new PendingSecretLease(stale, batch.lease().coordinate())))
                 .isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_FENCED);
+    }
+
+    @Test void exactAttemptCannotBeStagedAtAnotherCoordinate() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandLease first = leaseTarget("global", 1, "global-token", "connection-a", 3);
+        store.stage(batchForRevision(first, 3, "token"));
+        CommandLease sameAttempt = leaseTarget("global", 1, "global-token", "connection-b", 3);
+        assertThatThrownBy(() -> store.stage(batchForRevision(sameAttempt, 3, "token")))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
+        CommandLease retry = leaseTarget("global", 2, "retry-token", "connection-b", 3);
+        store.stage(batchForRevision(retry, 3, "token"));
     }
 
     @Test void expiredLeaseIsRecoverableButLivePendingIsNotDue() {
@@ -190,6 +239,25 @@ public abstract class PendingSecretStoreContractTest {
         }
         assertThat(store.claimRecoveryDue(2)).extracting(candidate -> candidate.batch().lease().commandLease().commandId())
                 .containsExactly("a", "b");
+    }
+
+    @Test void boundedRecoveryClaimsWholeMultiSlotBatchInStableOrder() {
+        MutableClock clock = new MutableClock(NOW);
+        PendingSecretStore store = newStore(clock);
+        CommandLease first = lease("a-multi", 1, "a-token", NOW.plusSeconds(5));
+        CommandLease second = lease("b-single", 1, "b-token", NOW.plusSeconds(5));
+        PendingSecretBatch multi = batch(first, "password", "token");
+        PendingSecretBatch single = batch(second, "token");
+        store.stage(multi);
+        store.stage(single);
+        clock.advanceSeconds(6);
+        List<SecretAbortCandidate> firstClaim = store.claimRecoveryDue(1);
+        assertThat(firstClaim).singleElement().satisfies(candidate ->
+                assertThat(candidate.batch().operations()).hasSize(2));
+        store.completeAbort(firstClaim.getFirst());
+        assertThat(store.claimRecoveryDue(1)).singleElement()
+                .extracting(candidate -> candidate.batch().lease().commandLease().commandId())
+                .isEqualTo("b-single");
     }
 
     @Test void twoAttemptsSameRevisionDoNotCrossAbort() {
@@ -289,9 +357,22 @@ public abstract class PendingSecretStoreContractTest {
     }
 
     protected CommandLease lease(String commandId, int attempt, String token, Instant until) {
+        return leaseAtRevision(commandId, attempt, token, until, 3);
+    }
+
+    protected CommandLease leaseAtRevision(String commandId, int attempt, String token, Instant until, long revision) {
+        return leaseTarget(commandId, attempt, token, "connection", revision, until);
+    }
+
+    protected CommandLease leaseTarget(String commandId, int attempt, String token, String target, long revision) {
+        return leaseTarget(commandId, attempt, token, target, revision, NOW.plusSeconds(60));
+    }
+
+    private CommandLease leaseTarget(String commandId, int attempt, String token, String target, long revision,
+                                     Instant until) {
         CommandKey key = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
-                "connection", "idempotency-" + commandId);
-        return new CommandLease(commandId, attempt, token, key, "fingerprint-" + commandId, until,
-                ExpectedRevision.match(2));
+                target, "idempotency-" + commandId);
+        ExpectedRevision expected = revision == 1 ? ExpectedRevision.create() : ExpectedRevision.match(revision - 1);
+        return new CommandLease(commandId, attempt, token, key, "fingerprint-" + commandId, until, expected);
     }
 }
