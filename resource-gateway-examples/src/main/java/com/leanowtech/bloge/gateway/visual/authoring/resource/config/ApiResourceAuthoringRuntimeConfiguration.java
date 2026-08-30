@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceAuthoringSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.DefaultApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -47,13 +45,6 @@ public class ApiResourceAuthoringRuntimeConfiguration {
     @ConditionalOnMissingBean
     ApiResourceDecisions apiResourceDecisions(ObjectMapper mapper) {
         return new ApiResourceDecisions(mapper);
-    }
-
-    /** Creates the default compiler only when the application supplies Connection metadata resolution. */
-    @Bean
-    @ConditionalOnMissingBean(ApiResourceProjectionCompiler.class)
-    ApiResourceProjectionCompiler apiResourceProjectionCompiler(ApiResourceConnectionProjectionResolver resolver) {
-        return new DefaultApiResourceProjectionCompiler(resolver);
     }
 
     /**

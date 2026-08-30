@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
+package com.leanowtech.bloge.gateway.visualadapter.authoring.resource;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,6 +8,12 @@ import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceTransportSafetyPolicy;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ProjectionDocument;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ReadyApiResourceProjections;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;

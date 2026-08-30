@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.config.ApiResourceProjectionAdapterConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -24,7 +25,8 @@ import static org.mockito.Mockito.mock;
 class ApiResourceAuthoringRuntimeConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(ApiResourceAuthoringRuntimeConfiguration.class))
+            .withConfiguration(AutoConfigurations.of(ApiResourceAuthoringRuntimeConfiguration.class,
+                    ApiResourceProjectionAdapterConfiguration.class))
             .withBean(ObjectMapper.class, ObjectMapper::new);
 
     @Test
