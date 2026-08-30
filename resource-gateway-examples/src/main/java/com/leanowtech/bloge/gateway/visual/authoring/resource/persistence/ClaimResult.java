@@ -7,7 +7,7 @@ public sealed interface ClaimResult permits ClaimResult.Acquired, ClaimResult.Re
     /** Already committed receipt for the same request fingerprint. */
     record Replay(CommandReceipt receipt) implements ClaimResult { }
     /** A different live attempt owns the coordinate. */
-    record Busy(CommandLease lease) implements ClaimResult { }
+    record Busy(java.time.Instant leaseUntil) implements ClaimResult { }
     /** Same coordinate was used with a different request fingerprint. */
     record Conflict(String message) implements ClaimResult { }
 }

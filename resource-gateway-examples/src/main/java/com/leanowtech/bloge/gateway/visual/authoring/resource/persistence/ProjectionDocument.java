@@ -16,6 +16,7 @@ public record ProjectionDocument(Kind kind, ApiResourceSpec.ResourceRef subject,
         if (kind == null || subject == null || body == null || fingerprint == null || state == null) {
             throw new IllegalArgumentException("projection fields are required");
         }
+        if (!AuthoringFingerprints.of(body).equals(fingerprint)) throw new IllegalArgumentException("projection fingerprint does not match body");
         body = body.deepCopy();
     }
 

@@ -6,5 +6,5 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 @FunctionalInterface
 public interface ApiResourceProjectionCompiler {
     /** Compiles all required projections or throws without producing a stage. */
-    ReadyApiResourceProjections compile(ApiResourceSpec resource);
+    ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource);
 }
