@@ -60,6 +60,12 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new ApiConnectionDecisions(), clock);
     }
 
+    @Override
+    protected String activationLeaseId(PreparedSecretBinding prepared) {
+        return jdbc.queryForObject("SELECT lease_id FROM rg_api_connection_pending_secret_leases "
+                        + "WHERE opaque_handle=? AND status='PENDING'", String.class, prepared.reference().ref());
+    }
+
     @Test
     void pendingSecretLeaseIsInvisibleAndPreparedHandleIsNotPublishedAsBinding() throws Exception {
         JdbcApiConnectionCommitStore store = jdbcStore();

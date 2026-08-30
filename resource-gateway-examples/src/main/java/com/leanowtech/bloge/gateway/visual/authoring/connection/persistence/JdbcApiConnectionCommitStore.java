@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpe
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
@@ -433,11 +435,17 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     /** {@inheritDoc} */
     @Override
     public StoredApiConnection commit(CommandLease lease) {
+        return commitActivated(lease, List.of());
+    }
+
+    @Override
+    public StoredApiConnection commitActivated(CommandLease lease, List<ActivatedSecretSlot> activated) {
         requireLease(lease);
         if (lease.key().endpoint() != AuthoringEndpoint.API_CONNECTION_SAVE) fail(Code.INTEGRITY);
-        rejectUnactivatedSecrets(lease);
+        if (activated == null) fail(Code.INTEGRITY);
+        if (activated.isEmpty()) rejectUnactivatedSecrets(lease);
         try {
-            return requireResult(transactions.execute(status -> commitInTransaction(lease, false)));
+            return requireResult(transactions.execute(status -> commitInTransaction(lease, false, activated)));
         } catch (ApiConnectionCommitStoreException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -451,11 +459,17 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
      */
     @Override
     public StoredApiConnection commitChild(CommandLease lease) {
+        return commitChildActivated(lease, List.of());
+    }
+
+    @Override
+    public StoredApiConnection commitChildActivated(CommandLease lease, List<ActivatedSecretSlot> activated) {
         requireLease(lease);
         if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
-        rejectUnactivatedSecrets(lease);
+        if (activated == null) fail(Code.INTEGRITY);
+        if (activated.isEmpty()) rejectUnactivatedSecrets(lease);
         try {
-            return requireResult(transactions.execute(status -> commitInTransaction(lease, true)));
+            return requireResult(transactions.execute(status -> commitInTransaction(lease, true, activated)));
         } catch (ApiConnectionCommitStoreException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -463,7 +477,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         }
     }
 
-    private StoredApiConnection commitInTransaction(CommandLease lease, boolean child) {
+    private StoredApiConnection commitInTransaction(CommandLease lease, boolean child,
+                                                    List<ActivatedSecretSlot> activated) {
         requireLiveJournal(lease, true);
         RevisionRow staged = stagedRevision(lease);
         if (staged == null) fail(Code.STAGE_MISSING);
@@ -487,14 +502,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         List<PendingSecretLease> pending = pendingLeases(lease);
         ApiConnectionSpec next = nextSpec(lease.key().scope(), current, staged.connectionId(),
                 restoreCommand(staged, pending), expected, preparedBindings(staged.scope(), pending));
-        ApiConnectionSpec authority = restoreSpec(staged, references(staged.scope(), pending));
+        ApiConnectionSpec stagedAuthority = restoreSpec(staged, references(staged.scope(), pending));
         if (!staged.connectionId().equals(next.connectionId())
                 || !next.fingerprint().equals(staged.fingerprint())
                 || next.revision() != staged.revision()
-                || !authority.fingerprint().equals(next.fingerprint())
-                || authority.secretBindings().size() != pending.size()) {
+                || !stagedAuthority.fingerprint().equals(next.fingerprint())
+                || stagedAuthority.secretBindings().size() != pending.size()) {
             fail(Code.INTEGRITY);
         }
+        Map<String, ActivatedExternalSecret> activations = validateActivations(pending, activated);
+        Map<String, SecretReference> activeReferences = new LinkedHashMap<>();
+        pending.forEach(secret -> {
+            ActivatedExternalSecret output = activations.get(secret.slot());
+            if (output != null) activeReferences.put(secret.slot(),
+                    new SecretReference(staged.scope(), output.activeLocator()));
+        });
+        ApiConnectionSpec authority = restoreSpec(staged, activeReferences);
+        String authorityFingerprint = decisions.fingerprint(authority);
 
         String viewJson;
         String receiptFingerprint;
@@ -507,12 +531,32 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             return null;
         }
         if (jdbc.update("""
-                        UPDATE rg_api_connection_revisions SET state='COMMITTED'
+                        UPDATE rg_api_connection_revisions SET state='COMMITTED', metadata_fingerprint=?
                          WHERE tenant_id=? AND project_id=? AND environment_id=? AND connection_id=?
                            AND revision=? AND command_id=? AND state='STAGED'
-                        """, staged.tenantId(), staged.projectId(), staged.environmentId(),
-                staged.connectionId(), staged.revision(), lease.commandId()) != 1) {
+                        """, authorityFingerprint, staged.tenantId(), staged.projectId(),
+                staged.environmentId(), staged.connectionId(), staged.revision(), lease.commandId()) != 1) {
             fail(Code.CAS_MISMATCH);
+        }
+        for (PendingSecretLease secret : pending) {
+            ActivatedExternalSecret output = activations.get(secret.slot());
+            if (output == null) fail(Code.INTEGRITY);
+            if (jdbc.update("""
+                            INSERT INTO rg_api_connection_secret_bindings
+                                (tenant_id, project_id, environment_id, connection_id, revision, slot,
+                                 provider_id, active_locator, command_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, staged.tenantId(), staged.projectId(), staged.environmentId(),
+                    secret.connectionId(), staged.revision(), secret.slot(), output.providerId(),
+                    output.activeLocator(), lease.commandId()) != 1) {
+                fail(Code.INTEGRITY);
+            }
+        }
+        if (jdbc.update("""
+                        DELETE FROM rg_api_connection_pending_secret_leases
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PENDING'
+                        """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != pending.size()) {
+            fail(Code.INTEGRITY);
         }
         if (!child && jdbc.update("""
                         UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?,
@@ -540,8 +584,32 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 staged.connectionId(), staged.revision(), lease.commandId(), staged.strongEtag()) != 1) {
             fail(Code.INTEGRITY);
         }
-        return new StoredApiConnection(staged.scope(), canonicalView, authority.fingerprint(),
+        return new StoredApiConnection(staged.scope(), canonicalView, authorityFingerprint,
                 staged.strongEtag(), lease.commandId());
+    }
+
+    private Map<String, ActivatedExternalSecret> validateActivations(List<PendingSecretLease> pending,
+                                                                       List<ActivatedSecretSlot> activated) {
+        if (pending.isEmpty()) {
+            if (!activated.isEmpty()) fail(Code.INTEGRITY);
+            return Map.of();
+        }
+        if (activated.size() != pending.size()) fail(Code.INTEGRITY);
+        Map<String, PendingSecretLease> expected = new LinkedHashMap<>();
+        pending.forEach(secret -> expected.put(secret.slot(), secret));
+        Map<String, ActivatedExternalSecret> outputs = new LinkedHashMap<>();
+        for (ActivatedSecretSlot slot : activated) {
+            if (slot == null || outputs.containsKey(slot.slot())) fail(Code.INTEGRITY);
+            PendingSecretLease secret = expected.get(slot.slot());
+            if (secret == null) fail(Code.INTEGRITY);
+            ActivatedExternalSecret output = slot.activated();
+            if (!secret.providerId().equals(output.providerId())
+                    || !secret.leaseId().equals(output.leaseId())
+                    || secret.opaqueHandle().equals(output.activeLocator())) fail(Code.INTEGRITY);
+            outputs.put(slot.slot(), output);
+        }
+        if (outputs.size() != expected.size()) fail(Code.INTEGRITY);
+        return Map.copyOf(outputs);
     }
 
     /** {@inheritDoc} */
@@ -562,13 +630,24 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         String status = jdbc.query("SELECT status FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
                 (row, ignored) -> row.getString(1), lease.commandId()).stream().findFirst().orElse(null);
         if ("COMMITTED".equals(status) || "FAILED".equals(status)) return;
-        requireLiveJournal(lease, false);
-        if (jdbc.update("DELETE FROM rg_api_connection_pending_secret_leases "
-                + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", lease.commandId(),
-                lease.attemptNo(), lease.attemptToken()) < 0) fail(Code.INTEGRITY);
-        if (jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
-                + "AND attempt_token=? AND state='STAGED'", lease.commandId(), lease.attemptNo(),
-                lease.attemptToken()) < 0) fail(Code.INTEGRITY);
+        Integer pending = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
+                + "WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PENDING'",
+                Integer.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (pending != null && pending > 0) requireRecoveryJournal(lease);
+        else requireLiveJournal(lease, false);
+        if (jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET status='ABORT_REQUIRED', "
+                + "updated_at=CURRENT_TIMESTAMP WHERE command_id=? AND attempt_no=? AND attempt_token=? "
+                + "AND status='PENDING'", lease.commandId(), lease.attemptNo(), lease.attemptToken()) < 0) {
+            fail(Code.INTEGRITY);
+        }
+        Integer remaining = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
+                + "WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='ABORT_REQUIRED'",
+                Integer.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (remaining == null || remaining == 0) {
+            if (jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
+                    + "AND attempt_token=? AND state='STAGED'", lease.commandId(), lease.attemptNo(),
+                    lease.attemptToken()) < 0) fail(Code.INTEGRITY);
+        }
         if (jdbc.update("""
                         UPDATE rg_authoring_command_journal SET status='FAILED', receipt_schema=NULL,
                              receipt_json=NULL, receipt_fingerprint=NULL, receipt_etag=NULL,
@@ -585,7 +664,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         requireSlot(slot);
         try {
             transactions.executeWithoutResult(status -> {
-                requireLiveJournal(lease, true);
+                requireRecoveryJournal(lease);
                 if (jdbc.update("""
                                 UPDATE rg_api_connection_pending_secret_leases SET status='ABORT_REQUIRED',
                                      updated_at=CURRENT_TIMESTAMP
@@ -608,7 +687,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         requireSlot(slot);
         try {
             transactions.executeWithoutResult(status -> {
-                requireLiveJournal(lease, true);
+                requireRecoveryJournal(lease);
                 if (jdbc.update("""
                                 DELETE FROM rg_api_connection_pending_secret_leases
                                  WHERE command_id=? AND attempt_no=? AND attempt_token=? AND slot=?
@@ -626,7 +705,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
 
     private void requireLiveJournal(CommandLease lease, boolean forCommit) {
         CommandKey key = lease.key();
-        Boolean exact = jdbc.queryForObject("""
+        Long exactCount = jdbc.queryForObject("""
                         SELECT COUNT(*) FROM rg_authoring_command_journal
                          WHERE command_id=? AND tenant_id=? AND project_id=? AND environment_id=?
                            AND actor_id=? AND endpoint=? AND target_id=? AND idempotency_key=?
@@ -636,8 +715,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
                 key.idempotencyKey(), lease.requestFingerprint(), lease.attemptNo(), lease.attemptToken(),
                 timestamp(lease.leaseUntil()), expectedMode(lease.expectedRevision()),
-                expectedRevision(lease.expectedRevision())) > 0;
-        if (Boolean.FALSE.equals(exact)) fail(Code.LEASE_FENCED);
+                expectedRevision(lease.expectedRevision()));
+        if (exactCount == null || exactCount == 0) fail(Code.LEASE_FENCED);
         String status = jdbc.queryForObject(
                 "SELECT status FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
                 String.class, lease.commandId());
@@ -651,6 +730,28 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         Instant expiry = jdbc.queryForObject("SELECT lease_until FROM rg_authoring_command_journal "
                 + "WHERE command_id=?", (row, ignored) -> timestamp(row, 1), lease.commandId());
         if (expiry == null || !expiry.isAfter(databaseNow())) fail(Code.LEASE_EXPIRED);
+    }
+
+    /** Exact command-attempt fencing for recovery; expiration must not block cleanup. */
+    private void requireRecoveryJournal(CommandLease lease) {
+        CommandKey key = lease.key();
+        Long exactCount = jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rg_authoring_command_journal
+                         WHERE command_id=? AND tenant_id=? AND project_id=? AND environment_id=?
+                           AND actor_id=? AND endpoint=? AND target_id=? AND idempotency_key=?
+                           AND request_fingerprint=? AND attempt_no=? AND attempt_token=? AND lease_until=?
+                           AND expected_mode=? AND expected_revision IS NOT DISTINCT FROM ?
+                        """, Long.class, lease.commandId(), key.scope().tenantId(), key.scope().projectId(),
+                key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
+                key.idempotencyKey(), lease.requestFingerprint(), lease.attemptNo(), lease.attemptToken(),
+                timestamp(lease.leaseUntil()), expectedMode(lease.expectedRevision()),
+                expectedRevision(lease.expectedRevision()));
+        if (exactCount == null || exactCount == 0) fail(Code.LEASE_FENCED);
+        String status = jdbc.queryForObject(
+                "SELECT status FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
+                String.class, lease.commandId());
+        if (status == null || "COMMITTED".equals(status)) fail(Code.LEASE_FENCED);
+        if (!"PREPARING".equals(status) && !"FAILED".equals(status)) fail(Code.LEASE_FENCED);
     }
 
     /** Reads the committed head after checking persisted receipt and metadata integrity. */

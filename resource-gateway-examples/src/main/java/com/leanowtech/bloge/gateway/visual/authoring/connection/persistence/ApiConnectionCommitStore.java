@@ -2,11 +2,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.util.Optional;
+import java.util.List;
 
 /**
  * Persistence boundary for staged and atomically committed Connection metadata.
@@ -28,6 +30,9 @@ public interface ApiConnectionCommitStore {
     /** Promotes the exact live stage and returns its committed payload-free view. */
     StoredApiConnection commit(CommandLease lease);
 
+    /** Promotes a staged Connection after exact external-secret activation outputs are supplied. */
+    StoredApiConnection commitActivated(CommandLease lease, List<ActivatedSecretSlot> activated);
+
     /**
      * Promotes a Connection child of an outer resource save without closing
      * the shared command journal or creating a Connection receipt. The outer
@@ -37,6 +42,9 @@ public interface ApiConnectionCommitStore {
      * @return the locally committed child view, not a published receipt
      */
     StoredApiConnection commitChild(CommandLease lease);
+
+    /** Promotes a nested Connection child after exact external-secret activation outputs are supplied. */
+    StoredApiConnection commitChildActivated(CommandLease lease, List<ActivatedSecretSlot> activated);
 
     /** Fenced failure removes only the exact live stage; stale failures are no-ops. */
     void fail(CommandLease lease);

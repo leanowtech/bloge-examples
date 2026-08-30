@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDec
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -18,6 +20,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.Optional;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,6 +41,11 @@ abstract class ApiConnectionCommitStoreContractTest {
 
     /** Factory seam for exercising this matrix against a future JDBC adapter. */
     protected abstract ApiConnectionCommitStore createStore(Clock clock);
+
+    /** Adapter-specific pending lease lookup; the model uses its opaque handle. */
+    protected String activationLeaseId(PreparedSecretBinding prepared) {
+        return prepared.reference().ref();
+    }
 
     @Test
     void stageIsInvisibleUntilCommitAndCommittedReadIsDefensive() throws Exception {
@@ -186,7 +194,7 @@ abstract class ApiConnectionCommitStoreContractTest {
         MutableClock clock = new MutableClock(TEST_NOW);
         ApiConnectionCommitStore store = newStore(clock);
         CommandLease old = leaseAt(clock, "takeover-negative", 2, "old-token", SCOPE, "customer",
-                ExpectedRevision.create(), 1);
+                ExpectedRevision.create(), 10);
         stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
         clock.advanceSeconds(2);
         CommandLease lower = leaseWithTarget("takeover-negative", 1, "lower-token", SCOPE, "customer",
@@ -232,6 +240,63 @@ abstract class ApiConnectionCommitStoreContractTest {
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
         store.fail(secretCreate);
+    }
+
+    @Test
+    void secretCommitRequiresAndPublishesAnExplicitActivationOutput() {
+        ApiConnectionCommitStore store = newStore();
+        PreparedSecretBinding prepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/customer-token"));
+        CommandLease lease = lease("secret-activation", 1, "secret-activation-token", SCOPE, "customer",
+                ExpectedRevision.create());
+        stage(store, lease, "customer", ExpectedRevision.create(),
+                new ApiConnectionCommand("Secret API", BASE_URL,
+                        ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                        new ApiConnectionCommand.Defaults(5000, Map.of())), prepared);
+
+        assertThatThrownBy(() -> store.commitActivated(lease, List.of()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        CommandLease retry = lease("secret-activation-retry", 1, "secret-activation-retry-token", SCOPE,
+                "customer", ExpectedRevision.create());
+        PreparedSecretBinding retryPrepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/retry-token"));
+        stage(store, retry, "customer", ExpectedRevision.create(),
+                new ApiConnectionCommand("Secret API", BASE_URL,
+                        ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                        new ApiConnectionCommand.Defaults(5000, Map.of())), retryPrepared);
+        ActivatedSecretSlot activation = new ActivatedSecretSlot("token",
+                new ActivatedExternalSecret("team", activationLeaseId(retryPrepared),
+                        "vault://team/customer-token-active"));
+
+        StoredApiConnection committed = store.commitActivated(retry, List.of(activation));
+        assertThat(committed.view().auth().configured()).isTrue();
+        assertThat(store.findHead(SCOPE, "customer")).contains(committed);
+    }
+
+    @Test
+    void secretCommitRejectsWrongActivationAndPreparedHandleAsActiveLocator() {
+        ApiConnectionCommitStore store = newStore();
+        PreparedSecretBinding prepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/customer-token"));
+        CommandLease lease = lease("secret-wrong-activation", 1, "secret-wrong-activation-token", SCOPE,
+                "customer", ExpectedRevision.create());
+        stage(store, lease, "customer", ExpectedRevision.create(),
+                new ApiConnectionCommand("Secret API", BASE_URL,
+                        ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                        new ApiConnectionCommand.Defaults(5000, Map.of())), prepared);
+
+        ActivatedSecretSlot wrong = new ActivatedSecretSlot("token",
+                new ActivatedExternalSecret("wrong-provider", "wrong-lease", "vault://team/active-token"));
+        assertThatThrownBy(() -> store.commitActivated(lease, List.of(wrong)))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        ActivatedSecretSlot preparedAsActive = new ActivatedSecretSlot("token",
+                new ActivatedExternalSecret("team", activationLeaseId(prepared), prepared.reference().ref()));
+        assertThatThrownBy(() -> store.commitActivated(lease, List.of(preparedAsActive)))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
 
     @Test
