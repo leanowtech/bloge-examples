@@ -110,12 +110,12 @@ public final class ApiConnectionDecisions {
             }
         }
         if (command.auth() instanceof ApiConnectionCommand.Auth.Bearer bearer) {
-            requireSecretWrite(bearer.token(), "token");
+            requireSecretWrite(bearer.token());
         } else if (command.auth() instanceof ApiConnectionCommand.Auth.Basic basic) {
             if (basic.username() == null || basic.username().isBlank() || basic.username().length() > 256) {
                 invalid("username is invalid");
             }
-            requireSecretWrite(basic.password(), "password");
+            requireSecretWrite(basic.password());
         } else if (command.auth() instanceof ApiConnectionCommand.Auth.ApiKey apiKey) {
             if (apiKey.headerName() == null || apiKey.headerName().isBlank()) invalid("api-key header is required");
             try {
@@ -123,7 +123,7 @@ public final class ApiConnectionDecisions {
             } catch (IllegalArgumentException e) {
                 invalid("api-key header is reserved or invalid");
             }
-            requireSecretWrite(apiKey.value(), "value");
+            requireSecretWrite(apiKey.value());
             if (defaults != null) {
                 try {
                     ApiResourceTransportSafetyPolicy.requireSafeDefaults(defaults.headers(), apiKey.headerName());
@@ -213,12 +213,8 @@ public final class ApiConnectionDecisions {
                 : auth instanceof ApiConnectionCommand.Auth.Basic ? "password" : "value";
     }
 
-    private static void requireSecretWrite(ApiConnectionCommand.SecretWrite write, String name) {
-        if (write == null) invalid(name + " is required");
-        if (write instanceof ApiConnectionCommand.SecretWrite.Value value
-                && (value.value() == null || value.value().isEmpty())) invalid(name + " is required");
-        if (write instanceof ApiConnectionCommand.SecretWrite.SecretRef ref
-                && (ref.ref() == null || ref.ref().isBlank())) invalid(name + " is invalid");
+    private static void requireSecretWrite(ApiConnectionCommand.SecretWrite write) {
+        if (write == null) invalid("secret write is required");
     }
 
     private static void validateBaseUrl(String value) {

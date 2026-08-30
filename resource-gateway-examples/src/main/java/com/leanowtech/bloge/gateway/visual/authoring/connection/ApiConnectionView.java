@@ -29,7 +29,11 @@ public record ApiConnectionView(
                 : new ApiConnectionCommand.Defaults(defaults.timeoutMs(), defaults.headers());
     }
 
-    /** Credential-free auth summary. */
+    /**
+     * Credential-free auth summary.
+     * @param kind auth discriminator
+     * @param configured whether an opaque credential is configured
+     */
     public record Auth(String kind, boolean configured) {
         @Override public String toString() { return "Auth[kind=" + kind + ", configured=" + configured + "]"; }
     }

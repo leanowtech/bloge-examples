@@ -22,31 +22,50 @@ class ApiConnectionAuthorityTest {
 
     @Test
     void allAuthAndSecretVariantsRoundTripToTheStrictWireShape() throws Exception {
-        for (ApiConnectionCommand.Auth auth : new ApiConnectionCommand.Auth[]{
-                new ApiConnectionCommand.Auth.None(),
-                new ApiConnectionCommand.Auth.Bearer(new ApiConnectionCommand.SecretWrite.Value("token")),
-                new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.SecretRef("vault://team/key")),
-                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", new ApiConnectionCommand.SecretWrite.KeepExisting())}) {
+        for (WireCase testCase : new WireCase[]{
+                new WireCase(new ApiConnectionCommand.Auth.None(), "NONE", null, null),
+                new WireCase(ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("token")),
+                        "BEARER", "token", "VALUE"),
+                new WireCase(ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.secretRef("vault://team/key")),
+                        "BEARER", "token", "SECRET_REF"),
+                new WireCase(ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.keepExisting()),
+                        "BEARER", "token", "KEEP_EXISTING"),
+                new WireCase(ApiConnectionCommand.Auth.basic("alice", ApiConnectionCommand.SecretWrite.value("password")),
+                        "BASIC", "password", "VALUE"),
+                new WireCase(ApiConnectionCommand.Auth.basic("alice", ApiConnectionCommand.SecretWrite.secretRef("vault://team/key")),
+                        "BASIC", "password", "SECRET_REF"),
+                new WireCase(ApiConnectionCommand.Auth.basic("alice", ApiConnectionCommand.SecretWrite.keepExisting()),
+                        "BASIC", "password", "KEEP_EXISTING"),
+                new WireCase(ApiConnectionCommand.Auth.apiKey("X-Api-Key", ApiConnectionCommand.SecretWrite.value("key")),
+                        "API_KEY", "value", "VALUE"),
+                new WireCase(ApiConnectionCommand.Auth.apiKey("X-Api-Key", ApiConnectionCommand.SecretWrite.secretRef("vault://team/key")),
+                        "API_KEY", "value", "SECRET_REF"),
+                new WireCase(ApiConnectionCommand.Auth.apiKey("X-Api-Key", ApiConnectionCommand.SecretWrite.keepExisting()),
+                        "API_KEY", "value", "KEEP_EXISTING")}) {
+            ApiConnectionCommand.Auth auth = testCase.auth();
             ApiConnectionCommand command = new ApiConnectionCommand("Customer API", "https://customer.example.com", auth,
                     new ApiConnectionCommand.Defaults(5000, Map.of("Accept", "application/json")));
             JsonNode wire = JSON.valueToTree(command);
             assertThat(wire.path("schemaVersion").asText()).isEqualTo(ApiConnectionCommand.SCHEMA_VERSION);
-            assertThat(wire.path("auth").path("kind").asText()).isEqualTo(auth.kind());
+            assertThat(wire.path("auth").path("kind").asText()).isEqualTo(testCase.kind());
             if (auth instanceof ApiConnectionCommand.Auth.None) {
                 assertThat(wire.path("auth").fieldNames()).toIterable().containsExactly("kind");
             } else if (auth instanceof ApiConnectionCommand.Auth.Bearer) {
                 assertThat(wire.path("auth").fieldNames()).toIterable().containsExactlyInAnyOrder("kind", "token");
-                assertThat(wire.at("/auth/token/mode").asText()).isIn("VALUE", "SECRET_REF", "KEEP_EXISTING");
             } else if (auth instanceof ApiConnectionCommand.Auth.Basic) {
                 assertThat(wire.path("auth").fieldNames()).toIterable().containsExactlyInAnyOrder("kind", "username", "password");
-                assertThat(wire.at("/auth/password/mode").asText()).isIn("VALUE", "SECRET_REF", "KEEP_EXISTING");
             } else {
                 assertThat(wire.path("auth").fieldNames()).toIterable().containsExactlyInAnyOrder("kind", "headerName", "value");
-                assertThat(wire.at("/auth/value/mode").asText()).isIn("VALUE", "SECRET_REF", "KEEP_EXISTING");
+            }
+            if (testCase.secretField() != null) {
+                assertThat(wire.at("/auth/" + testCase.secretField() + "/mode").asText())
+                        .isEqualTo(testCase.mode());
             }
             assertThat(JSON.treeToValue(wire, ApiConnectionCommand.class)).isEqualTo(command);
         }
     }
+
+    private record WireCase(ApiConnectionCommand.Auth auth, String kind, String secretField, String mode) { }
 
     @Test
     void commandAndViewShapesFollowTheVersionedSchemaProperties() throws Exception {

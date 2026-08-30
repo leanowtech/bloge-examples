@@ -61,6 +61,10 @@ public record ApiConnectionCommand(
     })
     public sealed interface SecretWrite permits SecretWrite.Value, SecretWrite.SecretRef, SecretWrite.KeepExisting {
         /** One-time plaintext credential accepted only at the staging boundary. */
+        /**
+         * One-time plaintext credential.
+         * @param value plaintext accepted only at the staging boundary
+         */
         record Value(String value) implements SecretWrite {
             public Value {
                 if (value == null || value.isEmpty()) throw new IllegalArgumentException("secret value is required");
@@ -70,6 +74,10 @@ public record ApiConnectionCommand(
         }
 
         /** Existing vault reference; scope authorization is supplied by the authority seam. */
+        /**
+         * Existing vault reference.
+         * @param ref opaque vault handle
+         */
         record SecretRef(String ref) implements SecretWrite {
             public SecretRef {
                 SecretReference.requireValid(ref);
@@ -79,12 +87,16 @@ public record ApiConnectionCommand(
         }
 
         /** Retain the existing binding during a compatible update. */
+        /** Keep the existing binding during a compatible update. */
         record KeepExisting() implements SecretWrite {
             @Override public String toString() { return "SecretWrite.KeepExisting"; }
         }
 
+        /** @param value plaintext staged by the caller @return value write */
         static Value value(String value) { return new Value(value); }
+        /** @param ref authorized vault handle @return reference write */
         static SecretRef secretRef(String ref) { return new SecretRef(ref); }
+        /** @return keep-existing write */
         static KeepExisting keepExisting() { return new KeepExisting(); }
     }
 
@@ -100,9 +112,13 @@ public record ApiConnectionCommand(
         /** @return stable wire discriminator */
         String kind();
 
+        /** @return no-auth configuration */
         static None none() { return new None(); }
+        /** @param token token write @return bearer configuration */
         static Bearer bearer(SecretWrite token) { return new Bearer(token); }
+        /** @param username basic username @param password password write @return basic configuration */
         static Basic basic(String username, SecretWrite password) { return new Basic(username, password); }
+        /** @param headerName safe custom header @param value API-key write @return API-key configuration */
         static ApiKey apiKey(String headerName, SecretWrite value) { return new ApiKey(headerName, value); }
 
         /** Authentication is not configured. */
@@ -112,18 +128,32 @@ public record ApiConnectionCommand(
         }
 
         /** Bearer token authentication. */
+        /**
+         * Bearer token authentication.
+         * @param token token write operation
+         */
         record Bearer(SecretWrite token) implements Auth {
             @Override public String kind() { return "BEARER"; }
             @Override public String toString() { return "Auth.Bearer[REDACTED]"; }
         }
 
         /** Basic username/password authentication. */
+        /**
+         * Basic username/password authentication.
+         * @param username basic username
+         * @param password password write operation
+         */
         record Basic(String username, SecretWrite password) implements Auth {
             @Override public String kind() { return "BASIC"; }
             @Override public String toString() { return "Auth.Basic[username=REDACTED,password=REDACTED]"; }
         }
 
         /** API-key authentication carried in one safe custom header. */
+        /**
+         * API-key authentication in a safe custom header.
+         * @param headerName custom header name
+         * @param value API-key write operation
+         */
         record ApiKey(String headerName, SecretWrite value) implements Auth {
             @Override public String kind() { return "API_KEY"; }
             @Override public String toString() { return "Auth.ApiKey[headerName=REDACTED,value=REDACTED]"; }
