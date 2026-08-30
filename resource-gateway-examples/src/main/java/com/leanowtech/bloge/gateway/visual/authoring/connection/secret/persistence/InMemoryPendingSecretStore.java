@@ -76,6 +76,13 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         CommandAuthority authority = authority(batch.lease());
         CommandAuthority commandOwner = commandOwners.get(batch.lease().commandLease().commandId());
         if (commandOwner != null && !commandOwner.equals(authority)) {
+            if (commandOwner.coordinate().equals(authority.coordinate())
+                    && commandOwner.key().equals(authority.key())
+                    && commandOwner.requestFingerprint().equals(authority.requestFingerprint())
+                    && isHigherAttempt(batch.lease().commandLease().commandId(),
+                    batch.lease().commandLease().attemptNo())) {
+                throw failure(PendingSecretStoreException.Code.LEASE_FENCED);
+            }
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
         AttemptKey latest = latestAttempts.get(authority);
@@ -387,6 +394,19 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                 && command.attemptNo() > prior.attemptNo;
     }
 
+    private boolean isHigherAttempt(String commandId, int attemptNo) {
+        for (AttemptKey candidate : entries.keySet()) {
+            if (candidate.commandId.equals(commandId) && candidate.attemptNo < attemptNo) return true;
+        }
+        for (AttemptKey candidate : completed.keySet()) {
+            if (candidate.commandId.equals(commandId) && candidate.attemptNo < attemptNo) return true;
+        }
+        for (AttemptKey candidate : latestAttempts.values()) {
+            if (candidate.commandId.equals(commandId) && candidate.attemptNo < attemptNo) return true;
+        }
+        return false;
+    }
+
     private static AttemptKey key(PendingSecretLease lease) {
         CommandLease command = lease.commandLease();
         return new AttemptKey(lease.coordinate(), command.commandId(), command.attemptNo(), command.attemptToken());
@@ -399,8 +419,8 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
 
     private static CommandAuthority authority(PendingSecretLease lease) {
         CommandLease command = lease.commandLease();
-        return new CommandAuthority(command.key(), command.requestFingerprint(), lease.coordinate(),
-                lease.connectionExpected());
+        return new CommandAuthority(command.key(), command.requestFingerprint(), command.expectedRevision(),
+                lease.coordinate(), lease.connectionExpected());
     }
 
     private static PendingSecretStoreException failure(PendingSecretStoreException.Code code) {
@@ -411,7 +431,8 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                               String attemptToken) { }
     private record CommandAttemptKey(String commandId, int attemptNo, String attemptToken) { }
     private record CommandAuthority(com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey key,
-                                    String requestFingerprint, ConnectionRevisionCoordinate coordinate,
+                                    String requestFingerprint, ExpectedRevision outerExpected,
+                                    ConnectionRevisionCoordinate coordinate,
                                     ExpectedRevision connectionExpected) { }
     private record BindingKey(ConnectionRevisionCoordinate coordinate, String slot) { }
     private record Entry(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained, State state,

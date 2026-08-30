@@ -1,6 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence;
 
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.PreparedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.SecretOperationContext;
 import org.junit.jupiter.api.TestInstance;
 
 import java.time.Clock;
@@ -48,5 +53,36 @@ final class InMemoryPendingSecretStoreContractTest extends PendingSecretStoreCon
         assertThat(store.findActive(latestBatch.lease().coordinate(), "token")).contains(
                 new com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActiveSecretBinding(
                         "provider:one", "latest-active", "latest-attempt"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void higherAttemptWithDriftedNestedOuterCasIsFenced() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandKey outerKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE,
+                "resource", "idempotency-nested-cas-fence");
+        CommandLease first = new CommandLease("nested-cas-fence", 1, "first-token", outerKey,
+                "fingerprint-nested-cas-fence", NOW.plusSeconds(60),
+                com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.match(7));
+        PendingSecretBatch firstBatch = nested(first, ExpectedRevision.create(), 1);
+        store.stage(firstBatch);
+
+        CommandLease driftedRetry = new CommandLease("nested-cas-fence", 2, "retry-token", outerKey,
+                "fingerprint-nested-cas-fence", NOW.plusSeconds(60),
+                com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.match(8));
+        PendingSecretBatch driftedBatch = nested(driftedRetry, ExpectedRevision.create(), 1);
+
+        assertThatThrownBy(() -> store.stage(driftedBatch))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_FENCED);
+    }
+
+    private PendingSecretBatch nested(CommandLease outer, ExpectedRevision childExpected, long revision) {
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "connection-save",
+                "connection", revision, outer.commandId(), outer.attemptNo(), outer.attemptToken(), "token");
+        PreparedExternalSecret prepared = new PreparedExternalSecret("provider:one", outer.attemptToken(),
+                "opaque-nested-cas-fence", outer.leaseUntil(), context);
+        return new PendingSecretBatch(new PendingSecretLease(outer,
+                new ConnectionRevisionCoordinate(SCOPE, "connection", revision), childExpected),
+                java.util.List.of(new PendingSecretOperation.Prepared("token", SecretSourceMode.VALUE, prepared)));
     }
 }

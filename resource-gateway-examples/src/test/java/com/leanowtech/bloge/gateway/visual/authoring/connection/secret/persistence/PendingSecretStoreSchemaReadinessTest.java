@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
@@ -17,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Readiness and fail-closed evidence for the forward-only pending-secret V007
- * closure.  The fixture deliberately starts at V006 so this test exercises the
+ * Readiness and fail-closed evidence for the forward-only pending-secret V007/V008
+ * closure. The fixture deliberately starts at V006 so this test exercises the
  * upgrade boundary rather than only a clean current schema.
  */
 class PendingSecretStoreSchemaReadinessTest {
@@ -89,12 +90,27 @@ class PendingSecretStoreSchemaReadinessTest {
     }
 
     @Test
-    void currentMigrationTextIsForwardOnlyAndDoesNotRewriteShippedMigrations() throws Exception {
-        String v007 = java.nio.file.Files.readString(java.nio.file.Path.of(
-                "src/main/resources/db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql"));
-        assertThat(v007).contains("LEAST", "provider_lease_until", "SET NOT NULL",
-                "child_expected_mode", "child_expected_revision", "CREATE INDEX IF NOT EXISTS");
-        assertThat(v007).doesNotContain("DROP TABLE", "DELETE FROM");
+    void v008RejectsMatchWithNullChildCasAtDatabaseBoundary() {
+        insertFixture("v008-valid", "MATCH", 2L, PROVIDER_DEADLINE);
+
+        applyV007();
+        applyV008();
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE rg_api_connection_pending_secret_leases"
+                + " SET child_expected_revision=NULL WHERE command_id=?", "v008-valid"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET child_expected_revision=2"
+                + " WHERE command_id=?", "v008-valid");
+    }
+
+    @Test
+    void v008FailsClosedWhenLegacyMatchNullCannotBeProvenSafe() {
+        insertFixture("v008-legacy-null", "MATCH", null, PROVIDER_DEADLINE);
+
+        applyV007();
+
+        assertThatThrownBy(this::applyV008)
+                .isInstanceOf(ScriptStatementFailedException.class);
     }
 
     private void applyMigrationsThroughV006() {
@@ -108,6 +124,10 @@ class PendingSecretStoreSchemaReadinessTest {
 
     private void applyV007() {
         applyMigration("V20260831_007__pending_secret_store_protocol_closure.sql");
+    }
+
+    private void applyV008() {
+        applyMigration("V20260831_008__pending_secret_store_child_cas_closure.sql");
     }
 
     private void applyMigration(String name) {

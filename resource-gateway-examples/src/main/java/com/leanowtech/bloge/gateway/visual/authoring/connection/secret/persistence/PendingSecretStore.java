@@ -8,13 +8,15 @@ import java.util.Optional;
 /**
  * Durable seam between the authoring coordinator and external secret providers.
  *
- * <p>Every mutation is expected to join the coordinator's outer database transaction;
- * provider I/O must happen before that transaction is committed, never inside JDBC.
- * The in-memory implementation is a reference for the protocol and intentionally does
- * not pretend to provide database transactions.</p>
+ * <p>The final binding commit joins the coordinator's ambient database transaction;
+ * this keeps connection metadata, active bindings, and the outer receipt atomic.
+ * Staging and recovery may own local store transactions because provider I/O happens
+ * before the final coordinator commit, never inside JDBC. The in-memory implementation
+ * is a reference for the protocol and intentionally does not pretend to provide
+ * database transactions.</p>
  */
 public interface PendingSecretStore {
-    /** Atomically stages every slot, or rejects a partial, drifted, or expired batch. */
+    /** Atomically stages every slot in a store-local transaction, or rejects a partial, drifted, or expired batch. */
     void stage(PendingSecretBatch batch);
 
     /** Finds one exact complete lease, including child CAS and coordinate, never a nearby retry. */
@@ -37,7 +39,7 @@ public interface PendingSecretStore {
     /** Marks an exact staged or activated batch for provider compensation. */
     void markAbortRequired(PendingSecretLease lease);
 
-    /** Claims complete expired batches and existing abort claims atomically, bounded by batches. */
+    /** Claims complete expired batches and existing abort claims in a store-local transaction, bounded by batches. */
     List<SecretAbortCandidate> claimRecoveryDue(int attemptLimit);
 
     /** Completes one exact recovery claim; repeated completion of the same claim is idempotent. */

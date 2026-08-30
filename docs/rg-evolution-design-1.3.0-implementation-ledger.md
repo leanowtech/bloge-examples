@@ -1,6 +1,6 @@
 # Resource Gateway 1.3.0 Implementation Ledger
 
-Updated: 2026-08-30
+Updated: 2026-08-31
 Source of truth: `docs/rg-evolution-design-1.3.0.md`
 Branch: `codex/bloge-dag-workbench2`
 
@@ -76,6 +76,42 @@ WebDriver session. The chain covers:
 
 The browser evidence is recorded at two levels: focused chain `1/1`, and the
 browser test class `50/50`.
+
+### 8.6 Pending-secret persistence seam (J3-B1c–e)
+
+Status: **Implemented** as a persistence seam; this section does not change the
+accepted Facade/UI chain above.
+
+The in-memory implementation remains the exact reference model for complete
+batch replay, latest-attempt and competing-command fences, staged invisibility,
+KEEP_EXISTING behavior, and recovery claims. The JDBC implementation now
+reconstructs the outer `CommandLease` expected revision from the command journal
+and the child connection expected revision from each row, loads journal status,
+and allows stage, abort, recovery, and finalization only while that journal is
+`PREPARING`. Stage and recovery may own local JDBC transactions; only the final
+binding commit requires the coordinator's ambient transaction.
+
+Recovery selection is DB-bounded by complete batches, has stable ordering, and
+excludes batches with a still-live recovery claim before applying the limit. Lease
+decisions use the database clock. V007 remains an append-only historical
+migration: it clamps `lease_until` to the earlier provider/journal deadline while
+preserving `provider_lease_until`. V008 is forward-only and replaces the
+three-valued child-CAS check with an explicit non-null boolean closure; executable
+readiness tests prove both rejection of `MATCH` plus `NULL` and fail-closed
+upgrade behavior for legacy rows that cannot be proven safe.
+
+JDBC parity is exercised by a direct H2 PostgreSQL-mode harness with database
+seeding and ambient-transaction assertions: 26 JDBC tests cover the backend-
+applicable shared cases, including nested outer/child CAS, terminal status,
+takeover and recovery claims, KEEP_EXISTING, database-time expiry, rollback,
+replay, and binding ownership. The harness is intentionally not an inherited
+copy of the pure contract because the durable schema has one authoritative
+journal row per `command_id`, uses database time, and requires the final commit's
+ambient transaction; the pure value-object tests remain in the shared contract,
+and the simultaneous-attempt case is not representable by that schema.
+The focused persistence regression is 62/62 green: 26 JDBC, 30 in-memory, and
+6 migration-readiness tests. Real PostgreSQL, `AuthoringFacade`, HTTP endpoints,
+and UI acceptance remain outside this seam.
 
 ## Final gate evidence
 

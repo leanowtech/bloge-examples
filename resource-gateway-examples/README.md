@@ -118,6 +118,24 @@ worktree concurrently contains unrelated uncommitted Connection/JDBC compile err
 confused with the isolated HEAD evidence. Real PostgreSQL was not run, and PG metadata semantics are covered only
 by contract tests. This hardening does not increase the broader completion estimate beyond 35%.
 
+J3-B1c–e closes the PendingSecretStore persistence protocol as a persistence seam
+(2026-08-31). The in-memory adapter is the exact reference model: staged batches
+are invisible to active reads, retries replay only the complete matching attempt,
+and newer attempts or competing commands are fenced before bindings change. The
+JDBC adapter reconstructs the outer command CAS from the journal and the child
+connection CAS from each pending row, requires the journal to remain `PREPARING`
+for every mutation, uses the database clock and the earlier provider/journal
+deadline, claims complete recovery batches in stable DB-bounded order while
+excluding live claims, and requires an ambient coordinator transaction only for
+the final binding commit; stage and recovery own local store transactions.
+V007 is retained as history and clamps the effective lease while preserving
+`provider_lease_until`; forward-only V008 replaces its nullable three-valued
+child-CAS check with an explicit non-null boolean closure and fails closed on
+unprovable legacy rows. The focused persistence regression is 62/62 green
+(26 JDBC, 30 in-memory, 6 migration-readiness tests) in H2 PostgreSQL mode.
+This does not accept or wire the `AuthoringFacade`, HTTP endpoints, UI, or real
+PostgreSQL certification.
+
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than

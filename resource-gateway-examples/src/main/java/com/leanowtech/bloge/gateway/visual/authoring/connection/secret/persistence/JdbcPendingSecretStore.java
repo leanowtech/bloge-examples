@@ -205,9 +205,9 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         }
         Journal journal = journal(lease, true);
         journal.requirePreparing();
+        if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
-        if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (!restore(rows).lease().equals(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (rows.stream().anyMatch(row -> !"ABORT_REQUIRED".equals(row.status())
                 && !"PENDING".equals(row.status()))) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
@@ -229,13 +229,19 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                                        AND j.attempt_no=p.attempt_no
                                        AND j.attempt_token=p.attempt_token
                                        AND j.status='PREPARING')
+                       AND NOT EXISTS (SELECT 1
+                                         FROM rg_api_connection_pending_secret_leases claimed
+                                        WHERE claimed.command_id=p.command_id
+                                          AND claimed.attempt_no=p.attempt_no
+                                          AND claimed.attempt_token=p.attempt_token
+                                          AND claimed.recovery_claim_until > ?)
                      GROUP BY p.command_id, p.attempt_no, p.attempt_token
                      HAVING MIN(p.lease_until) <= ? OR SUM(CASE WHEN p.status='ABORT_REQUIRED' THEN 1 ELSE 0 END) = COUNT(*)
                     ORDER BY MIN(CASE WHEN p.status='ABORT_REQUIRED' THEN 0 ELSE 1 END),
                               MIN(p.lease_until), p.command_id, p.attempt_no, p.attempt_token, MIN(p.updated_at)
-                     LIMIT ?
+                    LIMIT ?
                     """, (row, ignored) -> new BatchKey(row.getString(1), row.getInt(2), row.getString(3)),
-                    timestamp(now), attemptLimit);
+                    timestamp(now), timestamp(now), attemptLimit);
             List<SecretAbortCandidate> result = new ArrayList<>();
             for (BatchKey key : keys) {
                 Journal journal = journal(key, true);
