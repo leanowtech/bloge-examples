@@ -1,12 +1,14 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
@@ -134,7 +136,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
-    void standaloneCommitClosesJournalAndWritesConnectionReceipt() {
+    void standaloneCommitClosesJournalAndWritesConnectionReceipt() throws Exception {
         JdbcApiConnectionCommitStore store = jdbcStore();
         CommandLease lease = lease("standalone-receipt", "standalone-receipt-token", "customer",
                 ExpectedRevision.create());
@@ -150,10 +152,89 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThat(jdbc.queryForObject(
                 "SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
                 String.class, lease.commandId())).contains("Customer API");
+        String receiptJson = jdbc.queryForObject(
+                "SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId());
+        assertThat(new ObjectMapper().readTree(receiptJson))
+                .isEqualTo(new ObjectMapper().valueToTree(committed.view()));
         assertThat(jdbc.queryForObject(
                 "SELECT receipt_etag FROM rg_authoring_command_journal WHERE command_id=?",
                 String.class, lease.commandId())).isEqualTo(committed.strongEtag());
         assertThat(store.findHead(SCOPE, "customer")).contains(committed);
+    }
+
+    @Test
+    void committedReadRejectsAViewAndReceiptThatDriftFromCanonicalAuthority() throws Exception {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("canonical-view", "canonical-view-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(lease);
+
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode tampered = (ObjectNode) mapper.readTree(jdbc.queryForObject(
+                "SELECT view_json FROM rg_api_connection_revisions WHERE command_id=?",
+                String.class, lease.commandId()));
+        ((ObjectNode) tampered.get("auth")).put("configured", true);
+        String tamperedJson = mapper.writeValueAsString(tampered);
+        jdbc.update("UPDATE rg_api_connection_revisions SET view_json=? WHERE command_id=?",
+                tamperedJson, lease.commandId());
+        jdbc.update("UPDATE rg_authoring_command_journal SET receipt_json=?, receipt_fingerprint=? "
+                        + "WHERE command_id=?", tamperedJson,
+                AuthoringFingerprints.of(mapper.readTree(tamperedJson)), lease.commandId());
+
+        assertThatThrownBy(() -> store.findHead(SCOPE, "customer"))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void committedReadRejectsDisplayNameBaseUrlDefaultsReceiptAndFingerprintTampering() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("canonical-fields", "canonical-fields-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(lease);
+
+        String viewJson = jdbc.queryForObject(
+                "SELECT view_json FROM rg_api_connection_revisions WHERE command_id=?",
+                String.class, lease.commandId());
+        String receiptJson = jdbc.queryForObject(
+                "SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId());
+        String metadataFingerprint = jdbc.queryForObject(
+                "SELECT metadata_fingerprint FROM rg_api_connection_revisions WHERE command_id=?",
+                String.class, lease.commandId());
+
+        jdbc.update("UPDATE rg_api_connection_revisions SET view_json=? WHERE command_id=?",
+                viewJson.replace("Customer API", "Tampered API"), lease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("UPDATE rg_api_connection_revisions SET view_json=? WHERE command_id=?",
+                viewJson, lease.commandId());
+
+        jdbc.update("UPDATE rg_api_connection_revisions SET base_url=? WHERE command_id=?",
+                "https://tampered.example.com", lease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("UPDATE rg_api_connection_revisions SET base_url=? WHERE command_id=?",
+                BASE_URL, lease.commandId());
+
+        jdbc.update("UPDATE rg_api_connection_revisions SET view_json=? WHERE command_id=?",
+                viewJson.replace("\"timeoutMs\":5000", "\"timeoutMs\":6000"), lease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("UPDATE rg_api_connection_revisions SET view_json=? WHERE command_id=?",
+                viewJson, lease.commandId());
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET receipt_json=? WHERE command_id=?",
+                receiptJson.replace("Customer API", "Tampered API"), lease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("UPDATE rg_authoring_command_journal SET receipt_json=? WHERE command_id=?",
+                receiptJson, lease.commandId());
+
+        jdbc.update("UPDATE rg_api_connection_revisions SET metadata_fingerprint=? WHERE command_id=?",
+                "sha256:" + "b".repeat(64), lease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("UPDATE rg_api_connection_revisions SET metadata_fingerprint=? WHERE command_id=?",
+                metadataFingerprint, lease.commandId());
     }
 
     @Test
@@ -291,5 +372,11 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     private int committedCount() {
         return jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_api_connection_revisions WHERE state='COMMITTED'", Integer.class);
+    }
+
+    private void assertReadIntegrityFailure(JdbcApiConnectionCommitStore store) {
+        assertThatThrownBy(() -> store.findHead(SCOPE, "customer"))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
 }

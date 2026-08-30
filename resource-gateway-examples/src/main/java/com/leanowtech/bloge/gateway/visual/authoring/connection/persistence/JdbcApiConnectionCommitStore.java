@@ -498,8 +498,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
 
         String viewJson;
         String receiptFingerprint;
+        ApiConnectionView canonicalView = authority.view();
         try {
-            viewJson = mapper.writeValueAsString(authority.view());
+            viewJson = mapper.writeValueAsString(canonicalView);
             receiptFingerprint = AuthoringFingerprints.of(mapper.readTree(viewJson));
         } catch (Exception ex) {
             fail(Code.INTEGRITY);
@@ -539,7 +540,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 staged.connectionId(), staged.revision(), lease.commandId(), staged.strongEtag()) != 1) {
             fail(Code.INTEGRITY);
         }
-        return new StoredApiConnection(staged.scope(), authority.view(), authority.fingerprint(),
+        return new StoredApiConnection(staged.scope(), canonicalView, authority.fingerprint(),
                 staged.strongEtag(), lease.commandId());
     }
 
@@ -711,7 +712,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             bindings.forEach(binding -> refs.put(binding.slot(),
                     new SecretReference(row.scope(), binding.activeLocator())));
             ApiConnectionSpec authority = restoreSpec(row, refs);
-            if (view == null || !RECEIPT_SCHEMA.equals(row.receiptSchema())
+            ApiConnectionView canonicalView = authority.view();
+            if (view == null || !view.equals(canonicalView)
+                    || !RECEIPT_SCHEMA.equals(row.receiptSchema())
                     || !ApiConnectionSpec.SCHEMA_VERSION.equals(authority.schemaVersion())
                     || !row.fingerprint().equals(decisions.fingerprint(authority))
                     || bindings.size() != authority.secretBindings().size()
@@ -721,7 +724,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                     || !mapper.readTree(row.receiptJson()).equals(mapper.readTree(row.viewJson()))) {
                 fail(Code.INTEGRITY);
             }
-            return new StoredApiConnection(row.scope(), view, row.fingerprint(), row.strongEtag(),
+            return new StoredApiConnection(row.scope(), canonicalView, row.fingerprint(), row.strongEtag(),
                     row.commandId());
         } catch (ApiConnectionCommitStoreException ex) {
             throw ex;
@@ -827,9 +830,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     private ApiConnectionSpec restoreSpec(RevisionRow row, Map<String, SecretReference> references) {
         try {
             ApiConnectionView view = mapper.readValue(row.viewJson(), ApiConnectionView.class);
-            return ApiConnectionSpec.restore(ApiConnectionSpec.SCHEMA_VERSION, row.scope(), row.connectionId(),
+            ApiConnectionSpec authority = ApiConnectionSpec.restore(ApiConnectionSpec.SCHEMA_VERSION,
+                    row.scope(), row.connectionId(),
                     Math.toIntExact(row.revision()), row.fingerprint(), view.displayName(), row.baseUrl(),
                     row.authKind(), row.basicUsername(), row.apiKeyHeader(), defaults(row), references);
+            if (!view.equals(authority.view())) fail(Code.INTEGRITY);
+            return authority;
         } catch (ApiConnectionCommitStoreException ex) {
             throw ex;
         } catch (Exception ex) {
