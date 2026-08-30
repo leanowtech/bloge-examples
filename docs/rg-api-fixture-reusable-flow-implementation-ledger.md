@@ -323,7 +323,36 @@ store contract 13、compiler 6、boundary 1。`c45436249` 的隔离 `clean verif
 Resource 对象页和首次模拟。复合保存必须继续满足 Exact Subject、强 ETag/Idempotency、secret-free
 Problem Detail、投影闭包与 fail-closed side-effect 边界。
 
-## 9. 未关闭风险
+## 9. Iteration 9 — J3-A Connection authority
+
+日期：2026-08-30。
+
+### 已完成
+
+- `9e2ac490f`、`b3eb989d0`、`5877a6714`：J3-A Connection authority 的 Spec 评审为
+  **Accepted**；Standards 评审无 P1，P2 已关闭。
+- 本切片只实现纯领域权威与 wire 形状：认证/Secret 的 wire variants、同 Scope 下已授权的 opaque
+  reference、CAS 与服务端 fingerprint，以及 secret-free View/Error 边界；同时固化 HTTPS、Header
+  和 timeout policy。它不等价于 Connection 的持久化或 API 可用性。
+
+### 最新验证
+
+J3-A 聚焦测试 **11/11 green**。该证据只覆盖上述纯 authority 能力；尚未实现或验收 JDBC、权威 head、
+Vault lease/activate、`AuthoringFacade` 或 controller。
+
+### 当前差距评估
+
+本轮只关闭 API Resource 后端权威能力中的 Connection 纯 authority 边界；按本台账现有权重，完成度从
+31% 调整为 **32%**，当前差距为 **68%**。这不是 JDBC、HTTP、对象页、真实 PostgreSQL 或全量门禁完成声明，
+也不意味着最终差距已小于 3%。
+
+`c45436249` 的隔离 `clean verify` 共 7739 个测试，只有 `VisualRuntimeBoundary` 1 个失败且 0 个错误；
+`6dd104292` 修复后保留的 full verify 证据为 **7739/7739 green**，边界聚焦测试为 1/1 通过。
+
+下一步仍是 JDBC/head、Vault lease/activate、`AuthoringFacade` 与 controller 的复合保存和 API 暴露，
+随后才进入 API Resource 对象页和首次模拟。
+
+## 10. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

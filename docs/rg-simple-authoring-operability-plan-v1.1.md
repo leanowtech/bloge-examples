@@ -1,7 +1,7 @@
 # Resource Gateway 简化创作可操作性方案 v1.1
 
-状态：Approved for implementation；J2 已完成，J3 编译器投影切片已通过 Spec + Standards Accepted，
-J3 的 Facade/复合保存仍在实施。
+状态：Approved for implementation；J2 已完成，J3 编译器投影与 J3-A Connection authority 均通过
+Spec + Standards Accepted，J3 的 Facade/复合保存仍在实施。
 
 日期：2026-08-30。
 
@@ -19,17 +19,20 @@ J3 的 Facade/复合保存仍在实施。
 | API Resource 后端权威、复合保存与投影闭包 | 15 / 18 |
 | 文档与聚焦门禁 | 5 / 7 |
 | 其余运行与 UI 能力 | 0 / 65 |
-| 当前完成度 | 31% |
+| 当前完成度 | 32% |
 
 `ApiResourceCommitStore` 已完成 claim、committed read、stage、commit、fail 与 opt-in production wiring 的
 聚焦证据。J3 编译器现在可通过服务端 `Connection` resolver 生成 3 个 `READY` 的精确 subject 投影，复用
 共享 Header/API-key policy，严格处理 URI 和 JSONPath 到运行时 dot path 的映射，并显式接入
-`visualadapter` 边界；但 `AuthoringFacade`、Connection 元数据、Secret lease、Default Fixture、新对象页和
-模拟运行还没有验收。因此 v1.1 的重点不是重开领域模型，而是在已完成 J2 的持久化边界上继续固化用户主线。
+`visualadapter` 边界；J3-A 又验收了 Connection 的纯领域 authority：wire auth/secret variants、同 Scope
+下已授权 opaque refs、CAS/fingerprint、secret-free View/Error，以及 HTTPS/header/timeout policy。
+但 JDBC/head、Vault lease/activate、`AuthoringFacade`、controller、Default Fixture、新对象页和模拟运行
+还没有验收。因此 v1.1 的重点不是重开领域模型，而是在已完成 J2 的持久化边界上继续固化用户主线。
 
 J3 的真实写入边界仍是 fail-closed：`FIXTURE_ONLY` 不执行真实写入，`MANAGED_WRITE` 在缺少无损 runtime
 side-effect contract 时也不开放。当前 31% 仅代表本台账权重中新增的编译器投影点，不代表 HTTP、真实
-PostgreSQL 或 full clean verify 已完成。
+PostgreSQL 或 full clean verify 已完成。当前 32% 包含该 Connection 纯 authority 切片，不包含 JDBC/head、
+Vault lease/activate、Facade 或 controller。
 
 共享工作树中当前存在的 `GraphNodeFixtureControls.tsx` 未提交修改，不属于本方案实施，必须保持隔离。
 
@@ -430,16 +433,18 @@ staged invisibility、原子 commit、fenced fail、restart/history replay 和 t
 配置默认关闭，缺 migration/compiler/readiness 时启用即 fail startup；真实 PostgreSQL、full clean verify
 仍未完成。
 
-### Slice J3：AuthoringFacade 与复合保存（编译器投影已验收，Facade 仍待完成）
+### Slice J3：AuthoringFacade 与复合保存（编译器投影与 Connection authority 已验收，Facade 仍待完成）
 
-目标：暴露第一个可用 API Resource 保存接口。编译器投影子切片已通过 Spec + Standards Accepted，
-但 Facade、Connection/Secret/Default Fixture 复合保存尚未完成。
+目标：暴露第一个可用 API Resource 保存接口。编译器投影与 J3-A Connection authority 子切片已通过
+Spec + Standards Accepted，但 JDBC/head、Vault lease/activate、Facade、controller、Connection/Secret/
+Default Fixture 复合保存尚未完成。
 
 已验收的编译器投影边界：服务端 `Connection` resolver 生成 3 个 `READY`、精确 subject 的投影，复用共享
 Header/API-key policy，严格 URI，JSONPath 映射到运行时 dot path，并显式接入 `visualadapter`。对应提交为
-`67d8530b4`、`3532ce5a1`、`c45436249`、`6dd104292`。协调者独立运行 82 个聚焦测试，全部通过；其中
-`c45436249` 的隔离 `clean verify` 有 1 个 `VisualRuntimeBoundary` 失败，`6dd104292` 后仅重跑该边界聚焦
-测试并通过，不能据此宣称之后的 full verify 已全绿。
+`67d8530b4`、`3532ce5a1`、`c45436249`、`6dd104292`。协调者独立运行 82 个聚焦测试，全部通过；J3-A
+对应 `9e2ac490f`、`b3eb989d0`、`5877a6714`，聚焦测试 11/11 green；其中
+`c45436249` 的隔离 `clean verify` 有 1 个 `VisualRuntimeBoundary` 失败，`6dd104292` 后保留的 full verify
+证据为 7739/7739 green，边界聚焦测试为 1/1 通过。
 
 真实写入保持 fail-closed：`FIXTURE_ONLY` 不执行真实写入；`MANAGED_WRITE` 在无损 runtime side-effect
 contract 完成前也保持 fail-closed。
@@ -548,6 +553,7 @@ contract 完成前也保持 fail-closed。
 | R4：先保存再模拟，用 Exact Subject 替代 transient GraphDraft | 接受 |
 | R5：第一阶段标准模式只支持数据流 DAG | 接受；复杂语义留在 Advanced/Legacy |
 
-J2 已按批准方案完成，J3 编译器投影子切片已验收。下一步进入 J3 剩余工作：Connection 元数据、Secret
-lease、Default Fixture 与 `AuthoringFacade` 复合保存，再进入 U1 API Resource 标准页；现有 H2 聚焦证据和
+J2 已按批准方案完成，J3 编译器投影与 J3-A Connection authority 子切片已验收。下一步进入 J3 剩余工作：
+JDBC/head、Vault lease/activate、Default Fixture 与 `AuthoringFacade`/controller 复合保存，再进入 U1
+API Resource 标准页；现有 H2 聚焦证据和
 编译器边界证据不替代真实 PostgreSQL、HTTP/UI 验收或未重跑的 full clean verify。

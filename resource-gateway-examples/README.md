@@ -70,7 +70,10 @@ silently fall back to the in-memory store. J2 covers scoped claim, committed rea
 transactional stage/commit/fail, lease fencing, restart-safe history, and tamper rejection. The opt-in compiler
 resolver/wiring now creates three `READY` exact-subject projections through the server-side `Connection` resolver,
 shared Header/API-key policy, strict URI and JSONPath-to-runtime-dot-path mapping, with an explicit `visualadapter`
-boundary. Missing resolver/readiness prerequisites fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
+boundary. J3-A also accepts the pure Connection authority boundary: wire auth/secret variants, same-scope authorized
+opaque references, CAS/fingerprint, secret-free views/errors, and HTTPS/header/timeout policy. This does not yet
+include JDBC/head, Vault lease/activate, the `AuthoringFacade`, or controllers. Missing resolver/readiness prerequisites
+fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
 real writes until the lossless runtime side-effect contract exists. Real PostgreSQL certification, the
 `AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
 
