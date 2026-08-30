@@ -207,7 +207,49 @@ code 反例均已修复并重新验证。
 并发 CAS、Journal replay、staged invisibility 和原子 commit。随后才进入 `AuthoringFacade`、Connection/Secret
 与 Default Fixture 复合保存。
 
-## 6. 未关闭风险
+## 6. Iteration 5 — JDBC Claim 与 Committed Read
+
+日期：2026-08-30。
+
+### 已完成
+
+- `cf259e560`：新增 `JdbcApiResourceCommitStore` 的 scoped claim 和 committed head/revision read；正式
+  migration 上支持首 claim、Busy、Replay、Conflict、过期 takeover、attempt token 轮换和旧 STAGED cleanup。
+- `fe1d635a9`：将关系行 identity、权威 Spec fingerprint、三 Projection fingerprint 和 Receipt ETag 绑定到
+  反序列化 wire；补真实双连接首插竞争、takeover cleanup、历史 revision、scope 和篡改回归。
+- `a0d502025`、`54635bed2`：fail-fast 拒绝 JDBC/transaction DataSource 误配与双空配置；将 Journal scope、
+  target、endpoint 重新绑定 Resource relationship，并覆盖 schema/status 与 coordinate tamper。
+
+本切片只接受 JDBC claim 与 committed read。`stage`、`commit`、`fail` 仍明确不可用，production runtime 也没有
+启用该 Store，因此不能把它报告为完整 production adapter。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=JdbcApiResourceCommitStoreClaimTest test
+JdbcApiResourceCommitStoreClaimTest: 10 tests
+Tests run: 10, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+协调者在 `54635bed2` 后独立串行复验。Standards 与 Spec review 最终均为 Accepted。
+
+### 当前差距评估
+
+| 目标能力 | 已证明 |
+| --- | ---: |
+| Wire Schema family | 10 / 10 |
+| API Resource 后端权威、复合保存与投影闭包 | 10 / 18（JDBC claim/read 已证明；stage/commit/fail/Facade 未完成） |
+| 文档与当前聚焦门禁 | 4 / 7 |
+| 其余运行与 UI 能力 | 0 / 65 |
+| **当前完成度** | **24%** |
+| **当前差距** | **76%** |
+
+下一步 J2 在同一 Store 内完成 stage、原子 commit、fenced fail 和 production readiness wiring，并让 JDBC
+实现通过与内存参考相同的 contract。真实 PostgreSQL certification 仍是独立门禁，不能由 H2 mode 替代。
+
+## 7. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
