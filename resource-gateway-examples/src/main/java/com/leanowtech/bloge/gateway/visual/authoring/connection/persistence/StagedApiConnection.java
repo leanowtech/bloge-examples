@@ -56,6 +56,7 @@ public final class StagedApiConnection {
             char c = value.charAt(i);
             if (c != '!' && (c < '#' || c > '~')) return false;
         }
+        if (value.startsWith("\"W/")) return false;
         return true;
     }
 

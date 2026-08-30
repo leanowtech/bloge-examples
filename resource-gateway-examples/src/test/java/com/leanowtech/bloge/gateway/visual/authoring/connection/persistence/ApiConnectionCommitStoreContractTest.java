@@ -338,7 +338,7 @@ abstract class ApiConnectionCommitStoreContractTest {
         CommandLease lease = lease("etag", 1, "etag-token", SCOPE, "customer", ExpectedRevision.create());
         ApiConnectionSpec spec = new ApiConnectionDecisions().next(SCOPE, Optional.empty(), "customer",
                 noneCommand(), ExpectedRevision.create());
-        for (String invalid : new String[]{"W/\"x\"", "\"a\n\"", "\"a\"b\""}) {
+        for (String invalid : new String[]{"W/\"x\"", "\"W/x\"", "\"a\n\"", "\"a\"b\""}) {
             assertThatThrownBy(() -> new StagedApiConnection(lease, spec, ExpectedRevision.create(), invalid))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> new StoredApiConnection(SCOPE, spec.view(), spec.fingerprint(), invalid,
