@@ -26,7 +26,11 @@ import java.util.regex.Pattern;
  */
 public final class InMemoryApiResourceModule implements ApiResourceModule {
 
+    private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]*$");
     private static final Pattern HEADER_TOKEN = Pattern.compile("^[A-Za-z0-9!#$%&'*+.^_`|~-]+$");
+    private static final Pattern OPERATION_PATH = Pattern.compile("^/[A-Za-z0-9._~:/{}-]*$");
+    private static final Pattern JSON_PATH = Pattern.compile("^\\$\\.[A-Za-z0-9_-]+$");
+    private static final Pattern FINGERPRINT = Pattern.compile("^sha256:[0-9a-f]{64}$");
     private static final Set<String> RESERVED_HEADERS = Set.of(
             "authorization", "proxy-authorization", "proxy-authenticate", "cookie", "set-cookie",
             "host", "content-length", "connection", "keep-alive", "te", "trailer",
@@ -49,10 +53,10 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     }
 
     @Override
-    public synchronized ApiResourceSpec save(String resourceId, String resolvedConnectionId,
+    public synchronized ApiResourceSpec save(String resourceId, String connectionId,
                                              ApiResourceCommand command, ExpectedRevision expected) {
-        requireText(resourceId, "resourceId");
-        requireText(resolvedConnectionId, "resolvedConnectionId");
+        requireIdentifier(resourceId, "resourceId");
+        requireIdentifier(connectionId, "connectionId");
         if (expected == null) invalid("expected revision is required");
         validate(command);
 
@@ -76,9 +80,10 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
         }
 
         int revision = current == null ? 1 : current.revision() + 1;
-        String fingerprint = fingerprint(resourceId, resolvedConnectionId, command);
-        ApiResourceSpec next = new ApiResourceSpec(resourceId, resolvedConnectionId, revision,
-                fingerprint, command);
+        String fingerprint = fingerprint(resourceId, connectionId, command);
+        ApiResourceSpec next = new ApiResourceSpec(ApiResourceSpec.SCHEMA_VERSION, resourceId, revision,
+                fingerprint, command.displayName(), command.description(), connectionId, command.operation(),
+                command.contract(), command.response(), command.effect(), command.examples(), ApiResourceSpec.DRAFT);
         resources.put(resourceId, next);
         return copy(next);
     }
@@ -90,13 +95,15 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     }
 
     private ApiResourceSpec copy(ApiResourceSpec spec) {
-        return new ApiResourceSpec(spec.resourceId(), spec.resolvedConnectionId(), spec.revision(),
-                spec.fingerprint(), spec.command());
+        return new ApiResourceSpec(spec.schemaVersion(), spec.resourceId(), spec.revision(), spec.fingerprint(),
+                spec.displayName(), spec.description(), spec.connectionId(), spec.operation(), spec.contract(),
+                spec.response(), spec.effect(), spec.examples(), spec.status());
     }
 
     private void validate(ApiResourceCommand command) {
         if (command == null) invalid("command is required");
-        if (blank(command.displayName())) invalid("displayName is required");
+        if (blank(command.displayName()) || command.displayName().length() > 200) invalid("displayName is invalid");
+        if (command.description() != null && command.description().length() > 2000) invalid("description is invalid");
         if (command.operation() == null) invalid("operation is required");
         if (command.contract() == null) invalid("contract is required");
         if (command.response() == null) invalid("response is required");
@@ -114,13 +121,14 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
             invalid("method must be GET, POST, PUT, or DELETE");
         }
         String path = operation.path();
-        if (path == null || !path.startsWith("/") || path.startsWith("//")
-                || path.contains(" ") || path.matches("^[A-Za-z][A-Za-z0-9+.-]*:.*")) {
-            invalid("path must be relative");
+        if (path == null || path.length() > 2048 || !OPERATION_PATH.matcher(path).matches()) {
+            invalid("path must match the relative operation path contract");
         }
         if (operation.bindings() == null) invalid("bindings are required");
+        if (operation.bindings().stream().filter(binding -> binding != null && binding.to() != null
+                && "BODY".equals(binding.to().location())).count() > 1) invalid("at most one BODY binding is allowed");
         for (ApiResourceCommand.Binding binding : operation.bindings()) {
-            if (binding == null || binding.from() == null || !binding.from().matches("^\\$\\.[A-Za-z0-9_-]+$")) {
+            if (binding == null || binding.from() == null || !JSON_PATH.matcher(binding.from()).matches()) {
                 invalid("binding input path must be a first-level JSON path");
             }
             if (binding.to() == null || binding.to().location() == null || binding.to().name() == null) {
@@ -195,7 +203,8 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
                 invalid("HTTP success codes are invalid");
             }
         } else if (response.success() instanceof ApiResourceCommand.BodyMatch bodyMatch) {
-            if (bodyMatch.path() == null || !bodyMatch.path().startsWith("$.") || bodyMatch.values().isEmpty()) {
+            if (bodyMatch.path() == null || !bodyMatch.path().startsWith("$.") || bodyMatch.values().isEmpty()
+                    || bodyMatch.values().stream().anyMatch(java.util.Objects::isNull)) {
                 invalid("body match response is invalid");
             }
         } else {
@@ -204,19 +213,55 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     }
 
     private void validateEffect(String method, ApiResourceCommand.Effect effect) {
-        if ("GET".equals(method) && effect != ApiResourceCommand.Effect.READ_ONLY) {
+        if ("GET".equals(method) && !(effect instanceof ApiResourceCommand.Effect.ReadOnly)) {
             invalid("GET resources must be READ_ONLY");
         }
-        if (!"GET".equals(method) && effect == ApiResourceCommand.Effect.READ_ONLY) {
+        if (!"GET".equals(method) && effect instanceof ApiResourceCommand.Effect.ReadOnly) {
             invalid("write methods must use FIXTURE_ONLY_WRITE or MANAGED_WRITE");
         }
+        if (effect instanceof ApiResourceCommand.Effect.ManagedWrite managed) validateManagedWrite(managed);
+    }
+
+    private void validateManagedWrite(ApiResourceCommand.Effect.ManagedWrite managed) {
+        if (managed.receipt() == null || !validHeader(managed.idempotencyHeader())) {
+            invalid("managed write idempotency and receipt contract is required");
+        }
+        ApiResourceCommand.Effect.Receipt receipt = managed.receipt();
+        if (!validJsonPath(receipt.idPath()) || !validJsonPath(receipt.statusPath())
+                || receipt.succeededValues().isEmpty() || receipt.failedValues().isEmpty()
+                || receipt.succeededValues().stream().anyMatch(java.util.Objects::isNull)
+                || receipt.failedValues().stream().anyMatch(java.util.Objects::isNull)) {
+            invalid("managed write receipt contract is invalid");
+        }
+        ApiResourceCommand.Effect.Reconciliation reconciliation = managed.reconciliation();
+        if (reconciliation != null) {
+            ApiResourceSpec.ResourceRef resource = reconciliation.resource();
+            if (resource == null || !"API_RESOURCE".equals(resource.kind())
+                    || !validIdentifier(resource.resourceId()) || resource.revision() < 1
+                    || !FINGERPRINT.matcher(String.valueOf(resource.fingerprint())).matches()
+                    || !validJsonPath(reconciliation.receiptIdInputPath())) {
+                invalid("managed write reconciliation contract is invalid");
+            }
+        }
+    }
+
+    private boolean validHeader(String header) {
+        return header != null && HEADER_TOKEN.matcher(header).matches() && !isReserved(header);
+    }
+
+    private static boolean validJsonPath(String path) {
+        return path != null && path.matches("^\\$[A-Za-z0-9._~:/{}-]*$");
+    }
+
+    private static boolean validIdentifier(String value) {
+        return value != null && value.length() <= 128 && IDENTIFIER.matcher(value).matches();
     }
 
     private void validateExamples(List<ApiResourceCommand.Example> examples, ApiResourceCommand.Contract contract) {
         if (examples == null || examples.isEmpty()) invalid("at least one example is required");
         Set<String> names = new HashSet<>();
         for (ApiResourceCommand.Example example : examples) {
-            if (example == null || blank(example.name()) || !names.add(example.name())) invalid("example names must be unique");
+            if (example == null || !validIdentifier(example.name()) || !names.add(example.name())) invalid("example names must be unique valid identifiers");
             validateExampleValue(example.input(), contract.input(), "input");
             validateExampleValue(example.output(), contract.output(), "output");
         }
@@ -253,7 +298,7 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     }
 
     private void validateHeader(String header) {
-        if (!HEADER_TOKEN.matcher(header).matches() || isReserved(header)) invalid("header is reserved or invalid");
+        if (!validHeader(header)) invalid("header is reserved or invalid");
     }
 
     private boolean isReserved(String header) {
@@ -264,7 +309,7 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     private String fingerprint(String resourceId, String connectionId, ApiResourceCommand command) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("resourceId", resourceId);
-        payload.put("resolvedConnectionId", connectionId);
+        payload.put("connectionId", connectionId);
         payload.set("command", mapper.valueToTree(command));
         try {
             byte[] bytes = canonicalize(payload).toString().getBytes(StandardCharsets.UTF_8);
@@ -293,6 +338,10 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
 
     private static void requireText(String value, String name) {
         if (blank(value)) throw failure(ApiResourceAuthoringException.Code.VALIDATION, name + " is required");
+    }
+
+    private static void requireIdentifier(String value, String name) {
+        if (!validIdentifier(value)) throw failure(ApiResourceAuthoringException.Code.VALIDATION, name + " is invalid");
     }
 
     private static boolean blank(String value) {

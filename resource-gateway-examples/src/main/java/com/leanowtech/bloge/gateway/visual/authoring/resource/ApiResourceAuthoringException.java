@@ -13,6 +13,10 @@ public final class ApiResourceAuthoringException extends RuntimeException {
 
     private final Code code;
 
+    /**
+     * @param code stable failure code used by protocol adapters
+     * @param message diagnostic safe for logs and clients (must not contain secrets)
+     */
     public ApiResourceAuthoringException(Code code, String message) {
         super(message);
         this.code = code;

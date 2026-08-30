@@ -117,7 +117,7 @@ class AuthoringProtocolSchemaTest {
                 .as("ordinary headers remain legal").isEmpty();
         for (String name : List.of("Authorization", "authorization", "COOKIE", "proxy-authorization", "proxy-authenticate",
                 "set-cookie", "Host", "content-length", "Connection", "keep-alive", "TE", "Trailer",
-                "transfer-encoding", "Upgrade", "Forwarded", "X-Forwarded-For", "x-forwarded-host")) {
+                "transfer-encoding", "Upgrade", "Forwarded", "X-Forwarded-", "X-Forwarded-For", "x-forwarded-host")) {
             assertThat(validationErrors(headers, MAPPER.createObjectNode().put(name, "blocked"), commonPath))
                 .as("sensitive header %s is blocked", name).isNotEmpty();
         }

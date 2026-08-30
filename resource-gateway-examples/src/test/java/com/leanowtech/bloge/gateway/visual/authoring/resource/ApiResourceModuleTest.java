@@ -9,6 +9,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,6 +29,9 @@ class ApiResourceModuleTest {
                 ExpectedRevision.create());
 
         assertThat(saved.revision()).isEqualTo(1);
+        assertThat(saved.schemaVersion()).isEqualTo(ApiResourceSpec.SCHEMA_VERSION);
+        assertThat(saved.connectionId()).isEqualTo("customer-service");
+        assertThat(saved.status()).isEqualTo("DRAFT");
         assertThat(saved.ref()).isEqualTo(new ApiResourceSpec.ResourceRef(
                 "API_RESOURCE", "customer.get-profile", 1, saved.fingerprint()));
         assertThat(module.get("customer.get-profile")).contains(saved);
@@ -78,18 +84,25 @@ class ApiResourceModuleTest {
     }
 
     @Test
-    void getAndCommandSnapshotsAreDefensiveCopies() throws Exception {
+    void allNestedSnapshotsAreDefensiveCopies() throws Exception {
         ApiResourceModule module = new InMemoryApiResourceModule();
-        ApiResourceSpec saved = module.save("customer.get-profile", "customer-service", validCommand(),
+        ApiResourceCommand input = bodyMatchCommand();
+        ApiResourceSpec saved = module.save("customer.get-profile", "customer-service", input,
                 ExpectedRevision.create());
-        ((com.fasterxml.jackson.databind.node.ObjectNode) saved.command().examples().get(0).input())
+        ((com.fasterxml.jackson.databind.node.ObjectNode) saved.examples().get(0).input())
                 .put("id", "mutated");
-        ((Map<String, Object>) saved.command().contract().input().schema()).put(
-                "injected", Map.of("type", "string"));
+        Map<String, Object> schema = saved.contract().input().schema();
+        ((Map<String, Object>) schema.get("properties")).put("injected", Map.of("type", "string"));
+        ApiResourceCommand.BodyMatch savedMatch = (ApiResourceCommand.BodyMatch) saved.response().success();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) savedMatch.values().get(0)).put("mutated", true);
 
         ApiResourceSpec readAgain = module.get("customer.get-profile").orElseThrow();
-        assertThat(readAgain.command().examples().get(0).input().path("id").asText()).isEqualTo("customer-1");
-        assertThat(readAgain.command().contract().input().hasProperty("injected")).isFalse();
+        assertThat(readAgain.examples().get(0).input().path("id").asText()).isEqualTo("customer-1");
+        assertThat(readAgain.contract().input().hasProperty("injected")).isFalse();
+        ApiResourceCommand.BodyMatch match = (ApiResourceCommand.BodyMatch) readAgain.response().success();
+        assertThat(match.values().get(0).has("mutated")).isFalse();
+        assertThat(readAgain.revision()).isEqualTo(1);
+        assertThat(readAgain.fingerprint()).isEqualTo(saved.fingerprint());
     }
 
     @Test
@@ -103,6 +116,50 @@ class ApiResourceModuleTest {
                 new ApiResourceCommand.Example("anonymous", JSON.createObjectNode().put("id", 1), object("id", "customer-1")))));
         assertValidation(module, "GET effect", validCommand().withEffect(ApiResourceCommand.Effect.FIXTURE_ONLY_WRITE));
         assertValidation(module, "POST effect", validCommand().withMethodEffect("POST", ApiResourceCommand.Effect.READ_ONLY));
+        assertValidation(module, "managed receipt", validCommand().withMethodEffect("POST", new ApiResourceCommand.Effect.ManagedWrite(
+                "Authorization", new ApiResourceCommand.Effect.Receipt("$.id", "$.status", List.of(object("x", "y")), List.of(object("x", "z"))), null)));
+        assertValidation(module, "multiple body", validCommand().withBindings(List.of(
+                new ApiResourceCommand.Binding("$.id", new ApiResourceCommand.Location("BODY", "id")),
+                new ApiResourceCommand.Binding("$.id", new ApiResourceCommand.Location("BODY", "other")))));
+        assertValidation(module, "identifier", validCommand(), "bad id");
+        assertValidation(module, "path character", validCommand().withPath("/profile?bad"));
+    }
+
+    @Test
+    void concurrentMatchOneHasExactlyOneWinnerAndEndsAtRevisionTwo() throws Exception {
+        ApiResourceModule module = new InMemoryApiResourceModule();
+        module.save("customer.get-profile", "customer-service", validCommand(), ExpectedRevision.create());
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            var first = pool.submit(() -> concurrentSave(module, ready, start));
+            var second = pool.submit(() -> concurrentSave(module, ready, start));
+            ready.await();
+            start.countDown();
+            List<Object> outcomes = List.of(first.get(), second.get());
+            assertThat(outcomes.stream().filter(ApiResourceSpec.class::isInstance)).hasSize(1);
+            assertThat(outcomes.stream().filter(ApiResourceAuthoringException.class::isInstance)
+                    .map(ApiResourceAuthoringException.class::cast).map(ApiResourceAuthoringException::code))
+                    .containsExactly(ApiResourceAuthoringException.Code.CAS_MISMATCH);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(module.get("customer.get-profile").orElseThrow().revision()).isEqualTo(2);
+    }
+
+    private Object concurrentSave(ApiResourceModule module, CountDownLatch ready, CountDownLatch start) {
+        ready.countDown();
+        try {
+            start.await();
+            return module.save("customer.get-profile", "customer-service", commandWithDescription("r2"),
+                    ExpectedRevision.match(1));
+        } catch (ApiResourceAuthoringException exception) {
+            return exception;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(exception);
+        }
     }
 
     @Test
@@ -117,11 +174,26 @@ class ApiResourceModuleTest {
     }
 
     private void assertValidation(ApiResourceModule module, String label, ApiResourceCommand command) {
-        assertThatThrownBy(() -> module.save("invalid-" + label.replace(' ', '-'), "customer-service", command,
+        assertValidation(module, label, command, "invalid-" + label.replace(' ', '-'));
+    }
+
+    private void assertValidation(ApiResourceModule module, String label, ApiResourceCommand command, String resourceId) {
+        assertThatThrownBy(() -> module.save(resourceId, "customer-service", command,
                 ExpectedRevision.create()))
                 .as(label)
                 .isInstanceOf(ApiResourceAuthoringException.class)
                 .extracting("code").isEqualTo(ApiResourceAuthoringException.Code.VALIDATION);
+    }
+
+    private ApiResourceCommand bodyMatchCommand() throws Exception {
+        return new ApiResourceCommand("Customer profile", "Read a customer profile.",
+                new ApiResourceCommand.Operation("GET", "/profile", List.of()),
+                new ApiResourceCommand.Contract(
+                        new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schemaWithPropertyType("string")),
+                        new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schemaWithPropertyType("string"))),
+                new ApiResourceCommand.Response(new ApiResourceCommand.BodyMatch("$.status", List.of(object("state", "ok"))), "$.data"),
+                ApiResourceCommand.Effect.READ_ONLY,
+                List.of(new ApiResourceCommand.Example("anonymous", object("id", "customer-1"), object("id", "customer-1"))));
     }
 
     private ApiResourceCommand validCommand() throws Exception {

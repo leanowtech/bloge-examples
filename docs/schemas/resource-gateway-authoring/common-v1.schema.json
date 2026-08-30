@@ -26,7 +26,7 @@
         { "pattern": "^[Tt][Rr][Aa][Nn][Ss][Ff][Ee][Rr]-[Ee][Nn][Cc][Oo][Dd][Ii][Nn][Gg]$" },
         { "pattern": "^[Uu][Pp][Gg][Rr][Aa][Dd][Ee]$" },
         { "pattern": "^[Ff][Oo][Rr][Ww][Aa][Rr][Dd][Ee][Dd]$" },
-        { "pattern": "^[Xx]-[Ff][Oo][Rr][Ww][Aa][Rr][Dd][Ee][Dd]-.+$" }
+        { "pattern": "^[Xx]-[Ff][Oo][Rr][Ww][Aa][Rr][Dd][Ee][Dd]-.*$" }
       ] }
     },
     "fixtureStatus": { "enum": ["PRIVATE_DRAFT", "SHARING_PENDING", "TEAM_AVAILABLE", "STALE", "REVOKED"] },
