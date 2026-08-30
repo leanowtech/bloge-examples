@@ -51,6 +51,19 @@ class JdbcApiResourceCommitStoreClaimTest {
                 .execute(dataSource);
         new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql"))
                 .execute(dataSource);
+        for (String migration : List.of(
+                "V20260830_003__api_connection_secret_staging.sql",
+                "V20260830_004__connection_metadata_authority.sql",
+                "V20260830_005__pending_secret_store_protocol.sql",
+                "V20260830_006__pending_secret_store_hardening.sql",
+                "V20260831_007__pending_secret_store_protocol_closure.sql",
+                "V20260831_008__pending_secret_store_child_cas_closure.sql",
+                "V20260831_009__authoring_command_attempt_authority.sql")) {
+            new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/" + migration)).execute(dataSource);
+        }
+        jdbc.update("INSERT INTO rg_api_connection_identities"
+                + " (tenant_id, project_id, environment_id, connection_id)"
+                + " VALUES ('tenant', 'project', 'dev', 'connection')");
     }
 
     @AfterEach
@@ -256,6 +269,14 @@ class JdbcApiResourceCommitStoreClaimTest {
                 VALUES ('tenant','project','dev','actor','API_RESOURCE_SAVE','profile','k1','cmd-read',?,
                         'COMMITTED',1,'token-read',CURRENT_TIMESTAMP,'CREATE',NULL,'r',?,?, '"etag"',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
                 """, FP, receiptBody, AuthoringFingerprints.of(JSON.readTree(receiptBody)));
+        jdbc.update("""
+                INSERT INTO rg_authoring_command_attempts
+                    (tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key,
+                     command_id, request_fingerprint, status, attempt_no, attempt_token, lease_until,
+                     expected_mode, expected_revision)
+                VALUES ('tenant','project','dev','actor','API_RESOURCE_SAVE','profile','k1','cmd-read',?,
+                        'COMMITTED',1,'token-read',CURRENT_TIMESTAMP,'CREATE',NULL)
+                """, FP);
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,

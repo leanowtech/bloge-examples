@@ -54,6 +54,17 @@ class JdbcApiResourceCommitStoreMutationTest {
         jdbc = new JdbcTemplate(dataSource);
         applyMigration("db/postgresql/V20260830_001__api_resource_authoring.sql", dataSource);
         applyMigration("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql", dataSource);
+        applyMigration("db/postgresql/V20260830_003__api_connection_secret_staging.sql", dataSource);
+        applyMigration("db/postgresql/V20260830_004__connection_metadata_authority.sql", dataSource);
+        applyMigration("db/postgresql/V20260830_005__pending_secret_store_protocol.sql", dataSource);
+        applyMigration("db/postgresql/V20260830_006__pending_secret_store_hardening.sql", dataSource);
+        applyMigration("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql", dataSource);
+        applyMigration("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql", dataSource);
+        applyMigration("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql", dataSource);
+        jdbc.update("INSERT INTO rg_api_connection_identities"
+                + " (tenant_id, project_id, environment_id, connection_id) VALUES ('tenant', 'project', 'dev', 'connection')");
+        jdbc.update("INSERT INTO rg_api_connection_identities"
+                + " (tenant_id, project_id, environment_id, connection_id) VALUES ('tenant', 'project', 'dev', 'other-connection')");
     }
 
     private static void applyMigration(String path, DataSource dataSource) {

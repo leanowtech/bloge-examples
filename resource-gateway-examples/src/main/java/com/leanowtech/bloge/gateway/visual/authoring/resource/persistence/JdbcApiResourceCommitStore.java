@@ -36,8 +36,8 @@ import java.util.ArrayList;
 /**
  * JDBC-backed, transactionally fenced API Resource authoring store.
  *
- * <p>All mutations require the exact persisted PREPARING attempt.  V001 and
- * V002 migrations must be installed before this class is constructed; this
+ * <p>All mutations require the exact persisted PREPARING attempt.  V001 through
+ * V009 migrations must be installed before this class is constructed; this
  * repository intentionally never applies or falls back from migrations.</p>
  */
 public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore {
@@ -171,6 +171,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         int attemptNo = prior == null ? 1 : prior.attemptNo() + 1;
         String attemptToken = UUID.randomUUID().toString();
         OffsetDateTime leaseUntil = OffsetDateTime.ofInstant(now.plus(leaseDuration), ZoneOffset.UTC);
+        CommandLease incoming = new CommandLease(commandId, attemptNo, attemptToken, key, fingerprint,
+                now.plus(leaseDuration), expected);
         if (prior == null) {
             jdbc.update("""
                     INSERT INTO rg_authoring_command_journal
@@ -182,8 +184,13 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     key.endpoint().name(), key.targetId(), key.idempotencyKey(), commandId, fingerprint, attemptNo,
                     attemptToken, leaseUntil, expectedMode(expected), expectedRevision(expected),
                     OffsetDateTime.ofInstant(now, ZoneOffset.UTC), OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
+            insertAttempt(incoming, now);
         } else {
-            jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND state = 'STAGED'", commandId);
+            // Keep the expired attempt immutable. Its pending-secret rows may
+            // still need recovery after this current-journal pointer advances.
+            insertAttempt(incoming, now);
+            jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND attempt_no = ? "
+                    + "AND attempt_token = ? AND state = 'STAGED'", commandId, prior.attemptNo(), prior.attemptToken());
             jdbc.update("""
                     UPDATE rg_authoring_command_journal
                        SET request_fingerprint = ?, status = 'PREPARING', attempt_no = ?, attempt_token = ?,
@@ -194,8 +201,25 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     """, fingerprint, attemptNo, attemptToken, leaseUntil, expectedMode(expected), expectedRevision(expected),
                     OffsetDateTime.ofInstant(now, ZoneOffset.UTC), commandId);
         }
-        return new ClaimResult.Acquired(new CommandLease(commandId, attemptNo, attemptToken, key, fingerprint,
-                now.plus(leaseDuration), expected), resumed);
+        return new ClaimResult.Acquired(incoming, resumed);
+    }
+
+    /** Inserts one immutable command-attempt authority row before moving the journal pointer. */
+    private void insertAttempt(CommandLease lease, Instant now) {
+        if (jdbc.update("""
+                INSERT INTO rg_authoring_command_attempts
+                    (tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                     idempotency_key, command_id, request_fingerprint, status, attempt_no,
+                     attempt_token, lease_until, expected_mode, expected_revision, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARING', ?, ?, ?, ?, ?, ?, ?)
+                """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().actorId(), lease.key().endpoint().name(),
+                lease.key().targetId(), lease.key().idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
+                lease.attemptNo(), lease.attemptToken(), OffsetDateTime.ofInstant(lease.leaseUntil(), ZoneOffset.UTC),
+                expectedMode(lease.expectedRevision()), expectedRevision(lease.expectedRevision()),
+                OffsetDateTime.ofInstant(now, ZoneOffset.UTC), OffsetDateTime.ofInstant(now, ZoneOffset.UTC)) != 1) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "command attempt insert failed");
+        }
     }
 
     private boolean databaseLeaseIsLive(String commandId) {
@@ -410,6 +434,11 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                               String attemptToken, Instant leaseUntil, String receiptSchema, String receiptJson,
                               String receiptFingerprint, String receiptEtag) { }
 
+    private record AttemptAuthority(String tenantId, String projectId, String environmentId, String actorId,
+                                    String endpoint, String targetId, String idempotencyKey,
+                                    String requestFingerprint, String status, int attemptNo, String attemptToken,
+                                    Instant leaseUntil, String expectedMode, Long expectedRevision) { }
+
     private record ActiveRow(String commandId, String tenantId, String projectId, String environmentId,
                              String actorId, String endpoint, String targetId, String idempotencyKey,
                              String requestFingerprint, String status, int attemptNo, String attemptToken, Instant leaseUntil,
@@ -577,8 +606,44 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         if (!coordinate) {
             throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
         }
+        requireAttempt(lease);
         if (!databaseLeaseIsLive(r.commandId())) {
             throw error(ApiResourceCommitStoreException.Code.LEASE_EXPIRED, "lease expired");
+        }
+    }
+
+    /** Checks the immutable V009 authority, independently of the mutable journal pointer. */
+    private void requireAttempt(CommandLease lease) {
+        List<AttemptAuthority> rows = jdbc.query("""
+                SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                       idempotency_key, request_fingerprint, status, attempt_no, attempt_token,
+                       lease_until, expected_mode, expected_revision
+                  FROM rg_authoring_command_attempts
+                 WHERE command_id=? AND attempt_no=? AND attempt_token=?
+                 FOR UPDATE""", (rs, n) -> new AttemptAuthority(
+                rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5),
+                rs.getString(6), rs.getString(7), rs.getString(8), rs.getString(9), rs.getInt(10),
+                rs.getString(11), timestamp(rs, 12), rs.getString(13), (Long) rs.getObject(14)),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (rows.size() != 1) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
+        AttemptAuthority a = rows.getFirst();
+        if (!"PREPARING".equals(a.status())
+                || !a.tenantId().equals(lease.key().scope().tenantId())
+                || !a.projectId().equals(lease.key().scope().projectId())
+                || !a.environmentId().equals(lease.key().scope().environmentId())
+                || !a.actorId().equals(lease.key().actorId())
+                || !a.endpoint().equals(lease.key().endpoint().name())
+                || !a.targetId().equals(lease.key().targetId())
+                || !a.idempotencyKey().equals(lease.key().idempotencyKey())
+                || !a.requestFingerprint().equals(lease.requestFingerprint())
+                || a.attemptNo() != lease.attemptNo()
+                || !a.attemptToken().equals(lease.attemptToken())
+                || !a.leaseUntil().equals(lease.leaseUntil())
+                || !a.expectedMode().equals(expectedMode(lease.expectedRevision()))
+                || !Objects.equals(a.expectedRevision(), expectedRevision(lease.expectedRevision()))) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
         }
     }
 
@@ -797,7 +862,14 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                         + "AND revision=? AND command_id=? AND state='STAGED'",
                 staged.tenantId(), staged.projectId(), staged.environmentId(), staged.resourceId(),
                 staged.revision(), staged.commandId()) != 1) {
-            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage state changed");
+                throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage state changed");
+        }
+        if (jdbc.update("""
+                UPDATE rg_authoring_command_attempts
+                   SET status='COMMITTED', updated_at=CURRENT_TIMESTAMP
+                 WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'
+                """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "command attempt state changed");
         }
         if (jdbc.update("""
                 UPDATE rg_authoring_command_journal
@@ -862,6 +934,13 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                                 + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "
                                 + "AND state='STAGED'",
                         lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                if (jdbc.update("""
+                        UPDATE rg_authoring_command_attempts
+                           SET status='FAILED', updated_at=CURRENT_TIMESTAMP
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'
+                        """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
+                    throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "command attempt state changed");
+                }
                 if (jdbc.update(
                         "UPDATE rg_authoring_command_journal SET status='FAILED', "
                                 + "receipt_schema=NULL, receipt_json=NULL, receipt_fingerprint=NULL, "

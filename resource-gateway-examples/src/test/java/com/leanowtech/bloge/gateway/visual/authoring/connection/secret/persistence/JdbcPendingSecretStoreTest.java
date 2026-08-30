@@ -47,8 +47,9 @@ class JdbcPendingSecretStoreTest {
 
     @BeforeEach
     void setUp() {
-        dataSource = new DriverManagerDataSource("jdbc:h2:mem:pending-jdbc-" + System.nanoTime()
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
+        String databaseUrl = "jdbc:h2:mem:pending-jdbc-" + System.nanoTime()
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        dataSource = new DriverManagerDataSource(databaseUrl, "sa", "");
         jdbc = new JdbcTemplate(dataSource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         migrate("db/postgresql/V20260830_001__api_resource_authoring.sql");
@@ -59,6 +60,7 @@ class JdbcPendingSecretStoreTest {
         migrate("db/postgresql/V20260830_006__pending_secret_store_hardening.sql");
         migrate("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql");
         migrate("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql");
+        migrate("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql");
     }
 
     @AfterEach
@@ -140,6 +142,54 @@ class JdbcPendingSecretStoreTest {
         assertThat(candidate.batch()).isEqualTo(recoveryBatch);
         store.completeAbort(candidate);
         assertThat(store.findExact(recoveryBatch.lease())).isEmpty();
+    }
+
+    @Test
+    void takeoverKeepsOldAttemptRecoverableAndHydratesOuterCasFromImmutableAuthority() {
+        JdbcPendingSecretStore store = store();
+        CommandKey outerKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE,
+                "resource-takeover", "idempotency-resource-takeover");
+        String fingerprint = "sha256:" + "a".repeat(64);
+        CommandLease old = new CommandLease("resource-takeover", 1, "old-attempt", outerKey,
+                fingerprint, NOW.plusSeconds(60), ExpectedRevision.match(7));
+        PendingSecretBatch oldBatch = nestedBatch(old, "connection-takeover", 1, ExpectedRevision.create());
+        seed(oldBatch);
+        store.stage(oldBatch);
+        jdbc.update("UPDATE rg_api_connection_revisions SET state='STAGED' WHERE command_id=?"
+                + " AND attempt_no=1 AND attempt_token=?", old.commandId(), old.attemptToken());
+
+        CommandLease replacement = new CommandLease("resource-takeover", 2, "new-attempt", outerKey,
+                fingerprint, NOW.plusSeconds(120), ExpectedRevision.match(8));
+        PendingSecretBatch replacementBatch = nestedBatch(replacement, "connection-takeover", 1,
+                ExpectedRevision.create());
+        insertAttemptAndPointJournal(replacement);
+        insertCommittedConnectionRevision(replacement, replacementBatch.lease().coordinate());
+
+        // The old pending row is still reconstructable after the journal's
+        // current pointer moves to the replacement attempt.
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until="
+                + "CURRENT_TIMESTAMP - INTERVAL '1' SECOND WHERE command_id=? AND attempt_no=1",
+                old.commandId());
+        assertThat(store.findExact(oldBatch.lease())).contains(oldBatch);
+        store.stage(replacementBatch);
+
+        SecretAbortCandidate oldCandidate = store.claimRecoveryDue(1).getFirst();
+        assertThat(oldCandidate.batch()).isEqualTo(oldBatch);
+        store.completeAbort(oldCandidate);
+        assertThat(store.findExact(oldBatch.lease())).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT outcome FROM rg_api_connection_pending_secret_outcomes"
+                + " WHERE command_id=? AND attempt_no=1", String.class, old.commandId())).isEqualTo("ABORTED");
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=1", String.class, old.commandId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=2", String.class, replacement.commandId())).isEqualTo("PREPARING");
+
+        assertThat(store.findExact(replacementBatch.lease())).contains(replacementBatch);
+        transactions.executeWithoutResult(status -> store.commitBindings(replacementBatch,
+                List.of(activation("token", "new-attempt", "new-active"))));
+        assertThat(store.findActive(replacementBatch.lease().coordinate(), "token")).isPresent();
+        assertThat(jdbc.queryForObject("SELECT outcome FROM rg_api_connection_pending_secret_outcomes"
+                + " WHERE command_id=? AND attempt_no=2", String.class, replacement.commandId())).isEqualTo("COMMITTED");
     }
 
     @Test
@@ -555,6 +605,14 @@ class JdbcPendingSecretStoreTest {
                 key.idempotencyKey(), lease.commandId(), lease.requestFingerprint(), lease.attemptNo(), lease.attemptToken(),
                 java.sql.Timestamp.from(lease.leaseUntil()), lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
                 lease.expectedRevision() instanceof ExpectedRevision.Match match ? (long) match.revision() : null);
+        jdbc.update("INSERT INTO rg_authoring_command_attempts (tenant_id, project_id, environment_id, actor_id,"
+                + " endpoint, target_id, idempotency_key, command_id, request_fingerprint, status, attempt_no,"
+                + " attempt_token, lease_until, expected_mode, expected_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                + " 'PREPARING', ?, ?, ?, ?, ?)", SCOPE.tenantId(), SCOPE.projectId(), SCOPE.environmentId(), key.actorId(),
+                key.endpoint().name(), key.targetId(), key.idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
+                lease.attemptNo(), lease.attemptToken(), java.sql.Timestamp.from(lease.leaseUntil()),
+                lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
+                lease.expectedRevision() instanceof ExpectedRevision.Match match ? (long) match.revision() : null);
         jdbc.update("MERGE INTO rg_api_connection_identities (tenant_id, project_id, environment_id, connection_id) KEY (tenant_id, project_id, environment_id, connection_id) VALUES (?, ?, ?, ?)",
                 SCOPE.tenantId(), SCOPE.projectId(), SCOPE.environmentId(), batch.lease().coordinate().connectionId());
         jdbc.update("INSERT INTO rg_api_connection_revisions (tenant_id, project_id, environment_id, connection_id, revision, command_id,"
@@ -564,6 +622,39 @@ class JdbcPendingSecretStoreTest {
                 SCOPE.tenantId(), SCOPE.projectId(), SCOPE.environmentId(), batch.lease().coordinate().connectionId(),
                 batch.lease().coordinate().revision(), lease.commandId(), lease.attemptNo(), lease.attemptToken(),
                 "sha256:" + "b".repeat(64));
+    }
+
+    private void insertAttemptAndPointJournal(CommandLease lease) {
+        CommandKey key = lease.key();
+        jdbc.update("INSERT INTO rg_authoring_command_attempts (tenant_id, project_id, environment_id, actor_id,"
+                + " endpoint, target_id, idempotency_key, command_id, request_fingerprint, status, attempt_no,"
+                + " attempt_token, lease_until, expected_mode, expected_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                + " 'PREPARING', ?, ?, ?, ?, ?)", key.scope().tenantId(), key.scope().projectId(),
+                key.scope().environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
+                key.idempotencyKey(), lease.commandId(), lease.requestFingerprint(), lease.attemptNo(),
+                lease.attemptToken(), java.sql.Timestamp.from(lease.leaseUntil()),
+                lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
+                lease.expectedRevision() instanceof ExpectedRevision.Match match ? (long) match.revision() : null);
+        jdbc.update("UPDATE rg_authoring_command_journal SET request_fingerprint=?, status='PREPARING',"
+                + " attempt_no=?, attempt_token=?, lease_until=?, expected_mode=?, expected_revision=?,"
+                + " receipt_schema=NULL, receipt_json=NULL, receipt_fingerprint=NULL, receipt_etag=NULL,"
+                + " failure_code=NULL WHERE command_id=?", lease.requestFingerprint(), lease.attemptNo(),
+                lease.attemptToken(), java.sql.Timestamp.from(lease.leaseUntil()),
+                lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
+                lease.expectedRevision() instanceof ExpectedRevision.Match match ? (long) match.revision() : null,
+                lease.commandId());
+    }
+
+    private void insertCommittedConnectionRevision(CommandLease lease,
+                                                    ConnectionRevisionCoordinate coordinate) {
+        jdbc.update("INSERT INTO rg_api_connection_revisions (tenant_id, project_id, environment_id, connection_id,"
+                + " revision, command_id, state, attempt_no, attempt_token, display_name, secret_slot, view_json,"
+                + " metadata_fingerprint, base_url, defaults_headers_json, timeout_ms, auth_kind, basic_username,"
+                + " api_key_header, strong_etag) VALUES (?, ?, ?, ?, ?, ?, 'COMMITTED', ?, ?, 'fixture', 'token', '{}',"
+                + " ?, 'https://example.com', '{}', 1000, 'BEARER', NULL, NULL, ?)",
+                coordinate.scope().tenantId(), coordinate.scope().projectId(), coordinate.scope().environmentId(),
+                coordinate.connectionId(), coordinate.revision(), lease.commandId(), lease.attemptNo(),
+                lease.attemptToken(), "sha256:" + "c".repeat(64), "\"etag-" + lease.commandId() + "\"");
     }
 
     private void migrate(String path) { new ResourceDatabasePopulator(new ClassPathResource(path)).execute(dataSource); }

@@ -113,6 +113,41 @@ class PendingSecretStoreSchemaReadinessTest {
                 .isInstanceOf(ScriptStatementFailedException.class);
     }
 
+    @Test
+    void v009CreatesImmutableAttemptAuthorityAndRebindsAllCompositeReferences() {
+        insertFixture("v009-authority", "MATCH", 2L, PROVIDER_DEADLINE);
+
+        applyV007();
+        applyV008();
+        applyV009();
+
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_authoring_command_attempts"
+                + " WHERE command_id='v009-authority' AND attempt_no=1 AND attempt_token='v009-authority-attempt'",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id='v009-authority' AND attempt_no=1 AND attempt_token='v009-authority-attempt'",
+                String.class)).isEqualTo("PREPARING");
+        assertThat(foreignKeyTarget("RG_API_CONNECTION_PENDING_SECRET_LEASES",
+                "RG_API_CONNECTION_PENDING_SECRET_LEASES_COMMAND_FK")).isEqualTo("RG_AUTH");
+        assertThat(foreignKeyTarget("RG_API_CONNECTION_PENDING_SECRET_OUTCOMES",
+                "RG_API_CONNECTION_PENDING_SECRET_OUTCOMES_COMMAND_FK")).isEqualTo("RG_AUTH");
+        assertThat(foreignKeyTarget("RG_API_CONNECTION_REVISIONS",
+                "RG_API_CONNECTION_REVISIONS_COMMAND_FK")).isEqualTo("RG_AUTH");
+        assertThat(foreignKeyTarget("RG_API_RESOURCE_REVISIONS",
+                "RG_API_RESOURCE_REVISIONS_COMMAND_FK")).isEqualTo("RG_AUTH");
+    }
+
+    private String foreignKeyTarget(String table, String constraint) {
+        String referenced = jdbc.query("SELECT tc.TABLE_NAME"
+                        + " FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc"
+                        + " JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc"
+                        + " ON tc.CONSTRAINT_SCHEMA=rc.UNIQUE_CONSTRAINT_SCHEMA"
+                        + " AND tc.CONSTRAINT_NAME=rc.UNIQUE_CONSTRAINT_NAME"
+                        + " WHERE rc.CONSTRAINT_NAME=? AND rc.CONSTRAINT_SCHEMA=SCHEMA()"
+                        , (row, ignored) -> row.getString(1), constraint).stream().findFirst().orElse(null);
+        return "RG_AUTHORING_COMMAND_ATTEMPTS".equals(referenced) ? "RG_AUTH" : referenced;
+    }
+
     private void applyMigrationsThroughV006() {
         applyMigration("V20260830_001__api_resource_authoring.sql");
         applyMigration("V20260830_002__api_resource_concurrent_staging.sql");
@@ -128,6 +163,10 @@ class PendingSecretStoreSchemaReadinessTest {
 
     private void applyV008() {
         applyMigration("V20260831_008__pending_secret_store_child_cas_closure.sql");
+    }
+
+    private void applyV009() {
+        applyMigration("V20260831_009__authoring_command_attempt_authority.sql");
     }
 
     private void applyMigration(String name) {

@@ -132,7 +132,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         ApiConnectionSpec next = nextSpec(lease.key().scope(), current, connectionId, command,
                 connectionExpected, prepared);
 
-        deleteCommandStages(lease.commandId());
+        deleteCommandStages(lease);
         insertIdentity(lease.key().scope(), connectionId);
         String etag = opaqueEtag();
         insertRevision(lease, next, etag);
@@ -154,10 +154,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         if (prior == null) {
             requireIncomingLeaseLive(lease);
             insertJournal(lease);
+            insertAttempt(lease);
             return;
         }
         if (sameLease(prior, lease)) {
             requireIncomingLeaseLive(lease);
+            requireAttempt(lease);
             return;
         }
         boolean sameCommand = prior.commandId().equals(lease.commandId());
@@ -167,7 +169,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 && !"COMMITTED".equals(prior.status())
                 && !prior.leaseUntil().isAfter(databaseNow());
         if (!takeoverAllowed) fail(Code.LEASE_FENCED);
-        deleteCommandStages(lease.commandId());
+        insertAttempt(lease);
+        deleteCommandStages(prior.commandId(), prior.attemptNo(), prior.attemptToken());
         replaceJournal(lease);
     }
 
@@ -189,6 +192,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             }
         } catch (DuplicateKeyException ex) {
             fail(Code.LEASE_FENCED);
+        }
+    }
+
+    /** Inserts one immutable lease authority before the mutable journal pointer advances. */
+    private void insertAttempt(CommandLease lease) {
+        if (jdbc.update("""
+                        INSERT INTO rg_authoring_command_attempts
+                            (tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                             idempotency_key, command_id, request_fingerprint, status, attempt_no,
+                             attempt_token, lease_until, expected_mode, expected_revision)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARING', ?, ?, ?, ?, ?)
+                        """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().actorId(), lease.key().endpoint().name(),
+                lease.key().targetId(), lease.key().idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
+                lease.attemptNo(), lease.attemptToken(), timestamp(lease.leaseUntil()),
+                expectedMode(lease.expectedRevision()), expectedRevision(lease.expectedRevision())) != 1) {
+            fail(Code.INTEGRITY);
         }
     }
 
@@ -282,9 +302,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
      * preparation belongs to the outer secret coordinator and is deliberately
      * absent from this metadata store.
      */
-    private void deleteCommandStages(String commandId) {
-        if (jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND state='STAGED'",
-                commandId) < 0) {
+    private void deleteCommandStages(CommandLease lease) {
+        deleteCommandStages(lease.commandId(), lease.attemptNo(), lease.attemptToken());
+    }
+
+    private void deleteCommandStages(String commandId, int attemptNo, String attemptToken) {
+        // A pending-secret row keeps the child revision as immutable recovery
+        // provenance.  Retain that staged revision until the exact old
+        // attempt is recovered; deleting it would violate the V009 attempt FK
+        // and make the old provider compensation unverifiable.
+        if (jdbc.update("DELETE FROM rg_api_connection_revisions r WHERE r.command_id=? AND r.attempt_no=? "
+                + "AND r.attempt_token=? AND r.state='STAGED'"
+                + " AND NOT EXISTS (SELECT 1 FROM rg_api_connection_pending_secret_leases p"
+                + " WHERE p.tenant_id=r.tenant_id AND p.project_id=r.project_id"
+                + " AND p.environment_id=r.environment_id AND p.connection_id=r.connection_id"
+                + " AND p.revision=r.revision AND p.command_id=r.command_id"
+                + " AND p.attempt_no=r.attempt_no AND p.attempt_token=r.attempt_token)", commandId,
+                attemptNo, attemptToken) < 0) {
             fail(Code.INTEGRITY);
         }
     }
@@ -624,6 +658,13 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             fail(Code.CAS_MISMATCH);
         }
         if (!child && jdbc.update("""
+                        UPDATE rg_authoring_command_attempts
+                           SET status='COMMITTED', updated_at=CURRENT_TIMESTAMP
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'
+                        """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
+            fail(Code.LEASE_FENCED);
+        }
+        if (!child && jdbc.update("""
                         UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?,
                              receipt_json=?, receipt_fingerprint=?, receipt_etag=?, failure_code=NULL,
                              updated_at=CURRENT_TIMESTAMP
@@ -689,6 +730,13 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 + "AND attempt_token=? AND state='STAGED'", lease.commandId(), lease.attemptNo(),
                 lease.attemptToken()) < 0) fail(Code.INTEGRITY);
         if (jdbc.update("""
+                        UPDATE rg_authoring_command_attempts
+                           SET status='FAILED', updated_at=CURRENT_TIMESTAMP
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'
+                        """, lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
+            fail(Code.LEASE_FENCED);
+        }
+        if (jdbc.update("""
                         UPDATE rg_authoring_command_journal SET status='FAILED', receipt_schema=NULL,
                              receipt_json=NULL, receipt_fingerprint=NULL, receipt_etag=NULL,
                              failure_code='INTERNAL', updated_at=CURRENT_TIMESTAMP
@@ -722,9 +770,44 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         if ("FAILED".equals(status)) {
             fail(forCommit ? Code.STAGE_MISSING : Code.LEASE_FENCED);
         }
+        requireAttempt(lease);
         Instant expiry = jdbc.queryForObject("SELECT lease_until FROM rg_authoring_command_journal "
                 + "WHERE command_id=?", (row, ignored) -> timestamp(row, 1), lease.commandId());
         if (expiry == null || !expiry.isAfter(databaseNow())) fail(Code.LEASE_EXPIRED);
+    }
+
+    /** Verifies the immutable V009 authority, not merely the mutable journal row. */
+    private void requireAttempt(CommandLease lease) {
+        List<AttemptAuthority> rows = jdbc.query("""
+                        SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                               idempotency_key, request_fingerprint, status, attempt_no, attempt_token,
+                               lease_until, expected_mode, expected_revision
+                          FROM rg_authoring_command_attempts
+                         WHERE command_id=? AND attempt_no=? AND attempt_token=?
+                         FOR UPDATE
+                        """, (row, ignored) -> new AttemptAuthority(
+                row.getString(1), row.getString(2), row.getString(3), row.getString(4), row.getString(5),
+                row.getString(6), row.getString(7), row.getString(8), row.getString(9), row.getInt(10),
+                row.getString(11), timestamp(row, 12), row.getString(13), nullableLong(row, 14)),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        if (rows.size() != 1) fail(Code.LEASE_FENCED);
+        AttemptAuthority authority = rows.getFirst();
+        if (!"PREPARING".equals(authority.status())
+                || !authority.tenantId().equals(lease.key().scope().tenantId())
+                || !authority.projectId().equals(lease.key().scope().projectId())
+                || !authority.environmentId().equals(lease.key().scope().environmentId())
+                || !authority.actorId().equals(lease.key().actorId())
+                || !authority.endpoint().equals(lease.key().endpoint().name())
+                || !authority.targetId().equals(lease.key().targetId())
+                || !authority.idempotencyKey().equals(lease.key().idempotencyKey())
+                || !authority.requestFingerprint().equals(lease.requestFingerprint())
+                || authority.attemptNo() != lease.attemptNo()
+                || !authority.attemptToken().equals(lease.attemptToken())
+                || !authority.leaseUntil().equals(lease.leaseUntil())
+                || !authority.expectedMode().equals(expectedMode(lease.expectedRevision()))
+                || !Objects.equals(authority.expectedRevision(), expectedRevision(lease.expectedRevision()))) {
+            fail(Code.LEASE_FENCED);
+        }
     }
 
 
@@ -929,6 +1012,11 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     private record JournalRow(String commandId, String requestFingerprint, String status, int attemptNo,
                               String attemptToken, Instant leaseUntil, String expectedMode,
                               Long expectedRevision) { }
+
+    private record AttemptAuthority(String tenantId, String projectId, String environmentId, String actorId,
+                                    String endpoint, String targetId, String idempotencyKey,
+                                    String requestFingerprint, String status, int attemptNo, String attemptToken,
+                                    Instant leaseUntil, String expectedMode, Long expectedRevision) { }
 
     private record CommittedOuterReceipt(String schema, JsonNode body, String fingerprint, String etag) { }
 

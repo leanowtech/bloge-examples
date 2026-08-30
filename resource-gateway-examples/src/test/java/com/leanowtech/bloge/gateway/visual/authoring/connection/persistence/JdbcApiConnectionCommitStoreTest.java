@@ -63,6 +63,11 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         migrate("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql");
         migrate("db/postgresql/V20260830_003__api_connection_secret_staging.sql");
         migrate("db/postgresql/V20260830_004__connection_metadata_authority.sql");
+        migrate("db/postgresql/V20260830_005__pending_secret_store_protocol.sql");
+        migrate("db/postgresql/V20260830_006__pending_secret_store_hardening.sql");
+        migrate("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql");
+        migrate("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql");
+        migrate("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql");
         return new JdbcApiConnectionCommitStore(dataSource, new ObjectMapper(),
                 new ApiConnectionDecisions(), clock);
     }
@@ -184,6 +189,9 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
                 + "WHERE command_id=?", live.commandId());
         Instant expiredUntil = databaseLeaseUntil(live.commandId());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET lease_until = ? "
+                + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", OffsetDateTime.ofInstant(expiredUntil, ZoneOffset.UTC),
+                live.commandId(), live.attemptNo(), live.attemptToken());
         CommandLease expired = withLeaseUntil(live, expiredUntil);
         store.fail(expired);
         assertThatThrownBy(() -> store.commit(expired)).isInstanceOf(ApiConnectionCommitStoreException.class)
@@ -205,9 +213,13 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
         jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
                 + "WHERE command_id=?", old.commandId());
+        Instant expiredUntil = databaseLeaseUntil(old.commandId());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET lease_until = ? "
+                + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", OffsetDateTime.ofInstant(expiredUntil, ZoneOffset.UTC),
+                old.commandId(), old.attemptNo(), old.attemptToken());
         StagedApiConnection replacement = store.stage(current, "customer", ExpectedRevision.create(),
                 renamedCommand("Current"));
-        store.fail(withLeaseUntil(old, databaseLeaseUntil(old.commandId())));
+        store.fail(withLeaseUntil(old, expiredUntil));
         assertThatThrownBy(() -> store.commit(old)).isInstanceOf(ApiConnectionCommitStoreException.class);
         assertThat(store.commit(current)).isEqualTo(new StoredApiConnection(SCOPE, replacement.view(),
                 replacement.metadataFingerprint(), replacement.strongEtag(), current.commandId()));
@@ -645,6 +657,18 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     private void seedOuterJournal(CommandLease lease) {
         jdbc.update("""
                 INSERT INTO rg_authoring_command_journal
+                    (tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key,
+                     command_id, request_fingerprint, status, attempt_no, attempt_token, lease_until,
+                     expected_mode, expected_revision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARING', ?, ?, ?, ?, ?)
+                """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().actorId(), lease.key().endpoint().name(),
+                lease.key().targetId(), lease.key().idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
+                lease.attemptNo(), lease.attemptToken(), OffsetDateTime.ofInstant(lease.leaseUntil(), ZoneOffset.UTC),
+                lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
+                lease.expectedRevision() instanceof ExpectedRevision.Match match ? match.revision() : null);
+        jdbc.update("""
+                INSERT INTO rg_authoring_command_attempts
                     (tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key,
                      command_id, request_fingerprint, status, attempt_no, attempt_token, lease_until,
                      expected_mode, expected_revision)
