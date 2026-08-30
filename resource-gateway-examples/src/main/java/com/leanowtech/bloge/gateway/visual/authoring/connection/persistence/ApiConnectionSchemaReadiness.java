@@ -78,14 +78,20 @@ public final class ApiConnectionSchemaReadiness {
     }
 
     private static void verifyMetadata(JdbcTemplate jdbc) {
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_command_uq",
+                List.of("command_id"));
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_etag_uq",
+                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag"));
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_state_etag_uq",
+                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag", "state"));
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
+                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "attempt_no", "attempt_token"));
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
             requirePrimaryKey(metadata, "rg_api_connection_identities", "rg_api_connection_identities_pk",
                     List.of("tenant_id", "project_id", "environment_id", "connection_id"));
             requirePrimaryKey(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_pk",
                     List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id"));
-            requireUnique(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_command_uq",
-                    List.of("command_id"));
             requirePrimaryKey(metadata, "rg_api_connection_heads", "rg_api_connection_heads_pk",
                     List.of("tenant_id", "project_id", "environment_id", "connection_id"));
             requirePrimaryKey(metadata, "rg_api_connection_pending_secret_leases",
@@ -101,7 +107,8 @@ public final class ApiConnectionSchemaReadiness {
             requireForeignKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_connection_fk",
                     "rg_api_connection_identities", List.of(
                             pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
-                            pair("environment_id", "environment_id"), pair("connection_id", "connection_id")));
+                            pair("environment_id", "environment_id"), pair("connection_id", "connection_id")),
+                    (short) DatabaseMetaData.importedKeyRestrict);
             requireForeignKey(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_command_fk",
                     "rg_authoring_command_journal", List.of(
                             pair("command_id", "command_id"), pair("attempt_no", "attempt_no"),
@@ -116,7 +123,11 @@ public final class ApiConnectionSchemaReadiness {
                     "rg_api_connection_pending_secret_leases_revision_fk", "rg_api_connection_revisions", List.of(
                             pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
                             pair("environment_id", "environment_id"), pair("connection_id", "connection_id"),
-                            pair("revision", "revision"), pair("command_id", "command_id")));
+                            pair("revision", "revision"), pair("command_id", "command_id"),
+                            pair("attempt_no", "attempt_no"), pair("attempt_token", "attempt_token")));
+            requireForeignKey(metadata, "rg_api_connection_secret_bindings",
+                    "rg_api_connection_secret_bindings_command_fk", "rg_authoring_command_journal",
+                    List.of(pair("command_id", "command_id")));
             requireForeignKey(metadata, "rg_api_connection_pending_secret_leases",
                     "rg_api_connection_pending_secret_leases_command_fk", "rg_authoring_command_journal", List.of(
                             pair("command_id", "command_id"), pair("attempt_no", "attempt_no"),
@@ -131,6 +142,11 @@ public final class ApiConnectionSchemaReadiness {
             requireIndex(metadata, "rg_api_connection_pending_secret_leases",
                     "rg_api_connection_pending_secret_leases_recovery_idx",
                     List.of("status", "lease_until", "updated_at"));
+            requireIndex(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_staging_cleanup_idx",
+                    List.of("state", "updated_at"));
+            requireIndex(metadata, "rg_api_connection_secret_bindings",
+                    "rg_api_connection_secret_bindings_locator_idx",
+                    List.of("tenant_id", "project_id", "environment_id", "connection_id", "slot", "provider_id"));
             return null;
         });
     }
@@ -168,38 +184,43 @@ public final class ApiConnectionSchemaReadiness {
         throw new IllegalStateException("missing or misordered index " + expected);
     }
 
-    private static void requireUnique(DatabaseMetaData metadata, String table, String expected,
-                                      List<String> columns) throws SQLException {
-        for (String candidate : tableCandidates(table)) {
-            Map<String, Map<Short, String>> indexes = new HashMap<>();
-            try (ResultSet rows = metadata.getIndexInfo(null, null, candidate, true, false)) {
-                while (rows.next()) {
-                    String index = rows.getString("INDEX_NAME");
-                    String column = rows.getString("COLUMN_NAME");
-                    if (index != null && column != null) {
-                        indexes.computeIfAbsent(normalize(index), ignored -> new HashMap<>())
-                                .put(rows.getShort("ORDINAL_POSITION"), normalize(column));
-                    }
-                }
-            }
-            for (Map.Entry<String, Map<Short, String>> index : indexes.entrySet()) {
-                if (ordered(index.getValue()).equals(normalized(columns))) return;
-            }
+    private static void requireUnique(JdbcTemplate jdbc, String table, String expected,
+                                      List<String> columns) {
+        List<String> actual = jdbc.query("""
+                SELECT kcu.column_name
+                  FROM information_schema.table_constraints tc
+                  JOIN information_schema.key_column_usage kcu
+                    ON kcu.constraint_name = tc.constraint_name
+                   AND kcu.table_name = tc.table_name
+                 WHERE UPPER(tc.table_name) = UPPER(?)
+                   AND UPPER(tc.constraint_name) = UPPER(?)
+                   AND tc.constraint_type = 'UNIQUE'
+                 ORDER BY kcu.ordinal_position
+                """, (rs, row) -> normalize(rs.getString("column_name")), table, expected);
+        if (!actual.equals(normalized(columns))) {
+            throw new IllegalStateException("missing or misordered unique constraint " + expected);
         }
-        throw new IllegalStateException("missing or misordered unique constraint " + expected);
     }
 
     private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,
                                            String targetTable, List<ColumnPair> columns) throws SQLException {
+        requireForeignKey(metadata, table, expected, targetTable, columns, null);
+    }
+
+    private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,
+                                           String targetTable, List<ColumnPair> columns,
+                                           Short expectedDeleteRule) throws SQLException {
         for (String candidate : tableCandidates(table)) {
             Map<Short, ColumnPair> actual = new HashMap<>();
             String keyName = null;
             String actualTarget = null;
+            Short actualDeleteRule = null;
             try (ResultSet rows = metadata.getImportedKeys(null, null, candidate)) {
                 while (rows.next()) {
                     if (keyName == null || normalize(expected).equals(normalize(rows.getString("FK_NAME")))) {
                         keyName = rows.getString("FK_NAME");
                         actualTarget = rows.getString("PKTABLE_NAME");
+                        actualDeleteRule = rows.getShort("DELETE_RULE");
                         actual.put(rows.getShort("KEY_SEQ"), pair(rows.getString("FKCOLUMN_NAME"),
                                 rows.getString("PKCOLUMN_NAME")));
                     }
@@ -207,6 +228,7 @@ public final class ApiConnectionSchemaReadiness {
             }
             if (normalize(expected).equals(normalize(keyName))
                     && normalize(targetTable).equals(normalize(actualTarget))
+                    && (expectedDeleteRule == null || expectedDeleteRule.equals(actualDeleteRule))
                     && orderedPairs(actual).equals(normalizedPairs(columns))) return;
         }
         throw new IllegalStateException("missing or misordered foreign key " + expected);

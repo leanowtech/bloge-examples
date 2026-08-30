@@ -33,7 +33,8 @@ ALTER TABLE rg_api_resource_revisions
     ADD CONSTRAINT rg_api_resource_revisions_connection_fk FOREIGN KEY
         (tenant_id, project_id, environment_id, connection_id)
         REFERENCES rg_api_connection_identities
-            (tenant_id, project_id, environment_id, connection_id);
+            (tenant_id, project_id, environment_id, connection_id)
+        ON DELETE RESTRICT;
 
 CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
     tenant_id VARCHAR(128) NOT NULL,
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
     CONSTRAINT rg_api_connection_revisions_pk PRIMARY KEY
         (tenant_id, project_id, environment_id, connection_id, revision, command_id),
     CONSTRAINT rg_api_connection_revisions_command_uq UNIQUE (command_id),
+    CONSTRAINT rg_api_connection_revisions_revision_attempt_uq UNIQUE
+        (tenant_id, project_id, environment_id, connection_id, revision, command_id, attempt_no, attempt_token),
     CONSTRAINT rg_api_connection_revisions_identity_fk FOREIGN KEY
         (tenant_id, project_id, environment_id, connection_id)
         REFERENCES rg_api_connection_identities
@@ -82,8 +85,13 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
              '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''), 'a', ''),
              'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     CONSTRAINT rg_api_connection_revisions_url_ck CHECK
-        (CHAR_LENGTH(base_url) BETWEEN 8 AND 2048 AND base_url LIKE 'https://%'
-         AND base_url NOT LIKE '%?%' AND base_url NOT LIKE '%#%'),
+        (CHAR_LENGTH(base_url) BETWEEN 8 AND 2048 AND base_url = TRIM(base_url)
+         AND base_url LIKE 'https://%' AND CHAR_LENGTH(base_url) > 8
+         AND base_url NOT LIKE 'https:///%' AND base_url NOT LIKE 'https://:%'
+         AND base_url NOT LIKE '% %' AND POSITION(CHR(9) IN base_url) = 0
+         AND POSITION(CHR(10) IN base_url) = 0 AND POSITION(CHR(11) IN base_url) = 0
+         AND POSITION(CHR(12) IN base_url) = 0 AND POSITION(CHR(13) IN base_url) = 0
+         AND base_url NOT LIKE '%@%' AND base_url NOT LIKE '%?%' AND base_url NOT LIKE '%#%'),
     CONSTRAINT rg_api_connection_revisions_timeout_ck CHECK (timeout_ms BETWEEN 100 AND 120000),
     CONSTRAINT rg_api_connection_revisions_auth_ck CHECK
         ((auth_kind = 'NONE' AND basic_username IS NULL AND api_key_header IS NULL)
@@ -144,9 +152,9 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_pending_secret_leases (
     CONSTRAINT rg_api_connection_pending_secret_leases_pk PRIMARY KEY
         (command_id, attempt_no, attempt_token, slot),
     CONSTRAINT rg_api_connection_pending_secret_leases_revision_fk FOREIGN KEY
-        (tenant_id, project_id, environment_id, connection_id, revision, command_id)
+        (tenant_id, project_id, environment_id, connection_id, revision, command_id, attempt_no, attempt_token)
         REFERENCES rg_api_connection_revisions
-            (tenant_id, project_id, environment_id, connection_id, revision, command_id),
+            (tenant_id, project_id, environment_id, connection_id, revision, command_id, attempt_no, attempt_token),
     CONSTRAINT rg_api_connection_pending_secret_leases_command_fk FOREIGN KEY
         (command_id, attempt_no, attempt_token)
         REFERENCES rg_authoring_command_journal (command_id, attempt_no, attempt_token),
