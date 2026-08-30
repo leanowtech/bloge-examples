@@ -51,6 +51,8 @@ class JdbcApiResourceCommitStoreClaimTest {
         transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/V20260830_001__api_resource_authoring.sql"))
                 .execute(dataSource);
+        new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql"))
+                .execute(dataSource);
         clock = new MutableClock();
     }
 
@@ -69,7 +71,7 @@ class JdbcApiResourceCommitStoreClaimTest {
         assertThat(store.claim(KEY, FP2, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()))
                 .isInstanceOf(ClaimResult.Conflict.class);
 
-        clock.advance(Duration.ofSeconds(2));
+        expireLease(first.lease());
         ClaimResult.Acquired takeover = (ClaimResult.Acquired) store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.match(3));
         assertThat(takeover.resumed()).isTrue();
         assertThat(takeover.lease().commandId()).isEqualTo(first.lease().commandId());
@@ -237,12 +239,12 @@ class JdbcApiResourceCommitStoreClaimTest {
         String empty = "{}";
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
-                    (tenant_id, project_id, environment_id, resource_id, revision,
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id,
                      descriptor_json, descriptor_fingerprint, descriptor_state,
                      design_contract_json, design_contract_fingerprint, design_contract_state,
                      operator_json, operator_fingerprint, operator_state, set_fingerprint)
-                VALUES ('tenant','project','dev','profile',1,?,?, 'READY',?,?, 'READY',?,?, 'READY',?)
-                """, empty, AuthoringFingerprints.of(JSON.readTree(empty)), empty, AuthoringFingerprints.of(JSON.readTree(empty)),
+                VALUES ('tenant','project','dev','profile',1,?, ?,?, 'READY',?,?, 'READY',?,?, 'READY',?)
+                """, lease.commandId(), empty, AuthoringFingerprints.of(JSON.readTree(empty)), empty, AuthoringFingerprints.of(JSON.readTree(empty)),
                 empty, AuthoringFingerprints.of(JSON.readTree(empty)), FP);
     }
 
@@ -265,19 +267,39 @@ class JdbcApiResourceCommitStoreClaimTest {
                 """, JSON.writeValueAsString(spec), spec.fingerprint(), "connection", "\"etag\"", "cmd-read");
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
-                    (tenant_id, project_id, environment_id, resource_id, revision,
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id,
                      descriptor_json, descriptor_fingerprint, descriptor_state,
                      design_contract_json, design_contract_fingerprint, design_contract_state,
                      operator_json, operator_fingerprint, operator_state, set_fingerprint)
-                VALUES ('tenant','project','dev','profile',1,?,?, 'READY',?,?, 'READY',?,?, 'READY',?)
-                """, JSON.writeValueAsString(descriptor), AuthoringFingerprints.of(descriptor),
+                VALUES ('tenant','project','dev','profile',1,?, ?,?, 'READY',?,?, 'READY',?,?, 'READY',?)
+                """, "cmd-read", JSON.writeValueAsString(descriptor), AuthoringFingerprints.of(descriptor),
                 JSON.writeValueAsString(design), AuthoringFingerprints.of(design),
-                JSON.writeValueAsString(operator), AuthoringFingerprints.of(operator), FP2);
+                JSON.writeValueAsString(operator), AuthoringFingerprints.of(operator),
+                projectionSetFingerprint(spec, descriptor, design, operator));
         jdbc.update("""
                 INSERT INTO rg_api_resource_heads
-                    (tenant_id, project_id, environment_id, resource_id, revision, strong_etag, revision_state)
-                VALUES ('tenant','project','dev','profile',1,'"etag"','COMMITTED')
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id, strong_etag, revision_state)
+                VALUES ('tenant','project','dev','profile',1,'cmd-read','"etag"','COMMITTED')
                 """);
+    }
+
+    private void expireLease(CommandLease lease) {
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND WHERE command_id = ?",
+                lease.commandId());
+    }
+
+    private static String projectionSetFingerprint(ApiResourceSpec resource, JsonNode descriptor,
+                                                   JsonNode design, JsonNode operator) {
+        JsonNode root = JSON.createObjectNode();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("DESCRIPTOR", projectionFingerprintItem("DESCRIPTOR", resource, descriptor));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("DESIGN_CONTRACT", projectionFingerprintItem("DESIGN_CONTRACT", resource, design));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("OPERATOR", projectionFingerprintItem("OPERATOR", resource, operator));
+        return AuthoringFingerprints.of(root);
+    }
+
+    private static JsonNode projectionFingerprintItem(String kind, ApiResourceSpec resource, JsonNode body) {
+        return JSON.createObjectNode().put("kind", kind).put("subject", resource.ref().toString())
+                .put("bodyFingerprint", AuthoringFingerprints.of(body));
     }
 
     private static ApiResourceCommand command() {

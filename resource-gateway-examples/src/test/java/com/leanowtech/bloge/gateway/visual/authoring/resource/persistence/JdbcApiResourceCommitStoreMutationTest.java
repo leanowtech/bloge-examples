@@ -2,91 +2,336 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.*;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import javax.sql.DataSource;
-import java.time.*;
-import java.util.*;
-import static org.assertj.core.api.Assertions.*;
-import java.util.concurrent.*;
+import org.springframework.transaction.support.TransactionTemplate;
 
-/** Mutation-focused JDBC coverage: durable stage, atomic commit, fencing and failure cleanup. */
+import javax.sql.DataSource;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * JDBC mutation contract at the public commit-store seam.
+ *
+ * <p>Both migrations are installed for every test. V002 is part of this
+ * store's contract because staged revisions and projections are keyed by
+ * exact command provenance and may share a logical revision.</p>
+ */
 class JdbcApiResourceCommitStoreMutationTest {
     private static final ObjectMapper JSON = new ObjectMapper();
-    private final AuthoringScope scope = new AuthoringScope("t", "p", "dev");
-    private final CommandKey key = new CommandKey(scope, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k");
-    private final String fp = "sha256:" + "1".repeat(64);
-    private JdbcTemplate jdbc; private MutableClock clock;
+    private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
+    private static final CommandKey KEY = key("one");
+    private static final String FP1 = "sha256:" + "1".repeat(64);
+    private static final String FP2 = "sha256:" + "2".repeat(64);
+    private static final String FP3 = "sha256:" + "3".repeat(64);
 
-    @BeforeEach void setUp() {
-        DataSource ds = new DriverManagerDataSource("jdbc:h2:mem:mutation-" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
-        jdbc = new JdbcTemplate(ds); clock = new MutableClock();
-        new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/V20260830_001__api_resource_authoring.sql")).execute(ds);
+    private JdbcTemplate jdbc;
+    private String url;
+
+    @BeforeEach
+    void setUp() {
+        url = "jdbc:h2:mem:mutation-" + System.nanoTime() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        DataSource dataSource = new DriverManagerDataSource(url, "sa", "");
+        jdbc = new JdbcTemplate(dataSource);
+        applyMigration("db/postgresql/V20260830_001__api_resource_authoring.sql", dataSource);
+        applyMigration("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql", dataSource);
     }
 
-    @Test void stageCommitFindAndFailAreDurableAndFenced() {
+    private static void applyMigration(String path, DataSource dataSource) {
+        new ResourceDatabasePopulator(new ClassPathResource(path)).execute(dataSource);
+    }
+
+    @Test
+    void stageIsInvisibleThenCommitPublishesDurableHeadAndRevision() {
         JdbcApiResourceCommitStore store = store();
-        CommandLease lease = acquire(store, key, ExpectedRevision.create());
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
         StagedApiResource staged = store.stage(lease, "connection", command("one"));
-        assertThat(store.findHead(scope, "profile")).isEmpty();
+
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+        assertThat(store.findRevision(SCOPE, "profile", 1)).isEmpty();
         CommandReceipt receipt = receipt(staged);
+
         assertThat(store.commit(lease, receipt)).isEqualTo(receipt);
-        assertThat(store.findHead(scope, "profile")).isPresent();
-        assertThat(store.findRevision(scope, "profile", 1)).isPresent();
-        assertThatThrownBy(() -> store.fail(lease, CommandFailureCode.INTERNAL)).isInstanceOf(ApiResourceCommitStoreException.class)
+        assertThat(store.findHead(SCOPE, "profile")).isPresent();
+        assertThat(store.findRevision(SCOPE, "profile", 1))
+                .contains(store.findHead(SCOPE, "profile").orElseThrow());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isZero();
+    }
+
+    @Test
+    void stageIsIdempotentAndProjectionSetTamperingFailsClosed() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource first = store.stage(lease, "connection", command("one"));
+
+        assertThat(store.stage(lease, "connection", command("one")).strongEtag())
+                .isEqualTo(first.strongEtag());
+        jdbc.update("UPDATE rg_api_resource_projection_revisions SET set_fingerprint=?", FP2);
+
+        assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
     }
 
-    @Test void expiredLeaseUsesDatabaseTimeAndFailCleansStage() {
-        JdbcApiResourceCommitStore store = store(); CommandLease lease = acquire(store, key, ExpectedRevision.create());
-        store.stage(lease, "connection", command("one")); clock.advance(Duration.ofSeconds(2));
-        assertThatThrownBy(() -> store.commit(lease, null)).isInstanceOf(ApiResourceCommitStoreException.class)
+    @Test
+    void stagedSpecAndRelationshipTamperingFailsClosed() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        store.stage(lease, "connection", command("one"));
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_id=?", "other-connection");
+
+        assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void compilerFailureIsTypedAndLeavesNoStage() {
+        JdbcApiResourceCommitStore store = store((scope, resource) -> {
+            throw new IllegalStateException("invalid projection");
+        });
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+
+        assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.PROJECTION_INVALID);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions", Integer.class)).isZero();
+    }
+
+    @Test
+    void authoringValidationRemainsDistinctFromCas() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+
+        assertThatThrownBy(() -> store.stage(lease, "connection", command("")))
+                .isInstanceOf(ApiResourceAuthoringException.class)
+                .extracting("code").isEqualTo(ApiResourceAuthoringException.Code.VALIDATION);
+    }
+
+    @Test
+    void receiptMismatchIsRejectedBeforeCommit() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        JsonNode body = JSON.createObjectNode().put("result", "profile");
+
+        assertThatThrownBy(() -> store.commit(lease, new CommandReceipt(
+                "test.receipt.v1", body, AuthoringFingerprints.of(body), "\"wrong-etag\"")))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.RECEIPT_INVALID);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_resource_revisions", String.class))
+                .isEqualTo("STAGED");
+        assertThat(staged.strongEtag()).isNotEqualTo("\"wrong-etag\"");
+    }
+
+    @Test
+    void failedAttemptCleansStageAndCannotBeCommittedOrReplayed() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        store.stage(lease, "connection", command("one"));
+
+        store.fail(lease, CommandFailureCode.INTERNAL);
+
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal", String.class))
+                .isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions", Integer.class)).isZero();
+        assertThatThrownBy(() -> store.fail(lease, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
+        assertThat(store.claim(KEY, FP2, ExpectedRevision.create())).isInstanceOf(ClaimResult.Conflict.class);
+    }
+
+    @Test
+    void staleFailIsNoOpButMatchingExpiredFailIsTyped() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease old = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        store.stage(old, "connection", command("one"));
+        expire(old);
+        CommandLease current = acquire(store, KEY, ExpectedRevision.create(), FP1);
+
+        store.fail(old, CommandFailureCode.INTERNAL);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal", String.class))
+                .isEqualTo("PREPARING");
+        expire(current);
+        assertThatThrownBy(() -> store.fail(current, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_EXPIRED);
-        // A valid takeover fences the old attempt and removes only its staged revision.
-        CommandLease newer = acquire(store, key, ExpectedRevision.create());
-        assertThat(newer.attemptNo()).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isZero();
     }
 
-    @Test void stageIsIdempotentAndTamperFailsClosed() {
-        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); StagedApiResource a=s.stage(l,"connection",command("one"));
-        assertThat(s.stage(l,"connection",command("one")).strongEtag()).isEqualTo(a.strongEtag());
-        assertThat(jdbc.queryForObject("SELECT set_fingerprint FROM rg_api_resource_projection_revisions",String.class)).isNotEqualTo(AuthoringFingerprints.of(JSON.createObjectNode()));
-        jdbc.update("UPDATE rg_api_resource_projection_revisions SET set_fingerprint=?",fp.replace('1','2'));
-        assertThatThrownBy(()->s.stage(l,"connection",command("one"))).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    @Test
+    void expiredLeaseCannotCommitAndTakeoverGetsFreshAttempt() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease old = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(old, "connection", command("one"));
+        expire(old);
+
+        assertThatThrownBy(() -> store.commit(old, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_EXPIRED);
+        ClaimResult.Acquired takeover = (ClaimResult.Acquired) store.claim(
+                KEY, FP1, ExpectedRevision.create());
+        assertThat(takeover.lease().attemptNo()).isEqualTo(2);
+        assertThat(takeover.lease().attemptToken()).isNotEqualTo(old.attemptToken());
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isZero();
     }
 
-    @Test void validationIsPreservedAndConcurrencyMapsToCas() {
-        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create());
-        assertThatThrownBy(()->s.stage(l,"connection",command(""))).isInstanceOf(ApiResourceAuthoringException.class).extracting("code").isEqualTo(ApiResourceAuthoringException.Code.VALIDATION);
+    @Test
+    void updatePublishesHistoryAndRestartReadsIt() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease create = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource first = store.stage(create, "connection", command("one"));
+        store.commit(create, receipt(first));
+        CommandLease update = acquire(store, key("two"), ExpectedRevision.match(1), FP2);
+        StagedApiResource second = store.stage(update, "connection", command("two"));
+        store.commit(update, receipt(second));
+
+        assertThat(store.findHead(SCOPE, "profile").orElseThrow().resource().revision()).isEqualTo(2);
+        assertThat(store.findRevision(SCOPE, "profile", 1).orElseThrow().resource().revision()).isEqualTo(1);
+        JdbcApiResourceCommitStore restarted = store();
+        assertThat(restarted.findRevision(SCOPE, "profile", 1)).isPresent();
+        assertThat(restarted.findRevision(SCOPE, "profile", 2)).isPresent();
     }
 
-    @Test void forgedLeaseAndReceiptMismatchAreRejected() {
-        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); StagedApiResource a=s.stage(l,"connection",command("one"));
-        CommandLease f=new CommandLease(l.commandId(),l.attemptNo(),l.attemptToken(),l.key(),l.requestFingerprint(),clock.instant().plus(Duration.ofDays(1)),ExpectedRevision.match(9));
-        assertThatThrownBy(()->s.commit(f,null)).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
-        JsonNode b=JSON.createObjectNode().put("result","profile"); assertThatThrownBy(()->new CommandReceipt("r",b,fp,a.strongEtag())).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(()->s.commit(l,new CommandReceipt("r",b,AuthoringFingerprints.of(b),"\"wrong\""))).isInstanceOf(ApiResourceCommitStoreException.class).extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.RECEIPT_INVALID);
+    @Test
+    void staleUpdateFailsCasAndLeavesItsStageForRetry() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease create = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource first = store.stage(create, "connection", command("one"));
+        store.commit(create, receipt(first));
+        CommandLease update = acquire(store, key("two"), ExpectedRevision.match(1), FP2);
+        StagedApiResource updateStage = store.stage(update, "connection", command("two"));
+        CommandLease other = acquire(store, key("three"), ExpectedRevision.match(1), FP3);
+        StagedApiResource otherStage = store.stage(other, "connection", command("three"));
+        store.commit(other, receipt(otherStage));
+
+        assertThatThrownBy(() -> store.commit(update, receipt(updateStage)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.CAS_MISMATCH);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isEqualTo(1);
     }
 
-    @Test void failCleansStageAndWritesFailedJournal() {
-        JdbcApiResourceCommitStore s=store(); CommandLease l=acquire(s,key,ExpectedRevision.create()); s.stage(l,"connection",command("one")); s.fail(l,CommandFailureCode.INTERNAL);
-        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal",String.class)).isEqualTo("FAILED"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions",Integer.class)).isZero();
-        assertThatThrownBy(()->s.fail(null,CommandFailureCode.INTERNAL)).isInstanceOf(ApiResourceCommitStoreException.class); assertThatThrownBy(()->s.fail(l,null)).isInstanceOf(ApiResourceCommitStoreException.class);
+    @Test
+    void twoIndependentConnectionsHaveOneCommitWinnerAndRollbackLoser() throws Exception {
+        DataSource leftDataSource = new DriverManagerDataSource(url, "sa", "");
+        DataSource rightDataSource = new DriverManagerDataSource(url, "sa", "");
+        JdbcApiResourceCommitStore left = store(new JdbcTemplate(leftDataSource), leftDataSource);
+        JdbcApiResourceCommitStore right = store(new JdbcTemplate(rightDataSource), rightDataSource);
+        CommandLease leftLease = acquire(left, key("left"), ExpectedRevision.create(), FP1);
+        CommandLease rightLease = acquire(right, key("right"), ExpectedRevision.create(), FP2);
+        StagedApiResource leftStage = left.stage(leftLease, "connection", command("one"));
+        StagedApiResource rightStage = right.stage(rightLease, "connection", command("two"));
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> leftCommit = executor.submit(() ->
+                    commitAtBarrier(left, leftLease, leftStage, barrier));
+            Future<Boolean> rightCommit = executor.submit(() ->
+                    commitAtBarrier(right, rightLease, rightStage, barrier));
+            assertThat((leftCommit.get() ? 1 : 0) + (rightCommit.get() ? 1 : 0)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_heads", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='COMMITTED'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'", Integer.class)).isEqualTo(1);
     }
 
-    private JdbcApiResourceCommitStore store() { return new JdbcApiResourceCommitStore(jdbc, new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource())), JSON, clock, Duration.ofSeconds(1), new ApiResourceDecisions(), (s, r) -> projections(r)); }
-    private JdbcApiResourceCommitStore store(ApiResourceDecisions d, ApiResourceProjectionCompiler c) { return new JdbcApiResourceCommitStore(jdbc,new org.springframework.transaction.support.TransactionTemplate(new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbc.getDataSource())),JSON,clock,Duration.ofSeconds(1),d,c); }
-    private CommandLease acquire(JdbcApiResourceCommitStore s, CommandKey k, ExpectedRevision e) { return ((ClaimResult.Acquired)s.claim(k, fp, e)).lease(); }
-    private static CommandReceipt receipt(StagedApiResource s) { JsonNode b = JSON.createObjectNode().put("result", s.resource().resourceId()); return new CommandReceipt("test.receipt.v1", b, AuthoringFingerprints.of(b), s.strongEtag()); }
-    private static ReadyApiResourceProjections projections(ApiResourceSpec r) { return new ReadyApiResourceProjections(doc(ProjectionDocument.Kind.DESCRIPTOR,r),doc(ProjectionDocument.Kind.DESIGN_CONTRACT,r),doc(ProjectionDocument.Kind.OPERATOR,r)); }
-    private static ProjectionDocument doc(ProjectionDocument.Kind k, ApiResourceSpec r) { JsonNode b=JSON.createObjectNode().put("kind",k.name()); return new ProjectionDocument(k,r.ref(),b,AuthoringFingerprints.of(b),ProjectionDocument.State.READY); }
-    private static ApiResourceCommand command(String n) { Map<String,Object> schema=SchemaEnvelope.object(Map.of("id",Map.of("type","string")),List.of("id")).schema(); SchemaEnvelope e=new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA,"2020-12",schema); JsonNode v=JSON.createObjectNode().put("id","one"); return new ApiResourceCommand(n,null,new ApiResourceCommand.Operation("GET","/profile",List.of()),new ApiResourceCommand.Contract(e,e),new ApiResourceCommand.Response(new ApiResourceCommand.HttpStatus(List.of(200)),null),ApiResourceCommand.Effect.READ_ONLY,List.of(new ApiResourceCommand.Example("one",v,v))); }
-    private static final class MutableClock extends Clock { private Instant now=Instant.parse("2026-01-01T00:00:00Z"); void advance(Duration d){now=now.plus(d);} public Instant instant(){return now;} public ZoneId getZone(){return ZoneOffset.UTC;} public Clock withZone(ZoneId z){return this;} }
+    private static boolean commitAtBarrier(JdbcApiResourceCommitStore store, CommandLease lease,
+                                            StagedApiResource staged, CyclicBarrier barrier) throws Exception {
+        barrier.await();
+        try {
+            store.commit(lease, receipt(staged));
+            return true;
+        } catch (ApiResourceCommitStoreException ex) {
+            assertThat(ex.code()).as(ex.getMessage()).isEqualTo(ApiResourceCommitStoreException.Code.CAS_MISMATCH);
+            return false;
+        }
+    }
+
+    private void expire(CommandLease lease) {
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND WHERE command_id=?",
+                lease.commandId());
+    }
+
+    private JdbcApiResourceCommitStore store() {
+        return store(jdbc, jdbc.getDataSource());
+    }
+
+    private JdbcApiResourceCommitStore store(ApiResourceProjectionCompiler compiler) {
+        return new JdbcApiResourceCommitStore(jdbc,
+                new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                Clock.systemUTC(), Duration.ofSeconds(1), new ApiResourceDecisions(), compiler);
+    }
+
+    private JdbcApiResourceCommitStore store(JdbcTemplate template, DataSource dataSource) {
+        return new JdbcApiResourceCommitStore(template,
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)), JSON,
+                Clock.systemUTC(), Duration.ofSeconds(1), new ApiResourceDecisions(),
+                JdbcApiResourceCommitStoreMutationTest::compile);
+    }
+
+    private static CommandLease acquire(JdbcApiResourceCommitStore store, CommandKey key,
+                                        ExpectedRevision expected, String fingerprint) {
+        return ((ClaimResult.Acquired) store.claim(key, fingerprint, expected)).lease();
+    }
+
+    private static CommandKey key(String idempotencyKey) {
+        return new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", idempotencyKey);
+    }
+
+    private static CommandReceipt receipt(StagedApiResource staged) {
+        JsonNode body = JSON.createObjectNode().put("result", staged.resource().resourceId());
+        return new CommandReceipt("test.receipt.v1", body, AuthoringFingerprints.of(body), staged.strongEtag());
+    }
+
+    private static ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource) {
+        return new ReadyApiResourceProjections(document(ProjectionDocument.Kind.DESCRIPTOR, resource),
+                document(ProjectionDocument.Kind.DESIGN_CONTRACT, resource),
+                document(ProjectionDocument.Kind.OPERATOR, resource));
+    }
+
+    private static ProjectionDocument document(ProjectionDocument.Kind kind, ApiResourceSpec resource) {
+        JsonNode body = JSON.createObjectNode().put("kind", kind.name());
+        return new ProjectionDocument(kind, resource.ref(), body, AuthoringFingerprints.of(body),
+                ProjectionDocument.State.READY);
+    }
+
+    private static ApiResourceCommand command(String name) {
+        Map<String, Object> schema = SchemaEnvelope
+                .object(Map.of("id", Map.of("type", "string")), List.of("id")).schema();
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema);
+        JsonNode value = JSON.createObjectNode().put("id", "one");
+        return new ApiResourceCommand(name, null,
+                new ApiResourceCommand.Operation("GET", "/profile", List.of()),
+                new ApiResourceCommand.Contract(envelope, envelope),
+                new ApiResourceCommand.Response(new ApiResourceCommand.HttpStatus(List.of(200)), null),
+                ApiResourceCommand.Effect.READ_ONLY,
+                List.of(new ApiResourceCommand.Example("one", value, value)));
+    }
 }
