@@ -593,17 +593,17 @@ mvn -f resource-gateway-examples/pom.xml \
 JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest,\
 PendingSecretStoreSchemaReadinessTest test -DfailIfNoTests=false
 
-JdbcApiConnectionCommitStoreTest: 45/45
+JdbcApiConnectionCommitStoreTest: 46/46
 JdbcPendingSecretStoreTest: 32/32
 JdbcApiResourceCommitStoreClaimTest: 11/11
 JdbcApiResourceCommitStoreMutationTest: 23/23
 PendingSecretStoreSchemaReadinessTest: 8/8
-Tests run: 119, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 120, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
 该聚焦证据来自 H2 `MODE=PostgreSQL`、独立 JDBC connections 和测试时钟；随后 resource-gateway
-`clean verify` 为 7,941/7,941，0 failures、0 errors、33 skipped。它不替代真实 PostgreSQL
+`clean verify` 报告 `Tests run 7,942; failures 0; errors 0; skipped 33`。它不替代真实 PostgreSQL
 锁/隔离级别、Secret Provider、Facade、HTTP 或 UI 验收。受保护的 frontend 文件和两份 reusable-flow
 计划/评审文档不属于本轮提交。
 

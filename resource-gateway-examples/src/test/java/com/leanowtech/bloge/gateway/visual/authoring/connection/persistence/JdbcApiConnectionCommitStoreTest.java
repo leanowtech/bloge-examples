@@ -716,6 +716,23 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void committedConnectionReadRejectsMatchingButWrongJournalAndAttemptTarget() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("target-authority", "target-authority-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(lease);
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET target_id=? WHERE command_id=?",
+                "other-connection", lease.commandId());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET target_id=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", "other-connection", lease.commandId(),
+                lease.attemptNo(), lease.attemptToken());
+
+        assertReadIntegrityFailureForHeadAndRevision(store);
+    }
+
+    @Test
     void concurrentCommitsSerializeTheHeadCas() throws Exception {
         ApiConnectionCommitStore store = jdbcStore();
         CommandLease first = lease("race-a", "race-a-token", "customer", ExpectedRevision.create());
