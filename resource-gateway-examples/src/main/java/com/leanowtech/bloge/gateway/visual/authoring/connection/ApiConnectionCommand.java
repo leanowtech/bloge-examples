@@ -7,7 +7,14 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Write-only API Connection command. Credential payloads are never safe to log. */
+/**
+ * Write-only API Connection command. Credential payloads are never safe to log.
+ * @param schemaVersion versioned command wire identifier
+ * @param displayName human-readable connection name
+ * @param baseUrl HTTPS absolute endpoint without credentials or query data
+ * @param auth authentication configuration
+ * @param defaults optional static transport defaults
+ */
 public record ApiConnectionCommand(
         String schemaVersion,
         String displayName,
@@ -27,10 +34,12 @@ public record ApiConnectionCommand(
         this(displayName, baseUrl, auth, null);
     }
 
+    /** Defensive snapshot of mutable defaults. */
     public ApiConnectionCommand {
         defaults = defaults == null ? null : new Defaults(defaults.timeoutMs(), defaults.headers());
     }
 
+    /** Returns a defensive defaults snapshot. */
     @Override
     public Defaults defaults() {
         return defaults == null ? null : new Defaults(defaults.timeoutMs(), defaults.headers());
@@ -39,10 +48,8 @@ public record ApiConnectionCommand(
     /** Deliberately excludes all credential fields and values. */
     @Override
     public String toString() {
-        return "ApiConnectionCommand[schemaVersion=" + schemaVersion + ", displayName=" + displayName
-                + ", baseUrl=" + baseUrl + ", auth=" + (auth == null ? "null" : auth.kind())
-                + ", defaults=" + (defaults == null ? "null" : "Defaults[timeoutMs=" + defaults.timeoutMs()
-                + ", headers=REDACTED]") + "]";
+        return "ApiConnectionCommand[schemaVersion=" + schemaVersion + ", authKind="
+                + (auth == null ? "null" : auth.kind()) + "]";
     }
 
     /** Wire-polymorphic credential write operation. */
@@ -65,9 +72,7 @@ public record ApiConnectionCommand(
         /** Existing vault reference; scope authorization is supplied by the authority seam. */
         record SecretRef(String ref) implements SecretWrite {
             public SecretRef {
-                if (ref == null || !ref.matches("^vault://[A-Za-z0-9][A-Za-z0-9._:/~-]*$")) {
-                    throw new IllegalArgumentException("secret reference is invalid");
-                }
+                SecretReference.requireValid(ref);
             }
 
             @Override public String toString() { return "SecretWrite.SecretRef[REDACTED]"; }
@@ -92,6 +97,7 @@ public record ApiConnectionCommand(
             @JsonSubTypes.Type(value = Auth.ApiKey.class, name = "API_KEY")
     })
     public sealed interface Auth permits Auth.None, Auth.Bearer, Auth.Basic, Auth.ApiKey {
+        /** @return stable wire discriminator */
         String kind();
 
         static None none() { return new None(); }
@@ -99,35 +105,45 @@ public record ApiConnectionCommand(
         static Basic basic(String username, SecretWrite password) { return new Basic(username, password); }
         static ApiKey apiKey(String headerName, SecretWrite value) { return new ApiKey(headerName, value); }
 
+        /** Authentication is not configured. */
         record None() implements Auth {
             @Override public String kind() { return "NONE"; }
             @Override public String toString() { return "Auth.None"; }
         }
 
+        /** Bearer token authentication. */
         record Bearer(SecretWrite token) implements Auth {
             @Override public String kind() { return "BEARER"; }
             @Override public String toString() { return "Auth.Bearer[REDACTED]"; }
         }
 
+        /** Basic username/password authentication. */
         record Basic(String username, SecretWrite password) implements Auth {
             @Override public String kind() { return "BASIC"; }
             @Override public String toString() { return "Auth.Basic[username=REDACTED,password=REDACTED]"; }
         }
 
+        /** API-key authentication carried in one safe custom header. */
         record ApiKey(String headerName, SecretWrite value) implements Auth {
             @Override public String kind() { return "API_KEY"; }
             @Override public String toString() { return "Auth.ApiKey[headerName=REDACTED,value=REDACTED]"; }
         }
     }
 
-    /** Optional transport defaults. Header values must be non-secret static values. */
+    /**
+     * Optional transport defaults. Header values must be non-secret static values.
+     * @param timeoutMs request timeout in milliseconds
+     * @param headers safe static request headers
+     */
     public record Defaults(Integer timeoutMs, Map<String, String> headers) {
         public static final int DEFAULT_TIMEOUT_MS = 30_000;
 
+        /** Creates an immutable defaults snapshot. */
         public Defaults {
             headers = headers == null ? Map.of() : Map.copyOf(new LinkedHashMap<>(headers));
         }
 
+        /** Returns a defensive header-map copy. */
         @Override public Map<String, String> headers() { return Map.copyOf(headers); }
         @Override public String toString() { return "Defaults[timeoutMs=" + timeoutMs + ", headers=REDACTED]"; }
     }

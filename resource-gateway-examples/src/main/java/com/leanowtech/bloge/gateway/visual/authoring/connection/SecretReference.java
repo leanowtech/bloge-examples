@@ -4,18 +4,31 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 
 import java.util.Objects;
 
-/** Opaque, scope-bound handle returned by a future Secret Store adapter. */
-public record SecretReference(AuthoringScope scope, String ref) {
+/**
+ * Opaque, scope-bound handle returned by a future Secret Store adapter.
+ * @param scope scope that authorized this opaque handle
+ * @param ref opaque vault handle, never included in public views or diagnostics
+ */
+public record SecretReference(
+        AuthoringScope scope,
+        String ref) {
+    static final int MAX_LENGTH = 2048;
+
     public SecretReference {
         Objects.requireNonNull(scope, "scope");
-        if (ref == null || !ref.matches("^vault://[A-Za-z0-9][A-Za-z0-9._:/~-]*$")) {
-            throw new IllegalArgumentException("secret reference is invalid");
-        }
+        requireValid(ref);
     }
 
     /** Never put the vault handle in an exception, log or diagnostic. */
     @Override
     public String toString() {
         return "SecretReference[REDACTED]";
+    }
+
+    static void requireValid(String value) {
+        if (value == null || value.length() > MAX_LENGTH
+                || !value.matches("^vault://[A-Za-z0-9][A-Za-z0-9._:/~-]*$")) {
+            throw new IllegalArgumentException("secret reference is invalid");
+        }
     }
 }

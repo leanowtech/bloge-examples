@@ -45,22 +45,34 @@ public final class ApiConnectionSpec {
         this.secretBindings = Map.copyOf(new LinkedHashMap<>(secretBindings == null ? Map.of() : secretBindings));
     }
 
+    /** @return authority schema version */
     public String schemaVersion() { return schemaVersion; }
+    /** @return authenticated scope */
     public AuthoringScope scope() { return scope; }
+    /** @return stable connection identifier */
     public String connectionId() { return connectionId; }
+    /** @return one-based revision */
     public int revision() { return revision; }
+    /** @return deterministic canonical fingerprint */
     public String fingerprint() { return fingerprint; }
+    /** @return non-secret display name */
     public String displayName() { return displayName; }
+    /** @return validated HTTPS base URL */
     public String baseUrl() { return baseUrl; }
+    /** @return auth discriminator */
     public String authKind() { return authKind; }
+    /** @return Basic auth username, when applicable */
     public String username() { return username; }
+    /** @return API-key header name, when applicable */
     public String apiKeyHeader() { return apiKeyHeader; }
+    /** @return defensive non-secret defaults snapshot */
     public ApiConnectionCommand.Defaults defaults() {
         return defaults == null ? null : new ApiConnectionCommand.Defaults(defaults.timeoutMs(), defaults.headers());
     }
+    /** @return defensive map of opaque scope-bound secret handles */
     public Map<String, SecretReference> secretBindings() { return Map.copyOf(secretBindings); }
 
-    /** @return the exact payload-free projection allowed to clients */
+    /** @return exact payload-free client projection */
     public ApiConnectionView view() {
         return new ApiConnectionView(ApiConnectionView.SCHEMA_VERSION, connectionId, revision, displayName,
                 baseUrl, new ApiConnectionView.Auth(authKind, !secretBindings.isEmpty()), defaults());
@@ -69,7 +81,6 @@ public final class ApiConnectionSpec {
     @Override
     public String toString() {
         return "ApiConnectionSpec[connectionId=" + connectionId + ", revision=" + revision
-                + ", fingerprint=" + fingerprint + ", displayName=" + displayName + ", baseUrl=" + baseUrl
-                + ", authKind=" + authKind + ", secretBindings=REDACTED]";
+                + ", fingerprint=" + fingerprint + ", authKind=" + authKind + "]";
     }
 }

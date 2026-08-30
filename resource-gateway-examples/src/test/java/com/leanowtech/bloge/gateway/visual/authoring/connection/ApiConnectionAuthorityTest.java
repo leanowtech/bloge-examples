@@ -93,6 +93,7 @@ class ApiConnectionAuthorityTest {
         assertThat(first.view().auth().kind()).isEqualTo("BEARER");
         assertThat(first.view().auth().configured()).isTrue();
         assertThat(JSON.valueToTree(first.view()).toString()).doesNotContain("vault", "token", "do-not-persist");
+        assertThat(first.toString()).doesNotContain("https://customer.example.com", "do-not-persist", "vault");
 
         ApiConnectionCommand update = command(new ApiConnectionCommand.Auth.Bearer(
                 new ApiConnectionCommand.SecretWrite.KeepExisting()));
@@ -123,6 +124,103 @@ class ApiConnectionAuthorityTest {
                 new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.KeepExisting())),
                 ExpectedRevision.match(1))).isInstanceOf(ApiConnectionAuthoringException.class)
                 .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
+    }
+
+    @Test
+    void sameScopeIsRequiredForPreparedValuesAndExactAuthorizedReferences() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        ApiConnectionCommand value = command(new ApiConnectionCommand.Auth.Bearer(
+                new ApiConnectionCommand.SecretWrite.Value("one-time-value")));
+        ApiConnectionSpec current = decisions.next(SCOPE, Optional.empty(), "same-scope", value,
+                ExpectedRevision.create(), new PreparedSecretBinding("token",
+                        new SecretReference(SCOPE, "vault://staged/token")));
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.of(current), "same-scope", value,
+                ExpectedRevision.match(1), new PreparedSecretBinding("token",
+                        new SecretReference(OTHER_SCOPE, "vault://staged/token"))))
+                .isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.NOT_FOUND);
+
+        String requested = "vault://requested/token";
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.empty(), "wrong-ref", command(
+                new ApiConnectionCommand.Auth.Bearer(new ApiConnectionCommand.SecretWrite.SecretRef(requested))),
+                ExpectedRevision.create(), new PreparedSecretBinding("token",
+                        new SecretReference(SCOPE, "vault://authorized/token"))))
+                .isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.NOT_FOUND);
+    }
+
+    @Test
+    void secretReferenceUsesTheCommonWireLimit() {
+        String exact = "vault://" + "x".repeat(2040);
+        assertThat(new ApiConnectionCommand.SecretWrite.SecretRef(exact).ref()).isEqualTo(exact);
+        assertThat(new SecretReference(SCOPE, exact).ref()).isEqualTo(exact);
+        String oversized = "vault://" + "x".repeat(2041);
+        assertThatThrownBy(() -> new ApiConnectionCommand.SecretWrite.SecretRef(oversized))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new SecretReference(SCOPE, oversized))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void basicAndApiKeyAuthorityMatrixSupportsValueRefKeepAndRejectsUnpreparedWrites() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        String basicRef = "vault://basic/password";
+        ApiConnectionSpec basicValue = decisions.next(SCOPE, Optional.empty(), "basic-value", command(
+                new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.Value("password"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("password",
+                        new SecretReference(SCOPE, "vault://basic/staged")));
+        assertThat(basicValue.view().auth().configured()).isTrue();
+        ApiConnectionSpec basicRefSpec = decisions.next(SCOPE, Optional.empty(), "basic-ref", command(
+                new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.SecretRef(basicRef))),
+                ExpectedRevision.create(), new PreparedSecretBinding("password", new SecretReference(SCOPE, basicRef)));
+        ApiConnectionSpec basicKeep = decisions.next(SCOPE, Optional.of(basicRefSpec), "basic-ref", command(
+                new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.KeepExisting())),
+                ExpectedRevision.match(1));
+        assertThat(basicKeep.revision()).isEqualTo(2);
+
+        String apiKeyRef = "vault://api/key";
+        ApiConnectionSpec apiKeyValue = decisions.next(SCOPE, Optional.empty(), "key-value", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", new ApiConnectionCommand.SecretWrite.Value("key"))),
+                ExpectedRevision.create(), new PreparedSecretBinding("value",
+                        new SecretReference(SCOPE, "vault://api/staged")));
+        assertThat(apiKeyValue.view().auth().configured()).isTrue();
+        ApiConnectionSpec apiKeyRefSpec = decisions.next(SCOPE, Optional.empty(), "key-ref", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", new ApiConnectionCommand.SecretWrite.SecretRef(apiKeyRef))),
+                ExpectedRevision.create(), new PreparedSecretBinding("value", new SecretReference(SCOPE, apiKeyRef)));
+        ApiConnectionSpec apiKeyKeep = decisions.next(SCOPE, Optional.of(apiKeyRefSpec), "key-ref", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", new ApiConnectionCommand.SecretWrite.KeepExisting())),
+                ExpectedRevision.match(1));
+        assertThat(apiKeyKeep.revision()).isEqualTo(2);
+
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.empty(), "missing-value", command(
+                new ApiConnectionCommand.Auth.Basic("alice", new ApiConnectionCommand.SecretWrite.Value("password"))),
+                ExpectedRevision.create())).isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
+        assertThatThrownBy(() -> decisions.next(SCOPE, Optional.empty(), "missing-keep", command(
+                new ApiConnectionCommand.Auth.ApiKey("X-Api-Key", new ApiConnectionCommand.SecretWrite.KeepExisting())),
+                ExpectedRevision.create())).isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
+    }
+
+    @Test
+    void fingerprintsAreStableFormattedAndChangeWithAuthOrDefaults() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        PreparedSecretBinding staged = new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://fp/token"));
+        ApiConnectionCommand value = command(new ApiConnectionCommand.Auth.Bearer(
+                new ApiConnectionCommand.SecretWrite.Value("secret")));
+        ApiConnectionSpec first = decisions.next(SCOPE, Optional.empty(), "fingerprinted", value,
+                ExpectedRevision.create(), staged);
+        ApiConnectionSpec equivalent = decisions.next(SCOPE, Optional.empty(), "fingerprinted", value,
+                ExpectedRevision.create(), staged);
+        assertThat(first.fingerprint()).matches("^sha256:[0-9a-f]{64}$").isEqualTo(equivalent.fingerprint());
+        ApiConnectionSpec authChanged = decisions.next(SCOPE, Optional.of(first), "fingerprinted",
+                command(new ApiConnectionCommand.Auth.None()), ExpectedRevision.match(1));
+        assertThat(authChanged.fingerprint()).isNotEqualTo(first.fingerprint());
+        ApiConnectionSpec defaultsChanged = decisions.next(SCOPE, Optional.of(first), "fingerprinted",
+                command(new ApiConnectionCommand.Auth.Bearer(new ApiConnectionCommand.SecretWrite.KeepExisting()),
+                        "https://customer.example.com", new ApiConnectionCommand.Defaults(6000, Map.of())),
+                ExpectedRevision.match(1));
+        assertThat(defaultsChanged.fingerprint()).isNotEqualTo(first.fingerprint());
     }
 
     @Test
@@ -168,8 +266,10 @@ class ApiConnectionAuthorityTest {
         assertThat(new ApiConnectionCommand.SecretWrite.SecretRef("vault://private/ref").toString())
                 .doesNotContain("vault://private/ref");
         ApiConnectionAuthoringException error = new ApiConnectionAuthoringException(
-                ApiConnectionAuthoringException.Code.VALIDATION, "safe message");
-        assertThat(error.toString()).doesNotContain("secret", "vault://");
+                ApiConnectionAuthoringException.Code.VALIDATION);
+        assertThat(error.getMessage()).isEqualTo("connection command is invalid");
+        assertThat(error.toString()).isEqualTo("ApiConnectionAuthoringException[code=VALIDATION]");
+        assertThat(command.toString()).doesNotContain("https://example.com", "application/json");
     }
 
     private static ApiConnectionCommand command(ApiConnectionCommand.Auth auth) {

@@ -20,15 +20,25 @@ public final class ApiConnectionDecisions {
 
     private final ObjectMapper mapper;
 
+    /** Creates a decision engine with a fresh canonical JSON mapper. */
     public ApiConnectionDecisions() { this(new ObjectMapper()); }
 
+    /** @param mapper mapper used only for deterministic canonical fingerprints */
     public ApiConnectionDecisions(ObjectMapper mapper) {
         this.mapper = mapper == null ? new ObjectMapper() : mapper.copy();
     }
 
     /**
-     * Computes a create or update revision. A VALUE must have already been
-     * staged into a Secret Store and supplied as an opaque binding.
+     * Applies validation, optimistic concurrency and scope-bound secret
+     * resolution to produce the next immutable authority revision.
+     *
+     * @param scope authenticated tenant/project/environment scope
+     * @param currentValue current head, or empty for create
+     * @param connectionId stable connection identifier
+     * @param command write-only command
+     * @param expected create-only or exact-revision expectation
+     * @param prepared opaque bindings staged/authorized by Secret Store
+     * @return next authority revision
      */
     public ApiConnectionSpec next(AuthoringScope scope, Optional<ApiConnectionSpec> currentValue,
                                   String connectionId, ApiConnectionCommand command,
@@ -41,12 +51,11 @@ public final class ApiConnectionDecisions {
             notFound();
         }
         if (expected instanceof ExpectedRevision.Create) {
-            if (current != null) fail(ApiConnectionAuthoringException.Code.ALREADY_EXISTS,
-                    "connection already exists");
+            if (current != null) fail(ApiConnectionAuthoringException.Code.ALREADY_EXISTS);
         } else if (expected instanceof ExpectedRevision.Match match) {
             if (current == null) notFound();
             if (current.revision() != match.revision()) {
-                fail(ApiConnectionAuthoringException.Code.CAS_MISMATCH, "connection revision does not match");
+                fail(ApiConnectionAuthoringException.Code.CAS_MISMATCH);
             }
         } else {
             invalid("unsupported expected revision");
@@ -64,14 +73,14 @@ public final class ApiConnectionDecisions {
                 next.apiKeyHeader(), next.defaults(), next.secretBindings());
     }
 
-    /** Alias using the argument ordering used by other authoring decision engines. */
+    /** Alias with current value first, matching other authoring decisions. */
     public ApiConnectionSpec next(Optional<ApiConnectionSpec> currentValue, String connectionId,
                                   ApiConnectionCommand command, ExpectedRevision expected,
                                   AuthoringScope scope, PreparedSecretBinding... prepared) {
         return next(scope, currentValue, connectionId, command, expected, prepared);
     }
 
-    /** Convenience seam for commands without a VALUE staging binding. */
+    /** Convenience overload for commands without prepared bindings. */
     public ApiConnectionSpec next(AuthoringScope scope, Optional<ApiConnectionSpec> currentValue,
                                   String connectionId, ApiConnectionCommand command,
                                   ExpectedRevision expected) {
@@ -231,10 +240,10 @@ public final class ApiConnectionDecisions {
         if (scope == null) invalid("scope is required");
     }
 
-    private static void notFound() { fail(ApiConnectionAuthoringException.Code.NOT_FOUND, "connection or secret was not found"); }
-    private static void invalid(String message) { fail(ApiConnectionAuthoringException.Code.VALIDATION, message); }
-    private static void fail(ApiConnectionAuthoringException.Code code, String message) {
-        throw new ApiConnectionAuthoringException(code, message);
+    private static void notFound() { fail(ApiConnectionAuthoringException.Code.NOT_FOUND); }
+    private static void invalid(String ignored) { fail(ApiConnectionAuthoringException.Code.VALIDATION); }
+    private static void fail(ApiConnectionAuthoringException.Code code) {
+        throw new ApiConnectionAuthoringException(code);
     }
 
     private record ResolvedAuth(String kind, String username, String apiKeyHeader,
