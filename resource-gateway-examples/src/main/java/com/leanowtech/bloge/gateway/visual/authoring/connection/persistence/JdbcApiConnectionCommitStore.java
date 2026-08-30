@@ -396,7 +396,10 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private Instant databaseNow() {
-        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", (row, ignored) -> timestamp(row, 1));
+        Instant database = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP", (row, ignored) -> timestamp(row, 1));
+        // The database is the lower-bound authority; the injected clock may only make
+        // a lease fail sooner, which keeps deterministic tests from weakening expiry.
+        return database.isAfter(clock.instant()) ? database : clock.instant();
     }
 
     /**

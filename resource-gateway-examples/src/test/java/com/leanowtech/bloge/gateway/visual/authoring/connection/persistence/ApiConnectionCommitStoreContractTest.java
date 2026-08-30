@@ -149,9 +149,9 @@ abstract class ApiConnectionCommitStoreContractTest {
         assertThat(zoned.instant()).isEqualTo(clock.instant());
         ApiConnectionCommitStore store = newStore(clock);
         CommandLease live = leaseAt(clock, "expiry", 1, "expiry-token", SCOPE, "customer",
-                ExpectedRevision.create(), 1);
+                ExpectedRevision.create(), 10);
         stage(store, live, "customer", ExpectedRevision.create(), noneCommand());
-        clock.advanceSeconds(2);
+        clock.advanceSeconds(20);
         store.fail(live);
         assertThatThrownBy(() -> store.commit(live)).isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_EXPIRED);
@@ -161,7 +161,7 @@ abstract class ApiConnectionCommitStoreContractTest {
     void newerAttemptTakesOverOldStageAndFencesOldLease() {
         MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
         ApiConnectionCommitStore store = newStore(clock);
-        CommandLease old = leaseAt(clock, "takeover", 1, "old-token", SCOPE, "customer", ExpectedRevision.create(), 1);
+        CommandLease old = leaseAt(clock, "takeover", 1, "old-token", SCOPE, "customer", ExpectedRevision.create(), 10);
         CommandLease current = leaseAt(clock, "takeover", 2, "new-token", SCOPE, "customer",
                 ExpectedRevision.create(), 30);
         stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
@@ -170,7 +170,7 @@ abstract class ApiConnectionCommitStoreContractTest {
                 renamedCommand("Current")))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
-        clock.advanceSeconds(2);
+        clock.advanceSeconds(20);
         StagedApiConnection replacement = stage(store, current, "customer", ExpectedRevision.create(),
                 renamedCommand("Current"));
         store.fail(old);
