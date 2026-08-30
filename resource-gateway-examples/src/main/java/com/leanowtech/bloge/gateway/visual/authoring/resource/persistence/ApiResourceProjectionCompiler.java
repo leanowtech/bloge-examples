@@ -2,7 +2,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 
-/** Synchronous compiler for the three required API Resource read models. */
+/**
+ * Synchronous compiler for the three required API Resource read models.
+ *
+ * <p>Implementations must resolve Connection metadata server-side.  A
+ * compiler must fail closed when only the resource's Connection id is known;
+ * it must never invent a URL, credential, or side-effect receipt mapping.</p>
+ */
 @FunctionalInterface
 public interface ApiResourceProjectionCompiler {
     /** Compiles all required projections or throws without producing a stage. */
