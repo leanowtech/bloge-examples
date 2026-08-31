@@ -561,7 +561,8 @@ V1 使用确定的可见性提交协议，而不是返回部分成功：
 空 Header。`resource` Body 不重复提交 `connectionId`，由 Facade 根据 `EXISTING` 或 `CREATE` 结果写入。
 `FROM_EXAMPLES` 将每个具名 Resource Example 转为一个 Fixture Case；未知、重复或空 `exampleNames` 返回 422。
 每个生成 Case 的 Input 来自同名 Example Input，Subject Control 为 `RETURN`，Material 来自同名 Example Output。
-Default Fixture 使用服务端生成的 `{resourceId}@r{resourceRevision}` 身份，每次 Resource 保存只创建一个新的
+Default Fixture 使用服务端生成的 `{resourceId}:r{resourceRevision}` 身份；冒号属于冻结 `identifier` 字符集，
+不会为这一派生对象放宽所有公共 ID。每次 Resource 保存只创建一个新的
 不可变 Fixture Set，不更新旧 Set，因此不需要第二个客户端 CAS。Resource 中的
 `examples[].name` 在同一 revision 内必须唯一；Receipt 的 `cases` 顺序与请求 `exampleNames`
 一致，页面可按 `exampleName` 无歧义地选择精确 Case 发起模拟。

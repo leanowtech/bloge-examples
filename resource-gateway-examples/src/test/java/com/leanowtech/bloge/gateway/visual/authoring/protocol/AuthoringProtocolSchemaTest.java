@@ -6,6 +6,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -389,6 +395,35 @@ class AuthoringProtocolSchemaTest {
         JsonNode receipt = read(SCHEMA_ROOT.resolve("fixture-set-receipt-v1.schema.json"));
         assertThat(receipt.at("/properties/status/const").asText()).isEqualTo("PRIVATE_DRAFT");
         assertThat(read(SCHEMA_ROOT.resolve("examples/fixture-view-complete.json"))).isNotNull();
+    }
+
+    @Test
+    void generatedDefaultFixtureRoundTripsAgainstCommandViewSummaryAndReceiptSchemas() throws Exception {
+        ApiResourceSpec resource = spec("orders", minimalCommand());
+        GeneratedDefaultFixture generated = new DefaultFixtureSetMaterializer(MAPPER).generate(resource,
+                new ApiResourceSaveCommand.DefaultFixture.FromExamples("Default orders", List.of("happy")));
+        FixtureSetView view = generated.view();
+        FixtureSetCommand command = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,
+                view.displayName(), view.subject(), view.cases());
+
+        Path commandPath = SCHEMA_ROOT.resolve("fixture-set-command-v1.schema.json");
+        Path viewPath = SCHEMA_ROOT.resolve("fixture-set-view-v1.schema.json");
+        Path summaryPath = SCHEMA_ROOT.resolve("fixture-set-summary-v1.schema.json");
+        Path receiptPath = SCHEMA_ROOT.resolve("fixture-set-receipt-v1.schema.json");
+        JsonNode commandWire = MAPPER.valueToTree(command);
+        JsonNode viewWire = MAPPER.valueToTree(view);
+        JsonNode summaryWire = MAPPER.valueToTree(generated.summary());
+        JsonNode receiptWire = MAPPER.valueToTree(generated.receipt());
+
+        assertThat(validationErrors(read(commandPath), commandWire, commandPath)).isEmpty();
+        assertThat(validationErrors(read(viewPath), viewWire, viewPath)).isEmpty();
+        assertThat(validationErrors(read(summaryPath), summaryWire, summaryPath)).isEmpty();
+        assertThat(validationErrors(read(receiptPath), receiptWire, receiptPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(commandWire, FixtureSetCommand.class)).isEqualTo(command);
+        assertThat(MAPPER.treeToValue(viewWire, FixtureSetView.class)).isEqualTo(view);
+        assertThat(MAPPER.treeToValue(summaryWire, FixtureSetSummary.class)).isEqualTo(generated.summary());
+        assertThat(MAPPER.treeToValue(receiptWire, FixtureSetSaveReceipt.class)).isEqualTo(generated.receipt());
+        assertThat(summaryWire.toString()).doesNotContain("input", "material", "output");
     }
 
     @Test

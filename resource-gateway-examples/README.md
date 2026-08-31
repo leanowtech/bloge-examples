@@ -163,6 +163,18 @@ execution path can enforce simulation-equivalent authorization and redaction. Th
 transport/authority gate completed at **206/206 green** with no failures, errors or skips. The post-C6 serial
 `clean verify` completed with `Tests run: 8,065; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+J3-C7 begins the Default Fixture vertical slice with one pure, schema-closed materialization authority.
+`DefaultFixtureSetMaterializer` converts an exact committed API Resource revision plus an ordered
+`FROM_EXAMPLES` selection into one immutable `PRIVATE_DRAFT` Fixture Set. Each selected example becomes one
+Subject `RETURN` control with inline output material; Case inputs, Case mappings and order remain exact. Unknown,
+empty or duplicate selections fail closed. The server-derived identity is `{resourceId}:r{resourceRevision}` so
+it remains inside the frozen public identifier alphabet; exceptionally long resource ids use an exact Resource
+fingerprint fallback. Command, full View, metadata-only Summary and Save Receipt all validate against the frozen
+JSON Schemas and round-trip through Jackson. This slice is deliberately authority-only: it does not yet persist,
+publish, expose or simulate the generated Fixture Set. The focused materializer/schema gate is **16/16 green**
+with no failures, errors or skips. The post-C7 serial `clean verify` completed with
+`Tests run: 8,069; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

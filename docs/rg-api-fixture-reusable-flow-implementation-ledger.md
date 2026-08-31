@@ -1012,3 +1012,45 @@ BUILD SUCCESS
 Connection 对象的保存、读取、选择与显式 check extension point 已闭合，但默认 egress provider、credential
 provider、Default Fixture、首次 Simulation、Reusable Flow/DAG、Tool/Solution 和对象页仍未完成。累计完成度
 保守调整为 **46%**，剩余差距 **54%**。
+
+## 27. Iteration 26 — C7 Default Fixture materialization authority
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 `FixtureSubjectRef`、`FixtureSetCommand`、`FixtureSetView`、`FixtureSetSummary` 与
+  `FixtureSetSaveReceipt` Java wire authority，覆盖冻结的 exact Subject、Case、Target、Behavior、Material、
+  fidelity 与状态词汇；JsonNode 和集合均防御性复制。
+- 新增 `DefaultFixtureSetMaterializer`。它从一个 exact API Resource revision 的具名 examples 生成
+  `PRIVATE_DRAFT` Fixture Set；请求顺序、Case input、Subject `RETURN`、inline output 和 receipt 中的
+  exampleName→caseId 映射保持精确。
+- 空、重复或未知 `exampleNames` 统一 fail closed；普通派生 ID 使用 `{resourceId}:r{revision}`。这修正了
+  方案文字原先使用 `@`、却与冻结公共 identifier schema 冲突的问题；超长 Resource ID 使用 exact Resource
+  fingerprint 派生的合法 ID，不放宽整个公共 ID 字符集。
+- 生成的 Command、View、metadata-only Summary 与 Save Receipt 均直接经过现有 JSON Schema 校验与
+  Jackson round-trip。Summary 不包含 input、material 或 output。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=DefaultFixtureSetMaterializerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 16, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,069, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该证据只证明 Default Fixture 的纯选择、物化和 wire closure；当前尚无 Fixture Set persistence/head、
+Resource 复合事务、HTTP 查询/保存或 Simulation 编译/执行，不能据此宣称用户已经能保存或运行 Fixture。
+
+### 当前差距评估
+
+Default Fixture 已从“只有 schema”推进到可测试的后端物化权威，但用户主路径仍缺持久化、复合保存和首次
+Simulation，Reusable Flow/DAG、Tool/Solution 与对象页也未闭合。累计完成度保守调整为 **47%**，剩余差距
+**53%**。
