@@ -773,3 +773,49 @@ BUILD SUCCESS
 聚焦与 full verify 均为本地 H2/资源网关证据；它们不替代真实 PostgreSQL lock/isolation certification、
 credential provider、HTTP/controller transport、Default Fixture 或 UI acceptance。受保护的 frontend 文件与
 两份 reusable-flow 计划/评审文档不属于本轮提交。
+
+## 22. Iteration 21 — C2 Resource application tracer and exact Connection snapshot
+
+日期：2026-08-31。
+
+### 已完成
+
+- `b10faa94b` 增加 V011 与 Resource revision 的 exact Connection snapshot：`connection_id + revision +
+  metadata_fingerprint` 同时进入 Resource revision 和 projection-set fingerprint。V001-V010 的历史 Resource
+  没有该事实，V011 不用迁移时当前 Connection head 伪造 provenance，而是对遗留行 fail closed。
+- 新增 `ApiResourceAuthoringFacade`、transport-neutral request/result/failure/precondition 和冻结的
+  `bloge.apiResourceSaveCommand.v1` wrapper。当前仅接受 `EXISTING`、已提交、`Auth.NONE` Connection 与
+  `defaultFixture.kind=NONE`；Connection `CREATE` 和 `FROM_EXAMPLES` 在 fingerprint/claim 前明确返回
+  `CAPABILITY_UNAVAILABLE`，不静默忽略。
+- create/update 以 opaque strong ETag 解析 exact historical Resource revision；same-key replay 先按 receipt
+  strong ETag 读取 committed authority，再闭合 receipt、Resource revision/fingerprint 和 Connection snapshot，
+  因此 head 前进后仍可重放。新 stale key 继续由 stage CAS fail closed。
+- 新增 Connection-store projection resolver 与 feature-scoped application configuration。编译器只能读取
+  payload-free Connection metadata；Facade 还会校验编译 snapshot 与 preflight Connection authority 完全一致。
+  缺显式 `ApiConnectionAuthoringStore` 时 opt-in context 启动失败，没有隐藏的 in-memory/provider fallback。
+- H2 same-database integration 通过真实 Connection facade 建立 Connection，再完成 Resource create/replay，
+  验证 V011 列、无残留 STAGED row，并对 receipt 中 Connection revision 篡改后重算 fingerprint 仍 fail closed。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceAuthoringFacadeTest,JdbcApiResourceAuthoringFacadeTest,\
+ApiResourceAuthoringApplicationConfigurationTest,ApiResourceCommitStoreContractTest,\
+JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest,\
+DefaultApiResourceProjectionCompilerTest,ApiResourceConnectionSnapshotSchemaReadinessTest,\
+ApiResourceAuthoringRuntimeConfigurationTest,ApiResourceAuthoringSchemaReadinessTest,\
+VisualRuntimeBoundaryTest test
+
+Tests run: 100, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 7,989, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该证据来自本地 H2 `MODE=PostgreSQL` 与 in-memory reference store；它不替代真实 PostgreSQL
+lock/isolation certification。HTTP/controller、trusted auth scope、Problem Detail、credential provider、nested
+Connection create、Default Fixture Set、Flow/DAG facade 与 UI acceptance 仍未实现/验收。受保护的
+`GraphNodeFixtureControls.tsx` 与两份未跟踪 reusable-flow 文档不属于本切片。

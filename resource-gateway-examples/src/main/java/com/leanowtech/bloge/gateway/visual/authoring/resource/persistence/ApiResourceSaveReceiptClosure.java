@@ -1,6 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -20,6 +23,43 @@ public final class ApiResourceSaveReceiptClosure {
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[0-9a-f]{64}");
 
     private ApiResourceSaveReceiptClosure() { }
+
+    /** Builds the canonical NONE-Fixture receipt from one exact staged authority. */
+    public static CommandReceipt create(StagedApiResource staged) {
+        if (staged == null) throw new IllegalArgumentException("staged Resource is required");
+        ApiResourceSpec resource = staged.resource();
+        ApiResourceConnectionSnapshot connection = staged.projections().connectionSnapshot();
+        ObjectNode body = JsonNodeFactory.instance.objectNode();
+        body.put("schemaVersion", SCHEMA_VERSION);
+        ObjectNode connectionBody = body.putObject("connection");
+        connectionBody.put("connectionId", connection.connectionId());
+        putRevision(connectionBody, connection.revision());
+        ObjectNode resourceBody = body.putObject("resource");
+        resourceBody.put("kind", "API_RESOURCE");
+        resourceBody.put("resourceId", resource.resourceId());
+        putRevision(resourceBody, resource.revision());
+        resourceBody.put("fingerprint", resource.fingerprint());
+        body.putObject("projections")
+                .put("descriptor", "READY")
+                .put("designContract", "READY")
+                .put("operator", "READY");
+        CommandReceipt receipt = new CommandReceipt(SCHEMA_VERSION, body,
+                AuthoringFingerprints.of(body), staged.strongEtag());
+        require(receipt, resource, connection);
+        return receipt;
+    }
+
+    /** Validates a receipt against the exact Resource and Connection snapshot. */
+    public static void require(CommandReceipt receipt, ApiResourceSpec resource,
+                               ApiResourceConnectionSnapshot connection) {
+        if (resource == null || connection == null) invalid();
+        require(receipt, resource.resourceId(), connection.connectionId(), connection.revision());
+        JsonNode reference = receipt.body().path("resource");
+        if (reference.path("revision").asLong(-1) != resource.revision()
+                || !resource.fingerprint().equals(reference.path("fingerprint").asText(null))) {
+            invalid();
+        }
+    }
 
     /** Validates the exact schema shape and the child coordinate in a receipt. */
     public static void require(CommandReceipt receipt, String resourceId,
@@ -59,6 +99,11 @@ public final class ApiResourceSaveReceiptClosure {
     private static boolean revision(JsonNode value, long exact) {
         return value != null && value.isIntegralNumber() && value.canConvertToLong() && value.asLong() >= 1
                 && (exact == 0 || value.asLong() == exact);
+    }
+
+    private static void putRevision(ObjectNode body, long revision) {
+        if (revision <= Integer.MAX_VALUE) body.put("revision", (int) revision);
+        else body.put("revision", revision);
     }
 
     private static boolean identifier(JsonNode value) {

@@ -49,9 +49,10 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
-### API Resource authoring persistence (J2)
+### API Resource authoring persistence and application tracer (J2/J3-C2)
 
-The JDBC authoring store is opt-in and is not an HTTP/Facade API yet. Apply the migrations in order:
+The JDBC authoring store and first Resource application facade are opt-in; there is still no HTTP endpoint.
+Apply the migrations in order:
 
 ```text
 db/postgresql/V20260830_001__api_resource_authoring.sql
@@ -64,6 +65,7 @@ db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql
 db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql
 db/postgresql/V20260831_009__authoring_command_attempt_authority.sql
 db/postgresql/V20260831_010__attempt_provenance_closure.sql
+db/postgresql/V20260831_011__api_resource_connection_snapshot.sql
 ```
 
 Then enable the production wiring explicitly:
@@ -81,8 +83,27 @@ shared Header/API-key policy, strict URI and JSONPath-to-runtime-dot-path mappin
 boundary. J3-A also accepts the pure Connection authority boundary: wire auth/secret variants, same-scope authorized
 opaque references, CAS/fingerprint, secret-free views/errors, and HTTPS/header/timeout policy. Missing
 resolver/readiness prerequisites fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
-real writes until the lossless runtime side-effect contract exists. Real PostgreSQL certification, the
-HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+real writes until the lossless runtime side-effect contract exists. V011 additionally binds every Resource
+revision and its projection-set fingerprint to the exact committed Connection revision and metadata fingerprint
+used for compilation. Because V001-V010 did not retain that historical fact, V011 intentionally fails on legacy
+Resource rows rather than inventing a migration-time snapshot; such rows require a separately audited export and
+re-authoring migration.
+
+J3-C2 adds `ApiResourceAuthoringFacade` for the first honest compound-save subset: one `EXISTING` committed
+`Auth.NONE` Connection, one API Resource command, and `defaultFixture.kind=NONE`. It validates before claim,
+resolves opaque historical Resource ETags, preserves receipt-first exact replay after heads advance, stages all
+three `READY` projections, verifies that compilation used the same committed Connection snapshot seen during
+preflight, and persists an exact `bloge.apiResourceSaveReceipt.v1` receipt. Nested Connection `CREATE` and
+`FROM_EXAMPLES` default Fixture generation return typed capability-unavailable failures before claim; neither is
+ignored or partially saved. The feature-scoped application configuration requires an explicit lifecycle-complete
+`ApiConnectionAuthoringStore`, so enabling the feature without Connection authority fails startup.
+
+The focused C2 command covering facade, same-database JDBC integration, adapter-side configuration, the visual
+package boundary, projection compiler, Resource store contracts, V001/V002 readiness, and V011 readiness is
+**100/100 green** with no failures, errors, or skips. Real PostgreSQL certification, HTTP/auth/problem transport,
+credential-bearing Connections, default Fixture generation, and the authoring UI remain subsequent J3/U1 work.
+The post-fix full gate also completed with `Tests run: 7,989; failures: 0; errors: 0; skipped: 33` and
+`BUILD SUCCESS`.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

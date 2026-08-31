@@ -38,8 +38,7 @@ class JdbcApiResourceCommitStoreClaimTest {
     private DataSource dataSource;
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
-    private static final String COMMITTED_PROJECTION_SET_FINGERPRINT =
-            "sha256:de16d95d1d3ed0de22c35909f622769db684e4c470f0acfdeb30b967969f9d4a";
+    private static final String CONNECTION_METADATA_FINGERPRINT = "sha256:" + "c".repeat(64);
 
     @BeforeEach
     void setUp() {
@@ -59,7 +58,8 @@ class JdbcApiResourceCommitStoreClaimTest {
                 "V20260831_007__pending_secret_store_protocol_closure.sql",
                 "V20260831_008__pending_secret_store_child_cas_closure.sql",
                 "V20260831_009__authoring_command_attempt_authority.sql",
-                "V20260831_010__attempt_provenance_closure.sql")) {
+                "V20260831_010__attempt_provenance_closure.sql",
+                "V20260831_011__api_resource_connection_snapshot.sql")) {
             new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/" + migration)).execute(dataSource);
         }
         jdbc.update("INSERT INTO rg_api_connection_identities"
@@ -268,9 +268,11 @@ class JdbcApiResourceCommitStoreClaimTest {
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,
-                     spec_fingerprint, connection_id, strong_etag, command_id, attempt_no, attempt_token)
-                VALUES ('tenant','project','dev','profile',1,'STAGED',?,?,?,?,?,?,?)
-                """, json, spec.fingerprint(), "connection", "\"staged\"", lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                     spec_fingerprint, connection_id, connection_revision, connection_metadata_fingerprint,
+                     strong_etag, command_id, attempt_no, attempt_token)
+                VALUES ('tenant','project','dev','profile',1,'STAGED',?,?,?,1,?,?,?,?,?)
+                """, json, spec.fingerprint(), "connection", CONNECTION_METADATA_FINGERPRINT,
+                "\"staged\"", lease.commandId(), lease.attemptNo(), lease.attemptToken());
         String empty = "{}";
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
@@ -305,9 +307,11 @@ class JdbcApiResourceCommitStoreClaimTest {
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,
-                     spec_fingerprint, connection_id, strong_etag, command_id, attempt_no, attempt_token)
-                VALUES ('tenant','project','dev','profile',1,'COMMITTED',?,?,?,?,?,1, 'token-read')
-                """, JSON.writeValueAsString(spec), spec.fingerprint(), "connection", "\"etag\"", "cmd-read");
+                     spec_fingerprint, connection_id, connection_revision, connection_metadata_fingerprint,
+                     strong_etag, command_id, attempt_no, attempt_token)
+                VALUES ('tenant','project','dev','profile',1,'COMMITTED',?,?,?,1,?,?,?,1, 'token-read')
+                """, JSON.writeValueAsString(spec), spec.fingerprint(), "connection",
+                CONNECTION_METADATA_FINGERPRINT, "\"etag\"", "cmd-read");
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, command_id,
@@ -318,12 +322,34 @@ class JdbcApiResourceCommitStoreClaimTest {
                 """, "cmd-read", JSON.writeValueAsString(descriptor), AuthoringFingerprints.of(descriptor),
                 JSON.writeValueAsString(design), AuthoringFingerprints.of(design),
                 JSON.writeValueAsString(operator), AuthoringFingerprints.of(operator),
-                COMMITTED_PROJECTION_SET_FINGERPRINT);
+                projectionSetFingerprint(spec, descriptor, design, operator));
         jdbc.update("""
                 INSERT INTO rg_api_resource_heads
                     (tenant_id, project_id, environment_id, resource_id, revision, command_id, strong_etag, revision_state)
                 VALUES ('tenant','project','dev','profile',1,'cmd-read','"etag"','COMMITTED')
                 """);
+    }
+
+    private static String projectionSetFingerprint(ApiResourceSpec spec, JsonNode descriptor,
+                                                   JsonNode design, JsonNode operator) {
+        var root = JSON.createObjectNode();
+        root.set("DESCRIPTOR", projectionFingerprint("DESCRIPTOR", spec, descriptor));
+        root.set("DESIGN_CONTRACT", projectionFingerprint("DESIGN_CONTRACT", spec, design));
+        root.set("OPERATOR", projectionFingerprint("OPERATOR", spec, operator));
+        var connection = JSON.createObjectNode();
+        connection.put("connectionId", "connection");
+        connection.put("revision", 1);
+        connection.put("metadataFingerprint", CONNECTION_METADATA_FINGERPRINT);
+        root.set("connectionSnapshot", connection);
+        return AuthoringFingerprints.of(root);
+    }
+
+    private static JsonNode projectionFingerprint(String kind, ApiResourceSpec spec, JsonNode body) {
+        var fingerprint = JSON.createObjectNode();
+        fingerprint.put("kind", kind);
+        fingerprint.put("subject", spec.ref().toString());
+        fingerprint.put("bodyFingerprint", AuthoringFingerprints.of(body));
+        return fingerprint;
     }
 
     private void expireLease(CommandLease lease) {

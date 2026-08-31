@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.nio.charset.StandardCharsets;
@@ -66,6 +67,27 @@ public final class ApiResourceDecisions {
     /** Validates an identifier for read-only callers using the same policy as save. */
     void validateResourceId(String resourceId) {
         requireIdentifier(resourceId, "resourceId");
+    }
+
+    /** Validates pure command content before an idempotency claim is consumed. */
+    public void validateForAuthoring(ApiResourceCommand command) { validate(command); }
+
+    /**
+     * Fingerprints the currently supported compound-save subset explicitly.
+     * The body contains no credentials, protected Fixture material, revision,
+     * or server-generated snapshot coordinate.
+     */
+    public String requestFingerprint(String resourceId, String connectionId,
+                                     ApiResourceCommand command) {
+        requireIdentifier(resourceId, "resourceId");
+        requireIdentifier(connectionId, "connectionId");
+        validate(command);
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("schemaVersion", "bloge.apiResourceSaveCommand.v1");
+        payload.putObject("connection").put("mode", "EXISTING").put("connectionId", connectionId);
+        payload.set("resource", mapper.valueToTree(command));
+        payload.putObject("defaultFixture").put("kind", "NONE");
+        return AuthoringFingerprints.of(payload);
     }
 
     private void validate(ApiResourceCommand command) {
