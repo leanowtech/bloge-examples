@@ -239,6 +239,17 @@ serial `clean verify` completed with `Tests run: 8,127; failures: 0; errors: 0; 
 This slice does not yet claim Flow draft persistence, authenticated save/read, immutable publication, Flow
 Fixture simulation, or the Tool/Solution object pages.
 
+The follow-up Flow draft authority adds `ReusableFlowModule` and a complete in-memory reference adapter for
+revision/head/history, create/update CAS, actor-and-scope-isolated idempotency, exact committed replay, opaque
+strong ETags, and server-generated stable draft identity. Invalid DAGs are compiled before an idempotency key is
+observed. Replaying an already committed update is resolved before current-head CAS, while a new stale command
+fails without occupying its key. Layout-only edits create a new revision and ETag but preserve the content
+fingerprint; the full command still participates in the request fingerprint. `ReusableFlowDraft` and
+`ReusableFlowSaveReceipt` round-trip against their frozen schemas. The focused compiler/module/protocol gate is
+**24/24 green** with no failures, errors, or skips. JDBC durability/readiness and authenticated PUT/GET remain
+the next slice; this reference adapter is not production persistence evidence. The serial `clean verify`
+completed with `Tests run: 8,132; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -4,7 +4,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.flow;
 public final class ReusableFlowFailure extends RuntimeException {
     public enum Code {
         VALIDATION, DEPENDENCY_NOT_FOUND, DEPENDENCY_DRIFT, MAPPING_INVALID,
-        SCHEMA_INCOMPATIBLE, CYCLE, LAYOUT_INVALID
+        SCHEMA_INCOMPATIBLE, CYCLE, LAYOUT_INVALID, CAS_MISMATCH, CONFLICT,
+        BUSY, NOT_FOUND, INTEGRITY
     }
 
     private final Code code;

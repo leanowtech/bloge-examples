@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
@@ -292,6 +294,24 @@ class AuthoringProtocolSchemaTest {
 
         flowInput.schema().put("type", "string");
         assertThat(command.flow().contract().input().schema()).containsEntry("type", "object");
+
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                "eligibility", "draft-eligibility", 3, flowFingerprint,
+                command.flow().displayName(), command.flow().kind(), command.flow().description(),
+                command.flow().contract(), command.flow().graph(), command.flow().layout(),
+                ReusableFlowDraft.Status.DRAFT);
+        Path draftSchema = SCHEMA_ROOT.resolve("reusable-flow-draft-v1.schema.json");
+        JsonNode draftWire = MAPPER.valueToTree(draft);
+        assertThat(validationErrors(read(draftSchema), draftWire, draftSchema)).isEmpty();
+        assertThat(MAPPER.treeToValue(draftWire, ReusableFlowDraft.class)).isEqualTo(draft);
+
+        ReusableFlowSaveReceipt receipt = new ReusableFlowSaveReceipt(
+                ReusableFlowSaveReceipt.SCHEMA_VERSION, draft.flowId(), draft.subject(),
+                ReusableFlowSaveReceipt.Validation.VALID);
+        Path receiptSchema = SCHEMA_ROOT.resolve("reusable-flow-receipt-v1.schema.json");
+        JsonNode receiptWire = MAPPER.valueToTree(receipt);
+        assertThat(validationErrors(read(receiptSchema), receiptWire, receiptSchema)).isEmpty();
+        assertThat(MAPPER.treeToValue(receiptWire, ReusableFlowSaveReceipt.class)).isEqualTo(receipt);
     }
 
     @Test

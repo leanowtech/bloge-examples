@@ -1286,3 +1286,43 @@ Reusable Flow 已从“只有 JSON Schema”推进到可执行验证的 Java wir
 但用户尚不能保存、读取、发布或模拟一个 Tool/Solution，也没有对象页。因此累计完成度仅保守调整为
 **65%**，剩余差距 **35%**。下一切片是 Flow Draft 的 revision/head、CAS/idempotency、authenticated PUT/GET
 与 exact Resource catalog adapter；随后才是 whole-flow Fixture simulation、immutable publication 与前端对象页。
+
+## 33. Iteration 32 — reusable Flow Draft reference authority
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 `ReusableFlowDraft` / `ReusableFlowSaveReceipt` / `ReusableFlowSaveResult`，服务端生成并闭合
+  `flowId + stable draftId + revision + content fingerprint + strong ETag`。Draft 与 Receipt 直接通过冻结 JSON
+  Schema round-trip；Draft 同时提供 exact `FLOW_DRAFT` Fixture/Simulation subject。
+- 新增深模块 `ReusableFlowModule`：先 compile，再生成完整 request fingerprint 与排除 layout 的 content
+  fingerprint，最后把 revision/head/idempotency/CAS 委托给一个 `ReusableFlowDraftStore`，HTTP adapter 不需要
+  重做这些规则。
+- 新增线程安全 reference store：create/update、历史 revision、scope/actor/key 隔离、same-key exact replay、
+  changed intent conflict 与 stale CAS 均为原子行为。重放发生在 current-head CAS 之前；失败 CAS 不占 key。
+- 无效 DAG 在 store/idempotency 之前被拒绝。layout-only 更新产生新 revision/ETag，但保持 content
+  fingerprint；完整 command 仍进入 request fingerprint，因而不会把不同布局误当同一幂等请求。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowModuleTest,ReusableFlowCompilerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 24, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8132, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+本切片尚未增加 V014/JDBC/readiness、production exact Resource catalog adapter、认证 PUT/GET、publication、
+whole-flow Fixture simulation 或对象页。因此累计完成度仅保守调整为 **67%**，剩余差距 **33%**；下一刀
+必须把相同 `ReusableFlowDraftStore` contract 落到 JDBC 并接入 transport，不能把 in-memory green 当生产闭环。
