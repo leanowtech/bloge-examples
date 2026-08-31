@@ -13,6 +13,8 @@ public final class ApiFixtureSetAuthoringFailure extends RuntimeException {
     /** @return stable closed failure category */
     public Code code() { return code; }
 
-    /** Closed read failure vocabulary. */
-    public enum Code { VALIDATION, NOT_FOUND, INTEGRITY }
+    /** Closed private Fixture authoring failure vocabulary. */
+    public enum Code {
+        CAPABILITY_UNAVAILABLE, VALIDATION, NOT_FOUND, CAS_MISMATCH, CONFLICT, INTEGRITY, PERSISTENCE
+    }
 }

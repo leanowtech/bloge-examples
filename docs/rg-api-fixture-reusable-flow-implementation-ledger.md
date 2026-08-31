@@ -1539,3 +1539,57 @@ Fixture PUT。不能把测试中构造的 `StoredFixtureSet` 当 production pers
 standalone Fixture authority、authenticated write/read、parent Flow `NODE + APPLY_CASE` 编译/运行、对象页和真实
 端到端仍未完成。累计完成度保守调整为 **81%**，剩余差距 **19%**。下一刀先交付 standalone Flow Fixture
 JDBC/HTTP vertical slice，再实现父 Flow `APPLY_CASE`；UI 继续独立收口。
+
+## 38. Iteration 37 — durable standalone Flow Fixture authoring
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 V016 standalone Fixture authority，独立于 V012 Resource child 表：scope 内 identity、append-only revision、
+  exact head、strong ETag 与 endpoint-isolated idempotency command 在同一事务关闭；revision 以外键绑定 exact
+  immutable Flow Version。
+- 新增 `StandaloneFixtureSetStore` 的 InMemory/JDBC 实现，以及 create/update CAS、historical ETag、exact replay、
+  changed replay conflict、scope isolation、authority tamper fail-closed 和 payload-free subject listing。
+- `WholeFlowFixtureMaterializer` 支持服务端指定正 revision；既有 Resource Default Fixture 仍产生 revision 1，
+  Flow Fixture update 则产生单调 revision，不改变 Case/subject/fingerprint closure。
+- 新增 `FixtureSetAuthorityReader` 与 fail-closed composite reader。V012 Resource child 和 V016 standalone Flow
+  Fixture 共用既有 GET/list/Simulation 读取路径；同 scope/id 若同时出现在两个 authority 中则按 integrity 拒绝，
+  不任意选一个。
+- `PUT /api/authoring/fixture-sets/{fixtureSetId}` 使用 trusted tenant/project/environment/actor，新增精确 write
+  purpose；create 必须 `If-None-Match: *`，update 必须单个 opaque strong `If-Match`，并要求 bounded
+  `Idempotency-Key`。成功响应是 exact receipt + ETag + `Idempotency-Replayed` 且 no-store。
+- feature-scoped V016 runtime 默认随 reusable-flow feature opt-in，readiness 缺表时 fail startup；未把配置继续
+  塞入全局 `GatewayConfiguration`。
+
+### 聚焦验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=WholeFlowFixtureMaterializerTest,ReusableFlowFixtureModuleTest,\
+CompositeFixtureSetAuthorityReaderTest,JdbcStandaloneFixtureSetStoreTest,\
+StandaloneFixtureSetSchemaReadinessTest,StandaloneFixtureSetRuntimeConfigurationTest,\
+ApiFixtureSetAuthoringFacadeTest,ApiFixtureSetAuthoringControllerTest,\
+ApiFixtureSetApplicationConfigurationTest,SimulationModuleTest,WholeFlowSimulationModuleTest,\
+ApiSimulationApplicationConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 48, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+完整 Resource Gateway 门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,182; Failures: 0; Errors: 0; Skipped: 33
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+Standalone whole-flow Fixture 已可经可信 HTTP 写入、强 ETag 更新、JDBC 持久化、复用既有读取并直接进入
+subject-level Simulation；这关闭了 Iteration 36 最大的 production gap。尚缺父 Flow 的 exact
+`NODE + APPLY_CASE` 编译/运行、Fixture share/promotion、Tool/Solution/Fixture 对象页和真实浏览器/真实
+PostgreSQL 端到端。累计完成度保守调整为 **85%**，剩余差距 **15%**；下一刀进入父 Flow 对子 Flow Case
+的显式替代语义，再进入对象页，不扩充隐藏控制面。

@@ -1,0 +1,397 @@
+package com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.function.Supplier;
+
+/** JDBC V016 authority for independently authored whole-flow Fixture Set revisions. */
+public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSetStore {
+    private final JdbcTemplate jdbc;
+    private final TransactionTemplate transactions;
+    private final ObjectMapper mapper;
+    private final Supplier<String> identifiers;
+
+    public JdbcStandaloneFixtureSetStore(JdbcTemplate jdbc, TransactionTemplate transactions,
+                                         ObjectMapper mapper) {
+        this(jdbc, transactions, mapper, () -> UUID.randomUUID().toString());
+    }
+
+    JdbcStandaloneFixtureSetStore(JdbcTemplate jdbc, TransactionTemplate transactions,
+                                  ObjectMapper mapper, Supplier<String> identifiers) {
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
+        this.transactions = Objects.requireNonNull(transactions, "transactions");
+        if (!(transactions.getTransactionManager() instanceof DataSourceTransactionManager manager)
+                || jdbc.getDataSource() == null || manager.getDataSource() != jdbc.getDataSource()) {
+            throw new IllegalArgumentException("Fixture store and transaction manager must share one DataSource");
+        }
+        this.mapper = Objects.requireNonNull(mapper, "mapper").copy().findAndRegisterModules();
+        this.identifiers = Objects.requireNonNull(identifiers, "identifiers");
+    }
+
+    @Override public StandaloneFixtureSetSaveResult save(StandaloneFixtureSetSaveIntent intent) {
+        Objects.requireNonNull(intent, "intent");
+        try {
+            return required(transactions.execute(status -> saveInTransaction(intent)));
+        } catch (DuplicateKeyException race) {
+            try {
+                return required(transactions.execute(status -> saveInTransaction(intent)));
+            } catch (StandaloneFixtureSetStoreException failure) {
+                throw failure;
+            } catch (DataAccessException failure) {
+                throw failure(StandaloneFixtureSetStoreException.Code.PERSISTENCE);
+            }
+        } catch (StandaloneFixtureSetStoreException failure) {
+            throw failure;
+        } catch (DataAccessException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.PERSISTENCE);
+        } catch (RuntimeException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    @Override public Optional<StoredFixtureSet> findHead(AuthoringScope scope, String fixtureSetId) {
+        if (!valid(scope, fixtureSetId)) return Optional.empty();
+        try {
+            Optional<HeadRow> head = head(scope, fixtureSetId, false);
+            if (head.isEmpty()) return Optional.empty();
+            StoredStandaloneFixtureSet stored = revision(scope, fixtureSetId, head.get().revision())
+                    .map(this::decode).orElseThrow(() -> failure(
+                            StandaloneFixtureSetStoreException.Code.INTEGRITY));
+            if (!head.get().matches(stored)) {
+                throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+            }
+            return Optional.of(stored.stored());
+        } catch (StandaloneFixtureSetStoreException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    @Override public Optional<StoredFixtureSet> findRevision(
+            AuthoringScope scope, String fixtureSetId, int revision) {
+        if (!valid(scope, fixtureSetId) || revision < 1) return Optional.empty();
+        try {
+            return revision(scope, fixtureSetId, revision).map(this::decode)
+                    .map(StoredStandaloneFixtureSet::stored);
+        } catch (StandaloneFixtureSetStoreException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    @Override public Optional<StoredStandaloneFixtureSet> findRevisionByStrongEtag(
+            AuthoringScope scope, String fixtureSetId, String strongEtag) {
+        if (!valid(scope, fixtureSetId) || !FixtureSetStrongEtag.isValid(strongEtag)) {
+            return Optional.empty();
+        }
+        try {
+            return exact(jdbc.query("""
+                    SELECT revision, fixture_fingerprint, subject_publication_id,
+                           subject_revision, subject_fingerprint, generated_json, strong_etag
+                      FROM rg_authoring_standalone_fixture_revisions
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                       AND fixture_set_id=? AND strong_etag=?
+                    """, rowMapper(scope, fixtureSetId), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), fixtureSetId, strongEtag)).map(this::decode);
+        } catch (StandaloneFixtureSetStoreException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    @Override public List<FixtureSetSummary> listSummariesBySubject(
+            AuthoringScope scope, FixtureSubjectRef subject) {
+        if (scope == null || !(subject instanceof FixtureSubjectRef.FlowVersion flow)) return List.of();
+        try {
+            List<Row> rows = jdbc.query("""
+                    SELECT r.fixture_set_id, r.revision, r.fixture_fingerprint, r.subject_publication_id,
+                           r.subject_revision, r.subject_fingerprint, r.generated_json, r.strong_etag
+                      FROM rg_authoring_standalone_fixture_heads h
+                      JOIN rg_authoring_standalone_fixture_revisions r
+                        ON r.tenant_id=h.tenant_id AND r.project_id=h.project_id
+                       AND r.environment_id=h.environment_id AND r.fixture_set_id=h.fixture_set_id
+                       AND r.revision=h.revision AND r.fixture_fingerprint=h.fixture_fingerprint
+                       AND r.strong_etag=h.strong_etag
+                     WHERE r.tenant_id=? AND r.project_id=? AND r.environment_id=?
+                       AND r.subject_publication_id=? AND r.subject_revision=?
+                       AND r.subject_fingerprint=?
+                     ORDER BY r.fixture_set_id
+                    """, (rs, index) -> new Row(scope, rs.getString(1),
+                            Math.toIntExact(rs.getLong(2)), rs.getString(3), rs.getString(4),
+                            Math.toIntExact(rs.getLong(5)), rs.getString(6), rs.getString(7),
+                            rs.getString(8)),
+                    scope.tenantId(), scope.projectId(), scope.environmentId(), flow.publicationId(),
+                    flow.revision(), flow.fingerprint());
+            return rows.stream().map(this::decode).map(value -> value.stored().generated().summary()).toList();
+        } catch (RuntimeException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    private StandaloneFixtureSetSaveResult saveInTransaction(StandaloneFixtureSetSaveIntent intent) {
+        Optional<CommandRow> command = command(intent, true);
+        if (command.isPresent()) return replay(intent, command.get());
+        Optional<HeadRow> head = head(intent.scope(), intent.fixtureSetId(), true);
+        Optional<CommandRow> concurrent = command(intent, false);
+        if (concurrent.isPresent()) return replay(intent, concurrent.get());
+        checkExpected(head, intent.expectedRevision());
+        int revision = head.map(value -> Math.addExact(value.revision(), 1)).orElse(1);
+        if (intent.generated().view().revision() != revision) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+        String strongEtag = "\"" + nextIdentifier() + "\"";
+        if (head.isEmpty()) insertIdentity(intent);
+        insertRevision(intent, strongEtag);
+        if (head.isEmpty()) insertHead(intent, strongEtag);
+        else updateHead(intent, head.get(), strongEtag);
+        insertCommand(intent, strongEtag);
+        return new StandaloneFixtureSetSaveResult(intent.generated().view(),
+                intent.generated().receipt(), strongEtag, false);
+    }
+
+    private StandaloneFixtureSetSaveResult replay(
+            StandaloneFixtureSetSaveIntent intent, CommandRow command) {
+        if (!command.requestFingerprint().equals(intent.requestFingerprint())
+                || !command.expected().equals(intent.expectedRevision())) {
+            throw failure(StandaloneFixtureSetStoreException.Code.CONFLICT);
+        }
+        StoredStandaloneFixtureSet stored = revision(
+                        intent.scope(), intent.fixtureSetId(), command.committedRevision())
+                .map(this::decode).orElseThrow(() -> failure(
+                        StandaloneFixtureSetStoreException.Code.INTEGRITY));
+        FixtureSetSaveReceipt receipt = decode(command.receiptJson(), FixtureSetSaveReceipt.class);
+        if (!receipt.equals(stored.stored().generated().receipt())
+                || !command.strongEtag().equals(stored.strongEtag())) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+        return new StandaloneFixtureSetSaveResult(stored.stored().generated().view(),
+                receipt, stored.strongEtag(), true);
+    }
+
+    private Optional<CommandRow> command(StandaloneFixtureSetSaveIntent intent, boolean lock) {
+        String sql = """
+                SELECT request_fingerprint, expected_mode, expected_revision,
+                       committed_revision, receipt_json, strong_etag
+                  FROM rg_authoring_standalone_fixture_commands
+                 WHERE tenant_id=? AND project_id=? AND environment_id=?
+                   AND actor_id=? AND fixture_set_id=? AND idempotency_key=?
+                """ + (lock ? " FOR UPDATE" : "");
+        return exact(jdbc.query(sql, (rs, index) -> new CommandRow(rs.getString(1),
+                        expected(rs.getString(2), nullableLong(rs, 3)), Math.toIntExact(rs.getLong(4)),
+                        rs.getString(5), rs.getString(6)),
+                intent.scope().tenantId(), intent.scope().projectId(), intent.scope().environmentId(),
+                intent.actorId(), intent.fixtureSetId(), intent.idempotencyKey()));
+    }
+
+    private Optional<HeadRow> head(AuthoringScope scope, String fixtureSetId, boolean lock) {
+        String sql = """
+                SELECT revision, fixture_fingerprint, strong_etag
+                  FROM rg_authoring_standalone_fixture_heads
+                 WHERE tenant_id=? AND project_id=? AND environment_id=? AND fixture_set_id=?
+                """ + (lock ? " FOR UPDATE" : "");
+        return exact(jdbc.query(sql, (rs, index) -> new HeadRow(
+                        Math.toIntExact(rs.getLong(1)), rs.getString(2), rs.getString(3)),
+                scope.tenantId(), scope.projectId(), scope.environmentId(), fixtureSetId));
+    }
+
+    private Optional<Row> revision(AuthoringScope scope, String fixtureSetId, int revision) {
+        return exact(jdbc.query("""
+                SELECT revision, fixture_fingerprint, subject_publication_id,
+                       subject_revision, subject_fingerprint, generated_json, strong_etag
+                  FROM rg_authoring_standalone_fixture_revisions
+                 WHERE tenant_id=? AND project_id=? AND environment_id=?
+                   AND fixture_set_id=? AND revision=?
+                """, rowMapper(scope, fixtureSetId), scope.tenantId(), scope.projectId(),
+                scope.environmentId(), fixtureSetId, revision));
+    }
+
+    private org.springframework.jdbc.core.RowMapper<Row> rowMapper(
+            AuthoringScope scope, String fixtureSetId) {
+        return (rs, index) -> row(scope, fixtureSetId, rs);
+    }
+
+    private static Row row(AuthoringScope scope, String fixtureSetId, ResultSet rs) throws SQLException {
+        return new Row(scope, fixtureSetId, Math.toIntExact(rs.getLong(1)), rs.getString(2),
+                rs.getString(3), Math.toIntExact(rs.getLong(4)), rs.getString(5),
+                rs.getString(6), rs.getString(7));
+    }
+
+    private void insertIdentity(StandaloneFixtureSetSaveIntent intent) {
+        jdbc.update("""
+                INSERT INTO rg_authoring_standalone_fixture_identities
+                    (tenant_id, project_id, environment_id, fixture_set_id)
+                VALUES (?, ?, ?, ?)
+                """, intent.scope().tenantId(), intent.scope().projectId(),
+                intent.scope().environmentId(), intent.fixtureSetId());
+    }
+
+    private void insertRevision(StandaloneFixtureSetSaveIntent intent, String strongEtag) {
+        FixtureSubjectRef.FlowVersion subject = (FixtureSubjectRef.FlowVersion) intent.generated().view().subject();
+        jdbc.update("""
+                INSERT INTO rg_authoring_standalone_fixture_revisions
+                    (tenant_id, project_id, environment_id, fixture_set_id, revision,
+                     fixture_fingerprint, subject_publication_id, subject_revision,
+                     subject_fingerprint, generated_json, strong_etag, committed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, intent.scope().tenantId(), intent.scope().projectId(),
+                intent.scope().environmentId(), intent.fixtureSetId(), intent.generated().view().revision(),
+                intent.generated().view().fingerprint(), subject.publicationId(), subject.revision(),
+                subject.fingerprint(), encode(intent.generated()), strongEtag, intent.actorId());
+    }
+
+    private void insertHead(StandaloneFixtureSetSaveIntent intent, String strongEtag) {
+        jdbc.update("""
+                INSERT INTO rg_authoring_standalone_fixture_heads
+                    (tenant_id, project_id, environment_id, fixture_set_id,
+                     revision, fixture_fingerprint, strong_etag)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, intent.scope().tenantId(), intent.scope().projectId(),
+                intent.scope().environmentId(), intent.fixtureSetId(), intent.generated().view().revision(),
+                intent.generated().view().fingerprint(), strongEtag);
+    }
+
+    private void updateHead(StandaloneFixtureSetSaveIntent intent, HeadRow prior, String strongEtag) {
+        int updated = jdbc.update("""
+                UPDATE rg_authoring_standalone_fixture_heads
+                   SET revision=?, fixture_fingerprint=?, strong_etag=?
+                 WHERE tenant_id=? AND project_id=? AND environment_id=? AND fixture_set_id=?
+                   AND revision=? AND fixture_fingerprint=? AND strong_etag=?
+                """, intent.generated().view().revision(), intent.generated().view().fingerprint(), strongEtag,
+                intent.scope().tenantId(), intent.scope().projectId(), intent.scope().environmentId(),
+                intent.fixtureSetId(), prior.revision(), prior.fingerprint(), prior.strongEtag());
+        if (updated != 1) throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
+    }
+
+    private void insertCommand(StandaloneFixtureSetSaveIntent intent, String strongEtag) {
+        ExpectedColumns expected = columns(intent.expectedRevision());
+        jdbc.update("""
+                INSERT INTO rg_authoring_standalone_fixture_commands
+                    (tenant_id, project_id, environment_id, actor_id, fixture_set_id,
+                     idempotency_key, request_fingerprint, expected_mode, expected_revision,
+                     committed_revision, receipt_json, strong_etag)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, intent.scope().tenantId(), intent.scope().projectId(),
+                intent.scope().environmentId(), intent.actorId(), intent.fixtureSetId(),
+                intent.idempotencyKey(), intent.requestFingerprint(), expected.mode(), expected.revision(),
+                intent.generated().view().revision(), encode(intent.generated().receipt()), strongEtag);
+    }
+
+    private StoredStandaloneFixtureSet decode(Row row) {
+        GeneratedDefaultFixture generated = decode(row.generatedJson(), GeneratedDefaultFixture.class);
+        if (!generated.view().fixtureSetId().equals(row.fixtureSetId())
+                || generated.view().revision() != row.revision()
+                || !generated.view().fingerprint().equals(row.fixtureFingerprint())
+                || !(generated.view().subject() instanceof FixtureSubjectRef.FlowVersion subject)
+                || !subject.publicationId().equals(row.subjectPublicationId())
+                || subject.revision() != row.subjectRevision()
+                || !subject.fingerprint().equals(row.subjectFingerprint())) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+        return new StoredStandaloneFixtureSet(new StoredFixtureSet(row.scope(), generated), row.strongEtag());
+    }
+
+    private String encode(Object value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (JsonProcessingException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    private <T> T decode(String value, Class<T> type) {
+        try {
+            return mapper.readValue(value, type);
+        } catch (JsonProcessingException failure) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
+    private static void checkExpected(Optional<HeadRow> head, ExpectedRevision expected) {
+        boolean mismatch = expected instanceof ExpectedRevision.Create && head.isPresent()
+                || expected instanceof ExpectedRevision.Match match
+                && (head.isEmpty() || head.get().revision() != match.revision());
+        if (mismatch) throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
+    }
+
+    private String nextIdentifier() {
+        String value = identifiers.get();
+        if (value == null || !value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+        return value;
+    }
+
+    private static ExpectedRevision expected(String mode, Long revision) {
+        if ("CREATE".equals(mode) && revision == null) return ExpectedRevision.create();
+        if ("MATCH".equals(mode) && revision != null && revision > 0) {
+            return ExpectedRevision.match(revision);
+        }
+        throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+    }
+
+    private static ExpectedColumns columns(ExpectedRevision expected) {
+        return expected instanceof ExpectedRevision.Create
+                ? new ExpectedColumns("CREATE", null)
+                : new ExpectedColumns("MATCH", ((ExpectedRevision.Match) expected).revision());
+    }
+
+    private static Long nullableLong(ResultSet result, int index) throws SQLException {
+        long value = result.getLong(index);
+        return result.wasNull() ? null : value;
+    }
+
+    private static boolean valid(AuthoringScope scope, String fixtureSetId) {
+        return scope != null && fixtureSetId != null
+                && fixtureSetId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
+    }
+
+    private static <T> Optional<T> exact(List<T> values) {
+        if (values.size() > 1) throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        return values.stream().findFirst();
+    }
+
+    private static <T> T required(T value) {
+        if (value == null) throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        return value;
+    }
+
+    private static StandaloneFixtureSetStoreException failure(StandaloneFixtureSetStoreException.Code code) {
+        return new StandaloneFixtureSetStoreException(code);
+    }
+
+    private record Row(AuthoringScope scope, String fixtureSetId, int revision,
+                       String fixtureFingerprint, String subjectPublicationId,
+                       int subjectRevision, String subjectFingerprint,
+                       String generatedJson, String strongEtag) { }
+    private record HeadRow(int revision, String fingerprint, String strongEtag) {
+        boolean matches(StoredStandaloneFixtureSet value) {
+            return revision == value.stored().generated().view().revision()
+                    && fingerprint.equals(value.stored().generated().view().fingerprint())
+                    && strongEtag.equals(value.strongEtag());
+        }
+    }
+    private record CommandRow(String requestFingerprint, ExpectedRevision expected,
+                              int committedRevision, String receiptJson, String strongEtag) { }
+    private record ExpectedColumns(String mode, Long revision) { }
+}

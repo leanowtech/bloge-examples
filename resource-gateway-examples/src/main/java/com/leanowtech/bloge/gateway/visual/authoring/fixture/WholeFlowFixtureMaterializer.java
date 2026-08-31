@@ -26,6 +26,13 @@ public final class WholeFlowFixtureMaterializer {
      */
     public GeneratedDefaultFixture generate(String fixtureSetId, ReusableFlowVersion version,
                                              FixtureSetCommand command) {
+        return generate(fixtureSetId, 1, version, command);
+    }
+
+    /** Creates one exact private Fixture revision for one immutable Flow Version. */
+    public GeneratedDefaultFixture generate(String fixtureSetId, int revision,
+                                             ReusableFlowVersion version, FixtureSetCommand command) {
+        if (revision < 1) throw new IllegalArgumentException("Fixture revision is invalid");
         requireHeader(fixtureSetId, version, command);
         List<FixtureSetCommand.Case> cases = command.cases();
         Set<String> caseIds = new HashSet<>();
@@ -34,15 +41,15 @@ public final class WholeFlowFixtureMaterializer {
         }
         String fingerprint = FixtureSetFingerprints.of(
                 command.displayName(), command.subject(), cases);
-        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, fixtureSetId, 1,
+        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, fixtureSetId, revision,
                 fingerprint, 1, command.displayName(), command.subject(), cases,
                 FixtureSetView.Status.PRIVATE_DRAFT);
         List<String> orderedCaseIds = cases.stream().map(FixtureSetCommand.Case::caseId).toList();
         FixtureSetSaveReceipt receipt = new FixtureSetSaveReceipt(FixtureSetSaveReceipt.SCHEMA_VERSION,
-                fixtureSetId, 1, fingerprint, command.subject(), orderedCaseIds,
+                fixtureSetId, revision, fingerprint, command.subject(), orderedCaseIds,
                 FixtureSetView.Status.PRIVATE_DRAFT, 1);
         FixtureSetSummary summary = new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION,
-                fixtureSetId, 1, fingerprint, command.displayName(), command.subject(),
+                fixtureSetId, revision, fingerprint, command.displayName(), command.subject(),
                 cases.stream().map(value -> new FixtureSetSummary.CaseSummary(
                         value.caseId(), value.name())).toList(), FixtureSetView.Status.PRIVATE_DRAFT, 1);
         List<GeneratedDefaultFixture.CaseMapping> identityMappings = cases.stream()

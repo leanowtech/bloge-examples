@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 
-import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
@@ -18,7 +18,7 @@ public class ApiSimulationApplicationConfiguration {
     /** Fails startup when any Resource, Fixture or V013 authority is absent. */
     @Bean
     @ConditionalOnMissingBean
-    SimulationModule simulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+    SimulationModule simulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                                       SimulationRunStore runs,
                                       ObjectProvider<ReusableFlowPublicationStore> flows) {
         ReusableFlowPublicationStore flowAuthority = flows.getIfAvailable();

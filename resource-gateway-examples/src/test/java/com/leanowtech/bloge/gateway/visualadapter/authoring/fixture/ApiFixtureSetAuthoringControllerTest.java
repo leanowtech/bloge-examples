@@ -11,6 +11,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixt
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
 import org.junit.jupiter.api.Test;
@@ -31,6 +35,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,6 +125,55 @@ class ApiFixtureSetAuthoringControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(facade, never()).read(any(), any(), any());
+    }
+
+    @Test
+    void savesWholeFlowFixtureWithTrustedIdentityStrongPreconditionAndReplayReceipt() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        var version = com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .WholeFlowFixtureMaterializerTest.version();
+        var command = com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .WholeFlowFixtureMaterializerTest.command(version.subject(),
+                        com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand.Target.subject(),
+                        com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand.Behavior.returned(
+                                com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand.Material
+                                        .inline(com.leanowtech.bloge.gateway.visual.authoring.fixture
+                                                .WholeFlowFixtureMaterializerTest.output())), null);
+        GeneratedDefaultFixture generated = new WholeFlowFixtureMaterializer()
+                .generate("eligibility-cases", version, command);
+        when(facade.save(any(), any(), any(), any(), any(), any())).thenReturn(
+                new StandaloneFixtureSetSaveResult(generated.view(), generated.receipt(), "\"etag-1\"", false));
+
+        mvc(facade).perform(put("/api/authoring/fixture-sets/eligibility-cases")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(command))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-None-Match", "*")
+                        .header("Idempotency-Key", "fixture-create-1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"etag-1\""))
+                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.fixtureSetId").value("eligibility-cases"));
+
+        verify(facade).save(new AuthoringScope("tenant-a", "project-a", "test"), "author",
+                "eligibility-cases", FixtureSetPrecondition.create(), "fixture-create-1", command);
+    }
+
+    @Test
+    void invalidPreconditionIsRejectedBeforeFixtureMaterialIsHandled() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+
+        mvc(facade).perform(put("/api/authoring/fixture-sets/eligibility-cases")
+                        .contentType("application/json").content("{}")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-Match", "W/\"weak\"")
+                        .header("Idempotency-Key", "fixture-update-1"))
+                .andExpect(status().isBadRequest());
+
+        verify(facade, never()).save(any(), any(), any(), any(), any(), any());
     }
 
     private static MockMvc mvc(ApiFixtureSetAuthoringFacade facade) {

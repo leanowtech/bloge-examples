@@ -86,13 +86,23 @@ public final class ApiResourceAuthoringProblemHandler {
     public ResponseEntity<ApiResourceAuthoringProblemDetail> fixture(
             ApiFixtureSetAuthoringFailure failure, HttpServletRequest request) {
         Mapping mapping = switch (failure.code()) {
+            case CAPABILITY_UNAVAILABLE -> fixtureMapping(424, "authoring-capability-unavailable",
+                    "Fixture Set authoring is unavailable", "CAPABILITY_UNAVAILABLE", List.of());
             case VALIDATION -> fixtureMapping(400, "bad-authoring-request", "Fixture Set request is invalid",
                     "REQUEST_INVALID", List.of(action("OPEN_FIELD", "/")));
             case NOT_FOUND -> fixtureMapping(404, "authoring-resource-not-found",
                     "Fixture Set was not found", "NOT_FOUND",
                     List.of(action("OPEN_LIST", "/api/authoring/fixture-sets")));
+            case CAS_MISMATCH -> fixtureMapping(412, "authoring-precondition-failed",
+                    "Fixture Set changed", "PRECONDITION_FAILED",
+                    List.of(action("RELOAD", null)));
+            case CONFLICT -> fixtureMapping(409, "authoring-conflict",
+                    "Fixture Set idempotency key conflicts", "IDEMPOTENCY_CONFLICT", List.of());
             case INTEGRITY -> fixtureMapping(500, "authoring-integrity",
                     "Fixture Set integrity check failed", "INTEGRITY_FAILED", List.of());
+            case PERSISTENCE -> fixtureMapping(503, "authoring-service-unavailable",
+                    "Fixture Set persistence is unavailable", "PERSISTENCE_FAILED",
+                    List.of(action("RETRY", null)));
         };
         ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
                 mapping.type(), mapping.title(), mapping.status(), failure.getMessage(), mapping.code(),

@@ -4,8 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
-import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStoreException;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
@@ -42,32 +43,32 @@ public final class SimulationModule {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private final ApiResourceCommitStore resources;
-    private final ApiFixtureSetCommitStore fixtures;
+    private final FixtureSetAuthorityReader fixtures;
     private final ReusableFlowPublicationStore flows;
     private final SimulationRunStore runs;
     private final Clock clock;
     private final Supplier<String> runIds;
 
     /** Creates a production-neutral module with server-generated run ids. */
-    public SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+    public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                             SimulationRunStore runs) {
         this(resources, fixtures, null, runs, Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
     }
 
     /** Creates a module that can also execute exact whole-flow Fixture returns. */
-    public SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+    public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                             ReusableFlowPublicationStore flows, SimulationRunStore runs) {
         this(resources, fixtures, flows, runs, Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
     }
 
     /** Test seam for deterministic time and ids. */
-    SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+    SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                      SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
         this(resources, fixtures, null, runs, clock, runIds);
     }
 
     /** Test seam for deterministic whole-flow execution time and ids. */
-    SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+    SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                      ReusableFlowPublicationStore flows, SimulationRunStore runs,
                      Clock clock, Supplier<String> runIds) {
         this.resources = Objects.requireNonNull(resources, "resources");
@@ -155,7 +156,8 @@ public final class SimulationModule {
             throw failure(SimulationFailure.Code.UNSUPPORTED);
         } catch (SimulationFailure failure) {
             throw failure;
-        } catch (ApiFixtureSetCommitStoreException | ApiResourceCommitStoreException
+        } catch (ApiFixtureSetCommitStoreException | StandaloneFixtureSetStoreException
+                 | ApiResourceCommitStoreException
                  | ReusableFlowFailure failure) {
             throw failure(SimulationFailure.Code.INTEGRITY);
         }

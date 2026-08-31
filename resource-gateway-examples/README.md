@@ -305,6 +305,18 @@ is **26/26 green** with no failures, errors, or skips. The serial `clean verify`
 `Tests run: 8,171; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`. This tracer does not yet provide durable
 standalone Flow Fixture save/read or its authenticated HTTP endpoint; those are the next persistence slice.
 
+The durable standalone Flow Fixture slice adds V016 identities, immutable revisions, exact heads, committed
+idempotency commands, and opaque strong ETags without changing the V012 Resource-child authority. Authenticated
+`PUT /api/authoring/fixture-sets/{fixtureSetId}` accepts only one exact published `FLOW_VERSION`, requires
+`If-None-Match: *` for create or one strong `If-Match` for update, and requires a bounded `Idempotency-Key`.
+Exact replay is resolved before current-head CAS; historical revisions remain readable and stale new updates fail
+with precondition semantics. A fail-closed composite reader unifies V012 child and V016 standalone Fixture Sets for
+existing GET/list and Simulation paths while rejecting an id that appears in both authorities. V016 is externally
+applied; enabling reusable Flow authoring without it fails startup. The focused materializer/module/store/readiness/
+configuration/controller/simulation gate is **48/48 green** with no failures, errors, or skips. Real PostgreSQL,
+parent-Flow `NODE + APPLY_CASE`, sharing, and Tool/Solution object pages remain subsequent slices. The serial
+`clean verify` completed with `Tests run: 8,182; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

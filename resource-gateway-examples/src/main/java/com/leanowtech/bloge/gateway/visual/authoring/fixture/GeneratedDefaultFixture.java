@@ -19,7 +19,7 @@ public record GeneratedDefaultFixture(FixtureSetView view, FixtureSetSaveReceipt
                 || !FixtureSetSaveReceipt.SCHEMA_VERSION.equals(receipt.schemaVersion())
                 || !FixtureSetSummary.SCHEMA_VERSION.equals(summary.schemaVersion())
                 || !identifier(view.fixtureSetId()) || !fingerprint(view.fingerprint())
-                || view.revision() != 1 || view.statusRevision() != 1
+                || view.revision() < 1 || view.statusRevision() != 1
                 || view.status() != FixtureSetView.Status.PRIVATE_DRAFT || view.cases().isEmpty()
                 || !view.fixtureSetId().equals(receipt.fixtureSetId())
                 || view.revision() != receipt.revision()
