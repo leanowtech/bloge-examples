@@ -192,6 +192,17 @@ configuration gate is **70/70 green** with no failures, errors or skips. The wid
 Connection readiness contract is **98/98 green** with no failures, errors or skips. The post-persistence C7
 serial `clean verify` completed with `Tests run: 8,090; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+J3-C8 starts the user-visible Fixture access path without adding a second persistence model. Authenticated
+`GET /api/authoring/fixture-sets/{fixtureSetId}?revision={revision}` returns the current or exact committed private
+Fixture revision, while `GET /api/authoring/fixture-sets` requires all four Exact Subject coordinates and returns
+metadata-only summaries. Both routes derive tenant/project/environment from the trusted integration identity,
+use no-store responses, and fail closed on malformed coordinates, missing objects, or damaged persisted authority.
+The feature-scoped application configuration requires the V012 authority store instead of silently disabling the
+read module. The focused new/affected transport gate is **63/63 green** with no failures, errors or skips. This
+slice's serial `clean verify` completed with `Tests run: 8,101; failures: 0; errors: 0; skipped: 33` and
+`BUILD SUCCESS`. It does not yet implement standalone Fixture writes, sharing, or
+`POST /api/authoring/simulations`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

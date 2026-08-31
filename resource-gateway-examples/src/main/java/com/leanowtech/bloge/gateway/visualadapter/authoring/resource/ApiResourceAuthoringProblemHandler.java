@@ -3,9 +3,11 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.resource;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFailure;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
@@ -24,7 +26,8 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /** Maps API Resource and Connection failures to one Authoring Problem Detail shape. */
-@RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class, ApiConnectionAuthoringController.class})
+@RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class,
+        ApiConnectionAuthoringController.class, ApiFixtureSetAuthoringController.class})
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringProblemHandler {
     private static final Pattern CORRELATION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -73,6 +76,25 @@ public final class ApiResourceAuthoringProblemHandler {
                 mapping.type(), mapping.title(), mapping.status(), failure.getMessage(), mapping.code(),
                 correlation("", request), List.of(), mapping.actions());
         return response(problem, retryAfter(failure.retryAt()), false);
+    }
+
+    /** Converts private Fixture read failures without exposing Case material. */
+    @ExceptionHandler(ApiFixtureSetAuthoringFailure.class)
+    public ResponseEntity<ApiResourceAuthoringProblemDetail> fixture(
+            ApiFixtureSetAuthoringFailure failure, HttpServletRequest request) {
+        Mapping mapping = switch (failure.code()) {
+            case VALIDATION -> fixtureMapping(400, "bad-authoring-request", "Fixture Set request is invalid",
+                    "REQUEST_INVALID", List.of(action("OPEN_FIELD", "/")));
+            case NOT_FOUND -> fixtureMapping(404, "authoring-resource-not-found",
+                    "Fixture Set was not found", "NOT_FOUND",
+                    List.of(action("OPEN_LIST", "/api/authoring/fixture-sets")));
+            case INTEGRITY -> fixtureMapping(500, "authoring-integrity",
+                    "Fixture Set integrity check failed", "INTEGRITY_FAILED", List.of());
+        };
+        ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
+                mapping.type(), mapping.title(), mapping.status(), failure.getMessage(), mapping.code(),
+                correlation("", request), List.of(), mapping.actions());
+        return response(problem, null, false);
     }
 
     /** Converts malformed JSON before it reaches the facade. */
@@ -208,6 +230,12 @@ public final class ApiResourceAuthoringProblemHandler {
                                               List<ApiResourceAuthoringProblemDetail.RecoveryAction> actions) {
         return new Mapping(status, "urn:bloge:problem:" + type, title,
                 "RG.AUTHORING.API_CONNECTION." + code, actions);
+    }
+
+    private static Mapping fixtureMapping(int status, String type, String title, String code,
+                                          List<ApiResourceAuthoringProblemDetail.RecoveryAction> actions) {
+        return new Mapping(status, "urn:bloge:problem:" + type, title,
+                "RG.AUTHORING.FIXTURE_SET." + code, actions);
     }
 
     private static Mapping mapping(int status, String type, String title, String code,

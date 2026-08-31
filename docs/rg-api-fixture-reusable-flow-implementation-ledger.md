@@ -1109,3 +1109,47 @@ Tool/Solution 或对象页完成。
 
 Default Fixture 已闭合到 Resource 复合保存和可复核私有持久化，但用户还不能在独立对象页管理 Fixture，
 也未完成首次 Simulation 与 Reusable Flow/DAG 主路径。累计完成度保守调整为 **49%**，剩余差距 **51%**。
+
+## 29. Iteration 28 — C8 authenticated Fixture discovery and exact read
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 `ApiFixtureSetAuthoringFacade`，直接复用 V012 `ApiFixtureSetCommitStore`，读取 current head、精确
+  immutable revision，并按一个完整 `FixtureSubjectRef` 返回 metadata-only summaries；不存在与 authority
+  损坏使用互斥的 closed failure code。
+- 新增 authenticated `GET /api/authoring/fixture-sets/{fixtureSetId}?revision={revision}` 与
+  `GET /api/authoring/fixture-sets?subjectKind=...&subjectId=...&subjectRevision=...&subjectFingerprint=...`。
+  Scope 只来自 verified integration identity，客户端不能提交 tenant/project/environment。
+- 列表响应只包含 Case id/name；Case input、controls、expected 仅在精确私有 revision 读取中返回。两个入口
+  都返回 `Cache-Control: no-store`，并复用统一 payload-free Authoring Problem Detail。
+- 新增 feature-scoped application configuration；feature enabled 但缺 V012 store 时启动失败关闭。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiFixtureSetAuthoringFacadeTest,ApiFixtureSetAuthoringControllerTest,\
+ApiFixtureSetApplicationConfigurationTest,ApiResourceAuthoringControllerTest,\
+ApiConnectionAuthoringControllerTest test
+
+Tests run: 63, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+随后串行执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8101, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+本切片尚未实现 Fixture standalone PUT/share、Simulation application/runtime、Reusable Flow/DAG 或对象页。
+
+### 当前差距评估
+
+Default Fixture 已能通过标准 authenticated API 被精确读取和按 Subject 发现，但“选择 Case 后模拟并看到
+REAL/MOCKED evidence”的用户闭环尚未开始。累计完成度保守调整为 **51%**，剩余差距 **49%**。
