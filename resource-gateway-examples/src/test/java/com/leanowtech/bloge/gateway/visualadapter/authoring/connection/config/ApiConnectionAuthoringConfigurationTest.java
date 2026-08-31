@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.connection.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionCheckGateway;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
@@ -85,6 +87,34 @@ class ApiConnectionAuthoringConfigurationTest {
                                     ApiConnectionCommand.Auth.none())));
                     assertThat(facade.read(new AuthoringScope("tenant", "project", "dev"), "customer").view())
                             .isEqualTo(saved.view());
+                });
+    }
+
+    @Test
+    void enabledRuntimeUsesAnExplicitGovernedCheckProvider() {
+        DataSource dataSource = readyDataSource();
+        ApiConnectionCheckGateway gateway = request -> new ApiConnectionCheckGateway.Outcome(
+                ApiConnectionCheckResult.Status.BLOCKED, java.time.Instant.parse("2026-08-31T08:00:00Z"), 0,
+                java.util.List.of(new ApiConnectionCheckResult.Stage(
+                        "EGRESS_POLICY", "BLOCKED", "DESTINATION_NOT_ALLOWED")),
+                new ApiConnectionCheckResult.Audit("decision-configuration",
+                        "sha256:" + "e".repeat(64)));
+
+        runtimeRunner(dataSource)
+                .withBean(ApiConnectionCheckGateway.class, () -> gateway)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    ApiConnectionAuthoringFacade facade = context.getBean(ApiConnectionAuthoringFacade.class);
+                    AuthoringScope scope = new AuthoringScope("tenant", "project", "dev");
+                    facade.save(new ApiConnectionAuthoringRequest(scope, "author", "customer",
+                            "check-provider-create", ApiConnectionAuthoringPrecondition.create(),
+                            new ApiConnectionCommand("Customer API", "https://customer.example.com",
+                                    ApiConnectionCommand.Auth.none())));
+
+                    assertThat(facade.check(scope, "author", "customer",
+                            com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand
+                                    .networkOnly()).status())
+                            .isEqualTo(ApiConnectionCheckResult.Status.BLOCKED);
                 });
     }
 

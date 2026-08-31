@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "bloge.connectionCheckResult.v1",
+  "connectionId": "customer-api",
+  "revision": 1,
+  "kind": "NETWORK_ONLY",
+  "status": "REACHABLE",
+  "checkedAt": "2026-08-31T08:00:00Z",
+  "durationMs": 5,
+  "stages": [
+    { "stage": "CONNECT", "status": "PASSED", "code": "CONNECTED" }
+  ],
+  "audit": {
+    "decisionId": "decision-003",
+    "policyFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "payload": { "secret": "forbidden" }
+}

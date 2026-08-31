@@ -965,3 +965,50 @@ Reusable Flow/DAG、Tool/Solution 对象页或 UI acceptance。
 
 Connection 的创建、读取和选择列表已经具备最小后端操作链，但用户目标中的 Fixture/Simulation 与可复用
 多 API DAG 仍未开始形成新 authoring surface。累计完成度保守调整为 **45%**，剩余差距 **55%**。
+
+## 26. Iteration 25 — C6 governed Connection-check boundary
+
+日期：2026-08-31。
+
+### 已完成
+
+- 冻结 `bloge.connectionCheckCommand.v1`：`NETWORK_ONLY` 与 `SAFE_READ` 使用严格 union；未知字段、credential
+  注入和缺失坐标均不进入应用层。
+- 冻结 payload-free `bloge.connectionCheckResult.v1`：只包含 exact Connection revision、总状态、code-only
+  stages、耗时和 egress decision id/policy fingerprint。它不能承载响应 payload 或 credential。
+- 新增 `POST /api/authoring/connections/{connectionId}:check`。适配器复用 trusted integration identity、统一
+  Problem Detail 和 no-store 响应；不接受调用者自报 scope/actor。
+- 新增 `ApiConnectionCheckGateway` 深接口。`NETWORK_ONLY` 只把 trusted scope/actor、exact committed
+  Connection coordinate、validated base URI 和 bounded timeout 交给 provider；provider 负责 destination policy、
+  DNS rebinding、TLS 和 durable egress audit。
+- 默认 provider 明确 fail-closed 为 424，不会因保存或启用 authoring 隐式触网。`SAFE_READ` 在同 Connection
+  READ_ONLY Resource + Simulation authorization/redaction seam 完成前同样返回 424。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,\
+ApiConnectionAuthoringControllerTest,ApiConnectionAuthoringTransportConfigurationTest,\
+ApiConnectionAuthoringConfigurationTest,InMemoryApiConnectionCommitStoreTest,\
+JdbcApiConnectionCommitStoreTest,ApiConnectionAuthorityTest,ApiConnectionSchemaReadinessTest,\
+AuthoringProtocolSchemaTest,IntegrationRequestAuthenticatorTest' test
+
+Tests run: 206, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,065, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该证据证明 wire、exact committed revision lookup、trusted authority、provider injection、payload-free evidence
+和默认 fail-closed 行为；它不证明任何具体 destination 已获准，也不等于 DNS/TLS/网络探测或 SAFE_READ
+已经由 production provider 执行。
+
+### 当前差距评估
+
+Connection 对象的保存、读取、选择与显式 check extension point 已闭合，但默认 egress provider、credential
+provider、Default Fixture、首次 Simulation、Reusable Flow/DAG、Tool/Solution 和对象页仍未完成。累计完成度
+保守调整为 **46%**，剩余差距 **54%**。

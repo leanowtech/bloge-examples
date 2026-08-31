@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -21,6 +23,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
 /** Contract tests for the Slice 0 authoring wire schemas and golden examples. */
@@ -31,6 +34,8 @@ class AuthoringProtocolSchemaTest {
 
     private static final Map<String, String> FAMILIES = Map.ofEntries(
             Map.entry("connection", "connection-command-v1.schema.json"),
+            Map.entry("check-command", "connection-check-command-v1.schema.json"),
+            Map.entry("check-result", "connection-check-result-v1.schema.json"),
             Map.entry("api-resource", "api-resource-command-v1.schema.json"),
             Map.entry("api-resource-receipt", "api-resource-receipt-v1.schema.json"),
             Map.entry("openapi", "openapi-preview-v1.schema.json"),
@@ -111,6 +116,45 @@ class AuthoringProtocolSchemaTest {
         assertThat(summary.at("/properties/subject/$ref").asText())
                 .isEqualTo("common-v1.schema.json#/$defs/exactSubjectRef");
         assertThat(summary.toString()).doesNotContain("input", "material", "fixtureAssetId", "replayId", "credential");
+    }
+
+    @Test
+    void connectionCheckKindsAndPayloadFreeEvidenceRoundTripAgainstSchemas() throws Exception {
+        Path commandPath = SCHEMA_ROOT.resolve("connection-check-command-v1.schema.json");
+        Path resultPath = SCHEMA_ROOT.resolve("connection-check-result-v1.schema.json");
+        ApiConnectionCheckCommand network = ApiConnectionCheckCommand.networkOnly();
+        ApiConnectionCheckCommand safeRead = ApiConnectionCheckCommand.safeRead(
+                new ApiResourceSpec.ResourceRef("API_RESOURCE", "customer.get-profile", 3,
+                        "sha256:" + "a".repeat(64)),
+                MAPPER.createObjectNode().put("customerId", "customer-1001"), "Verify read-only access");
+        for (ApiConnectionCheckCommand command : List.of(network, safeRead)) {
+            JsonNode wire = MAPPER.valueToTree(command);
+            assertThat(validationErrors(read(commandPath), wire, commandPath)).as(wire.toString()).isEmpty();
+            assertThat(MAPPER.treeToValue(wire, ApiConnectionCheckCommand.class).kind())
+                    .isEqualTo(command.kind());
+        }
+        assertThat(safeRead.toString()).doesNotContain("customer-1001");
+
+        ApiConnectionCheckResult result = new ApiConnectionCheckResult(
+                ApiConnectionCheckResult.SCHEMA_VERSION, "customer-api", 3, "NETWORK_ONLY",
+                ApiConnectionCheckResult.Status.REACHABLE, java.time.Instant.parse("2026-08-31T08:00:00Z"), 8,
+                List.of(new ApiConnectionCheckResult.Stage("EGRESS_POLICY", "PASSED", "ALLOWLIST_MATCH"),
+                        new ApiConnectionCheckResult.Stage("DNS", "PASSED", "RESOLVED"),
+                        new ApiConnectionCheckResult.Stage("TLS", "PASSED", "HANDSHAKE_OK"),
+                        new ApiConnectionCheckResult.Stage("CONNECT", "PASSED", "CONNECTED")),
+                new ApiConnectionCheckResult.Audit("decision-01", "sha256:" + "b".repeat(64)));
+        ObjectMapper temporalMapper = MAPPER.copy().findAndRegisterModules();
+        JsonNode wire = temporalMapper.valueToTree(result);
+        assertThat(validationErrors(read(resultPath), wire, resultPath)).as(wire.toString()).isEmpty();
+        assertThat(wire.toString()).doesNotContain("payload", "token", "password", "secret");
+        assertThat(temporalMapper.treeToValue(wire, ApiConnectionCheckResult.class)).isEqualTo(result);
+        assertThatThrownBy(() -> new ApiConnectionCheckResult(
+                ApiConnectionCheckResult.SCHEMA_VERSION, "customer-api", 3, "NETWORK_ONLY",
+                ApiConnectionCheckResult.Status.REACHABLE, java.time.Instant.parse("2026-08-31T08:00:00Z"), 8,
+                List.of(new ApiConnectionCheckResult.Stage(
+                        "EGRESS_POLICY", "BLOCKED", "DESTINATION_NOT_ALLOWED")),
+                new ApiConnectionCheckResult.Audit("decision-02", "sha256:" + "c".repeat(64))))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiC
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
@@ -39,6 +41,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -110,6 +113,97 @@ class ApiConnectionAuthoringControllerTest {
                 .andExpect(jsonPath("$[0].password").doesNotExist());
 
         verify(facade).list(new AuthoringScope("tenant-a", "project-a", "test"));
+    }
+
+    @Test
+    void networkCheckUsesTrustedAuthorityAndReturnsPayloadFreeEvidence() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+        when(facade.check(any(), any(), any(), any())).thenReturn(new ApiConnectionCheckResult(
+                ApiConnectionCheckResult.SCHEMA_VERSION, "customer", 1, "NETWORK_ONLY",
+                ApiConnectionCheckResult.Status.REACHABLE, Instant.parse("2026-08-31T08:00:00Z"), 7,
+                List.of(new ApiConnectionCheckResult.Stage("EGRESS_POLICY", "PASSED", "ALLOWLIST_MATCH"),
+                        new ApiConnectionCheckResult.Stage("DNS", "PASSED", "RESOLVED"),
+                        new ApiConnectionCheckResult.Stage("TLS", "PASSED", "HANDSHAKE_OK"),
+                        new ApiConnectionCheckResult.Stage("CONNECT", "PASSED", "CONNECTED")),
+                new ApiConnectionCheckResult.Audit("decision-01", "sha256:" + "a".repeat(64))));
+
+        mvc(facade).perform(post("/api/authoring/connections/customer:check")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kind\":\"NETWORK_ONLY\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.schemaVersion").value("bloge.connectionCheckResult.v1"))
+                .andExpect(jsonPath("$.connectionId").value("customer"))
+                .andExpect(jsonPath("$.status").value("REACHABLE"))
+                .andExpect(jsonPath("$.stages[3].stage").value("CONNECT"))
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.payload").doesNotExist());
+
+        verify(facade).check(new AuthoringScope("tenant-a", "project-a", "test"),
+                "author", "customer", ApiConnectionCheckCommand.networkOnly());
+    }
+
+    @Test
+    void malformedCheckBodyIsRejectedBeforeFacadeAccess() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+
+        mvc(facade).perform(post("/api/authoring/connections/customer:check")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kind\":\"NETWORK_ONLY\",\"credential\":\"forbidden\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.API_CONNECTION.REQUEST_INVALID"));
+
+        verify(facade, never()).check(any(), any(), any(), any());
+    }
+
+    @Test
+    void incompleteSafeReadCheckIsRejectedBeforeFacadeAccess() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+
+        mvc(facade).perform(post("/api/authoring/connections/customer:check")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kind\":\"SAFE_READ\",\"input\":null,\"justification\":\"Review\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.API_CONNECTION.REQUEST_INVALID"));
+
+        verify(facade, never()).check(any(), any(), any(), any());
+    }
+
+    @Test
+    void missingCheckContentTypeUsesTheUnifiedProblemContract() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+
+        mvc(facade).perform(post("/api/authoring/connections/customer:check")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .content("{\"kind\":\"NETWORK_ONLY\"}"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code")
+                        .value("RG.AUTHORING.API_CONNECTION.CONTENT_TYPE_REQUIRED"));
+
+        verify(facade, never()).check(any(), any(), any(), any());
+    }
+
+    @Test
+    void unavailableCheckProviderUsesAStableCapabilityProblem() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+        when(facade.check(any(), any(), any(), any())).thenThrow(
+                new ApiConnectionAuthoringFailure(ApiConnectionAuthoringFailure.Code.CHECK_UNAVAILABLE));
+
+        mvc(facade).perform(post("/api/authoring/connections/customer:check")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"kind\":\"NETWORK_ONLY\"}"))
+                .andExpect(status().isFailedDependency())
+                .andExpect(jsonPath("$.code")
+                        .value("RG.AUTHORING.API_CONNECTION.CHECK_UNAVAILABLE"));
     }
 
     @Test

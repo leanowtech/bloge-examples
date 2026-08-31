@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/connection-check-result-v1.schema.json",
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "properties": {
+        "stage": { "enum": ["EGRESS_POLICY", "DNS", "TLS", "CONNECT", "SAFE_READ"] },
+        "status": { "enum": ["PASSED", "FAILED", "BLOCKED", "NOT_RUN"] },
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$", "maxLength": 128 }
+      },
+      "required": ["stage", "status", "code"],
+      "additionalProperties": false
+    },
+    "audit": {
+      "type": "object",
+      "properties": {
+        "decisionId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" }
+      },
+      "required": ["decisionId", "policyFingerprint"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.connectionCheckResult.v1" },
+    "connectionId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "kind": { "enum": ["NETWORK_ONLY", "SAFE_READ"] },
+    "status": { "enum": ["REACHABLE", "UNREACHABLE", "BLOCKED"] },
+    "checkedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+    "stages": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/stage" } },
+    "audit": { "$ref": "#/$defs/audit" }
+  },
+  "required": ["schemaVersion", "connectionId", "revision", "kind", "status", "checkedAt", "durationMs", "stages", "audit"],
+  "additionalProperties": false
+}

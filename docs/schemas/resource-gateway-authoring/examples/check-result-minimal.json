@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "bloge.connectionCheckResult.v1",
+  "connectionId": "customer-api",
+  "revision": 1,
+  "kind": "NETWORK_ONLY",
+  "status": "BLOCKED",
+  "checkedAt": "2026-08-31T08:00:00Z",
+  "durationMs": 0,
+  "stages": [
+    { "stage": "EGRESS_POLICY", "status": "BLOCKED", "code": "DESTINATION_NOT_ALLOWED" }
+  ],
+  "audit": {
+    "decisionId": "decision-001",
+    "policyFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "bloge.connectionCheckResult.v1",
+  "connectionId": "customer-api",
+  "revision": 3,
+  "kind": "NETWORK_ONLY",
+  "status": "REACHABLE",
+  "checkedAt": "2026-08-31T08:00:00Z",
+  "durationMs": 18,
+  "stages": [
+    { "stage": "EGRESS_POLICY", "status": "PASSED", "code": "ALLOWLIST_MATCH" },
+    { "stage": "DNS", "status": "PASSED", "code": "RESOLVED" },
+    { "stage": "TLS", "status": "PASSED", "code": "HANDSHAKE_OK" },
+    { "stage": "CONNECT", "status": "PASSED", "code": "CONNECTED" }
+  ],
+  "audit": {
+    "decisionId": "decision-002",
+    "policyFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

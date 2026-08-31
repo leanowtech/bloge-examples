@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiC
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -26,6 +28,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -80,6 +83,34 @@ public final class ApiConnectionAuthoringController {
                 .body(facade.list(trustedScope(context)));
     }
 
+    /** Runs an explicit governed check without returning credentials or business payloads. */
+    @PostMapping(path = "/{connectionId}:check", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiConnectionCheckResult> check(@PathVariable String connectionId,
+                                                           @RequestHeader HttpHeaders headers,
+                                                           @RequestBody JsonNode commandWire,
+                                                           HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_API_CONNECTION_CHECK, request);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(facade.check(trustedScope(context), context.actorId(), connectionId,
+                        checkCommand(commandWire, context.correlationId())));
+    }
+
+    /** Authenticates before rejecting a missing check-command content type. */
+    @PostMapping(path = "/{connectionId}:check", consumes = MediaType.ALL_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ApiConnectionCheckResult> unsupportedCheckMedia(
+            @RequestHeader HttpHeaders headers, HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_API_CONNECTION_CHECK, request);
+        throw invalid("RG.AUTHORING.API_CONNECTION.CONTENT_TYPE_REQUIRED",
+                "API Connection check commands must use application/json.", context.correlationId(), 415,
+                "urn:bloge:problem:unsupported-authoring-media");
+    }
+
     /** Creates or updates one Connection under an explicit HTTP precondition. */
     @PutMapping(path = "/{connectionId}", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -119,6 +150,18 @@ public final class ApiConnectionAuthoringController {
     private ApiConnectionCommand command(JsonNode wire, String correlationId) {
         try {
             ApiConnectionCommand command = strictMapper.treeToValue(wire, ApiConnectionCommand.class);
+            if (command == null) throw invalidRequest(correlationId);
+            return command;
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (RuntimeException | java.io.IOException failure) {
+            throw invalidRequest(correlationId);
+        }
+    }
+
+    private ApiConnectionCheckCommand checkCommand(JsonNode wire, String correlationId) {
+        try {
+            ApiConnectionCheckCommand command = strictMapper.treeToValue(wire, ApiConnectionCheckCommand.class);
             if (command == null) throw invalidRequest(correlationId);
             return command;
         } catch (IntegrationProblemException failure) {

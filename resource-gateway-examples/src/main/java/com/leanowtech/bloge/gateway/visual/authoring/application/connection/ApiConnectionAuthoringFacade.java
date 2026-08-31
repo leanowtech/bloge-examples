@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
@@ -43,6 +45,7 @@ public final class ApiConnectionAuthoringFacade {
 
     private final ApiConnectionAuthoringStore store;
     private final ApiConnectionDecisions decisions;
+    private final ApiConnectionCheckGateway checkGateway;
 
     /**
      * Creates a facade with one lifecycle-complete store and pure decisions.
@@ -51,8 +54,16 @@ public final class ApiConnectionAuthoringFacade {
      */
     public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store,
                                        ApiConnectionDecisions decisions) {
+        this(store, decisions, ApiConnectionCheckGateway.unavailable());
+    }
+
+    /** Creates a facade with an explicit governed Connection-check provider. */
+    public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store,
+                                        ApiConnectionDecisions decisions,
+                                        ApiConnectionCheckGateway checkGateway) {
         this.store = Objects.requireNonNull(store, "store");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        this.checkGateway = Objects.requireNonNull(checkGateway, "checkGateway");
     }
 
     /**
@@ -134,6 +145,55 @@ public final class ApiConnectionAuthoringFacade {
                     .map(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection::view)
                     .sorted(java.util.Comparator.comparing(ApiConnectionView::connectionId))
                     .toList();
+        } catch (RuntimeException failure) {
+            throw mapFailure(failure);
+        }
+    }
+
+    /**
+     * Runs one explicit governed check against an exact committed Connection.
+     *
+     * <p>NETWORK_ONLY carries no credential or business payload. SAFE_READ is
+     * frozen in the wire contract but remains unavailable until the Resource
+     * execution path can enforce same-Connection READ_ONLY authority.</p>
+     *
+     * @param scope trusted tenant/project/environment scope
+     * @param actorId trusted actor identity
+     * @param connectionId stable Connection identifier
+     * @param command explicit check command
+     * @return payload-free check evidence
+     */
+    public ApiConnectionCheckResult check(AuthoringScope scope, String actorId, String connectionId,
+                                           ApiConnectionCheckCommand command) {
+        if (scope == null || !validIdentifier(actorId, 256) || !validIdentifier(connectionId, 128)
+                || command == null) {
+            throw failure(ApiConnectionAuthoringFailure.Code.VALIDATION);
+        }
+        if (!(command instanceof ApiConnectionCheckCommand.NetworkOnly)) {
+            throw failure(ApiConnectionAuthoringFailure.Code.CHECK_UNAVAILABLE);
+        }
+        try {
+            var stored = store.findHead(scope, connectionId)
+                    .orElseThrow(() -> failure(ApiConnectionAuthoringFailure.Code.NOT_FOUND));
+            ApiConnectionView view = stored.view();
+            int timeoutMs = view.defaults() == null || view.defaults().timeoutMs() == null
+                    ? 5_000 : view.defaults().timeoutMs();
+            ApiConnectionCheckGateway.Outcome outcome = checkGateway.networkOnly(
+                    new ApiConnectionCheckGateway.Request(scope, actorId, connectionId, view.revision(),
+                            java.net.URI.create(view.baseUrl()), java.time.Duration.ofMillis(timeoutMs)));
+            return new ApiConnectionCheckResult(ApiConnectionCheckResult.SCHEMA_VERSION,
+                    connectionId, view.revision(), command.kind(), outcome.status(), outcome.checkedAt(),
+                    outcome.durationMs(), outcome.stages(), outcome.audit());
+        } catch (ApiConnectionAuthoringFailure failure) {
+            throw failure;
+        } catch (ApiConnectionCheckGatewayException failure) {
+            throw switch (failure.code()) {
+                case CAPABILITY_UNAVAILABLE -> failure(ApiConnectionAuthoringFailure.Code.CHECK_UNAVAILABLE);
+                case INTEGRITY -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
+                case PERSISTENCE -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+            };
+        } catch (IllegalArgumentException failure) {
+            throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
         } catch (RuntimeException failure) {
             throw mapFailure(failure);
         }

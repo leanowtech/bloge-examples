@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/connection-check-command-v1.schema.json",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": { "kind": { "const": "NETWORK_ONLY" } },
+      "required": ["kind"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "SAFE_READ" },
+        "resource": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" },
+        "input": {},
+        "justification": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      },
+      "required": ["kind", "resource", "input", "justification"],
+      "additionalProperties": false
+    }
+  ]
+}

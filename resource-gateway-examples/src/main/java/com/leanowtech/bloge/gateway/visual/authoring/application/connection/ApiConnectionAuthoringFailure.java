@@ -8,7 +8,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 public final class ApiConnectionAuthoringFailure extends RuntimeException {
     /** Stable categories intentionally independent of a transport status map. */
     public enum Code {
-        CAPABILITY_UNAVAILABLE, VALIDATION, NOT_FOUND, BUSY, LEASE_LOST, CONFLICT,
+        CAPABILITY_UNAVAILABLE, CHECK_UNAVAILABLE, VALIDATION, NOT_FOUND, BUSY, LEASE_LOST, CONFLICT,
         CAS_MISMATCH, INTEGRITY, PERSISTENCE
     }
 
@@ -37,6 +37,7 @@ public final class ApiConnectionAuthoringFailure extends RuntimeException {
     private static String message(Code code) {
         return switch (code) {
             case CAPABILITY_UNAVAILABLE -> "connection authentication capability is unavailable";
+            case CHECK_UNAVAILABLE -> "connection check capability is unavailable";
             case VALIDATION -> "connection authoring request is invalid";
             case NOT_FOUND -> "connection revision was not found";
             case BUSY -> "connection command is busy";

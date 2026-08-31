@@ -1,0 +1,11 @@
+{
+  "kind": "SAFE_READ",
+  "resource": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "input": { "customerId": "customer-1001" },
+  "justification": "Verify the explicit read-only customer profile operation"
+}

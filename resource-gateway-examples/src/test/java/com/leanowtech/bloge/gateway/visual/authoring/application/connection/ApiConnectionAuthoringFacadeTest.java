@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
@@ -18,6 +20,7 @@ import java.time.Instant;
 import java.lang.reflect.Constructor;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -87,6 +90,85 @@ class ApiConnectionAuthoringFacadeTest {
         assertThat(facade.list(otherScope))
                 .extracting(ApiConnectionView::connectionId)
                 .containsExactly("hidden");
+    }
+
+    @Test
+    void networkCheckUsesTheExactCommittedConnectionAndPayloadFreeGateway() {
+        var store = new InMemoryApiConnectionCommitStore(Clock.systemUTC(),
+                new ApiConnectionDecisions(), java.time.Duration.ofSeconds(30), JSON);
+        var captured = new java.util.concurrent.atomic.AtomicReference<ApiConnectionCheckGateway.Request>();
+        ApiConnectionCheckGateway gateway = request -> {
+            captured.set(request);
+            return new ApiConnectionCheckGateway.Outcome(
+                    ApiConnectionCheckResult.Status.REACHABLE, Instant.parse("2026-08-31T08:00:00Z"), 12,
+                    List.of(
+                            new ApiConnectionCheckResult.Stage("EGRESS_POLICY", "PASSED", "ALLOWLIST_MATCH"),
+                            new ApiConnectionCheckResult.Stage("DNS", "PASSED", "RESOLVED"),
+                            new ApiConnectionCheckResult.Stage("TLS", "PASSED", "HANDSHAKE_OK"),
+                            new ApiConnectionCheckResult.Stage("CONNECT", "PASSED", "CONNECTED")),
+                    new ApiConnectionCheckResult.Audit("decision-01", "sha256:" + "a".repeat(64)));
+        };
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), gateway);
+        facade.save(request("author", "customer", "check-create", ApiConnectionAuthoringPrecondition.create(),
+                command("Customer API")));
+
+        ApiConnectionCheckResult result = facade.check(SCOPE, "author", "customer",
+                ApiConnectionCheckCommand.networkOnly());
+
+        assertThat(result.connectionId()).isEqualTo("customer");
+        assertThat(result.revision()).isEqualTo(1);
+        assertThat(result.kind()).isEqualTo("NETWORK_ONLY");
+        assertThat(result.status()).isEqualTo(ApiConnectionCheckResult.Status.REACHABLE);
+        assertThat(result.stages()).extracting(ApiConnectionCheckResult.Stage::stage)
+                .containsExactly("EGRESS_POLICY", "DNS", "TLS", "CONNECT");
+        assertThat(captured.get().scope()).isEqualTo(SCOPE);
+        assertThat(captured.get().actorId()).isEqualTo("author");
+        assertThat(captured.get().connectionId()).isEqualTo("customer");
+        assertThat(captured.get().revision()).isEqualTo(1);
+        assertThat(captured.get().baseUri()).hasToString(BASE_URL);
+        assertThat(captured.get().timeout()).isEqualTo(java.time.Duration.ofMillis(5000));
+    }
+
+    @Test
+    void safeReadAndMissingNetworkAuthorityFailBeforeAnyEgress() {
+        var facade = facade();
+        facade.save(request("author", "customer", "check-seed", ApiConnectionAuthoringPrecondition.create(),
+                command("Customer API")));
+
+        assertThatThrownBy(() -> facade.check(SCOPE, "author", "customer",
+                ApiConnectionCheckCommand.networkOnly()))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.CHECK_UNAVAILABLE);
+        assertThatThrownBy(() -> facade.check(SCOPE, "author", "customer",
+                ApiConnectionCheckCommand.safeRead(
+                        new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec.ResourceRef(
+                                "API_RESOURCE", "customer.get", 1, "sha256:" + "b".repeat(64)),
+                        JSON.createObjectNode().put("id", "customer-1"), "Operator requested connectivity check")))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.CHECK_UNAVAILABLE);
+    }
+
+    @Test
+    void missingConnectionAndInvalidGatewayEvidenceFailClosed() {
+        ApiConnectionCheckGateway gateway = mock(ApiConnectionCheckGateway.class);
+        var store = new InMemoryApiConnectionCommitStore(Clock.systemUTC(),
+                new ApiConnectionDecisions(), java.time.Duration.ofSeconds(30), JSON);
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions(), gateway);
+
+        assertThatThrownBy(() -> facade.check(SCOPE, "author", "missing",
+                ApiConnectionCheckCommand.networkOnly()))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.NOT_FOUND);
+        verify(gateway, never()).networkOnly(any());
+
+        facade.save(request("author", "customer", "invalid-evidence-seed",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API")));
+        org.mockito.Mockito.when(gateway.networkOnly(any()))
+                .thenThrow(new IllegalArgumentException("unsafe provider detail"));
+        assertThatThrownBy(() -> facade.check(SCOPE, "author", "customer",
+                ApiConnectionCheckCommand.networkOnly()))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.INTEGRITY);
     }
 
     @Test

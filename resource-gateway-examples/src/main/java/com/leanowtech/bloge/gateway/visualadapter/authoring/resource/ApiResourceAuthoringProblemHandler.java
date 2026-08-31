@@ -180,6 +180,8 @@ public final class ApiResourceAuthoringProblemHandler {
         return switch (code) {
             case CAPABILITY_UNAVAILABLE -> connectionMapping(424, "authoring-capability-unavailable",
                     "API Connection authentication is unavailable", "CAPABILITY_UNAVAILABLE", List.of());
+            case CHECK_UNAVAILABLE -> connectionMapping(424, "authoring-capability-unavailable",
+                    "API Connection check is unavailable", "CHECK_UNAVAILABLE", List.of());
             case VALIDATION -> connectionMapping(422, "authoring-validation",
                     "API Connection cannot be saved", "VALIDATION_FAILED",
                     List.of(action("OPEN_FIELD", "/")));

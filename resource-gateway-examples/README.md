@@ -151,6 +151,18 @@ gate completed at **186/186 green** with no failures, errors or skips. Explicit 
 a separate governed-egress slice; this list endpoint does not claim that a Connection is reachable. The post-C5
 serial `clean verify` completed with `Tests run: 8,055; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+J3-C6 freezes `bloge.connectionCheckCommand.v1` and `bloge.connectionCheckResult.v1` and exposes
+`POST /api/authoring/connections/{connectionId}:check`. `NETWORK_ONLY` resolves one exact committed Connection and
+passes only trusted scope/actor, Connection id/revision, validated base URI and bounded timeout to an explicit
+`ApiConnectionCheckGateway`; credentials and business payloads are absent from that seam. Results contain only a
+reachable/unreachable/blocked status, code-only stages and an exact egress decision identifier/fingerprint. The
+default gateway is fail-closed with 424, so enabling authoring never causes an implicit outbound call. Hosts may
+install one governed provider with destination authorization, DNS-rebinding resistance, TLS policy and durable
+audit. `SAFE_READ` is frozen in the command schema but returns 424 until the same-Connection READ_ONLY Resource
+execution path can enforce simulation-equivalent authorization and redaction. The focused protocol/application/
+transport/authority gate completed at **206/206 green** with no failures, errors or skips. The post-C6 serial
+`clean verify` completed with `Tests run: 8,065; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer
