@@ -68,18 +68,18 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
         }
     }
 
-    @Override public Optional<ReusableFlowDraft> findHead(AuthoringScope scope, String flowId) {
+    @Override public Optional<ReusableFlowStoredDraft> findHeadStored(AuthoringScope scope, String flowId) {
         if (!validRead(scope, flowId)) return Optional.empty();
         try {
             Optional<HeadRow> head = head(scope, flowId, false);
             if (head.isEmpty()) return Optional.empty();
             Row row = revisionRow(scope, flowId, head.get().revision())
                     .orElseThrow(() -> new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY));
-            Stored stored = decode(row);
+            ReusableFlowStoredDraft stored = decode(row);
             if (!head.get().matches(stored)) {
                 throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
             }
-            return Optional.of(stored.draft());
+            return Optional.of(stored);
         } catch (ReusableFlowFailure failure) {
             throw failure;
         } catch (RuntimeException failure) {
@@ -87,7 +87,7 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
         }
     }
 
-    @Override public Optional<ReusableFlowDraft> findRevision(
+    @Override public Optional<ReusableFlowStoredDraft> findRevisionStored(
             AuthoringScope scope, String flowId, int revision) {
         if (!validRead(scope, flowId) || revision < 1) return Optional.empty();
         try {
@@ -99,7 +99,27 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
                        AND flow_id=? AND revision=?
                     """, rowMapper(scope, flowId), scope.tenantId(), scope.projectId(),
                     scope.environmentId(), flowId, revision);
-            return exact(rows).map(this::decode).map(Stored::draft);
+            return exact(rows).map(this::decode);
+        } catch (ReusableFlowFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
+        }
+    }
+
+    @Override public Optional<ReusableFlowStoredDraft> findRevisionByStrongEtag(
+            AuthoringScope scope, String flowId, String strongEtag) {
+        if (!validRead(scope, flowId) || !ReusableFlowStrongEtag.isValid(strongEtag)) return Optional.empty();
+        try {
+            List<Row> rows = jdbc.query("""
+                    SELECT revision, draft_id, content_fingerprint, draft_json,
+                           receipt_json, strong_etag
+                      FROM rg_authoring_flow_revisions
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                       AND flow_id=? AND strong_etag=?
+                    """, rowMapper(scope, flowId), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), flowId, strongEtag);
+            return exact(rows).map(this::decode);
         } catch (ReusableFlowFailure failure) {
             throw failure;
         } catch (RuntimeException failure) {
@@ -136,7 +156,7 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
         }
         Row row = revisionRow(intent.scope(), intent.flowId(), command.committedRevision())
                 .orElseThrow(() -> new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY));
-        Stored stored = decode(row);
+        ReusableFlowStoredDraft stored = decode(row);
         ReusableFlowSaveReceipt commandReceipt = decode(command.receiptJson(), ReusableFlowSaveReceipt.class);
         if (!commandReceipt.equals(stored.receipt()) || !command.strongEtag().equals(stored.strongEtag())) {
             throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
@@ -245,17 +265,17 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
                 expected.mode(), expected.revision(), revision, encode(receipt), strongEtag);
     }
 
-    private Stored decode(Row row) {
+    private ReusableFlowStoredDraft decode(Row row) {
         ReusableFlowDraft draft = decode(row.draftJson(), ReusableFlowDraft.class);
         ReusableFlowSaveReceipt receipt = decode(row.receiptJson(), ReusableFlowSaveReceipt.class);
         if (!row.flowId().equals(draft.flowId()) || row.revision() != draft.revision()
                 || !row.draftId().equals(draft.draftId())
                 || !row.contentFingerprint().equals(draft.fingerprint())
                 || !receipt.flowId().equals(draft.flowId()) || !receipt.draft().equals(draft.subject())
-                || !strongEtag(row.strongEtag())) {
+                || !ReusableFlowStrongEtag.isValid(row.strongEtag())) {
             throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
         }
-        return new Stored(draft, receipt, row.strongEtag());
+        return new ReusableFlowStoredDraft(draft, receipt, row.strongEtag());
     }
 
     private static ReusableFlowDraft draft(ReusableFlowSaveIntent intent, String draftId, int revision) {
@@ -323,16 +343,6 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
         return rs.wasNull() ? null : value;
     }
 
-    private static boolean strongEtag(String value) {
-        if (value == null || value.length() < 3 || value.length() > 258
-                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') return false;
-        for (int index = 1; index < value.length() - 1; index++) {
-            char character = value.charAt(index);
-            if (character == '"' || character == '\\' || character < 0x21 || character > 0x7e) return false;
-        }
-        return true;
-    }
-
     private static boolean validRead(AuthoringScope scope, String flowId) {
         return scope != null && flowId != null && flowId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     }
@@ -349,7 +359,7 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
 
     private record ExpectedColumns(String mode, Long revision) { }
     private record HeadRow(int revision, String draftId, String contentFingerprint, String strongEtag) {
-        private boolean matches(Stored stored) {
+        private boolean matches(ReusableFlowStoredDraft stored) {
             return revision == stored.draft().revision()
                     && draftId.equals(stored.draft().draftId())
                     && contentFingerprint.equals(stored.draft().fingerprint())
@@ -361,5 +371,4 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
     private record Row(AuthoringScope scope, String flowId, int revision, String draftId,
                        String contentFingerprint, String draftJson, String receiptJson,
                        String strongEtag) { }
-    private record Stored(ReusableFlowDraft draft, ReusableFlowSaveReceipt receipt, String strongEtag) { }
 }

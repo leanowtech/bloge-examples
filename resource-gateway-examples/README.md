@@ -262,6 +262,22 @@ Flow Fixture simulation, or object page; those remain the next vertical slices. 
 readiness/schema gate passed `35/35` with no failures, errors, or skips. The serial `clean verify` completed with
 `Tests run: 8,143; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+The authenticated Flow authoring slice now exposes that authority through
+`PUT /api/authoring/flows/{flowId}` and revision-exact
+`GET /api/authoring/flows/{flowId}?revision={revision}`. Trusted tenant, project, environment, and actor come
+only from `IntegrationRequestAuthenticator`; self-reported scope is rejected. Create uses
+`If-None-Match: *`, update uses one opaque strong `If-Match`, and every save requires a bounded
+`Idempotency-Key`. Successful saves return the exact persisted receipt, strong ETag, and
+`Idempotency-Replayed`; reads and writes are no-store. Historical ETag resolution preserves committed replay
+after the head advances, while a new command using the same stale ETag fails CAS. The production catalog
+adapter resolves only exact committed API Resource revision/fingerprint coordinates; immutable
+`FLOW_VERSION` publication remains fail-closed until its authority is implemented. The feature-scoped
+application configuration is disabled by default and fails startup when the Resource authority or Flow draft
+store is missing. The focused compiler/module/JDBC/readiness/catalog/configuration/controller/schema gate is
+**43/43 green** with no failures, errors, or skips. The serial `clean verify` completed with
+`Tests run: 8,151; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`. Immutable Flow publication,
+whole-flow Fixture simulation, and Tool/Solution object pages remain subsequent vertical slices.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

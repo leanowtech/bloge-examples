@@ -12,7 +12,7 @@ import java.util.function.Supplier;
 /** Thread-safe reference implementation of the complete Flow draft save authority. */
 public final class InMemoryReusableFlowDraftStore implements ReusableFlowDraftStore {
     private final Map<FlowKey, ReusableFlowSaveResult> heads = new HashMap<>();
-    private final Map<RevisionKey, ReusableFlowDraft> history = new HashMap<>();
+    private final Map<RevisionKey, ReusableFlowStoredDraft> history = new HashMap<>();
     private final Map<CommandKey, Completion> commands = new HashMap<>();
     private final Supplier<String> identifierFactory;
 
@@ -53,20 +53,31 @@ public final class InMemoryReusableFlowDraftStore implements ReusableFlowDraftSt
         ReusableFlowSaveResult result = new ReusableFlowSaveResult(
                 draft, receipt, "\"" + nextIdentifier() + "\"", false);
         heads.put(flowKey, result);
-        history.put(new RevisionKey(intent.scope(), intent.flowId(), revision), draft);
+        history.put(new RevisionKey(intent.scope(), intent.flowId(), revision), stored(result));
         commands.put(commandKey, new Completion(intent.requestFingerprint(), intent.expectedRevision(), result));
         return result;
     }
 
-    @Override public synchronized Optional<ReusableFlowDraft> findHead(AuthoringScope scope, String flowId) {
+    @Override public synchronized Optional<ReusableFlowStoredDraft> findHeadStored(
+            AuthoringScope scope, String flowId) {
         ReusableFlowSaveResult result = heads.get(new FlowKey(scope, flowId));
-        return result == null ? Optional.empty() : Optional.of(result.draft());
+        return result == null ? Optional.empty() : Optional.of(stored(result));
     }
 
-    @Override public synchronized Optional<ReusableFlowDraft> findRevision(
+    @Override public synchronized Optional<ReusableFlowStoredDraft> findRevisionStored(
             AuthoringScope scope, String flowId, int revision) {
         if (scope == null || flowId == null || flowId.isBlank() || revision < 1) return Optional.empty();
         return Optional.ofNullable(history.get(new RevisionKey(scope, flowId, revision)));
+    }
+
+    @Override public synchronized Optional<ReusableFlowStoredDraft> findRevisionByStrongEtag(
+            AuthoringScope scope, String flowId, String strongEtag) {
+        if (scope == null || flowId == null || flowId.isBlank() || strongEtag == null) return Optional.empty();
+        return history.entrySet().stream()
+                .filter(entry -> entry.getKey().scope().equals(scope)
+                        && entry.getKey().flowId().equals(flowId)
+                        && entry.getValue().strongEtag().equals(strongEtag))
+                .map(Map.Entry::getValue).findFirst();
     }
 
     private static void checkExpected(ReusableFlowSaveResult current, ExpectedRevision expected) {
@@ -82,6 +93,10 @@ public final class InMemoryReusableFlowDraftStore implements ReusableFlowDraftSt
             throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
         }
         return value;
+    }
+
+    private static ReusableFlowStoredDraft stored(ReusableFlowSaveResult result) {
+        return new ReusableFlowStoredDraft(result.draft(), result.receipt(), result.strongEtag());
     }
 
     private record FlowKey(AuthoringScope scope, String flowId) { }

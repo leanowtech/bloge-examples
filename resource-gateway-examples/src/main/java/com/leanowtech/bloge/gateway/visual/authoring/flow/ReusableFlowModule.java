@@ -42,6 +42,38 @@ public final class ReusableFlowModule {
         return store.save(intent);
     }
 
+    /** Resolves a strong-validator precondition then compiles and saves one exact intent. */
+    public ReusableFlowSaveResult save(AuthoringScope scope, String actorId, String flowId,
+                                       ReusableFlowPrecondition precondition, String idempotencyKey,
+                                       ReusableFlowCommand command) {
+        Objects.requireNonNull(precondition, "precondition");
+        ExpectedRevision expected;
+        if (precondition instanceof ReusableFlowPrecondition.Create) {
+            expected = ExpectedRevision.create();
+        } else {
+            String strongEtag = ((ReusableFlowPrecondition.MatchStrongEtag) precondition).strongEtag();
+            Optional<ReusableFlowStoredDraft> prior = store.findRevisionByStrongEtag(scope, flowId, strongEtag);
+            if (prior.isEmpty()) {
+                ReusableFlowFailure.Code code = store.findHeadStored(scope, flowId).isEmpty()
+                        ? ReusableFlowFailure.Code.NOT_FOUND : ReusableFlowFailure.Code.CAS_MISMATCH;
+                throw new ReusableFlowFailure(code);
+            }
+            expected = ExpectedRevision.match(prior.get().draft().revision());
+        }
+        return save(scope, actorId, flowId, expected, idempotencyKey, command);
+    }
+
+    /** Reads the current committed draft authority in one trusted scope. */
+    public Optional<ReusableFlowStoredDraft> findHeadStored(AuthoringScope scope, String flowId) {
+        return store.findHeadStored(scope, flowId);
+    }
+
+    /** Reads one exact committed draft authority in one trusted scope. */
+    public Optional<ReusableFlowStoredDraft> findRevisionStored(
+            AuthoringScope scope, String flowId, int revision) {
+        return store.findRevisionStored(scope, flowId, revision);
+    }
+
     /** Reads the current committed draft in one trusted scope. */
     public Optional<ReusableFlowDraft> findHead(AuthoringScope scope, String flowId) {
         return store.findHead(scope, flowId);

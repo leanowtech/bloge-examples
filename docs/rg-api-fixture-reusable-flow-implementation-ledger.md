@@ -1375,3 +1375,57 @@ Flow Draft 已具有生产 JDBC revision/head/CAS/idempotency authority，但尚
 认证 PUT/GET、immutable Flow Version publication、whole-flow Fixture simulation 或 Tool/Solution 对象页。
 累计完成度保守调整为 **69%**，剩余差距 **31%**。下一刀必须交付 production exact Resource catalog 与
 authenticated Flow PUT/GET；随后再进入 immutable publication、whole-flow Fixture simulation 与对象页。
+
+## 35. Iteration 34 — authenticated reusable Flow authoring
+
+日期：2026-09-01。
+
+### 已完成
+
+- 为 `ReusableFlowDraftStore` 增加 exact stored authority：draft、receipt、strong ETag 的 head、revision 与
+  historical ETag lookup。in-memory 与 JDBC adapter 均保持 revision-exact read；JDBC 继续校验持久化
+  draft/receipt/fingerprint/ETag 闭包。
+- `ReusableFlowModule` 接受 HTTP-neutral `Create | MatchStrongEtag` precondition。已提交 update 的历史 ETag
+  replay 在 current-head CAS 前恢复；同一旧 ETag 配新 idempotency key 则按 current head 失败，不占用 key。
+- 新增 production `ApiResourceComposableCatalog`，仅从 `ApiResourceCommitStore` 解析 exact committed
+  API Resource id/revision/fingerprint 与 input/output schema。`FLOW_VERSION` 在 publication authority 落地前
+  明确 fail-closed。
+- 新增默认关闭的 application configuration，以及认证的
+  `PUT /api/authoring/flows/{flowId}`、`GET /api/authoring/flows/{flowId}?revision=...`。scope/actor 仅来自
+  `IntegrationRequestAuthenticator`；create、update、Idempotency-Key、opaque strong ETag、replay、no-store 与
+  problem detail 均由薄 transport 显式闭合。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowCompilerTest,ReusableFlowModuleTest,JdbcReusableFlowDraftStoreTest,\
+ReusableFlowDraftSchemaReadinessTest,ReusableFlowDraftRuntimeConfigurationTest,\
+ApiResourceComposableCatalogTest,ReusableFlowAuthoringControllerTest,\
+ReusableFlowAuthoringApplicationConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8151, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+JDBC/readiness 证据仍来自 H2 PostgreSQL mode；本轮没有冒充真实 PostgreSQL 认证。HTTP 测试证明 trusted
+scope/actor、严格 precondition/idempotency、exact receipt/ETag/replay 与请求前拒绝，但尚不是浏览器对象页验收。
+
+### 当前差距评估
+
+Flow 已闭合 wire、DAG compile、durable Draft authority、exact API Resource catalog 与认证保存/读取主路径。
+尚缺 immutable Flow Version publication、`FLOW_VERSION` catalog resolution、whole-flow Fixture Set/Case
+simulation，以及面向用户的 Tool/Solution 对象页与真实端到端验收。累计完成度保守调整为 **73%**，剩余
+差距 **27%**。下一刀先交付 immutable Flow Version publication 与 catalog 闭包，再进入 whole-flow Fixture
+simulation；UI 不与 authority migration 混在同一提交。

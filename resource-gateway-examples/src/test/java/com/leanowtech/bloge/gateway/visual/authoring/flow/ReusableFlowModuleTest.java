@@ -60,6 +60,52 @@ class ReusableFlowModuleTest {
     }
 
     @Test
+    void strongEtagUpdateReplaysAfterHeadAdvancesButNewStaleIntentFails() {
+        ReusableFlowModule module = module();
+        ReusableFlowSaveResult created = module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.create(), "create-1", command("Customer tool", 0));
+        ReusableFlowSaveResult firstUpdate = module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.matchStrongEtag(created.strongEtag()), "update-1",
+                command("Customer tool v2", 40));
+        module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.matchStrongEtag(firstUpdate.strongEtag()), "update-2",
+                command("Customer tool v3", 80));
+
+        ReusableFlowSaveResult replay = module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.matchStrongEtag(created.strongEtag()), "update-1",
+                command("Customer tool v2", 40));
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.draft()).isEqualTo(firstUpdate.draft());
+
+        assertThatThrownBy(() -> module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.matchStrongEtag(created.strongEtag()), "stale-new-key",
+                command("Stale", 120)))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(value -> ((ReusableFlowFailure) value).code())
+                .isEqualTo(ReusableFlowFailure.Code.CAS_MISMATCH);
+    }
+
+    @Test
+    void unknownStrongEtagDistinguishesMissingFlowFromChangedFlow() {
+        ReusableFlowModule module = module();
+        assertThatThrownBy(() -> module.save(SCOPE, "alice", "missing",
+                ReusableFlowPrecondition.matchStrongEtag("\"unknown\""), "update-1",
+                command("Missing", 0)))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(value -> ((ReusableFlowFailure) value).code())
+                .isEqualTo(ReusableFlowFailure.Code.NOT_FOUND);
+
+        module.save(SCOPE, "alice", "customer-tool", ReusableFlowPrecondition.create(),
+                "create-1", command("Customer tool", 0));
+        assertThatThrownBy(() -> module.save(SCOPE, "alice", "customer-tool",
+                ReusableFlowPrecondition.matchStrongEtag("\"unknown\""), "update-1",
+                command("Changed", 40)))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(value -> ((ReusableFlowFailure) value).code())
+                .isEqualTo(ReusableFlowFailure.Code.CAS_MISMATCH);
+    }
+
+    @Test
     void staleCasFailsWithoutOccupyingAReusableIdempotencyCoordinate() {
         ReusableFlowModule module = module();
         module.save(SCOPE, "alice", "customer-tool", ExpectedRevision.create(),
