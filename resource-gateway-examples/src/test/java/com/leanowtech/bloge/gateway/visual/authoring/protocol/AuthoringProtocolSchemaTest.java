@@ -576,6 +576,21 @@ class AuthoringProtocolSchemaTest {
         assertThat(wireMapper.treeToValue(requestWire, SimulationRequest.class)).isEqualTo(request);
         assertThat(wireMapper.treeToValue(runWire, SimulationRun.class)).isEqualTo(run);
         assertThat(run.toString()).doesNotContain("one");
+
+        var flowSubject = new com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef.FlowVersion(
+                "eligibility-v1", 1, "sha256:" + "b".repeat(64));
+        SimulationRun wholeFlow = new SimulationRun(SimulationRun.SCHEMA_VERSION, "sim-flow",
+                SimulationRun.Status.SUCCEEDED, flowSubject,
+                new SimulationRun.FixtureCase("eligibility-cases", 1, "approved"),
+                MAPPER.createObjectNode().put("eligible", true), List.of(),
+                new SimulationRun.Verdicts(SimulationRun.ExecutionVerdict.SIMULATED_ONLY,
+                        SimulationRun.Verdict.PASSED, SimulationRun.Verdict.PASSED,
+                        SimulationRun.Verdict.NOT_CHECKED), List.of(),
+                Instant.parse("2030-01-01T00:00:00Z"), Instant.parse("2030-01-01T00:00:00Z"));
+        JsonNode wholeFlowWire = wireMapper.valueToTree(wholeFlow);
+        assertThat(validationErrors(read(runPath), wholeFlowWire, runPath)).isEmpty();
+        assertThat(wireMapper.treeToValue(wholeFlowWire, SimulationRun.class)).isEqualTo(wholeFlow);
+        assertThat(wholeFlow.nodes()).isEmpty();
     }
 
     private static List<String> validationErrors(JsonNode schema, JsonNode value, Path owner) throws IOException {

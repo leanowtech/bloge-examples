@@ -1,9 +1,11 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -17,7 +19,11 @@ public class ApiSimulationApplicationConfiguration {
     @Bean
     @ConditionalOnMissingBean
     SimulationModule simulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
-                                      SimulationRunStore runs) {
-        return new SimulationModule(resources, fixtures, runs);
+                                      SimulationRunStore runs,
+                                      ObjectProvider<ReusableFlowPublicationStore> flows) {
+        ReusableFlowPublicationStore flowAuthority = flows.getIfAvailable();
+        return flowAuthority == null
+                ? new SimulationModule(resources, fixtures, runs)
+                : new SimulationModule(resources, fixtures, flowAuthority, runs);
     }
 }

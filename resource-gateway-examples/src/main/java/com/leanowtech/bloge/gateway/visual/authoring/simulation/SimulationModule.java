@@ -7,7 +7,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
@@ -15,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.StoredApiResource;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -40,6 +43,7 @@ public final class SimulationModule {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private final ApiResourceCommitStore resources;
     private final ApiFixtureSetCommitStore fixtures;
+    private final ReusableFlowPublicationStore flows;
     private final SimulationRunStore runs;
     private final Clock clock;
     private final Supplier<String> runIds;
@@ -47,14 +51,28 @@ public final class SimulationModule {
     /** Creates a production-neutral module with server-generated run ids. */
     public SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
                             SimulationRunStore runs) {
-        this(resources, fixtures, runs, Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
+        this(resources, fixtures, null, runs, Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
+    }
+
+    /** Creates a module that can also execute exact whole-flow Fixture returns. */
+    public SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+                            ReusableFlowPublicationStore flows, SimulationRunStore runs) {
+        this(resources, fixtures, flows, runs, Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
     }
 
     /** Test seam for deterministic time and ids. */
     SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
                      SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
+        this(resources, fixtures, null, runs, clock, runIds);
+    }
+
+    /** Test seam for deterministic whole-flow execution time and ids. */
+    SimulationModule(ApiResourceCommitStore resources, ApiFixtureSetCommitStore fixtures,
+                     ReusableFlowPublicationStore flows, SimulationRunStore runs,
+                     Clock clock, Supplier<String> runIds) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
+        this.flows = flows;
         this.runs = Objects.requireNonNull(runs, "runs");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.runIds = Objects.requireNonNull(runIds, "runIds");
@@ -104,23 +122,41 @@ public final class SimulationModule {
                     .filter(value -> source.caseId().equals(value.caseId()))
                     .reduce((left, right) -> { throw failure(SimulationFailure.Code.INTEGRITY); })
                     .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
-            if (!(fixture.generated().view().subject() instanceof FixtureSubjectRef.ApiResource subject)) {
-                throw failure(SimulationFailure.Code.UNSUPPORTED);
-            }
-            StoredApiResource resource = resources.findRevision(scope, subject.resourceId(), subject.revision())
-                    .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
-            if (!FixtureSubjectRef.apiResource(resource.resource().ref()).equals(subject)) {
-                throw failure(SimulationFailure.Code.INTEGRITY);
-            }
             FixtureSetCommand.Control control = soleReturnControl(selected);
             FixtureSetCommand.Behavior.Return returned = (FixtureSetCommand.Behavior.Return) control.behavior();
             if (!(returned.material() instanceof FixtureSetCommand.Material.Inline inline)) {
                 throw failure(SimulationFailure.Code.UNSUPPORTED);
             }
-            return new CompiledCase(source, resource.resource(), selected, control, inline.value());
+            FixtureSubjectRef subject = fixture.generated().view().subject();
+            if (subject instanceof FixtureSubjectRef.ApiResource resourceSubject) {
+                StoredApiResource resource = resources.findRevision(
+                                scope, resourceSubject.resourceId(), resourceSubject.revision())
+                        .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
+                if (!FixtureSubjectRef.apiResource(resource.resource().ref()).equals(resourceSubject)) {
+                    throw failure(SimulationFailure.Code.INTEGRITY);
+                }
+                return new CompiledCase(source, resourceSubject, resource.resource().contract().input(),
+                        resource.resource().contract().output(), selected, control, inline.value(),
+                        resource.resource().resourceId());
+            }
+            if (subject instanceof FixtureSubjectRef.FlowVersion flowSubject) {
+                if (flows == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
+                ReusableFlowVersion version = flows.findVersion(
+                                scope, flowSubject.publicationId(), flowSubject.revision())
+                        .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
+                if (!version.subject().equals(flowSubject)) throw failure(SimulationFailure.Code.INTEGRITY);
+                if (control.fidelity() != null
+                        && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
+                    throw failure(SimulationFailure.Code.UNSUPPORTED);
+                }
+                return new CompiledCase(source, flowSubject, version.contract().input(),
+                        version.contract().output(), selected, control, inline.value(), null);
+            }
+            throw failure(SimulationFailure.Code.UNSUPPORTED);
         } catch (SimulationFailure failure) {
             throw failure;
-        } catch (ApiFixtureSetCommitStoreException | ApiResourceCommitStoreException failure) {
+        } catch (ApiFixtureSetCommitStoreException | ApiResourceCommitStoreException
+                 | ReusableFlowFailure failure) {
             throw failure(SimulationFailure.Code.INTEGRITY);
         }
     }
@@ -128,9 +164,9 @@ public final class SimulationModule {
     private SimulationRun execute(String runId, Instant startedAt, CompiledCase compiled) {
         List<SimulationRun.Diagnostic> diagnostics = new ArrayList<>();
         List<VisualDiagnostic> inputProblems = VisualSchemaValidator.validateValue(
-                compiled.resource().contract().input(), javaValue(compiled.fixture().input()), "/input");
+                compiled.input(), javaValue(compiled.fixture().input()), "/input");
         List<VisualDiagnostic> outputProblems = VisualSchemaValidator.validateValue(
-                compiled.resource().contract().output(), javaValue(compiled.output()), "/output");
+                compiled.outputSchema(), javaValue(compiled.output()), "/output");
         inputProblems.stream().map(SimulationModule::diagnostic).forEach(diagnostics::add);
         outputProblems.stream().map(SimulationModule::diagnostic).forEach(diagnostics::add);
         boolean contractPassed = diagnostics.isEmpty();
@@ -142,15 +178,17 @@ public final class SimulationModule {
         SimulationRun.Fidelity fidelity = compiled.control().fidelity() == null
                 ? SimulationRun.Fidelity.OUTPUT_LEVEL
                 : SimulationRun.Fidelity.valueOf(compiled.control().fidelity().name());
-        return new SimulationRun(SimulationRun.SCHEMA_VERSION, runId,
-                success ? SimulationRun.Status.SUCCEEDED : SimulationRun.Status.FAILED,
-                FixtureSubjectRef.apiResource(compiled.resource().ref()),
-                new SimulationRun.FixtureCase(compiled.source().fixtureSetId(),
-                        compiled.source().revision(), compiled.source().caseId()), compiled.output(),
-                List.of(new SimulationRun.Node(compiled.resource().resourceId(),
+        List<SimulationRun.Node> nodes = compiled.evidenceNodeId() == null ? List.of() : List.of(
+                new SimulationRun.Node(compiled.evidenceNodeId(),
                         success ? SimulationRun.NodeStatus.COMPLETED : SimulationRun.NodeStatus.FAILED,
                         SimulationRun.Execution.MOCKED, SimulationRun.FixtureSource.INLINE, fidelity,
-                        SimulationRun.Egress.fixture())),
+                        SimulationRun.Egress.fixture()));
+        return new SimulationRun(SimulationRun.SCHEMA_VERSION, runId,
+                success ? SimulationRun.Status.SUCCEEDED : SimulationRun.Status.FAILED,
+                compiled.subject(),
+                new SimulationRun.FixtureCase(compiled.source().fixtureSetId(),
+                        compiled.source().revision(), compiled.source().caseId()), compiled.output(),
+                nodes,
                 new SimulationRun.Verdicts(success ? SimulationRun.ExecutionVerdict.SIMULATED_ONLY
                         : SimulationRun.ExecutionVerdict.FAILED,
                         contractPassed ? SimulationRun.Verdict.PASSED : SimulationRun.Verdict.FAILED,
@@ -201,9 +239,10 @@ public final class SimulationModule {
     }
     private static SimulationFailure failure(SimulationFailure.Code code) { return new SimulationFailure(code); }
 
-    private record CompiledCase(SimulationRequest.Source.FixtureCase source, ApiResourceSpec resource,
+    private record CompiledCase(SimulationRequest.Source.FixtureCase source, FixtureSubjectRef subject,
+                                SchemaEnvelope input, SchemaEnvelope outputSchema,
                                 FixtureSetCommand.Case fixture, FixtureSetCommand.Control control,
-                                JsonNode output) {
+                                JsonNode output, String evidenceNodeId) {
         private CompiledCase { output = output.deepCopy(); }
         @Override public JsonNode output() { return output.deepCopy(); }
     }

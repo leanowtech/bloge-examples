@@ -293,6 +293,18 @@ serial `clean verify` completed with `Tests run: 8,166; failures: 0; errors: 0; 
 JDBC/readiness evidence remains H2 PostgreSQL mode rather than real PostgreSQL certification. Whole-flow Fixture
 simulation and the Tool/Solution object pages remain the next vertical slices.
 
+The first whole-flow Fixture tracer adds `WholeFlowFixtureMaterializer` and extends `SimulationModule` without
+changing the existing API Resource path. A Fixture for one exact immutable `FLOW_VERSION` must contain Cases with
+exactly one `SUBJECT + RETURN/INLINE` control; node controls, nested `APPLY_CASE`, real execution, governed assets,
+and protocol/transport fidelity fail closed. Case input, return output, and optional expectation are validated
+against the published Flow contract before the Fixture authority is produced. Executing the Case returns explicit
+`SIMULATED_ONLY` evidence for the exact Flow Version and an empty node list, proving that no internal API Resource
+or child Flow executed. The optional publication authority is wired into the existing opt-in Simulation module;
+resource-only deployments keep their prior behavior. The focused materializer/simulation/configuration/wire gate
+is **26/26 green** with no failures, errors, or skips. The serial `clean verify` completed with
+`Tests run: 8,171; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`. This tracer does not yet provide durable
+standalone Flow Fixture save/read or its authenticated HTTP endpoint; those are the next persistence slice.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

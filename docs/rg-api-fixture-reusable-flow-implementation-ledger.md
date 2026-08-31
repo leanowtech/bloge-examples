@@ -1488,3 +1488,54 @@ Flow 已闭合 wire、deterministic DAG compile、durable Draft、认证保存/�
 `FLOW_VERSION` catalog resolution。尚缺 whole-flow Fixture Set/Case、Flow simulation execution/evidence，
 以及面向用户的 Tool/Solution 对象页和真实端到端验收。累计完成度保守调整为 **78%**，剩余差距
 **22%**。下一刀进入 whole-flow Fixture simulation；UI 不与 simulation authority migration 混在同一提交。
+
+## 37. Iteration 36 — whole-flow Fixture simulation authority
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 `WholeFlowFixtureMaterializer`：只接受 exact `FLOW_VERSION` Subject，以及每个 Case 唯一的
+  `SUBJECT + RETURN/INLINE` control。Node control、nested `APPLY_CASE`、REAL、受保护 asset 和
+  protocol/transport fidelity 均 fail-closed，避免递归 Fixture 图或静默执行内部依赖。
+- materializer 在产生 Fixture authority 前，以 immutable Flow Version 的 input/output contract 校验 Case
+  input、Return material 与 optional expected output；subject id/revision/fingerprint 漂移直接拒绝。
+- `SimulationModule` 保持既有 API Resource 路径不变，同时可选接入 `ReusableFlowPublicationStore`。运行
+  whole-flow Case 时读取 exact published version，输出 subject-level `SIMULATED_ONLY` 证据与空 node list，
+  明确证明内部 API Resource 和子 Flow 都没有执行。
+- Spring application configuration 仅在 publication authority 存在时启用 Flow 路径；Resource-only
+  deployment 保持原有装配，不因为 Flow feature 未启用而启动失败。
+- frozen `SimulationRun` wire 新增 FLOW_VERSION + empty nodes round-trip 证据；无 protected material 或
+  graph snapshot 被写入运行结果。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=WholeFlowFixtureMaterializerTest,WholeFlowSimulationModuleTest,SimulationModuleTest,\
+ApiSimulationApplicationConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 26, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8171, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该切片证明 pure materialization 与 execution semantics，尚未把 Flow Fixture 独立保存到 JDBC，也没有认证的
+Fixture PUT。不能把测试中构造的 `StoredFixtureSet` 当 production persistence 证据。
+
+### 当前差距评估
+
+后端已能定义和执行 exact published Flow 的 subject-level Whole-flow Fixture，且明确不执行内部节点；但 durable
+standalone Fixture authority、authenticated write/read、parent Flow `NODE + APPLY_CASE` 编译/运行、对象页和真实
+端到端仍未完成。累计完成度保守调整为 **81%**，剩余差距 **19%**。下一刀先交付 standalone Flow Fixture
+JDBC/HTTP vertical slice，再实现父 Flow `APPLY_CASE`；UI 继续独立收口。
