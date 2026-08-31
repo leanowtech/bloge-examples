@@ -93,7 +93,7 @@ public final class ApiConnectionAuthoringFacade {
         } catch (RuntimeException ex) {
             ApiConnectionAuthoringFailure cleanupFailure = safeFail(lease);
             if (cleanupFailure != null) throw cleanupFailure;
-            throw mapFailure(ex);
+            throw mapFailure(ex, lease);
         }
     }
 
@@ -187,10 +187,11 @@ public final class ApiConnectionAuthoringFacade {
         try {
             store.fail(lease);
             return null;
-        } catch (RuntimeException ignored) {
-            // Never expose or silently discard a cleanup failure. The closed
-            // application code deliberately omits the original exception.
-            return failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+        } catch (RuntimeException cleanupFailure) {
+            // Never expose or silently discard a cleanup failure. Preserve
+            // its closed category, but use the acquired lease as the only
+            // authoritative retry deadline available to this path.
+            return mapFailure(cleanupFailure, lease);
         }
     }
 
@@ -200,6 +201,10 @@ public final class ApiConnectionAuthoringFacade {
     }
 
     private static ApiConnectionAuthoringFailure mapFailure(RuntimeException ex) {
+        return mapFailure(ex, null);
+    }
+
+    private static ApiConnectionAuthoringFailure mapFailure(RuntimeException ex, CommandLease acquiredLease) {
         if (ex instanceof ApiConnectionAuthoringFailure failure) return failure;
         if (ex instanceof ApiConnectionAuthoringException failure) {
             return switch (failure.code()) {
@@ -212,7 +217,8 @@ public final class ApiConnectionAuthoringFacade {
             return switch (failure.code()) {
                 case LEASE_FENCED -> failure(ApiConnectionAuthoringFailure.Code.LEASE_LOST);
                 case CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
-                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
+                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY,
+                        acquiredLease == null ? null : acquiredLease.leaseUntil());
                 case STAGE_MISSING -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
                 case INTEGRITY -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
             };
@@ -220,8 +226,10 @@ public final class ApiConnectionAuthoringFacade {
         if (ex instanceof AuthoringCommandClaimStoreException failure) {
             return switch (failure.code()) {
                 case LEASE_FENCED -> failure(ApiConnectionAuthoringFailure.Code.LEASE_LOST);
-                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
-                case INTEGRITY, PERSISTENCE -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+                case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY,
+                        acquiredLease == null ? null : acquiredLease.leaseUntil());
+                case INTEGRITY -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
+                case PERSISTENCE -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
             };
         }
         if (ex instanceof IllegalArgumentException) return failure(ApiConnectionAuthoringFailure.Code.VALIDATION);

@@ -110,6 +110,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private final Duration leaseDuration;
     private final ApiResourceDecisions decisions;
     private final ApiResourceProjectionCompiler compiler;
+    private final JdbcAuthoringAttemptCleanup attemptCleanup;
     /** Package-private test seam; production construction uses a no-op observer. */
     private final Consumer<String> failAfterJournalLockObserver;
 
@@ -141,6 +142,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         this.leaseDuration = leaseDuration;
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
+        this.attemptCleanup = new JdbcAuthoringAttemptCleanup(jdbc);
         this.failAfterJournalLockObserver = Objects.requireNonNull(failAfterJournalLockObserver,
                 "failAfterJournalLockObserver");
         DataSource jdbcDataSource = jdbc.getDataSource();
@@ -224,7 +226,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             // Keep the expired attempt immutable. Its pending-secret rows may
             // still need recovery after this current-journal pointer advances.
             supersedeAttempt(prior);
-            deleteAbandonedNestedConnectionStage(prior);
+            attemptCleanup.deleteAbandonedNestedConnectionStage(prior.commandId(), prior.attemptNo(),
+                    prior.attemptToken());
             insertAttempt(incoming, now);
             jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND attempt_no = ? "
                     + "AND attempt_token = ? AND state = 'STAGED'", commandId, prior.attemptNo(), prior.attemptToken());
@@ -239,41 +242,6 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     OffsetDateTime.ofInstant(now, ZoneOffset.UTC), commandId);
         }
         return new ClaimResult.Acquired(incoming, resumed);
-    }
-
-    /**
-     * Removes an uncommitted nested Connection revision when takeover leaves
-     * no provider, outcome, or active-binding provenance to recover. The
-     * caller already holds the journal and exact prior attempt locks; child
-     * writers acquire those locks in the same order, so this check cannot race
-     * a new mutation for the superseded attempt.
-     */
-    private void deleteAbandonedNestedConnectionStage(JournalRow prior) {
-        String commandId = prior.commandId();
-        int attemptNo = prior.attemptNo();
-        String attemptToken = prior.attemptToken();
-        Long pending = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        Long outcomes = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_outcomes "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        Long bindings = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_secret_bindings "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        if (positive(pending) || positive(outcomes) || positive(bindings)) return;
-
-        // Heads reference revisions, so remove the exact provisional head
-        // first. V010 makes both predicates attempt-inclusive.
-        jdbc.update("DELETE FROM rg_api_connection_heads WHERE command_id=? AND attempt_no=? "
-                        + "AND attempt_token=?", commandId, attemptNo, attemptToken);
-        jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
-                        + "AND attempt_token=? AND state IN ('STAGED', 'COMMITTED')", commandId, attemptNo,
-                attemptToken);
-    }
-
-    private static boolean positive(Long value) {
-        return value != null && value > 0;
     }
 
     /** Closes an expired current attempt before the mutable journal points at its replacement. */

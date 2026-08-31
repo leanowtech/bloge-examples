@@ -727,3 +727,49 @@ BUILD SUCCESS
 verify 仍是本地资源网关构建证据，不替代真实 PostgreSQL lock/isolation certification。Facade 目前只覆盖
 Auth.None 的 Connection create/update/replay tracer；credential provider、Default Fixture、HTTP/controller、
 UI 和生产 side-effect 尚未验收。受保护的 frontend 文件与两份 reusable-flow 计划/评审文档不属于本轮提交。
+
+## 21. Iteration 20 — C1 final P2 closure
+
+日期：2026-08-31。
+
+### 已完成
+
+- Acquired 路径的 `LEASE_EXPIRED` 映射为 `BUSY`，并携带该 acquired lease 的权威 `leaseUntil`；claim
+  返回的 `ClaimResult.Busy` 仍直接保留其权威 `retryAt`。Cleanup 不再把错误扁平化：`INTEGRITY`、
+  `PERSISTENCE`、`LEASE_FENCED` 和 `LEASE_EXPIRED` 分别映射到对应的 application category，并在过期
+  情形保留 acquired lease deadline。
+- `ApiConnectionAuthoringStore` 只保留 facade 实际需要的 head、ETag lookup、replay closure 与生命周期
+  操作；未使用的 revision lookup 已从该窄 seam/JDBC wrapper 移除。JDBC abandoned nested-stage cleanup
+  由 package-private `JdbcAuthoringAttemptCleanup` 统一承载，claim store 只在持有同一 journal transaction
+  时协调 delegated cleanup，Resource takeover 复用同一规则。
+- InMemory 与 JDBC facade integration 均直接调用真实 store 的 `resolveReplay`，对可构造的错误 schema、
+  canonical body、strong ETag 和 target authority fail closed 为 typed `INTEGRITY`；receipt 构造器同时
+  拒绝不一致的 body fingerprint。该证据不依赖 mock 或 source-text assertion。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,\
+ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,ApiConnectionAuthorityTest,\
+JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest \
+  test -DfailIfNoTests=false
+
+ApiConnectionAuthorityTest: 15/15
+InMemoryApiConnectionCommitStoreTest: 28/28
+JdbcApiConnectionCommitStoreTest: 50/50
+ApiConnectionAuthoringFacadeTest: 19/19
+JdbcApiConnectionAuthoringFacadeTest: 1/1
+JdbcApiResourceCommitStoreClaimTest: 11/11
+JdbcApiResourceCommitStoreMutationTest: 23/23
+Tests run: 147, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 7,970, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+聚焦与 full verify 均为本地 H2/资源网关证据；它们不替代真实 PostgreSQL lock/isolation certification、
+credential provider、HTTP/controller transport、Default Fixture 或 UI acceptance。受保护的 frontend 文件与
+两份 reusable-flow 计划/评审文档不属于本轮提交。

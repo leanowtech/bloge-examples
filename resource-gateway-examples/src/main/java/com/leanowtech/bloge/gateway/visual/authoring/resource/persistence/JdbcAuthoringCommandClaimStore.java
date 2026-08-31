@@ -22,11 +22,13 @@ import java.util.Objects;
 /**
  * JDBC command-claim adapter independent of Resource projection decisions.
  *
- * <p>It owns only the journal/immutable-attempt claim transition. A caller
- * supplies the JDBC transaction context so a lifecycle-complete module can
- * share one connection and transaction manager with its projection store;
- * this class never constructs or depends on Resource decisions/compiler
- * collaborators.</p>
+ * <p>It owns the journal/immutable-attempt claim transition. Projection-
+ * specific abandoned-child cleanup is delegated to {@link
+ * JdbcAuthoringAttemptCleanup} while the same transaction still holds the
+ * prior journal lock. A caller supplies the JDBC transaction context so a
+ * lifecycle-complete module can share one connection and transaction manager
+ * with its projection store; this class never constructs or depends on
+ * Resource decisions/compiler collaborators.</p>
  */
 public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandClaimStore {
     private static final String JOURNAL_COLUMNS = "tenant_id, project_id, environment_id, actor_id, endpoint, target_id, "
@@ -36,6 +38,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    private final JdbcAuthoringAttemptCleanup attemptCleanup;
     private final ObjectMapper mapper;
     private final Duration leaseDuration;
 
@@ -49,6 +52,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
             throw new IllegalArgumentException("leaseDuration must be positive");
         }
         this.leaseDuration = leaseDuration;
+        this.attemptCleanup = new JdbcAuthoringAttemptCleanup(jdbc);
         DataSource jdbcDataSource = jdbc.getDataSource();
         DataSource transactionDataSource = transactions.getTransactionManager()
                 instanceof DataSourceTransactionManager manager ? manager.getDataSource() : null;
@@ -122,7 +126,8 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
             insertAttempt(incoming, now);
         } else {
             supersedeAttempt(prior);
-            deleteAbandonedNestedConnectionStage(prior);
+            attemptCleanup.deleteAbandonedNestedConnectionStage(prior.commandId(), prior.attemptNo(),
+                    prior.attemptToken());
             insertAttempt(incoming, now);
             jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND attempt_no = ? "
                             + "AND attempt_token = ? AND state = 'STAGED'", commandId, prior.attemptNo(),
@@ -163,26 +168,6 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
                 prior.commandId(), prior.attemptNo(), prior.attemptToken()) != 1) {
             throw error(AuthoringCommandClaimStoreException.Code.LEASE_FENCED);
         }
-    }
-
-    private void deleteAbandonedNestedConnectionStage(JournalRow prior) {
-        String commandId = prior.commandId();
-        int attemptNo = prior.attemptNo();
-        String attemptToken = prior.attemptToken();
-        Long pending = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        Long outcomes = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_outcomes "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        Long bindings = jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_secret_bindings "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", Long.class,
-                commandId, attemptNo, attemptToken);
-        if (positive(pending) || positive(outcomes) || positive(bindings)) return;
-        jdbc.update("DELETE FROM rg_api_connection_heads WHERE command_id=? AND attempt_no=? AND attempt_token=?",
-                commandId, attemptNo, attemptToken);
-        jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=? "
-                        + "AND attempt_token=? AND state IN ('STAGED', 'COMMITTED')", commandId, attemptNo, attemptToken);
     }
 
     private JournalRow journalForCoordinate(CommandKey key) {
@@ -247,8 +232,6 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
             throw error(AuthoringCommandClaimStoreException.Code.INTEGRITY);
         }
     }
-
-    private static boolean positive(Long value) { return value != null && value > 0; }
 
     private static AuthoringCommandClaimStoreException error(AuthoringCommandClaimStoreException.Code code) {
         return new AuthoringCommandClaimStoreException(code);

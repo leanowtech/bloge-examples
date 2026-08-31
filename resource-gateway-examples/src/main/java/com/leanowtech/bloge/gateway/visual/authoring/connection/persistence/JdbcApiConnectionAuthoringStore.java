@@ -75,9 +75,6 @@ public final class JdbcApiConnectionAuthoringStore
     @Override public Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return connections.findHead(scope, connectionId);
     }
-    @Override public Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision) {
-        return connections.findRevision(scope, connectionId, revision);
-    }
     @Override public Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                                                String strongEtag) {
         return connections.findRevisionByStrongEtag(scope, connectionId, strongEtag);

@@ -35,9 +35,6 @@ public interface ApiConnectionAuthoringStore extends AuthoringCommandClaimStore 
     /** Reads the current committed head in the exact authoring scope. */
     Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId);
 
-    /** Reads one committed historical revision in the exact authoring scope. */
-    Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision);
-
     /** Reads one committed historical revision by exact persisted strong ETag. */
     Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                             String strongEtag);

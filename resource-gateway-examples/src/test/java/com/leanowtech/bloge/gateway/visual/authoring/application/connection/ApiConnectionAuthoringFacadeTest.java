@@ -2,11 +2,15 @@ package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -49,6 +53,43 @@ class ApiConnectionAuthoringFacadeTest {
         assertThat(replay.replayed()).isTrue();
         assertThat(replay.view()).isEqualTo(first.view());
         assertThat(replay.strongEtag()).isEqualTo(first.strongEtag());
+    }
+
+    @Test
+    void inMemoryResolveReplayRejectsIndependentReceiptAndTargetTampering() {
+        ObjectMapper mapper = new ObjectMapper();
+        var decisions = new ApiConnectionDecisions();
+        var store = new InMemoryApiConnectionCommitStore(Clock.systemUTC(), decisions,
+                java.time.Duration.ofSeconds(30), mapper);
+        var facade = new ApiConnectionAuthoringFacade(store, decisions);
+        ApiConnectionAuthoringResult first = facade.save(request("replay-integrity", "customer",
+                "replay-integrity-key", ApiConnectionAuthoringPrecondition.create(), command("Customer API")));
+        ObjectNode body = mapper.valueToTree(first.view());
+        CommandReceipt valid = new CommandReceipt(ApiConnectionView.SCHEMA_VERSION, body,
+                AuthoringFingerprints.of(body), first.strongEtag());
+
+        assertThat(store.resolveReplay(SCOPE, "customer", valid)).isNotNull();
+        assertThatThrownBy(() -> new CommandReceipt(ApiConnectionView.SCHEMA_VERSION, body,
+                "sha256:" + "f".repeat(64), first.strongEtag()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.resolveReplay(SCOPE, "customer", new CommandReceipt(
+                "unknown.receipt.v0", body, AuthoringFingerprints.of(body), first.strongEtag())))
+                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        ObjectNode alteredBody = body.deepCopy();
+        alteredBody.put("displayName", "Tampered");
+        assertThatThrownBy(() -> store.resolveReplay(SCOPE, "customer", new CommandReceipt(
+                ApiConnectionView.SCHEMA_VERSION, alteredBody, AuthoringFingerprints.of(alteredBody), first.strongEtag())))
+                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.INTEGRITY);
+        assertThatThrownBy(() -> store.resolveReplay(SCOPE, "customer", new CommandReceipt(
+                ApiConnectionView.SCHEMA_VERSION, body, AuthoringFingerprints.of(body), "\"different\"")))
+                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.INTEGRITY);
+        assertThatThrownBy(() -> store.resolveReplay(SCOPE, "other", valid))
+                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
 
     @Test
@@ -215,7 +256,82 @@ class ApiConnectionAuthoringFacadeTest {
         assertThatThrownBy(() -> facade.save(request("cleanup", "customer", "cleanup-key",
                 ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
                 .isInstanceOf(ApiConnectionAuthoringFailure.class)
-                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.INTEGRITY);
+    }
+
+    @Test
+    void acquiredLeaseExpiryCarriesTheExactLeaseDeadlineAsRetryAt() {
+        var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
+        var lease = lease("acquired-expired");
+        org.mockito.Mockito.when(store.claim(any(), any(), any()))
+                .thenReturn(new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(lease, false));
+        org.mockito.Mockito.doThrow(new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException(
+                com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_EXPIRED))
+                .when(store).stage(any(), any(), any(), any());
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+
+        assertThatThrownBy(() -> facade.save(request("expired", "customer", "expired-key",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .satisfies(error -> {
+                    ApiConnectionAuthoringFailure failure = (ApiConnectionAuthoringFailure) error;
+                    assertThat(failure.code()).isEqualTo(ApiConnectionAuthoringFailure.Code.BUSY);
+                    assertThat(failure.retryAt()).isEqualTo(lease.leaseUntil());
+                });
+    }
+
+    @Test
+    void cleanupFailurePreservesLeaseLostAndBusyCategories() {
+        for (var code : new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code[]{
+                com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_FENCED,
+                com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_EXPIRED}) {
+            var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
+            var lease = lease("cleanup-" + code.name());
+            org.mockito.Mockito.when(store.claim(any(), any(), any()))
+                    .thenReturn(new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(lease, false));
+            org.mockito.Mockito.doThrow(new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException(
+                    com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.STAGE_MISSING))
+                    .when(store).stage(any(), any(), any(), any());
+            org.mockito.Mockito.doThrow(new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException(code))
+                    .when(store).fail(lease);
+            var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+
+            assertThatThrownBy(() -> facade.save(request("cleanup", "customer", "cleanup-" + code.name(),
+                    ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
+                    .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                    .satisfies(error -> {
+                        ApiConnectionAuthoringFailure failure = (ApiConnectionAuthoringFailure) error;
+                        assertThat(failure.code()).isEqualTo(code == com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_FENCED
+                                ? ApiConnectionAuthoringFailure.Code.LEASE_LOST : ApiConnectionAuthoringFailure.Code.BUSY);
+                        if (code == com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.LEASE_EXPIRED) {
+                            assertThat(failure.retryAt()).isEqualTo(lease.leaseUntil());
+                        }
+                    });
+        }
+    }
+
+    @Test
+    void cleanupFailurePreservesGenericClaimIntegrityAndPersistenceCategories() {
+        for (var code : new AuthoringCommandClaimStoreException.Code[]{
+                AuthoringCommandClaimStoreException.Code.INTEGRITY,
+                AuthoringCommandClaimStoreException.Code.PERSISTENCE}) {
+            var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
+            var lease = lease("cleanup-claim-" + code.name());
+            org.mockito.Mockito.when(store.claim(any(), any(), any()))
+                    .thenReturn(new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(lease, false));
+            org.mockito.Mockito.doThrow(new com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException(
+                    com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code.STAGE_MISSING))
+                    .when(store).stage(any(), any(), any(), any());
+            org.mockito.Mockito.doThrow(new AuthoringCommandClaimStoreException(code)).when(store).fail(lease);
+            var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+
+            assertThatThrownBy(() -> facade.save(request("cleanup-claim", "customer", "cleanup-claim-" + code.name(),
+                    ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
+                    .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                    .extracting("code").isEqualTo(code == AuthoringCommandClaimStoreException.Code.INTEGRITY
+                            ? ApiConnectionAuthoringFailure.Code.INTEGRITY
+                            : ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+        }
     }
 
     @Test
@@ -247,6 +363,19 @@ class ApiConnectionAuthoringFacadeTest {
                 ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
                 .isInstanceOf(ApiConnectionAuthoringFailure.class)
                 .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+    }
+
+    @Test
+    void genericClaimIntegrityFailureRemainsIntegrity() {
+        var store = mock(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore.class);
+        org.mockito.Mockito.when(store.claim(any(), any(), any()))
+                .thenThrow(new AuthoringCommandClaimStoreException(AuthoringCommandClaimStoreException.Code.INTEGRITY));
+        var facade = new ApiConnectionAuthoringFacade(store, new ApiConnectionDecisions());
+
+        assertThatThrownBy(() -> facade.save(request("claim-integrity", "customer", "claim-integrity-key",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API"))))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.INTEGRITY);
     }
 
     private static com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease lease(String key) {
