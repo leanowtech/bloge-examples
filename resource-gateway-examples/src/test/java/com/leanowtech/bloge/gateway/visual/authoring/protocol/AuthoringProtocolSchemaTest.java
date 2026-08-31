@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveRecei
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
@@ -243,6 +244,54 @@ class AuthoringProtocolSchemaTest {
                 assertThat(roundTrip.effect()).isEqualTo(effect);
             }
         }
+    }
+
+    @Test
+    void reusableFlowKindsAndMappingsRoundTripAgainstFrozenWireSchema() throws Exception {
+        String resourceFingerprint = "sha256:" + "a".repeat(64);
+        String flowFingerprint = "sha256:" + "b".repeat(64);
+        SchemaEnvelope flowInput = SchemaEnvelope.object(Map.of(
+                "customerId", Map.of("type", "string")), List.of("customerId"));
+        SchemaEnvelope decisionOutput = SchemaEnvelope.object(Map.of(
+                "eligible", Map.of("type", "boolean")), List.of("eligible"));
+        ReusableFlowCommand command = new ReusableFlowCommand(ReusableFlowCommand.SCHEMA_VERSION,
+                new ReusableFlowCommand.Flow("Eligibility solution", ReusableFlowCommand.Kind.SOLUTION,
+                        "Compose a profile Resource and a published decision Flow.",
+                        new ReusableFlowCommand.Contract(flowInput, decisionOutput),
+                        new ReusableFlowCommand.Graph(List.of(
+                                new ReusableFlowCommand.Node("profile", "Customer profile",
+                                        new ReusableFlowCommand.ComposableRef.ApiResource(
+                                                "customer.profile", 3, resourceFingerprint),
+                                        List.of(
+                                                new ReusableFlowCommand.Input("$.customerId",
+                                                        new ReusableFlowCommand.MappingSource.FlowInput(
+                                                                "$.customerId")),
+                                                new ReusableFlowCommand.Input("$.region",
+                                                        new ReusableFlowCommand.MappingSource.Constant(
+                                                                MAPPER.valueToTree("APAC"))))),
+                                new ReusableFlowCommand.Node("decision", "Eligibility decision",
+                                        new ReusableFlowCommand.ComposableRef.FlowVersion(
+                                                "eligibility-v2", 2, flowFingerprint),
+                                        List.of(new ReusableFlowCommand.Input("$.profile",
+                                                new ReusableFlowCommand.MappingSource.NodeOutput(
+                                                        "profile", "$"))))),
+                                new ReusableFlowCommand.Output("decision", "$")),
+                        new ReusableFlowCommand.Layout(Map.of(
+                                "profile", new ReusableFlowCommand.Position(80, 120),
+                                "decision", new ReusableFlowCommand.Position(380, 120)))));
+
+        Path schemaPath = SCHEMA_ROOT.resolve("reusable-flow-command-v1.schema.json");
+        JsonNode wire = MAPPER.valueToTree(command);
+        assertThat(validationErrors(read(schemaPath), wire, schemaPath)).as(wire.toString()).isEmpty();
+        assertThat(wire.at("/flow/graph/nodes/0/use/kind").asText()).isEqualTo("API_RESOURCE");
+        assertThat(wire.at("/flow/graph/nodes/1/use/kind").asText()).isEqualTo("FLOW_VERSION");
+        assertThat(wire.at("/flow/graph/nodes/0/inputs/0/from/kind").asText()).isEqualTo("FLOW_INPUT");
+        assertThat(wire.at("/flow/graph/nodes/0/inputs/1/from/kind").asText()).isEqualTo("CONSTANT");
+        assertThat(wire.at("/flow/graph/nodes/1/inputs/0/from/kind").asText()).isEqualTo("NODE_OUTPUT");
+        assertThat(MAPPER.treeToValue(wire, ReusableFlowCommand.class)).isEqualTo(command);
+
+        flowInput.schema().put("type", "string");
+        assertThat(command.flow().contract().input().schema()).containsEntry("type", "object");
     }
 
     @Test

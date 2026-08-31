@@ -227,6 +227,18 @@ skips. The final serial `clean verify` completed with `Tests run: 8,122; failure
 Flow/DAG execution and the corresponding object pages remain fail-closed or unimplemented rather than silently
 falling back to a different execution path.
 
+The first Reusable Flow slice now freezes the Java wire authority for
+`bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
+`TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct
+`FLOW_INPUT`, `NODE_OUTPUT`, and `CONSTANT` mappings are the only edge authority. The compiler resolves exact
+dependency revisions and fingerprints, validates required target inputs and compatible direct schema paths,
+derives a stable topological order, and fails closed on missing/drifted dependencies, duplicate targets, cycles,
+invalid constants, output drift, or layout drift. Contract/dependency schema envelopes and constant JSON use
+defensive copies. The focused compiler/protocol gate is **19/19 green** with no failures, errors, or skips. The
+serial `clean verify` completed with `Tests run: 8,127; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+This slice does not yet claim Flow draft persistence, authenticated save/read, immutable publication, Flow
+Fixture simulation, or the Tool/Solution object pages.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

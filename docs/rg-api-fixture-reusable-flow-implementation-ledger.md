@@ -1240,3 +1240,49 @@ BUILD SUCCESS
 主路径。仍未完成的是 `AD_HOC`、真实 external-read authorization、governed material、内部节点 control、
 Reusable Flow/DAG 的保存与执行，以及前端对象页。累计完成度保守调整为 **62%**，剩余差距 **38%**；
 下一主切片必须进入 Reusable Flow/DAG，而不是继续扩充单资源外围能力。
+
+## 32. Iteration 31 — reusable Flow/DAG compiler authority
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增与冻结 `bloge.reusableFlowSaveCommand.v1` 一致的 Java wire authority：`TOOL` / `SOLUTION`、input/output
+  Contract、节点、布局、exact `API_RESOURCE` / `FLOW_VERSION` 引用，以及 `FLOW_INPUT` / `NODE_OUTPUT` /
+  `CONSTANT` 三种 Mapping source。Jackson 判别字段与完整 command 直接通过仓库 JSON Schema validator 和
+  round-trip；SchemaEnvelope 与常量 JSON 均做 defensive copy。
+- 新增深模块 `ReusableFlowCompiler`。Mapping 是唯一业务边 authority；编译器精确解析每个依赖的 revision 与
+  fingerprint，验证 direct `$` / `$.field` 路径、required target、重复 target、constant value、source/target
+  schema compatibility 与 graph output，并由 Mapping 派生稳定拓扑序。
+- 缺失或漂移 dependency、非法 command/layout、缺失 mapping、schema 不兼容与 cycle 均进入 closed、
+  payload-free failure taxonomy，不会降级为任意 GraphDraft 或真实外部调用。
+- `ComposableCatalog` 仅暴露 exact scoped dependency read，`CompiledReusableFlow` 成为后续 draft save、
+  simulation 与 publish 共用的单一编译结果；本切片没有并行再造 edge、runtime 或 persistence 模型。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowCompilerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 19, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8127, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+Reusable Flow 已从“只有 JSON Schema”推进到可执行验证的 Java wire 与 deterministic DAG compile authority，
+但用户尚不能保存、读取、发布或模拟一个 Tool/Solution，也没有对象页。因此累计完成度仅保守调整为
+**65%**，剩余差距 **35%**。下一切片是 Flow Draft 的 revision/head、CAS/idempotency、authenticated PUT/GET
+与 exact Resource catalog adapter；随后才是 whole-flow Fixture simulation、immutable publication 与前端对象页。
