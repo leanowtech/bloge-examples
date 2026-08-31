@@ -3,9 +3,11 @@ package com.leanowtech.bloge.gateway.visual.authoring.protocol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemDetail;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -222,6 +224,36 @@ class AuthoringProtocolSchemaTest {
         }
         assertThat(MAPPER.valueToTree(completeSpec).at("/effect/reconciliation/resource/kind").asText())
                 .isEqualTo("API_RESOURCE");
+    }
+
+    @Test
+    void authoringProblemDetailRoundTripsAndOmitsAbsentRecoveryPaths() throws Exception {
+        Path schemaPath = SCHEMA_ROOT.resolve("problem-detail-v1.schema.json");
+        ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
+                "urn:bloge:problem:authoring-service-unavailable", "Persistence unavailable", 503,
+                "The API Resource persistence authority is temporarily unavailable.",
+                "RG.AUTHORING.API_RESOURCE.PERSISTENCE_FAILED", "corr-01", List.of(),
+                List.of(new ApiResourceAuthoringProblemDetail.RecoveryAction("RETRY", null)));
+
+        JsonNode wire = MAPPER.valueToTree(problem);
+        assertThat(wire.at("/recoveryActions/0").has("path")).isFalse();
+        assertThat(validationErrors(read(schemaPath), wire, schemaPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(wire, ApiResourceAuthoringProblemDetail.class)).isEqualTo(problem);
+    }
+
+    @Test
+    void compoundApiResourceSaveCommandRoundTripsAgainstTheWireAuthority() throws Exception {
+        Path schemaPath = SCHEMA_ROOT.resolve("api-resource-command-v1.schema.json");
+        ApiResourceSaveCommand command = new ApiResourceSaveCommand(
+                ApiResourceSaveCommand.SCHEMA_VERSION,
+                ApiResourceSaveCommand.Connection.existing("customer-service"),
+                minimalCommand(), ApiResourceSaveCommand.DefaultFixture.none());
+
+        JsonNode wire = MAPPER.valueToTree(command);
+        assertThat(wire.at("/connection/mode").asText()).isEqualTo("EXISTING");
+        assertThat(wire.at("/defaultFixture/kind").asText()).isEqualTo("NONE");
+        assertThat(validationErrors(read(schemaPath), wire, schemaPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(wire, ApiResourceSaveCommand.class)).isEqualTo(command);
     }
 
     private static ApiResourceCommand command(String method, ApiResourceCommand.Success success,

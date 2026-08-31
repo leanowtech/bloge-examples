@@ -49,9 +49,11 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
-### API Resource authoring persistence and application tracer (J2/J3-C2)
+### API Resource authoring persistence, application tracer, and HTTP transport (J2/J3-C3)
 
-The JDBC authoring store and first Resource application facade are opt-in; there is still no HTTP endpoint.
+The JDBC authoring store, first Resource application facade, and HTTP adapter are opt-in. The transport exposes
+`PUT /api/authoring/resources/{resourceId}` only when `gateway.authoring.api-resource.enabled=true`; the default
+runtime remains disabled.
 Apply the migrations in order:
 
 ```text
@@ -104,6 +106,21 @@ package boundary, projection compiler, Resource store contracts, V001/V002 readi
 credential-bearing Connections, default Fixture generation, and the authoring UI remain subsequent J3/U1 work.
 The post-fix full gate also completed with `Tests run: 7,989; failures: 0; errors: 0; skipped: 33` and
 `BUILD SUCCESS`.
+
+J3-C3 adds the authenticated HTTP boundary for that exact C2 subset. The controller derives tenant/project/
+environment and actor only from `IntegrationRequestAuthenticator`, requires purpose `API_RESOURCE_AUTHORING`,
+requires one `Idempotency-Key`, and accepts only `If-None-Match: *` for create or one opaque strong `If-Match`
+for update. Successful responses return the canonical receipt body plus `ETag`, `Idempotency-Replayed`,
+`Cache-Control: no-store`, and `Pragma: no-cache`. Authentication, media-type, header, malformed-body, semantic,
+CAS, conflict, integrity, and persistence failures all use `problem-detail-v1` rather than mixing transport error
+shapes. Request decoding is strict at root and nested fields.
+
+The combined C2+C3 focused gate completed at **141/141 green** with no failures, errors, or skips: the prior 100
+application/persistence tests plus 28 controller tests, 2 transport configuration tests, and 11 protocol-schema
+tests. This transport still deliberately rejects Connection `CREATE` and `defaultFixture.kind=FROM_EXAMPLES`
+through the facade. Credential providers, Default Fixture Sets, reusable Flow/DAG authoring, real PostgreSQL
+certification, and UI acceptance remain open. The post-C3 full gate completed with
+`Tests run: 8,021; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

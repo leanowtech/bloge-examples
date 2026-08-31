@@ -819,3 +819,50 @@ BUILD SUCCESS
 lock/isolation certification。HTTP/controller、trusted auth scope、Problem Detail、credential provider、nested
 Connection create、Default Fixture Set、Flow/DAG facade 与 UI acceptance 仍未实现/验收。受保护的
 `GraphNodeFixtureControls.tsx` 与两份未跟踪 reusable-flow 文档不属于本切片。
+
+## 23. Iteration 22 — C3 API Resource HTTP transport
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 feature-scoped `PUT /api/authoring/resources/{resourceId}` 薄适配器；默认关闭，仅在
+  `gateway.authoring.api-resource.enabled=true` 时注册。Controller 只负责认证、可信 scope、HTTP 条件、
+  严格 body 解码和调用一次 `ApiResourceAuthoringFacade`，不复制 application 编排。
+- `IntegrationOperation.AUTHORING_API_RESOURCE_WRITE` 要求 purpose `API_RESOURCE_AUTHORING`。tenant、project、
+  environment 与 actor 仅来自 `IntegrationRequestAuthenticator` 的 verified context；自报 scope 漂移在
+  facade/store 前拒绝。
+- create 只接受 `If-None-Match: *`，update 只接受一个 opaque strong `If-Match`；缺少条件返回 428，weak、
+  list、wildcard update 与同时携带两类条件均 fail closed。`Idempotency-Key` 限制为 1–160 字符的稳定安全子集。
+- 成功响应返回 canonical receipt body，并携带 `ETag`、`Idempotency-Replayed`、`Cache-Control: no-store` 与
+  `Pragma: no-cache`。请求采用 application `ObjectMapper` 的 strict copy，root/nested unknown field、malformed
+  JSON 和非 `application/json` 都在 facade 前拒绝。
+- 新增统一 `problem-detail-v1` transport。认证、请求边界与 application failure 均返回同一字段集合；schema
+  显式覆盖 415、500、503，避免 auth/业务/媒体类型错误出现多套 JSON。错误 body 不包含 credential、
+  persistence message 或业务 payload。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceAuthoringFacadeTest,JdbcApiResourceAuthoringFacadeTest,\
+ApiResourceAuthoringApplicationConfigurationTest,ApiResourceCommitStoreContractTest,\
+JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest,\
+DefaultApiResourceProjectionCompilerTest,ApiResourceConnectionSnapshotSchemaReadinessTest,\
+ApiResourceAuthoringRuntimeConfigurationTest,ApiResourceAuthoringSchemaReadinessTest,\
+VisualRuntimeBoundaryTest,ApiResourceAuthoringControllerTest,\
+ApiResourceAuthoringTransportConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 141, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 8,021, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+其中 Controller 28、transport configuration 2、protocol schema 11，C2 application/persistence 100。
+当前 HTTP 入口仍只支持 `EXISTING`、已提交、`Auth.NONE` Connection 与 `defaultFixture.kind=NONE`；
+Connection `CREATE`、credential provider、Default Fixture Set、Flow/DAG application facade、真实 PostgreSQL
+certification 和 UI acceptance 均未实现/验收。受保护的 `GraphNodeFixtureControls.tsx` 与两份未跟踪
+reusable-flow 文档不属于本切片。
