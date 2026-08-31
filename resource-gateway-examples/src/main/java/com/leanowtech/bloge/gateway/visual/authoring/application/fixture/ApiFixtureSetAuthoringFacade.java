@@ -44,7 +44,7 @@ public final class ApiFixtureSetAuthoringFacade {
     }
 
     /** Returns the current or one exact immutable private Fixture revision. */
-    public FixtureSetView read(AuthoringScope scope, String fixtureSetId, Integer revision) {
+    public ApiFixtureSetAuthoringRead read(AuthoringScope scope, String fixtureSetId, Integer revision) {
         requireScope(scope);
         if (fixtureSetId == null || !IDENTIFIER.matcher(fixtureSetId).matches()
                 || revision != null && revision < 1) {
@@ -54,8 +54,10 @@ public final class ApiFixtureSetAuthoringFacade {
             Optional<StoredFixtureSet> stored = revision == null
                     ? store.findHead(scope, fixtureSetId)
                     : store.findRevision(scope, fixtureSetId, revision);
-            return stored.orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND))
-                    .generated().view();
+            StoredFixtureSet authority = stored.orElseThrow(
+                    () -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
+            return new ApiFixtureSetAuthoringRead(
+                    authority.generated().view(), authority.strongEtag());
         } catch (ApiFixtureSetAuthoringFailure failure) {
             throw failure;
         } catch (ApiFixtureSetCommitStoreException | StandaloneFixtureSetStoreException failure) {

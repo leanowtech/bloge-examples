@@ -57,9 +57,30 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowDraftStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveIntent;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.InMemoryApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.InMemorySimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -173,7 +194,8 @@ class VisualAuthoringBrowserDomTest {
             "CORRECTNESS_READ", "CORRECTNESS_WRITE", "CORRECTNESS_REVIEW",
             "CORRECTNESS_FIXTURE_MATERIAL_WRITE", "CORRECTNESS_FIXTURE_MATERIAL_READ",
             "CAPABILITY_PROJECTION", "GOVERNANCE_GATE_FEEDBACK", "TEST_SUITE_READ",
-            "TEST_SUITE_WRITE", "TEST_EXECUTION", "TEST_SCENARIO_PUBLISH");
+            "TEST_SUITE_WRITE", "TEST_EXECUTION", "TEST_SCENARIO_PUBLISH",
+            "API_RESOURCE_AUTHORING");
 
     private static IntegrationWorkloadIdentity browserIdentity(String identityId, String actorId) {
         return new IntegrationWorkloadIdentity(
@@ -295,6 +317,80 @@ class VisualAuthoringBrowserDomTest {
         @Bean
         BrowserReviewerSignInController browserReviewerSignInController() {
             return new BrowserReviewerSignInController();
+        }
+
+        /** Holds exact saved Flow Draft authority for the unified Fixture object browser path. */
+        @Bean
+        InMemoryReusableFlowDraftStore browserReusableFlowDraftStore() {
+            return new InMemoryReusableFlowDraftStore();
+        }
+
+        /** Holds immutable Flow versions without seeding unrelated catalog content. */
+        @Bean
+        InMemoryReusableFlowPublicationStore browserReusableFlowPublicationStore() {
+            return new InMemoryReusableFlowPublicationStore();
+        }
+
+        /** Holds independently authored Fixture revisions exercised through production HTTP. */
+        @Bean
+        InMemoryStandaloneFixtureSetStore browserStandaloneFixtureSetStore() {
+            return new InMemoryStandaloneFixtureSetStore();
+        }
+
+        /** Uses the production whole-Flow materializer for visible Draft Fixture edits. */
+        @Bean
+        ReusableFlowFixtureModule browserReusableFlowFixtureModule(
+                InMemoryReusableFlowPublicationStore publications,
+                InMemoryReusableFlowDraftStore drafts,
+                InMemoryStandaloneFixtureSetStore fixtures) {
+            return new ReusableFlowFixtureModule(
+                    publications, drafts, fixtures, new WholeFlowFixtureMaterializer(), null);
+        }
+
+        /** Exposes the production Fixture application boundary over the shared test authorities. */
+        @Bean
+        ApiFixtureSetAuthoringFacade browserApiFixtureSetAuthoringFacade(
+                InMemoryStandaloneFixtureSetStore fixtures,
+                ReusableFlowFixtureModule writer) {
+            return new ApiFixtureSetAuthoringFacade(fixtures, writer);
+        }
+
+        /** Exposes the production authenticated Fixture transport without enabling JDBC migrations. */
+        @Bean
+        ApiFixtureSetAuthoringController browserApiFixtureSetAuthoringController(
+                ApiFixtureSetAuthoringFacade facade,
+                IntegrationRequestAuthenticator authenticator) {
+            return new ApiFixtureSetAuthoringController(facade, authenticator);
+        }
+
+        /** Executes exact Draft Fixture returns through the production Simulation module. */
+        @Bean
+        SimulationModule browserApiSimulationModule(
+                InMemoryStandaloneFixtureSetStore fixtures,
+                InMemoryReusableFlowPublicationStore publications,
+                InMemoryReusableFlowDraftStore drafts) {
+            InMemoryApiResourceCommitStore resources = new InMemoryApiResourceCommitStore(
+                    Clock.systemUTC(), Duration.ofSeconds(30),
+                    (scope, resource) -> {
+                        throw new AssertionError("Flow Draft Fixture simulation must not resolve an API Resource");
+                    });
+            return new SimulationModule(resources, fixtures, publications, drafts, null,
+                    new InMemorySimulationRunStore());
+        }
+
+        /** Exposes the production authenticated Simulation transport for the object page. */
+        @Bean
+        ApiSimulationController browserApiSimulationController(
+                SimulationModule module,
+                IntegrationRequestAuthenticator authenticator,
+                ObjectMapper mapper) {
+            return new ApiSimulationController(module, authenticator, mapper);
+        }
+
+        /** Keeps authoring failures on the same no-store Problem Detail surface as production. */
+        @Bean
+        ApiResourceAuthoringProblemHandler browserApiResourceAuthoringProblemHandler() {
+            return new ApiResourceAuthoringProblemHandler();
         }
 
         /** Supplies a deterministic signed-workbook projection only to this real-browser test. */
@@ -930,6 +1026,15 @@ class VisualAuthoringBrowserDomTest {
     private FixtureAssetRepository fixtureAssetRepository;
 
     @Autowired
+    private InMemoryReusableFlowDraftStore browserReusableFlowDraftStore;
+
+    @Autowired
+    private ReusableFlowFixtureModule browserReusableFlowFixtureModule;
+
+    @Autowired
+    private InMemoryStandaloneFixtureSetStore browserStandaloneFixtureSetStore;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @LocalServerPort
@@ -1014,6 +1119,97 @@ class VisualAuthoringBrowserDomTest {
                             ? processTree::terminate
                             : service == null ? () -> { } : service::stop);
         }
+    }
+
+    @Test
+    void fixtureObjectPageVisiblySavesAndSimulatesAnExactFlowDraftFixture() {
+        assumeAuthoringWorkbenchBundlePresent();
+        AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
+        SchemaEnvelope input = SchemaEnvelope.object(
+                Map.of("customerId", Map.of("type", "string")), List.of("customerId"));
+        SchemaEnvelope output = SchemaEnvelope.object(
+                Map.of("eligible", Map.of("type", "boolean")), List.of("eligible"));
+        ReusableFlowCommand command = new ReusableFlowCommand(
+                ReusableFlowCommand.SCHEMA_VERSION,
+                new ReusableFlowCommand.Flow(
+                        "Browser Fixture Flow", ReusableFlowCommand.Kind.TOOL,
+                        "Proves the independent Fixture object path.",
+                        new ReusableFlowCommand.Contract(input, output),
+                        new ReusableFlowCommand.Graph(List.of(
+                                new ReusableFlowCommand.Node(
+                                        "decision", "Decision",
+                                        new ReusableFlowCommand.ComposableRef.ApiResource(
+                                                "browser-decision", 1,
+                                                "sha256:" + "a".repeat(64)),
+                                        List.of())),
+                                new ReusableFlowCommand.Output("decision", "$")),
+                        new ReusableFlowCommand.Layout(Map.of(
+                                "decision", new ReusableFlowCommand.Position(0, 0)))));
+        String requestFingerprint = AuthoringFingerprints.of(OBJECT_MAPPER.valueToTree(command));
+        ReusableFlowSaveResult savedFlow = browserReusableFlowDraftStore.save(
+                new ReusableFlowSaveIntent(scope, "browser-author", "browser-fixture-flow",
+                        ExpectedRevision.create(), "browser-flow-create", requestFingerprint,
+                        requestFingerprint, command));
+        FixtureSetCommand fixtureCommand = new FixtureSetCommand(
+                FixtureSetCommand.SCHEMA_VERSION, "Browser Flow Fixture", savedFlow.draft().subject(),
+                List.of(new FixtureSetCommand.Case(
+                        "approved", "Approved customer",
+                        OBJECT_MAPPER.createObjectNode().put("customerId", "customer-1"),
+                        List.of(new FixtureSetCommand.Control(
+                                FixtureSetCommand.Target.subject(),
+                                FixtureSetCommand.Behavior.returned(
+                                        FixtureSetCommand.Material.inline(
+                                                OBJECT_MAPPER.createObjectNode().put("eligible", true))),
+                                null)),
+                        new FixtureSetCommand.Expect(
+                                OBJECT_MAPPER.createObjectNode().put("eligible", true)))));
+        browserReusableFlowFixtureModule.save(
+                scope, "browser-author", "browser-flow-fixture", FixtureSetPrecondition.create(),
+                "browser-fixture-create", fixtureCommand);
+
+        driver = newChromeDriverOrSkip();
+        driver.manage().window().setSize(new Dimension(1280, 900));
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/workbench/?fixtureSetId=browser-flow-fixture");
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-object-page']")));
+        WebElement fixtureTitle = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='fixture-object-page'] h1")));
+        assertThat(fixtureTitle.getText()).isEqualTo("Browser Flow Fixture");
+        WebElement fixtureOutput = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-object-output']")));
+        fixtureOutput.clear();
+        fixtureOutput.sendKeys("{\n  \"eligible\": false\n}");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='save-fixture-object']"))).click();
+
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='fixture-message']"), "Fixture saved and simulated"));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-simulation-output']"))).getText())
+                .contains("\"eligible\": false");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-authority']")).getText())
+                .contains("Revision\n2", "PRIVATE_DRAFT · r1");
+
+        var stored = browserStandaloneFixtureSetStore.findHead(scope, "browser-flow-fixture")
+                .orElseThrow(() -> new AssertionError("visible Fixture save did not persist a head"));
+        assertThat(stored.generated().view().revision()).isEqualTo(2);
+        FixtureSetCommand.Behavior.Return returned = (FixtureSetCommand.Behavior.Return)
+                stored.generated().view().cases().getFirst().controls().getFirst().behavior();
+        FixtureSetCommand.Material.Inline inline =
+                (FixtureSetCommand.Material.Inline) returned.material();
+        assertThat(inline.value()).isEqualTo(
+                OBJECT_MAPPER.createObjectNode().put("eligible", false));
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-case-panel']")));
+        long scrollWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.scrollWidth")).longValue();
+        long clientWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.clientWidth")).longValue();
+        assertThat(scrollWidth).isLessThanOrEqualTo(clientWidth + 1);
     }
 
     /**
@@ -5991,6 +6187,14 @@ class VisualAuthoringBrowserDomTest {
         Assumptions.assumeTrue(
                 new ClassPathResource("static/author/index.html").exists(),
                 "React author bundle is built only when Maven runs with -Pfrontend"
+        );
+    }
+
+    /** The unified object workbench is packaged at the shared root SPA entry point. */
+    private void assumeAuthoringWorkbenchBundlePresent() {
+        Assumptions.assumeTrue(
+                new ClassPathResource("static/workbench/index.html").exists(),
+                "Authoring workbench bundle is built only when Maven runs with -Pfrontend"
         );
     }
 

@@ -308,7 +308,8 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
                 || !subject.fingerprint().equals(row.subjectFingerprint())) {
             throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
         }
-        return new StoredStandaloneFixtureSet(new StoredFixtureSet(row.scope(), generated), row.strongEtag());
+        return new StoredStandaloneFixtureSet(
+                new StoredFixtureSet(row.scope(), generated, row.strongEtag()), row.strongEtag());
     }
 
     private String encode(Object value) {

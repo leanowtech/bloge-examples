@@ -3,6 +3,7 @@ import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
+import FixtureObjectPage from './FixtureObjectPage';
 import { listApiResourceFixtures, readApiResource, saveApiResource, simulateFixtureCase } from './api';
 import {
   buildApiResourceSaveCommand,
@@ -31,10 +32,14 @@ export default function AuthoringWorkbench() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedResourceId = params.get('resourceId')?.trim() || '';
   const requestedFlowId = params.get('flowId')?.trim() || '';
+  const requestedFixtureSetId = params.get('fixtureSetId')?.trim() || '';
   const createApi = params.get('create') === 'api';
   const createFlow = params.get('create') === 'flow';
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
+  if (requestedFixtureSetId) {
+    return <FixtureObjectPage initialFixtureSetId={requestedFixtureSetId} />;
+  }
   if (requestedFlowId || createFlow) {
     return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind} />;
   }
@@ -273,6 +278,9 @@ function FixturePanel({ fixture, busy, onRun, t }: {
         <div><dt>{t('Case')}</dt><dd>{fixture.cases[0]?.caseId}</dd></div>
         <div><dt>{t('Behavior')}</dt><dd>RETURN · OUTPUT_LEVEL</dd></div>
       </dl>
+      <a data-testid="open-resource-fixture" href={`/workbench/?fixtureSetId=${encodeURIComponent(fixture.fixtureSetId)}`}>
+        {t('Open Fixture object')}
+      </a>
       <button type="button" className="primary-object-action" data-testid="run-saved-fixture"
         disabled={busy} onClick={onRun}>
         <TestTube2 aria-hidden="true" /> {busy ? t('Running...') : t('Run saved Fixture')}

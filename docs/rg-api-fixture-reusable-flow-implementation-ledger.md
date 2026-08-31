@@ -1793,3 +1793,72 @@ BUILD SUCCESS
 whole-flow Fixture，而不是只在组件测试中成立。它没有新增 share/promotion 或独立 Fixture 页面，因此累计完成度
 维持 **96%**、剩余差距 **4%**。下一刀应形成 Fixture 独立对象页与可见生命周期，再用真实浏览器串起 API
 Resource → 多节点 Tool/Solution → Fixture → Simulation；真实 PostgreSQL 证据与外部 Vault/provider 保持明确边界。
+
+## 43. Iteration 42 — 独立 Fixture 对象页与真实浏览器验收
+
+日期：2026-09-01。
+
+### 已完成
+
+- `/workbench/?fixtureSetId=<id>` 现在进入独立 Fixture 对象页。页面读取 trusted scope 下的 exact Fixture
+  authority、状态、Subject 和 Case，不从前端缓存猜 revision、fingerprint 或父对象。
+- standalone Flow Draft/Flow Version Fixture 返回真实 strong ETag，可见编辑一个 whole-subject
+  `SUBJECT + RETURN/INLINE` Case，保存后按 exact revision 运行 deny-all Simulation。保存与模拟仍是两个独立
+  动作和回执，页面不把本地输入冒充服务端已提交状态。
+- API Resource Default Fixture 保持 parent-governed、只读，并链接回 Resource 对象页；read response 不伪造
+  standalone ETag，也不开放受保护 material。
+- `/workbench` 与 `/workbench/` 由服务端转发到打包在 `static/workbench` 下的 production Vite 入口，资源路径在
+  子目录部署下闭合。
+- 真 Chrome 验收通过可见 UI 完成 Flow Draft Fixture 的编辑、保存、模拟，并在动作后只读核对服务端 revision
+  和 output；同一方法同时验证 1280 px 主路径与 390 px 无水平溢出。
+
+### 验证
+
+```text
+npm test -- --run src/authoring-workbench/fixtureModel.test.ts \
+  src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/FixtureObjectPage.test.tsx \
+  src/authoring-workbench/FlowObjectPage.test.tsx \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 5 passed; Tests: 13 passed
+
+npm run check:i18n
+Test Files: 6 passed; Tests: 39 passed
+
+npx tsc --noEmit
+npm run build
+
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 188.67 KiB / 11 files
+AuthorCanvas startup closure: 349.87 KiB / 22 files (budget 350 KiB)
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiFixtureSetAuthoringFacadeTest,ApiFixtureSetAuthoringControllerTest,\
+JdbcStandaloneFixtureSetStoreTest,WholeFlowSimulationModuleTest,\
+ApiSimulationApplicationConfigurationTest,GatewayExampleControllerTest test
+
+Tests run: 38; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#fixtureObjectPageVisiblySavesAndSimulatesAnExactFlowDraftFixture test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,198; Failures: 0; Errors: 0; Skipped: 34
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+用户主路径现在已经形成统一、可重载、可见的对象工作台：接入 API Resource → 为 Resource 保存 Default
+Fixture 并模拟 → 用多个 exact API Resource 编排 Tool/Solution DAG → 保存/发布 Flow → 为 Flow Draft/Version
+设置 whole-flow Fixture → 从独立 Fixture 对象页保存并模拟。累计完成度保守调整为 **97.5%**，剩余差距
+**2.5%**。
+
+剩余 2.5% 不属于上述核心本地创作链的隐藏断点：Fixture share/promotion 尚未进入简化工作台；新 workbench
+纵向链尚未在部署方的真实外部 Vault/provider 与 production PostgreSQL migration 环境中做专项认证。全量 Maven
+包含既有 PostgreSQL 认证测试，但不能替代这条新增 UI/application 路径的部署级认证。因此当前实现满足
+“剩余差距低于 3%”的停止条件，但不把这两个 deployment/lifecycle 边界写成已完成。

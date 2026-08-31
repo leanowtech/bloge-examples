@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringRead;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
@@ -51,18 +52,32 @@ class ApiFixtureSetAuthoringControllerTest {
     @Test
     void readsOneExactRevisionUnderTrustedScope() throws Exception {
         ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
-        when(facade.read(any(), any(), any())).thenReturn(view());
+        when(facade.read(any(), any(), any())).thenReturn(
+                new ApiFixtureSetAuthoringRead(view(), "\"fixture-etag\""));
 
         mvc(facade).perform(get("/api/authoring/fixture-sets/customer.get:r1?revision=1")
                         .header("Authorization", "Bearer author-token")
                         .header("X-Purpose", "API_RESOURCE_AUTHORING"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("ETag", "\"fixture-etag\""))
                 .andExpect(jsonPath("$.fixtureSetId").value("customer.get:r1"))
                 .andExpect(jsonPath("$.cases[0].input.customerId").value("customer-1"));
 
         verify(facade).read(new AuthoringScope("tenant-a", "project-a", "test"),
                 "customer.get:r1", 1);
+    }
+
+    @Test
+    void parentGovernedFixtureReadOmitsIndependentEditValidator() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        when(facade.read(any(), any(), any())).thenReturn(new ApiFixtureSetAuthoringRead(view(), null));
+
+        mvc(facade).perform(get("/api/authoring/fixture-sets/customer.get:r1")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("ETag"));
     }
 
     @Test

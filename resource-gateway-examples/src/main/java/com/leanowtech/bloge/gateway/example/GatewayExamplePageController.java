@@ -73,6 +73,16 @@ public class GatewayExamplePageController {
     }
 
     /**
+     * Forwards the unified Resource, Flow, and Fixture workbench to the shared Vite SPA.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/workbench", "/workbench/"})
+    public String authoringWorkbench() {
+        return "forward:/workbench/index.html";
+    }
+
+    /**
      * Forwards the first-class Correctness Studio route to the shared Vite-built SPA.
      *
      * @return static resource forward target

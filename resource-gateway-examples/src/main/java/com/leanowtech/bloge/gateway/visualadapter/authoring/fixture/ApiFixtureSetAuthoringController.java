@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringRead;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
@@ -58,8 +59,12 @@ public final class ApiFixtureSetAuthoringController {
                                                @RequestHeader HttpHeaders headers,
                                                HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers, request);
-        return response(facade.read(trustedScope(context), fixtureSetId,
-                revision == null ? null : positiveRevision(revision, context.correlationId())));
+        ApiFixtureSetAuthoringRead result = facade.read(trustedScope(context), fixtureSetId,
+                revision == null ? null : positiveRevision(revision, context.correlationId()));
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache");
+        if (result.strongEtag() != null) response.header(HttpHeaders.ETAG, result.strongEtag());
+        return response.body(result.view());
     }
 
     /** Returns payload-free summaries for one exact immutable subject. */

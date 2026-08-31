@@ -4,10 +4,17 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFix
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 
 /** Committed private Fixture Set authority in one exact authoring scope. */
-public record StoredFixtureSet(AuthoringScope scope, GeneratedDefaultFixture generated) {
+public record StoredFixtureSet(AuthoringScope scope, GeneratedDefaultFixture generated,
+                               String strongEtag) {
+    /** Creates a parent-governed read authority that cannot be edited independently. */
+    public StoredFixtureSet(AuthoringScope scope, GeneratedDefaultFixture generated) {
+        this(scope, generated, null);
+    }
+
     /** Rejects incomplete persisted values. */
     public StoredFixtureSet {
-        if (scope == null || generated == null) {
+        if (scope == null || generated == null
+                || strongEtag != null && !FixtureSetStrongEtag.isValid(strongEtag)) {
             throw new IllegalArgumentException("stored Fixture Set is incomplete");
         }
     }
@@ -15,6 +22,7 @@ public record StoredFixtureSet(AuthoringScope scope, GeneratedDefaultFixture gen
     /** Keeps full Case material out of diagnostics. */
     @Override public String toString() {
         return "StoredFixtureSet[scope=" + scope + ", fixtureSetId=" + generated.view().fixtureSetId()
-                + ", revision=" + generated.view().revision() + "]";
+                + ", revision=" + generated.view().revision() + ", independentlyEditable="
+                + (strongEtag != null) + "]";
     }
 }

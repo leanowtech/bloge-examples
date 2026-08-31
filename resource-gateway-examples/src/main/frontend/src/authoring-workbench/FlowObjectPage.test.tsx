@@ -97,6 +97,10 @@ describe('Tool and Solution object page', () => {
       'overview.default', 1, 'default', expect.stringMatching(/^simulate-flow:overview.default-1:/),
     );
     expect(element('flow-simulation-panel').textContent).toContain('SIMULATED_ONLY');
+    await act(async () => tab('Fixture').click());
+    expect(element<HTMLAnchorElement>('open-flow-fixture').getAttribute('href')).toBe(
+      '/workbench/?fixtureSetId=overview.default',
+    );
   });
 
   it('reloads an exact Flow draft and publishes the same authority', async () => {

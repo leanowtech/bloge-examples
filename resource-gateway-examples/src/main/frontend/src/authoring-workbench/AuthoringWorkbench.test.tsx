@@ -122,6 +122,8 @@ describe('simple authoring workbench', () => {
       [...host.querySelectorAll<HTMLButtonElement>('.object-tabs button')]
         .find((value) => value.textContent === 'Fixture')?.click();
     });
+    expect(element<HTMLAnchorElement>('open-resource-fixture').getAttribute('href'))
+      .toBe('/workbench/?fixtureSetId=profile%3Ar2');
     await act(async () => button('run-saved-fixture').click());
 
     expect(authoringApi.listApiResourceFixtures).toHaveBeenCalledWith(expect.objectContaining({

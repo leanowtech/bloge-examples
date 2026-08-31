@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
@@ -22,12 +23,15 @@ public class ApiSimulationApplicationConfiguration {
     SimulationModule simulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                                       SimulationRunStore runs,
                                       ObjectProvider<ReusableFlowPublicationStore> flows,
+                                      ObjectProvider<ReusableFlowDraftStore> drafts,
                                       ObjectProvider<ParentFlowApplyCaseCompiler> parentCompilers) {
         ReusableFlowPublicationStore flowAuthority = flows.getIfAvailable();
+        ReusableFlowDraftStore draftAuthority = drafts.getIfAvailable();
         ParentFlowApplyCaseCompiler parentCompiler = parentCompilers.getIfAvailable();
-        if (flowAuthority == null) return new SimulationModule(resources, fixtures, runs);
-        return parentCompiler == null
-                ? new SimulationModule(resources, fixtures, flowAuthority, runs)
-                : new SimulationModule(resources, fixtures, flowAuthority, parentCompiler, runs);
+        if (flowAuthority == null && draftAuthority == null) {
+            return new SimulationModule(resources, fixtures, runs);
+        }
+        return new SimulationModule(resources, fixtures, flowAuthority, draftAuthority,
+                parentCompiler, runs);
     }
 }

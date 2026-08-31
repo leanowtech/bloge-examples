@@ -8,7 +8,11 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixt
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -32,6 +36,41 @@ import static org.mockito.Mockito.when;
 class WholeFlowSimulationModuleTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
     private static final Instant NOW = Instant.parse("2030-01-01T00:00:00Z");
+
+    @Test
+    void wholeFlowDraftReturnUsesTheExactCommittedDraftAuthority() {
+        ReusableFlowVersion version = version();
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                "eligibility", "draft-1", 2, "sha256:" + "d".repeat(64),
+                version.displayName(), version.kind(), version.description(), version.contract(),
+                version.graph(), new ReusableFlowCommand.Layout(java.util.Map.of()),
+                ReusableFlowDraft.Status.DRAFT);
+        FixtureSetCommand command = command(draft.subject(), FixtureSetCommand.Target.subject(),
+                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output())), null);
+        GeneratedDefaultFixture generated = new WholeFlowFixtureMaterializer()
+                .generate("eligibility-draft-cases", 1, draft, command);
+        ApiFixtureSetCommitStore fixtures = mock(ApiFixtureSetCommitStore.class);
+        when(fixtures.findRevision(SCOPE, "eligibility-draft-cases", 1))
+                .thenReturn(Optional.of(new StoredFixtureSet(SCOPE, generated)));
+        ReusableFlowDraftStore drafts = mock(ReusableFlowDraftStore.class);
+        when(drafts.findDraftRevisionStored(SCOPE, draft.draftId(), draft.revision()))
+                .thenReturn(Optional.of(new ReusableFlowStoredDraft(draft,
+                        new ReusableFlowSaveReceipt(ReusableFlowSaveReceipt.SCHEMA_VERSION,
+                                draft.flowId(), draft.subject(), ReusableFlowSaveReceipt.Validation.VALID),
+                        "\"flow-r2\"")));
+        ApiResourceCommitStore resources = mock(ApiResourceCommitStore.class);
+        SimulationModule module = new SimulationModule(resources, fixtures, null, drafts, null,
+                new InMemorySimulationRunStore(), Clock.fixed(NOW, ZoneOffset.UTC), () -> "sim-draft");
+
+        SimulationRun run = module.run(SCOPE, "whole-flow-draft-run",
+                SimulationRequest.fixtureCase("eligibility-draft-cases", 1, "approved"));
+
+        assertThat(run.status()).isEqualTo(SimulationRun.Status.SUCCEEDED);
+        assertThat(run.subject()).isEqualTo(draft.subject());
+        assertThat(run.output()).isEqualTo(output());
+        assertThat(run.nodes()).isEmpty();
+        verifyNoInteractions(resources);
+    }
 
     @Test
     void wholeFlowReturnRunsWithoutExecutingInternalNodes() {

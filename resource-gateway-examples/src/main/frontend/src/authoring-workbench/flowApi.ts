@@ -12,6 +12,13 @@ import type {
 } from './flowModel';
 import type { AuthoringWorkbenchTransport, StoredResponse } from './api';
 
+/** Fixture reads omit the validator when the parent object exclusively governs edits. */
+export interface FixtureReadResponse {
+  value: FixtureSetView;
+  strongEtag: string | null;
+  replayed: false;
+}
+
 /** Reads one committed Tool/Solution draft for the unified object page. */
 export async function readFlow(
   flowId: string, transport: AuthoringWorkbenchTransport = fetch,
@@ -54,12 +61,12 @@ export async function saveFlowFixture(
 /** Reads one exact private whole-flow Fixture revision and its strong ETag. */
 export async function readFlowFixture(
   fixtureSetId: string, revision?: number, transport: AuthoringWorkbenchTransport = fetch,
-): Promise<StoredResponse<FixtureSetView>> {
+): Promise<FixtureReadResponse> {
   const suffix = revision === undefined ? '' : `?revision=${revision}`;
-  return storedResponse(await transport(
+  return fixtureReadResponse(await transport(
     `/api/authoring/fixture-sets/${encodeURIComponent(fixtureSetId)}${suffix}`,
     { headers: integrationRequestHeaders('API_RESOURCE_AUTHORING') },
-  ), false);
+  ));
 }
 
 /** Discovers payload-free Fixtures for one exact Flow draft revision. */
@@ -107,11 +114,38 @@ export async function simulateFlowFixture(
   }));
 }
 
+/** Reads one independent Fixture object while preserving its exact revision and strong ETag. */
+export async function readFixtureSet(
+  fixtureSetId: string, revision?: number, transport: AuthoringWorkbenchTransport = fetch,
+): Promise<FixtureReadResponse> {
+  return readFlowFixture(fixtureSetId, revision, transport);
+}
+
+/** Updates one editable standalone Fixture object under its opaque strong precondition. */
+export async function saveFixtureSet(
+  fixtureSetId: string, command: FixtureSetCommand, strongEtag: string, idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<FixtureSetSaveReceipt>> {
+  return saveFlowFixture(fixtureSetId, command, strongEtag, idempotencyKey, transport);
+}
+
+/** Runs one exact Case from an independently addressed Fixture object. */
+export async function simulateFixtureSetCase(
+  fixtureSetId: string, revision: number, caseId: string, idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<SimulationRun> {
+  return simulateFlowFixture(fixtureSetId, revision, caseId, idempotencyKey, transport);
+}
+
 async function storedResponse<T>(response: Response, includeReplay: boolean): Promise<StoredResponse<T>> {
   const value = await body<T>(response);
   const strongEtag = response.headers.get('ETag');
   if (!strongEtag) throw new Error('The server did not return a strong ETag.');
   return { value, strongEtag, replayed: includeReplay && response.headers.get('Idempotency-Replayed') === 'true' };
+}
+
+async function fixtureReadResponse(response: Response): Promise<FixtureReadResponse> {
+  return { value: await body<FixtureSetView>(response), strongEtag: response.headers.get('ETag'), replayed: false };
 }
 
 async function body<T>(response: Response): Promise<T> {

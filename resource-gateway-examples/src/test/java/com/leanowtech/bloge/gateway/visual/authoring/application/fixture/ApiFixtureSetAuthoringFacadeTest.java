@@ -32,8 +32,20 @@ class ApiFixtureSetAuthoringFacadeTest {
         when(store.findRevision(SCOPE, "customer.get:r1", 1)).thenReturn(Optional.of(stored));
         ApiFixtureSetAuthoringFacade facade = new ApiFixtureSetAuthoringFacade(store);
 
-        assertThat(facade.read(SCOPE, "customer.get:r1", null)).isEqualTo(view());
-        assertThat(facade.read(SCOPE, "customer.get:r1", 1)).isEqualTo(view());
+        assertThat(facade.read(SCOPE, "customer.get:r1", null))
+                .isEqualTo(new ApiFixtureSetAuthoringRead(view(), null));
+        assertThat(facade.read(SCOPE, "customer.get:r1", 1))
+                .isEqualTo(new ApiFixtureSetAuthoringRead(view(), null));
+    }
+
+    @Test
+    void preservesTheIndependentEditValidatorAtTheApplicationBoundary() {
+        ApiFixtureSetCommitStore store = mock(ApiFixtureSetCommitStore.class);
+        StoredFixtureSet stored = new StoredFixtureSet(SCOPE, stored().generated(), "\"fixture-etag\"");
+        when(store.findHead(SCOPE, "flow-cases")).thenReturn(Optional.of(stored));
+
+        assertThat(new ApiFixtureSetAuthoringFacade(store).read(SCOPE, "flow-cases", null))
+                .isEqualTo(new ApiFixtureSetAuthoringRead(view(), "\"fixture-etag\""));
     }
 
     @Test

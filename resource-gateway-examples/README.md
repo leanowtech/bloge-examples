@@ -364,6 +364,21 @@ errors, or skips. The serial `clean verify` completed with `Tests run: 8,192; fa
 and `BUILD SUCCESS`. Fixture sharing/promotion, an independent Fixture object page, and real browser/real PostgreSQL
 acceptance remain open.
 
+The independent Fixture object page is now available at `/workbench/?fixtureSetId=<id>`. It reads the exact trusted
+Fixture authority, status, Subject, and Case instead of reconstructing them in the browser. Standalone Flow Draft and
+Flow Version Fixtures expose their real strong ETag and support visible whole-subject Return editing, CAS save, and
+deny-all Simulation. An API Resource Default Fixture remains read-only and links back to its Resource page; the server
+does not fabricate an ETag for parent-governed material. The application packages the workbench under
+`static/workbench`, and `/workbench` forwards to that production entry point. Focused frontend model, transport, and
+component tests are **13/13 green**; i18n is **39/39**, UX **52/52**, host contracts **21/21**, TypeScript and the Vite
+production bundle pass, with AuthoringWorkbench at **188.67 KiB / 11 files** and AuthorCanvas at
+**349.87 KiB / 22 files** under the 350 KiB budget. The focused backend gate is **38/38 green**. A real Chrome run at
+1280 px visibly edits, saves, and simulates an exact Flow Draft Fixture, verifies revision/output against server
+authority, and repeats at 390 px without horizontal overflow (**1/1 green**). The final serial `clean verify` completed
+with `Tests run: 8,198; failures: 0; errors: 0; skipped: 34` and `BUILD SUCCESS`. Fixture share/promotion remains a
+separate lifecycle action; this new browser path also does not claim deployment-specific external Vault/provider or
+the exact workbench flow on a production PostgreSQL installation.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -51,7 +51,7 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
             throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
         }
         String strongEtag = "\"" + nextIdentifier() + "\"";
-        StoredFixtureSet stored = new StoredFixtureSet(intent.scope(), generated);
+        StoredFixtureSet stored = new StoredFixtureSet(intent.scope(), generated, strongEtag);
         StoredStandaloneFixtureSet authority = new StoredStandaloneFixtureSet(stored, strongEtag);
         StandaloneFixtureSetSaveResult result = new StandaloneFixtureSetSaveResult(
                 generated.view(), generated.receipt(), strongEtag, false);

@@ -257,9 +257,9 @@
         authoring app, so the Java build stays fast and offline. Enable with: mvn -Pfrontend package
         which installs a local Node, runs the Vite build, and bundles the app into the jar under
         static/capabilities, static/business-mirror, static/author, static/correctness,
-        static/libraries, static/rehearsals, and static/showcase (served at /capabilities/,
+        static/libraries, static/rehearsals, static/showcase, and static/workbench (served at /capabilities/,
         /business-mirror/, /author/, /correctness/, /libraries/, /rehearsals/, and /showcase/,
-        coexisting with the vanilla
+        plus /workbench/, coexisting with the vanilla
         /examples/gateway showcase).
     -->
     <profiles>
@@ -412,6 +412,21 @@
                                 </goals>
                                 <configuration>
                                     <outputDirectory>${project.build.outputDirectory}/static/libraries</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/frontend/dist</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-frontend-workbench-dist</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.outputDirectory}/static/workbench</outputDirectory>
                                     <resources>
                                         <resource>
                                             <directory>src/main/frontend/dist</directory>

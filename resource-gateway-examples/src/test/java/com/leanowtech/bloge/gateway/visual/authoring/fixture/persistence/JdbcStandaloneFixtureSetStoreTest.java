@@ -51,7 +51,10 @@ public class JdbcStandaloneFixtureSetStoreTest {
         assertThat(replay.replayed()).isTrue();
         assertThat(updated.view().revision()).isEqualTo(2);
         assertThat(reopened.findHead(SCOPE, "cases")).get()
-                .extracting(value -> value.generated().view()).isEqualTo(updated.view());
+                .satisfies(value -> {
+                    assertThat(value.generated().view()).isEqualTo(updated.view());
+                    assertThat(value.strongEtag()).isEqualTo(updated.strongEtag());
+                });
         assertThat(reopened.findRevision(SCOPE, "cases", 1)).isPresent();
         assertThat(reopened.findRevisionByStrongEtag(SCOPE, "cases", created.strongEtag()))
                 .hasValueSatisfying(value -> assertThat(value.stored().generated().view())

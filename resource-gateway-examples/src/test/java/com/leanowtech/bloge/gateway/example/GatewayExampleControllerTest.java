@@ -121,6 +121,18 @@ class GatewayExampleControllerTest {
     }
 
     @Test
+    void pageControllerForwardsTheUnifiedAuthoringWorkbench() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/workbench/"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/workbench/index.html"));
+        pageMvc.perform(get("/workbench"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/workbench/index.html"));
+    }
+
+    @Test
     void pageControllerForwardsCleanUrlToCorrectnessStudio() throws Exception {
         MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
 

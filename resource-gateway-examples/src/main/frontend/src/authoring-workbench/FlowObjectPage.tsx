@@ -277,6 +277,10 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
           </button>
           {fixture && <button type="button" data-testid="rerun-flow-fixture" disabled={busy}
             onClick={runSavedFixture}>{t('Run saved Fixture')}</button>}
+          {fixture && <a data-testid="open-flow-fixture"
+            href={`/workbench/?fixtureSetId=${encodeURIComponent(fixture.fixtureSetId)}`}>
+            {t('Open Fixture object')}
+          </a>}
         </section>
       )}
 

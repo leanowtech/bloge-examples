@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.Fixture
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
@@ -47,6 +48,7 @@ public final class SimulationModule {
     private final ApiResourceCommitStore resources;
     private final FixtureSetAuthorityReader fixtures;
     private final ReusableFlowPublicationStore flows;
+    private final ReusableFlowDraftStore drafts;
     private final ParentFlowApplyCaseCompiler parentCompiler;
     private final SimulationRunStore runs;
     private final Clock clock;
@@ -74,6 +76,14 @@ public final class SimulationModule {
                 Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
     }
 
+    /** Creates a module that resolves immutable versions and exact committed Flow drafts. */
+    public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
+                            ReusableFlowPublicationStore flows, ReusableFlowDraftStore drafts,
+                            ParentFlowApplyCaseCompiler parentCompiler, SimulationRunStore runs) {
+        this(resources, fixtures, flows, drafts, parentCompiler, runs,
+                Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
+    }
+
     /** Test seam for deterministic time and ids. */
     SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                      SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
@@ -91,9 +101,18 @@ public final class SimulationModule {
     SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                      ReusableFlowPublicationStore flows, ParentFlowApplyCaseCompiler parentCompiler,
                      SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
+        this(resources, fixtures, flows, null, parentCompiler, runs, clock, runIds);
+    }
+
+    /** Test seam for deterministic draft-backed whole-flow execution. */
+    SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
+                     ReusableFlowPublicationStore flows, ReusableFlowDraftStore drafts,
+                     ParentFlowApplyCaseCompiler parentCompiler, SimulationRunStore runs,
+                     Clock clock, Supplier<String> runIds) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
         this.flows = flows;
+        this.drafts = drafts;
         this.parentCompiler = parentCompiler;
         this.runs = Objects.requireNonNull(runs, "runs");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -184,6 +203,27 @@ public final class SimulationModule {
                 }
                 return new CompiledReturn(source, flowSubject, version.contract().input(),
                         version.contract().output(), selected, control, inline.value(), null);
+            }
+            if (subject instanceof FixtureSubjectRef.FlowDraft flowSubject) {
+                if (drafts == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
+                var stored = drafts.findDraftRevisionStored(
+                                scope, flowSubject.draftId(), flowSubject.revision())
+                        .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
+                if (!stored.draft().subject().equals(flowSubject)) {
+                    throw failure(SimulationFailure.Code.INTEGRITY);
+                }
+                FixtureSetCommand.Control control = soleReturnControl(selected);
+                FixtureSetCommand.Behavior.Return returned =
+                        (FixtureSetCommand.Behavior.Return) control.behavior();
+                if (!(returned.material() instanceof FixtureSetCommand.Material.Inline inline)) {
+                    throw failure(SimulationFailure.Code.UNSUPPORTED);
+                }
+                if (control.fidelity() != null
+                        && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
+                    throw failure(SimulationFailure.Code.UNSUPPORTED);
+                }
+                return new CompiledReturn(source, flowSubject, stored.draft().contract().input(),
+                        stored.draft().contract().output(), selected, control, inline.value(), null);
             }
             throw failure(SimulationFailure.Code.UNSUPPORTED);
         } catch (SimulationFailure failure) {

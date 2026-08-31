@@ -23,6 +23,15 @@ export interface FlowVersionRef {
   fingerprint: string;
 }
 
+export interface ApiResourceRef {
+  kind: 'API_RESOURCE';
+  resourceId: string;
+  revision: number;
+  fingerprint: string;
+}
+
+export type FixtureSubjectRef = ApiResourceRef | FlowDraftRef | FlowVersionRef;
+
 export interface ResolvedApiNode {
   nodeId: string;
   label: string;
@@ -69,7 +78,7 @@ export interface FixtureSetView {
   fingerprint: string;
   statusRevision: number;
   displayName: string;
-  subject: FlowDraftRef;
+  subject: FixtureSubjectRef;
   cases: FixtureSetCommand['cases'];
   status: string;
 }
@@ -91,10 +100,10 @@ export interface ReusableFlowPublishReceipt {
 export interface FixtureSetCommand {
   schemaVersion: 'bloge.fixtureSetCommand.v1';
   displayName: string;
-  subject: FlowDraftRef;
+  subject: FixtureSubjectRef;
   cases: Array<{
-    caseId: 'default';
-    name: 'Default';
+    caseId: string;
+    name: string;
     input: JsonObject;
     controls: Array<{
       target: { kind: 'SUBJECT' };
@@ -109,7 +118,7 @@ export interface FixtureSetSaveReceipt {
   fixtureSetId: string;
   revision: number;
   fingerprint: string;
-  subject: FlowDraftRef;
+  subject: FixtureSubjectRef;
   caseIds: string[];
   status: string;
   statusRevision: number;
