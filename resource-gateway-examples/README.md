@@ -203,6 +203,17 @@ slice's serial `clean verify` completed with `Tests run: 8,101; failures: 0; err
 `BUILD SUCCESS`. It does not yet implement standalone Fixture writes, sharing, or
 `POST /api/authoring/simulations`.
 
+The next C8 tracer freezes the Java wire model for `bloge.simulationRequest.v1` and
+`bloge.simulationRun.v1` and adds a deep `SimulationModule`. It resolves one exact private Fixture Case and its
+exact committed API Resource subject, compiles the currently safe SUBJECT `RETURN`/INLINE shape, validates Case
+input and returned output against the Resource contract, and records explicit `MOCKED`/`INLINE`/`FIXTURE` and
+orthogonal contract/assertion/governance evidence. The run is idempotent by scope and `Idempotency-Key`, and exact
+GET semantics are already represented by the immutable run store. This tracer performs no network call:
+`AD_HOC`, `ALLOW_EXACT`, internal-node controls and governed material remain fail-closed until their own runtime
+authorities exist. Request and run records round-trip against the frozen JSON Schemas and keep protected values
+out of `toString()`. The focused module/protocol gate is **17/17 green** with no failures, errors or skips. This
+authority-only step does not yet claim JDBC durability or the authenticated Simulation POST/GET adapter.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

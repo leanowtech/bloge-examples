@@ -1153,3 +1153,34 @@ BUILD SUCCESS
 
 Default Fixture 已能通过标准 authenticated API 被精确读取和按 Subject 发现，但“选择 Case 后模拟并看到
 REAL/MOCKED evidence”的用户闭环尚未开始。累计完成度保守调整为 **51%**，剩余差距 **49%**。
+
+## 30. Iteration 29 — C8 Fixture Case simulation domain tracer
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增与冻结 schema 一致的 `SimulationRequest` / `SimulationRun` Java wire model，覆盖 FIXTURE_CASE、AD_HOC、
+  egress policy、node trust evidence 与四维 verdict；JSON round-trip 直接通过既有 schema validator。
+- 新增 `SimulationModule`：按 trusted `AuthoringScope` 精确读取 Fixture revision、Case 与 API Resource revision，
+  并校验 Fixture Subject 的 id/revision/fingerprint 全闭合。
+- 当前仅编译可证明无网络副作用的 Subject `RETURN` + inline material。Case input 与返回 output 使用共享
+  `VisualSchemaValidator` 对 Resource input/output contract 做真实校验；运行 evidence 明确为 MOCKED、INLINE、
+  OUTPUT_LEVEL、FIXTURE attempted=false，assertion 与 governance 不被混为一个“Passed”。
+- 新增 `SimulationRunStore` 与线程安全 reference implementation：同 scope + Idempotency-Key + request fingerprint
+  精确 replay；不同请求冲突、执行中的命令 Busy；runId 按 scope 隔离，output 采用 defensive copy。
+- AD_HOC、ALLOW_EXACT external read、内部 node control 与 governed Fixture material 当前均显式 UNSUPPORTED，
+  不会退化成真实 egress 或伪造成功。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=SimulationModuleTest,AuthoringProtocolSchemaTest test
+
+Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+本次是 domain/reference-store tracer；尚未增加 Simulation JDBC migration/readiness、认证 POST/GET、真实
+external-read authorization，也未进入 Flow/DAG kernel。累计完成度保守调整为 **56%**，剩余差距 **44%**。

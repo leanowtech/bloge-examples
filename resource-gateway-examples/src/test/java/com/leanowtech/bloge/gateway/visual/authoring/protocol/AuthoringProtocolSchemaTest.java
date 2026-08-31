@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckCommand;
@@ -14,11 +15,14 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemDetail;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -448,6 +452,36 @@ class AuthoringProtocolSchemaTest {
         ObjectNode sensitive = fixture.deepCopy().put("payload", "secret");
         assertThat(validationErrors(schema.at("/$defs/node/properties/egress"), sensitive, schemaPath))
                 .as("egress must not carry payload").isNotEmpty();
+    }
+
+    @Test
+    void simulationRequestAndRunRoundTripAgainstFrozenWireSchemas() throws Exception {
+        ObjectMapper wireMapper = MAPPER.copy().findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        SimulationRequest request = SimulationRequest.fixtureCase("orders:r1", 1, "happy");
+        var subject = new com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef.ApiResource(
+                "orders", 1, "sha256:" + "e".repeat(64));
+        SimulationRun run = new SimulationRun(SimulationRun.SCHEMA_VERSION, "sim-1",
+                SimulationRun.Status.SUCCEEDED, subject,
+                new SimulationRun.FixtureCase("orders:r1", 1, "happy"),
+                MAPPER.createObjectNode().put("id", "one"),
+                List.of(new SimulationRun.Node("orders", SimulationRun.NodeStatus.COMPLETED,
+                        SimulationRun.Execution.MOCKED, SimulationRun.FixtureSource.INLINE,
+                        SimulationRun.Fidelity.OUTPUT_LEVEL, SimulationRun.Egress.fixture())),
+                new SimulationRun.Verdicts(SimulationRun.ExecutionVerdict.SIMULATED_ONLY,
+                        SimulationRun.Verdict.PASSED, SimulationRun.Verdict.NOT_CHECKED,
+                        SimulationRun.Verdict.NOT_CHECKED), List.of(),
+                Instant.parse("2030-01-01T00:00:00Z"), Instant.parse("2030-01-01T00:00:00Z"));
+        Path requestPath = SCHEMA_ROOT.resolve("simulation-request-v1.schema.json");
+        Path runPath = SCHEMA_ROOT.resolve("simulation-run-v1.schema.json");
+        JsonNode requestWire = wireMapper.valueToTree(request);
+        JsonNode runWire = wireMapper.valueToTree(run);
+
+        assertThat(validationErrors(read(requestPath), requestWire, requestPath)).isEmpty();
+        assertThat(validationErrors(read(runPath), runWire, runPath)).isEmpty();
+        assertThat(wireMapper.treeToValue(requestWire, SimulationRequest.class)).isEqualTo(request);
+        assertThat(wireMapper.treeToValue(runWire, SimulationRun.class)).isEqualTo(run);
+        assertThat(run.toString()).doesNotContain("one");
     }
 
     private static List<String> validationErrors(JsonNode schema, JsonNode value, Path owner) throws IOException {
