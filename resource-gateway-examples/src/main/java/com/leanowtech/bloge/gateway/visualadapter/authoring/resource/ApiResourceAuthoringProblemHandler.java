@@ -5,9 +5,11 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFailure;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
@@ -27,7 +29,8 @@ import java.util.regex.Pattern;
 
 /** Maps API Resource and Connection failures to one Authoring Problem Detail shape. */
 @RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class,
-        ApiConnectionAuthoringController.class, ApiFixtureSetAuthoringController.class})
+        ApiConnectionAuthoringController.class, ApiFixtureSetAuthoringController.class,
+        ApiSimulationController.class})
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringProblemHandler {
     private static final Pattern CORRELATION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -97,17 +100,47 @@ public final class ApiResourceAuthoringProblemHandler {
         return response(problem, null, false);
     }
 
+    /** Converts Simulation failures without exposing Fixture or output material. */
+    @ExceptionHandler(SimulationFailure.class)
+    public ResponseEntity<ApiResourceAuthoringProblemDetail> simulation(
+            SimulationFailure failure, HttpServletRequest request) {
+        Mapping mapping = switch (failure.code()) {
+            case VALIDATION -> simulationMapping(422, "authoring-validation",
+                    "Simulation request is invalid", "VALIDATION_FAILED",
+                    List.of(action("OPEN_FIELD", "/")));
+            case NOT_FOUND -> simulationMapping(404, "authoring-resource-not-found",
+                    "Simulation source was not found", "NOT_FOUND", List.of());
+            case CONFLICT -> simulationMapping(409, "authoring-conflict",
+                    "Simulation idempotency key conflicts", "IDEMPOTENCY_CONFLICT", List.of());
+            case BUSY -> simulationMapping(409, "authoring-conflict",
+                    "Simulation is already in progress", "BUSY", List.of(action("RETRY", null)));
+            case UNSUPPORTED -> simulationMapping(424, "authoring-capability-unavailable",
+                    "Simulation source is not supported", "CAPABILITY_UNAVAILABLE", List.of());
+            case INTEGRITY -> simulationMapping(500, "authoring-integrity",
+                    "Simulation integrity check failed", "INTEGRITY_FAILED", List.of());
+        };
+        ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
+                mapping.type(), mapping.title(), mapping.status(), failure.getMessage(),
+                mapping.code(), correlation("", request),
+                List.of(), mapping.actions());
+        return response(problem, null, false);
+    }
+
     /** Converts malformed JSON before it reaches the facade. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResourceAuthoringProblemDetail> malformed(
             HttpMessageNotReadableException failure, HttpServletRequest request) {
         boolean connection = isConnectionRequest(request);
+        boolean simulation = isSimulationRequest(request);
         ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
                 "urn:bloge:problem:bad-authoring-request",
-                connection ? "API Connection request is invalid" : "API Resource request is invalid", 400,
-                connection ? "The API Connection request body is malformed or incomplete."
+                simulation ? "Simulation request is invalid"
+                        : connection ? "API Connection request is invalid" : "API Resource request is invalid", 400,
+                simulation ? "The Simulation request body is malformed or incomplete."
+                        : connection ? "The API Connection request body is malformed or incomplete."
                         : "The API Resource request body is malformed or incomplete.",
-                connection ? "RG.AUTHORING.API_CONNECTION.REQUEST_INVALID"
+                simulation ? "RG.AUTHORING.SIMULATION.REQUEST_INVALID"
+                        : connection ? "RG.AUTHORING.API_CONNECTION.REQUEST_INVALID"
                         : "RG.AUTHORING.API_RESOURCE.REQUEST_INVALID",
                 correlation("", request), List.of(),
                 List.of(action("OPEN_FIELD", "/")));
@@ -160,6 +193,10 @@ public final class ApiResourceAuthoringProblemHandler {
 
     private static boolean isConnectionRequest(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/api/authoring/connections/");
+    }
+
+    private static boolean isSimulationRequest(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/authoring/simulations");
     }
 
     private static ApiResourceAuthoringProblemDetail.RecoveryAction action(String kind, String path) {
@@ -236,6 +273,12 @@ public final class ApiResourceAuthoringProblemHandler {
                                           List<ApiResourceAuthoringProblemDetail.RecoveryAction> actions) {
         return new Mapping(status, "urn:bloge:problem:" + type, title,
                 "RG.AUTHORING.FIXTURE_SET." + code, actions);
+    }
+
+    private static Mapping simulationMapping(int status, String type, String title, String code,
+                                              List<ApiResourceAuthoringProblemDetail.RecoveryAction> actions) {
+        return new Mapping(status, "urn:bloge:problem:" + type, title,
+                "RG.AUTHORING.SIMULATION." + code, actions);
     }
 
     private static Mapping mapping(int status, String type, String title, String code,

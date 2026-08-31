@@ -1184,3 +1184,59 @@ BUILD SUCCESS
 
 本次是 domain/reference-store tracer；尚未增加 Simulation JDBC migration/readiness、认证 POST/GET、真实
 external-read authorization，也未进入 Flow/DAG kernel。累计完成度保守调整为 **56%**，剩余差距 **44%**。
+
+## 31. Iteration 30 — C8 durable authenticated Simulation tracer
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 V013 `rg_authoring_simulation_runs`，以 scope + runId 为主键、scope + Idempotency-Key 为唯一命令坐标，
+  记录 request fingerprint、RUNNING lease、终态 run JSON 与开始/结束时间；状态与完成态由数据库 CHECK 关闭。
+- 新增 `JdbcSimulationRunStore`：使用数据库时间判定 lease，支持精确 acquire/replay/conflict/busy/expired
+  resume；完成写入和读取都校验 schemaVersion、runId、status 与持久化 authority，损坏或歧义统一 fail closed。
+- 新增 `SimulationRunSchemaReadiness`：只读验证 V013 exact columns、PK、idempotency UQ、recovery index、状态
+  literal set、fingerprint 和 RUNNING/terminal completion closure；缺失或弱化约束均阻止 feature 启动。
+- 新增 feature-scoped runtime/application configuration。启用后缺 V013 store、Fixture/Resource authority或
+  application dependency 时启动失败，不通过 `@ConditionalOnBean` 静默丢失 Simulation 能力。
+- 新增认证 transport：
+  - `POST /api/authoring/simulations` 要求 trusted `API_RESOURCE_AUTHORING` purpose 与 `Idempotency-Key`，返回
+    exact `SimulationRun`、`X-Simulation-Run-Id` 和 replay receipt；
+  - `GET /api/authoring/simulations/{runId}` 只在 verified tenant/project/environment scope 内返回 completed run；
+  - 两条路均 `no-store`，不信任客户端自报 scope，也不返回 Fixture 之外的 protected material。
+- 在 `IntegrationOperation` 中增加独立 execute/read operation，使认证、审计与用途仍由既有 integration
+  authority 统一决定；业务/transport 错误继续投影为统一的 authoring Problem wire shape。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=SimulationModuleTest,JdbcSimulationRunStoreTest,SimulationRunSchemaReadinessTest,\
+SimulationRunRuntimeConfigurationTest,ApiSimulationApplicationConfigurationTest,\
+ApiSimulationControllerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 34, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8122, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+首轮全量曾因一次 Embedded PostgreSQL 端口/SSL 就绪竞争出现 1 个环境 error；同一认证测试随后独立
+1/1 green，最终 clean verify 未复现且全绿。该证据不被计作产品失败，也不被隐藏。
+
+### 当前差距评估
+
+用户现在可以通过后端认证 API 选择一个已持久化的私有 Fixture Case，幂等执行零 egress 模拟，并读取
+持久化 `MOCKED`/contract/assertion/governance evidence。这关闭了单 API Resource 的首条 Fixture→Run 后端
+主路径。仍未完成的是 `AD_HOC`、真实 external-read authorization、governed material、内部节点 control、
+Reusable Flow/DAG 的保存与执行，以及前端对象页。累计完成度保守调整为 **62%**，剩余差距 **38%**；
+下一主切片必须进入 Reusable Flow/DAG，而不是继续扩充单资源外围能力。

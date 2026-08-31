@@ -214,6 +214,19 @@ authorities exist. Request and run records round-trip against the frozen JSON Sc
 out of `toString()`. The focused module/protocol gate is **17/17 green** with no failures, errors or skips. This
 authority-only step does not yet claim JDBC durability or the authenticated Simulation POST/GET adapter.
 
+The durable C8 slice adds V013 `rg_authoring_simulation_runs`, a database-time leased JDBC run authority, and
+feature-scoped runtime/application configuration. `POST /api/authoring/simulations` now executes the supported
+Fixture Case tracer behind trusted `API_RESOURCE_AUTHORING` authentication and a required `Idempotency-Key`;
+`GET /api/authoring/simulations/{runId}` reads the exact immutable completed run inside the verified scope. Both
+routes are no-store, replay exposes `Idempotency-Replayed`, and the JDBC authority rejects altered fingerprints,
+run JSON, status, scope or duplicate provenance. V013 readiness verifies the exact columns, primary/unique keys,
+recovery index, status set, fingerprint shape and RUNNING/completed state closure without repairing schema. The
+focused module/store/readiness/configuration/controller/schema gate is **34/34 green** with no failures, errors or
+skips. The final serial `clean verify` completed with `Tests run: 8,122; failures: 0; errors: 0; skipped: 33` and
+`BUILD SUCCESS`. `AD_HOC`, real external reads, governed Fixture material, internal-node controls, Reusable
+Flow/DAG execution and the corresponding object pages remain fail-closed or unimplemented rather than silently
+falling back to a different execution path.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

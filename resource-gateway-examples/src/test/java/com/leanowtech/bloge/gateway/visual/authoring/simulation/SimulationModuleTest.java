@@ -23,6 +23,12 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Staged
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
+import org.h2.jdbcx.JdbcDataSource;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -114,6 +120,27 @@ class SimulationModuleTest {
                 .isEqualTo(SimulationFailure.Code.UNSUPPORTED);
     }
 
+    @Test
+    void completedRunReplaysAfterTheJdbcRunAuthorityReopens() {
+        Fixture fixture = fixture();
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:simulation-module;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260831_013__authoring_simulation_runs.sql")).execute(dataSource);
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        SimulationRequest request = SimulationRequest.fixtureCase(
+                fixture.generated().view().fixtureSetId(), 1, "happy");
+        SimulationModule firstModule = new SimulationModule(fixture.resources(), fixture.fixtures(),
+                jdbcStore(jdbc), Clock.fixed(NOW, ZoneOffset.UTC), () -> "sim-durable");
+        SimulationRun first = firstModule.run(SCOPE, "durable-key", request);
+        SimulationModule reopened = new SimulationModule(fixture.resources(), fixture.fixtures(),
+                jdbcStore(jdbc), Clock.fixed(NOW, ZoneOffset.UTC),
+                () -> { throw new AssertionError("replay must not allocate another run id"); });
+
+        assertThat(reopened.run(SCOPE, "durable-key", request)).isEqualTo(first);
+        assertThat(reopened.readRequired(SCOPE, "sim-durable")).isEqualTo(first);
+    }
+
     private static Fixture fixture() {
         InMemoryApiResourceCommitStore resources = new InMemoryApiResourceCommitStore(
                 Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofSeconds(30),
@@ -172,6 +199,12 @@ class SimulationModuleTest {
                 new CommandKey(SCOPE, "author", AuthoringEndpoint.API_RESOURCE_SAVE,
                         "customer-profile", "resource-key"), "sha256:" + "a".repeat(64),
                 Instant.parse("2031-01-01T00:00:00Z"), ExpectedRevision.create());
+    }
+
+    private static JdbcSimulationRunStore jdbcStore(JdbcTemplate jdbc) {
+        return new JdbcSimulationRunStore(jdbc,
+                new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                Duration.ofSeconds(30));
     }
 
     private record Fixture(InMemoryApiResourceCommitStore resources,

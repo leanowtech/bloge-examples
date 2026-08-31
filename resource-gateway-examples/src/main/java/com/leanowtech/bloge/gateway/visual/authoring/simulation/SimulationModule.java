@@ -62,17 +62,25 @@ public final class SimulationModule {
 
     /** Executes or exactly replays one fixture-backed simulation. */
     public SimulationRun run(AuthoringScope scope, String idempotencyKey, SimulationRequest request) {
+        return execute(scope, idempotencyKey, request).run();
+    }
+
+    /** Executes one command and exposes whether the exact immutable result was replayed. */
+    public SimulationExecutionResult execute(AuthoringScope scope, String idempotencyKey,
+                                             SimulationRequest request) {
         validate(scope, idempotencyKey, request);
         CompiledCase compiled = compile(scope, (SimulationRequest.Source.FixtureCase) request.source());
         String fingerprint = fingerprint(request);
         Instant startedAt = clock.instant();
         SimulationRunStore.Claim claim = runs.claim(scope, idempotencyKey, fingerprint, runIds, startedAt);
-        if (claim instanceof SimulationRunStore.Claim.Replay replay) return replay.run();
+        if (claim instanceof SimulationRunStore.Claim.Replay replay) {
+            return new SimulationExecutionResult(replay.run(), true);
+        }
         if (claim instanceof SimulationRunStore.Claim.Conflict) throw failure(SimulationFailure.Code.CONFLICT);
         if (claim instanceof SimulationRunStore.Claim.Busy) throw failure(SimulationFailure.Code.BUSY);
         String runId = ((SimulationRunStore.Claim.Acquired) claim).runId();
         SimulationRun result = execute(runId, startedAt, compiled);
-        return runs.complete(scope, idempotencyKey, fingerprint, result);
+        return new SimulationExecutionResult(runs.complete(scope, idempotencyKey, fingerprint, result), false);
     }
 
     /** Reads one immutable run in the trusted scope. */
@@ -81,6 +89,11 @@ public final class SimulationModule {
             throw failure(SimulationFailure.Code.VALIDATION);
         }
         return runs.find(scope, runId);
+    }
+
+    /** Reads one immutable run or returns the closed not-found code. */
+    public SimulationRun readRequired(AuthoringScope scope, String runId) {
+        return read(scope, runId).orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
     }
 
     private CompiledCase compile(AuthoringScope scope, SimulationRequest.Source.FixtureCase source) {
