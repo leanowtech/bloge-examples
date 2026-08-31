@@ -250,6 +250,18 @@ fingerprint; the full command still participates in the request fingerprint. `Re
 the next slice; this reference adapter is not production persistence evidence. The serial `clean verify`
 completed with `Tests run: 8,132; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+The durable Flow draft slice adds V014 identities, immutable revisions, exact heads, and committed
+idempotency commands behind the same `ReusableFlowDraftStore` contract. One local JDBC transaction commits
+the revision, head, receipt, and command; exact replay is checked before current-head CAS, including simultaneous
+same-key creates. Reads close draft JSON, receipt, content fingerprint, stable draft identity, revision, and strong
+ETag, so damaged head/revision authority fails as integrity rather than appearing absent. The opt-in
+`gateway.authoring.reusable-flow.enabled` runtime is disabled by default and fails startup unless the read-only
+V014 readiness probe verifies all tables, primary keys, the exact head foreign key, and command expectation
+closure. This slice still has no authenticated Flow PUT/GET, production Resource catalog adapter, publication,
+Flow Fixture simulation, or object page; those remain the next vertical slices. The focused compiler/module/JDBC/
+readiness/schema gate passed `35/35` with no failures, errors, or skips. The serial `clean verify` completed with
+`Tests run: 8,143; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -1326,3 +1326,52 @@ BUILD SUCCESS
 本切片尚未增加 V014/JDBC/readiness、production exact Resource catalog adapter、认证 PUT/GET、publication、
 whole-flow Fixture simulation 或对象页。因此累计完成度仅保守调整为 **67%**，剩余差距 **33%**；下一刀
 必须把相同 `ReusableFlowDraftStore` contract 落到 JDBC 并接入 transport，不能把 in-memory green 当生产闭环。
+
+## 34. Iteration 33 — durable reusable Flow Draft authority
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 V014 Flow Draft authority：scoped identity、immutable revision、exact head 与 committed idempotency
+  command。稳定 `draftId` 由服务端创建；head 通过 revision、draftId、content fingerprint、strong ETag 的
+  exact foreign key 绑定不可变 revision。
+- 新增 `JdbcReusableFlowDraftStore`。一次本地数据库事务闭合 revision/head/receipt/command；先按
+  scope+actor+flowId+idempotency key 做 exact replay，再锁 current head 做 create/update CAS。并发同 key
+  create 只有一个 commit，另一方取得同一 committed replay；失败 CAS 不占用 key。
+- committed read 对 draft JSON、receipt、flow/draft/revision、content fingerprint 与 ETag 做完整闭包。
+  head 已存在但 exact revision 关联损坏时返回 `INTEGRITY`，不会伪装成 not found。
+- 新增只读 `ReusableFlowDraftSchemaReadiness` 与默认关闭的 feature-scoped runtime configuration。启用时
+  缺 V014、主键、exact head FK 或 command expectation closure 均阻止启动；运行时不创建或修复 schema。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowCompilerTest,ReusableFlowModuleTest,JdbcReusableFlowDraftStoreTest,\
+ReusableFlowDraftSchemaReadinessTest,ReusableFlowDraftRuntimeConfigurationTest,\
+AuthoringProtocolSchemaTest test
+
+Tests run: 35, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8143, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+readiness 与 JDBC persistence 证据来自 H2 PostgreSQL mode；尚未冒充真实 PostgreSQL 认证。
+
+### 当前差距评估
+
+Flow Draft 已具有生产 JDBC revision/head/CAS/idempotency authority，但尚无 exact API Resource catalog、
+认证 PUT/GET、immutable Flow Version publication、whole-flow Fixture simulation 或 Tool/Solution 对象页。
+累计完成度保守调整为 **69%**，剩余差距 **31%**。下一刀必须交付 production exact Resource catalog 与
+authenticated Flow PUT/GET；随后再进入 immutable publication、whole-flow Fixture simulation 与对象页。
