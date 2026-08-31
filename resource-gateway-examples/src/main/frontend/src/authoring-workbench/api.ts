@@ -35,9 +35,11 @@ export async function listApiResourceFixtures(
 /** Reads one committed API Resource without exposing Connection secret metadata. */
 export async function readApiResource(
   resourceId: string,
+  revision?: number,
   transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<StoredResponse<ApiResourceSpec>> {
-  const response = await transport(`/api/authoring/resources/${encodeURIComponent(resourceId)}`, {
+  const suffix = revision === undefined ? '' : `?revision=${revision}`;
+  const response = await transport(`/api/authoring/resources/${encodeURIComponent(resourceId)}${suffix}`, {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   });
   return storedResponse(response, false);

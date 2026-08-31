@@ -11,7 +11,7 @@ describe('simple authoring transport', () => {
         ETag: '"r2"', 'Idempotency-Replayed': 'false',
       }));
 
-    expect(await readApiResource('profile', transport)).toMatchObject({ strongEtag: '"r1"' });
+    expect(await readApiResource('profile', undefined, transport)).toMatchObject({ strongEtag: '"r1"' });
     await saveApiResource('profile', {} as ApiResourceSaveCommand, '"r1"', 'save-1', transport);
 
     const readHeaders = new Headers(transport.mock.calls[0][1]?.headers);
@@ -54,7 +54,7 @@ describe('simple authoring transport', () => {
       detail: 'Choose an existing Connection.',
     }, {}, 404));
 
-    await expect(readApiResource('profile', transport)).rejects.toThrow('Choose an existing Connection.');
+    await expect(readApiResource('profile', undefined, transport)).rejects.toThrow('Choose an existing Connection.');
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
+import FlowObjectPage from './FlowObjectPage';
 import { listApiResourceFixtures, readApiResource, saveApiResource, simulateFixtureCase } from './api';
 import {
   buildApiResourceSaveCommand,
@@ -29,8 +30,14 @@ export default function AuthoringWorkbench() {
   const { t } = useI18n();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedResourceId = params.get('resourceId')?.trim() || '';
+  const requestedFlowId = params.get('flowId')?.trim() || '';
   const createApi = params.get('create') === 'api';
+  const createFlow = params.get('create') === 'flow';
+  const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
+  if (requestedFlowId || createFlow) {
+    return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind} />;
+  }
   if (!requestedResourceId && !createApi) {
     return <AuthoringHome />;
   }
@@ -52,12 +59,12 @@ function AuthoringHome() {
           <strong>{t('Connect an API')}</strong>
           <span>{t('Describe one operation, add examples, and simulate it immediately.')}</span>
         </a>
-        <a href="/author/?spine=v1&intent=build-tool&flowKind=TOOL" data-testid="create-tool">
+        <a href="/workbench/?create=flow&kind=TOOL" data-testid="create-tool">
           <Boxes aria-hidden="true" />
           <strong>{t('Create a tool')}</strong>
           <span>{t('Compose API resources and published flows into a reusable DAG.')}</span>
         </a>
-        <a href="/author/?spine=v1&intent=build-tool&flowKind=SOLUTION" data-testid="create-solution">
+        <a href="/workbench/?create=flow&kind=SOLUTION" data-testid="create-solution">
           <Braces aria-hidden="true" />
           <strong>{t('Create a solution')}</strong>
           <span>{t('Build a reusable solution with the same Flow contract and runtime.')}</span>

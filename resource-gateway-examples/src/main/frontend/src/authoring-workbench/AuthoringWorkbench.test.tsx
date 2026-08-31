@@ -37,8 +37,8 @@ describe('simple authoring workbench', () => {
 
     expect(host.querySelectorAll('.simple-authoring-intents a')).toHaveLength(3);
     expect(link('create-api-resource').getAttribute('href')).toBe('/workbench/?create=api');
-    expect(link('create-tool').getAttribute('href')).toContain('flowKind=TOOL');
-    expect(link('create-solution').getAttribute('href')).toContain('flowKind=SOLUTION');
+    expect(link('create-tool').getAttribute('href')).toBe('/workbench/?create=flow&kind=TOOL');
+    expect(link('create-solution').getAttribute('href')).toBe('/workbench/?create=flow&kind=SOLUTION');
   });
 
   it('saves one compound Resource command and immediately runs its exact Default Fixture Case', async () => {

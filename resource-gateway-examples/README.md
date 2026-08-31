@@ -343,6 +343,18 @@ budget pass. The serial `clean verify` completed with `Tests run: 8,188; failure
 `BUILD SUCCESS`. This tracer deliberately supports existing Connections and flat object examples; Connection creation,
 advanced binding editing, and Tool/Solution/Fixture object pages remain separate slices rather than hidden JSON.
 
+The same `/workbench/` route now owns Tool and Solution object pages. Authors add committed API Resources in
+execution order; the page pins every exact Resource revision/fingerprint and derives the DAG only from explicit
+input mappings. A same-name, same-type field is wired from the nearest prior node output; otherwise it remains a
+declared Flow input. Saving returns an exact Flow Draft coordinate. Its Fixture task authors one visible whole-flow
+`SUBJECT + RETURN` Case, saves it through the standalone Fixture Set protocol, and immediately runs a deny-all
+Simulation; internal API nodes are not executed or misreported as real. The Versions task publishes the exact
+Draft as an immutable reusable Flow Version. Tool and Solution share this protocol and page instead of maintaining
+separate runtimes. The focused object-page model/transport/component gate is **44/44 green**, i18n is **39/39
+green**, TypeScript passes, and the production Vite/UX/host/bundle gates pass; the AuthoringWorkbench startup
+closure is **186.90 KiB / 10 files**, below the 350 KiB ceiling. Fixture sharing/promotion and real browser/
+PostgreSQL acceptance remain open.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -1701,3 +1701,49 @@ Simulation → 可重载对象页。当前仍要求预先存在 Connection，且
 仍进入既有 Author workspace，尚未使用统一对象页，Fixture 也没有独立对象页/share 动作。真实浏览器与真实
 PostgreSQL 验收仍未执行。累计完成度保守调整为 **92%**，剩余差距 **8%**；下一刀进入 Tool/Solution 共用
 对象页与 DAG 表单，再补 Fixture share/promotion 和真实端到端，不回退到隐藏 JSON 编辑。
+
+## 41. Iteration 40 — Tool/Solution 共用对象页、DAG、Fixture 与模拟
+
+日期：2026-09-01。
+
+### 已完成
+
+- `/workbench/` 的“创建工具”和“创建方案”现在进入同一个 Flow 对象页，不再跳回大而全的旧 Author
+  workspace。Tool/Solution 只共享一种 `ReusableFlowCommand`、Fixture 和 Simulation 语义。
+- 作者按执行顺序添加已提交 API Resource。页面读取 exact revision/fingerprint；同名同类型字段自动选择最近的
+  前序 `NODE_OUTPUT`，否则明确成为 `FLOW_INPUT`。DAG 边仍只由 mapping 派生，UI 不保存第二份拓扑状态。
+- 保存 Flow 使用现有 strong ETag + idempotency 协议并返回 exact Flow Draft subject。重载对象页会重新读取每个
+  pinned API Resource revision，fingerprint 漂移时 fail closed。
+- Fixture task 通过可见 input/output 表单创建一个 whole-flow `SUBJECT + RETURN/INLINE` Case；保存后立即运行
+  deny-all Simulation。该证据只表示整条 Flow 被 Fixture 替代，内部 API 节点没有执行。
+- Versions task 把 exact Draft 发布为 immutable Flow Version，并在同一对象页显示 publication coordinate。
+
+### 验证
+
+```text
+npm test -- --run src/authoring-workbench/model.test.ts \
+  src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/flowModel.test.ts \
+  src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx \
+  src/authoring-workbench/FlowObjectPage.test.tsx \
+  src/App.test.tsx src/ux/routeChunkContract.test.ts
+
+Test Files: 8 passed; Tests: 44 passed
+
+npm run check:i18n
+Test Files: 6 passed; Tests: 39 passed
+
+npx tsc --noEmit
+npm run build
+
+TypeScript, Vite production build, i18n 39/39, UX 52/52, host 21/21 and bundle gates: PASS
+AuthoringWorkbench startup closure: 186.90 KiB / 10 files (budget 350 KiB)
+```
+
+### 当前差距评估
+
+API Resource、Tool 和 Solution 已具备统一入口和同构对象任务，且 Tool/Solution 可以用多个 exact API Resource
+组成可重载、可发布、可设置 whole-flow Fixture、可模拟的 DAG。尚未闭合的是 Fixture 独立对象页及 share/
+promotion 可见动作，以及当前新工作台的真实浏览器与真实 PostgreSQL acceptance。累计完成度保守调整为
+**96%**，剩余差距 **4%**；下一刀先闭合 Fixture 生命周期和独立对象页，再做最终真实端到端证据。

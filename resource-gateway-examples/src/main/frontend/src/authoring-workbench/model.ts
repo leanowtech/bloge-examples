@@ -5,7 +5,7 @@ export interface SchemaEnvelope {
   version: '2020-12';
   schema: {
     type: 'object';
-    properties: Record<string, { type: 'string' | 'integer' | 'number' | 'boolean' | 'object' }>;
+    properties: Record<string, { type: string; [key: string]: unknown }>;
     required: string[];
     additionalProperties: false;
   };
@@ -80,7 +80,11 @@ export interface FixtureSetSummary {
   revision: number;
   fingerprint: string;
   displayName: string;
-  subject: ApiResourceRef;
+  subject: ApiResourceRef | {
+    kind: 'FLOW_DRAFT'; draftId: string; revision: number; fingerprint: string;
+  } | {
+    kind: 'FLOW_VERSION'; publicationId: string; revision: number; fingerprint: string;
+  };
   cases: Array<{ caseId: string; name: string }>;
   status: string;
   statusRevision: number;
