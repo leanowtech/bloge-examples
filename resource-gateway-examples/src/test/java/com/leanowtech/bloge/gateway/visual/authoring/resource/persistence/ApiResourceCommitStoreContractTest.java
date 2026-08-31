@@ -46,6 +46,30 @@ class ApiResourceCommitStoreContractTest {
     }
 
     @Test
+    void oldStrongEtagResolvesAfterTheHeadAdvances() {
+        InMemoryApiResourceCommitStore store = store();
+        CommandLease create = acquired(store, KEY, ExpectedRevision.create(), R1);
+        StagedApiResource stagedCreate = store.stage(create, "connection", command("one"));
+
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", stagedCreate.strongEtag())).isEmpty();
+        store.commit(create, receipt(stagedCreate));
+        StoredApiResource first = store.findRevision(SCOPE, "profile", 1).orElseThrow();
+        CommandLease update = acquired(store, key("k2"), ExpectedRevision.match(1), R2);
+        StagedApiResource stagedUpdate = store.stage(update, "connection", command("two"));
+        store.commit(update, receipt(stagedUpdate));
+        StoredApiResource second = store.findRevision(SCOPE, "profile", 2).orElseThrow();
+
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", first.receipt().strongEtag()))
+                .contains(first);
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", second.receipt().strongEtag()))
+                .contains(second);
+        assertThat(store.findRevisionByStrongEtag(new AuthoringScope("other", "project", "dev"),
+                "profile", first.receipt().strongEtag())).isEmpty();
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "other", first.receipt().strongEtag())).isEmpty();
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", "\"unknown\"")).isEmpty();
+    }
+
+    @Test
     void scopeAndIdempotencyCoordinatesAreIsolated() {
         InMemoryApiResourceCommitStore store = store();
         CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);

@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -186,6 +187,26 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
     public Optional<StoredApiResource> findRevision(AuthoringScope scope, String resourceId, long revision) {
         synchronized (state.monitor) {
             return Optional.ofNullable(state.revisions.get(new ResourceRevisionKey(new ResourceKey(scope, resourceId), revision)));
+        }
+    }
+
+    @Override
+    public Optional<StoredApiResource> findRevisionByStrongEtag(AuthoringScope scope, String resourceId,
+                                                               String strongEtag) {
+        Objects.requireNonNull(scope, "scope");
+        Objects.requireNonNull(resourceId, "resourceId");
+        if (!StrongEtag.isValid(strongEtag)) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "strong ETag is invalid");
+        }
+        synchronized (state.monitor) {
+            return state.revisions.entrySet().stream()
+                    .filter(entry -> entry.getKey().resource().equals(new ResourceKey(scope, resourceId)))
+                    .map(Map.Entry::getValue)
+                    .filter(stored -> strongEtag.equals(stored.receipt().strongEtag()))
+                    .reduce((left, right) -> {
+                        throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                                "committed resource ETag provenance is ambiguous");
+                    });
         }
     }
 

@@ -21,4 +21,7 @@ public interface ApiResourceCommitStore extends AuthoringCommandClaimStore {
     Optional<StoredApiResource> findHead(AuthoringScope scope, String resourceId);
     /** Reads only a committed exact revision in a scope; staged rows are never returned. */
     Optional<StoredApiResource> findRevision(AuthoringScope scope, String resourceId, long revision);
+    /** Resolves one committed historical revision by its opaque strong validator. */
+    Optional<StoredApiResource> findRevisionByStrongEtag(AuthoringScope scope, String resourceId,
+                                                         String strongEtag);
 }

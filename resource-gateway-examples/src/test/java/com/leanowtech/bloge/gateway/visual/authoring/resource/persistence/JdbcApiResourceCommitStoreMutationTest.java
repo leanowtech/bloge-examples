@@ -108,6 +108,26 @@ class JdbcApiResourceCommitStoreMutationTest {
     }
 
     @Test
+    void oldStrongEtagResolvesAfterHeadAdvancesButStagedTagDoesNot() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease create = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource stagedCreate = store.stage(create, "connection", command("one"));
+
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", stagedCreate.strongEtag())).isEmpty();
+        store.commit(create, receipt(stagedCreate));
+        StoredApiResource first = store.findRevision(SCOPE, "profile", 1).orElseThrow();
+        CommandLease update = acquire(store, key("two"), ExpectedRevision.match(1), FP2);
+        StagedApiResource stagedUpdate = store.stage(update, "connection", command("two"));
+        store.commit(update, receipt(stagedUpdate));
+
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", first.receipt().strongEtag()))
+                .contains(first);
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "profile", stagedUpdate.strongEtag()))
+                .contains(store.findRevision(SCOPE, "profile", 2).orElseThrow());
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "other", first.receipt().strongEtag())).isEmpty();
+    }
+
+    @Test
     void stageIsIdempotentAndProjectionSetTamperingFailsClosed() {
         JdbcApiResourceCommitStore store = store();
         CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);

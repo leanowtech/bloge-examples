@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisio
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -304,6 +305,36 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         Objects.requireNonNull(resourceId, "resourceId");
         if (revision < 1) return Optional.empty();
         return read(scope, resourceId, revision);
+    }
+
+    /** Resolves one committed historical revision by its opaque strong validator. */
+    @Override
+    public Optional<StoredApiResource> findRevisionByStrongEtag(AuthoringScope scope, String resourceId,
+                                                               String strongEtag) {
+        Objects.requireNonNull(scope, "scope");
+        Objects.requireNonNull(resourceId, "resourceId");
+        if (!StrongEtag.isValid(strongEtag)) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "strong ETag is invalid");
+        }
+        try {
+            List<Long> revisions = jdbc.query("""
+                    SELECT revision
+                      FROM rg_api_resource_revisions
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                       AND resource_id=? AND strong_etag=? AND state='COMMITTED'
+                    """, (rs, row) -> rs.getLong(1), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), resourceId, strongEtag);
+            if (revisions.isEmpty()) return Optional.empty();
+            if (revisions.size() != 1) {
+                throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                        "committed resource ETag provenance is ambiguous");
+            }
+            return findRevision(scope, resourceId, revisions.getFirst());
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        } catch (DataAccessException ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "read persistence failed");
+        }
     }
 
     private Optional<StoredApiResource> read(AuthoringScope scope, String resourceId, Long revision) {
