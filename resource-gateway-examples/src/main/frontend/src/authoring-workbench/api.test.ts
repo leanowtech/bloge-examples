@@ -1,9 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { listApiResourceFixtures, readApiResource, saveApiResource, simulateFixtureCase } from './api';
+import {
+  listApiResourceFixtures,
+  previewOpenApi,
+  readApiResource,
+  saveApiResource,
+  simulateFixtureCase,
+} from './api';
 import type { ApiResourceSaveCommand } from './model';
 
 describe('simple authoring transport', () => {
+  it('previews inline OpenAPI under the authoring purpose without save headers', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.openApiPreview.v1', discoveryId: 'preview-1', operations: [],
+    }));
+
+    await previewOpenApi('openapi: 3.0.3', ['getCustomer'], transport);
+
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/resources:preview-openapi');
+    const request = transport.mock.calls[0][1];
+    expect(request?.method).toBe('POST');
+    const headers = new Headers(request?.headers);
+    expect(headers.get('X-Purpose')).toBe('API_RESOURCE_AUTHORING');
+    expect(headers.get('Idempotency-Key')).toBeNull();
+    expect(headers.get('If-Match')).toBeNull();
+    expect(JSON.parse(String(request?.body))).toEqual({
+      schemaVersion: 'bloge.openApiPreviewCommand.v1',
+      source: { kind: 'INLINE', documentText: 'openapi: 3.0.3' },
+      operationIds: ['getCustomer'],
+    });
+  });
   it('reads and saves with authenticated purpose, strong CAS, and idempotency', async () => {
     const transport = vi.fn()
       .mockResolvedValueOnce(response({ resourceId: 'profile' }, { ETag: '"r1"' }))

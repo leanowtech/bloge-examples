@@ -19,6 +19,12 @@ export interface ApiResourceFormDraft {
   path: string;
   requestExample: string;
   responseExample: string;
+  importedResource: ApiResourceSaveCommand['resource'] | null;
+}
+
+export interface ApiResourceBinding {
+  from: string;
+  to: { location: 'PATH' | 'QUERY' | 'HEADER' | 'BODY'; name: string };
 }
 
 export interface ApiResourceSaveCommand {
@@ -29,14 +35,26 @@ export interface ApiResourceSaveCommand {
     operation: {
       method: ApiResourceFormDraft['method'];
       path: string;
-      bindings: Array<{ from: string; to: { location: 'QUERY'; name: string } }>;
+      bindings: ApiResourceBinding[];
     };
     contract: { input: SchemaEnvelope; output: SchemaEnvelope };
     response: { success: { kind: 'HTTP_STATUS'; codes: number[] } };
     effect: { kind: 'READ_ONLY' | 'FIXTURE_ONLY_WRITE' };
-    examples: Array<{ name: 'default'; input: JsonObject; output: JsonObject }>;
+    examples: Array<{ name: string; input: JsonObject; output: JsonObject }>;
   };
-  defaultFixture: { kind: 'FROM_EXAMPLES'; displayName: string; exampleNames: ['default'] };
+  defaultFixture: { kind: 'FROM_EXAMPLES'; displayName: string; exampleNames: string[] };
+}
+
+export interface OpenApiPreview {
+  schemaVersion: 'bloge.openApiPreview.v1';
+  discoveryId: string;
+  operations: Array<{
+    operationId: string;
+    method: ApiResourceFormDraft['method'];
+    path: string;
+    suggestedResource: ApiResourceSaveCommand['resource'];
+    diagnostics: Array<{ code: string; message: string }>;
+  }>;
 }
 
 export interface ApiResourceRef {
@@ -127,11 +145,18 @@ export function buildApiResourceSaveCommand(draft: ApiResourceFormDraft): ApiRes
   const output = parseObjectExample(draft.responseExample, 'Response example');
   const inputSchema = inferSchema(input);
   const outputSchema = inferSchema(output);
+  const imported = draft.importedResource;
+  if (imported && (imported.operation.method !== draft.method || imported.operation.path !== draft.path
+      || JSON.stringify(imported.examples[0]?.input ?? {}) !== JSON.stringify(input)
+      || JSON.stringify(imported.examples[0]?.output ?? {}) !== JSON.stringify(output))) {
+    throw new Error('The imported operation changed. Re-import it or edit it as a manual Resource.');
+  }
+  const exampleName = imported?.examples[0]?.name ?? 'default';
 
   return {
     schemaVersion: 'bloge.apiResourceSaveCommand.v1',
     connection: { mode: 'EXISTING', connectionId },
-    resource: {
+    resource: imported ? { ...imported, displayName } : {
       displayName,
       operation: {
         method: draft.method,
@@ -144,12 +169,12 @@ export function buildApiResourceSaveCommand(draft: ApiResourceFormDraft): ApiRes
       contract: { input: inputSchema, output: outputSchema },
       response: { success: { kind: 'HTTP_STATUS', codes: [200] } },
       effect: { kind: draft.method === 'GET' ? 'READ_ONLY' : 'FIXTURE_ONLY_WRITE' },
-      examples: [{ name: 'default', input, output }],
+      examples: [{ name: exampleName, input, output }],
     },
     defaultFixture: {
       kind: 'FROM_EXAMPLES',
       displayName: `${displayName} default`,
-      exampleNames: ['default'],
+      exampleNames: [exampleName],
     },
   };
 }
@@ -165,6 +190,32 @@ export function formDraftFromSpec(spec: ApiResourceSpec): ApiResourceFormDraft {
     path: spec.operation.path,
     requestExample: JSON.stringify(example?.input ?? {}, null, 2),
     responseExample: JSON.stringify(example?.output ?? {}, null, 2),
+    importedResource: {
+      displayName: spec.displayName,
+      operation: spec.operation,
+      contract: spec.contract,
+      response: spec.response,
+      effect: spec.effect,
+      examples: spec.examples,
+    },
+  };
+}
+
+/** Applies one server-projected OpenAPI operation while preserving the chosen Connection. */
+export function formDraftFromOpenApiOperation(
+  current: ApiResourceFormDraft,
+  operation: OpenApiPreview['operations'][number],
+): ApiResourceFormDraft {
+  const example = operation.suggestedResource.examples[0];
+  return {
+    resourceId: current.resourceId.trim() || operation.operationId,
+    displayName: operation.suggestedResource.displayName,
+    connectionId: current.connectionId,
+    method: operation.method,
+    path: operation.path,
+    requestExample: JSON.stringify(example?.input ?? {}, null, 2),
+    responseExample: JSON.stringify(example?.output ?? {}, null, 2),
+    importedResource: operation.suggestedResource,
   };
 }
 

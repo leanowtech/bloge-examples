@@ -70,6 +70,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveIntent;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.InMemoryApiResourceCommitStore;
@@ -78,8 +80,11 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule
 import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.OpenApiPreviewController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 
 import org.junit.jupiter.api.AfterEach;
@@ -391,6 +396,24 @@ class VisualAuthoringBrowserDomTest {
         @Bean
         ApiResourceAuthoringProblemHandler browserApiResourceAuthoringProblemHandler() {
             return new ApiResourceAuthoringProblemHandler();
+        }
+
+        /** Reuses the production importer for the visible side-effect-free OpenAPI preview path. */
+        @Bean
+        OpenApiPreviewModule browserOpenApiPreviewModule(
+                OpenApiResourceDesignContractImporter importer,
+                JsonSchemaSampleGenerator samples,
+                ObjectMapper mapper) {
+            return new OpenApiPreviewModule(importer, samples, mapper, new ApiResourceDecisions(mapper));
+        }
+
+        /** Exposes the exact production preview transport without enabling JDBC Resource persistence. */
+        @Bean
+        OpenApiPreviewController browserOpenApiPreviewController(
+                OpenApiPreviewModule module,
+                IntegrationRequestAuthenticator authenticator,
+                ObjectMapper mapper) {
+            return new OpenApiPreviewController(module, authenticator, mapper);
         }
 
         /** Supplies a deterministic signed-workbook projection only to this real-browser test. */
@@ -1119,6 +1142,62 @@ class VisualAuthoringBrowserDomTest {
                             ? processTree::terminate
                             : service == null ? () -> { } : service::stop);
         }
+    }
+
+    @Test
+    void apiResourcePageVisiblyImportsAnOpenApiOperationWithoutPersistence() {
+        assumeAuthoringWorkbenchBundlePresent();
+        driver = newChromeDriverOrSkip();
+        driver.manage().window().setSize(new Dimension(1280, 900));
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/workbench/?create=api");
+
+        WebElement connection = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='api-connection-id']")));
+        connection.sendKeys("crm");
+        WebElement document = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='openapi-document']")));
+        document.sendKeys("""
+                openapi: 3.0.3
+                info: { title: Customer API, version: 1.0.0 }
+                servers: [{ url: https://api.example.test }]
+                paths:
+                  /customers/{customerId}:
+                    get:
+                      operationId: getCustomer
+                      summary: Get customer
+                      parameters:
+                        - { in: path, name: customerId, required: true, schema: { type: string } }
+                      responses:
+                        '200':
+                          description: Customer
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties: { name: { type: string } }
+                                required: [name]
+                """);
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='preview-openapi']"))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='use-openapi-operation-getCustomer']"))).click();
+
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-resource-id']"))
+                .getAttribute("value")).isEqualTo("getCustomer");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-connection-id']"))
+                .getAttribute("value")).isEqualTo("crm");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-path']"))
+                .getAttribute("value")).isEqualTo("/customers/{customerId}");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='openapi-binding-summary']"))
+                .getText()).contains("$.customerId", "PATH:customerId");
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        long scrollWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.scrollWidth")).longValue();
+        long clientWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.clientWidth")).longValue();
+        assertThat(scrollWidth).isLessThanOrEqualTo(clientWidth + 1);
     }
 
     @Test

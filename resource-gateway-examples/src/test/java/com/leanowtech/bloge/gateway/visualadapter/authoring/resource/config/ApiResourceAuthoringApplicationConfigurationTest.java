@@ -1,10 +1,14 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.resource.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
+import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -17,6 +21,9 @@ class ApiResourceAuthoringApplicationConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(ApiResourceAuthoringApplicationConfiguration.class))
             .withBean(ApiResourceDecisions.class, ApiResourceDecisions::new)
+            .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(OpenApiResourceDesignContractImporter.class, OpenApiResourceDesignContractImporter::new)
+            .withBean(JsonSchemaSampleGenerator.class, JsonSchemaSampleGenerator::new)
             .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class));
 
     @Test
@@ -25,6 +32,7 @@ class ApiResourceAuthoringApplicationConfigurationTest {
                 .run(context -> {
                     assertThat(context).doesNotHaveBean(ApiResourceAuthoringFacade.class);
                     assertThat(context).doesNotHaveBean(ApiResourceConnectionProjectionResolver.class);
+                    assertThat(context).doesNotHaveBean(OpenApiPreviewModule.class);
                 });
     }
 
@@ -36,6 +44,7 @@ class ApiResourceAuthoringApplicationConfigurationTest {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(ApiResourceAuthoringFacade.class);
                     assertThat(context).hasSingleBean(ApiResourceConnectionProjectionResolver.class);
+                    assertThat(context).hasSingleBean(OpenApiPreviewModule.class);
                 });
     }
 

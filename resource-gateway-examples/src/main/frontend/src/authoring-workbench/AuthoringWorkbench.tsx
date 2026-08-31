@@ -4,12 +4,20 @@ import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
 import FixtureObjectPage from './FixtureObjectPage';
-import { listApiResourceFixtures, readApiResource, saveApiResource, simulateFixtureCase } from './api';
+import {
+  listApiResourceFixtures,
+  previewOpenApi,
+  readApiResource,
+  saveApiResource,
+  simulateFixtureCase,
+} from './api';
 import {
   buildApiResourceSaveCommand,
+  formDraftFromOpenApiOperation,
   formDraftFromSpec,
   type ApiResourceFormDraft,
   type FixtureSetSummary,
+  type OpenApiPreview,
   type SimulationRun,
 } from './model';
 import './authoringWorkbench.css';
@@ -22,6 +30,7 @@ const EMPTY_DRAFT: ApiResourceFormDraft = {
   path: '/',
   requestExample: '{\n  "id": "customer-1"\n}',
   responseExample: '{\n  "name": "Ada",\n  "status": "active"\n}',
+  importedResource: null,
 };
 
 type ObjectTab = 'design' | 'fixture' | 'simulation' | 'versions';
@@ -94,6 +103,9 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
   const [activeTab, setActiveTab] = useState<ObjectTab>('design');
   const [busy, setBusy] = useState(initialResourceId.length > 0);
   const [message, setMessage] = useState('');
+  const [openApiDocument, setOpenApiDocument] = useState('');
+  const [openApiPreview, setOpenApiPreview] = useState<OpenApiPreview | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   useEffect(() => {
     if (!initialResourceId) return;
@@ -170,6 +182,21 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
     }
   };
 
+  const previewDocument = async () => {
+    setPreviewBusy(true);
+    setMessage('');
+    try {
+      const preview = await previewOpenApi(openApiDocument);
+      setOpenApiPreview(preview);
+      setMessage(t('Choose an operation.'));
+    } catch (failure) {
+      setOpenApiPreview(null);
+      setMessage(errorMessage(failure));
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
+
   return (
     <main className="api-resource-object" data-testid="api-resource-object">
       <header className="api-resource-object-header">
@@ -193,6 +220,31 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
 
       {activeTab === 'design' && (
         <form className="api-resource-design" onSubmit={saveAndSimulate}>
+          <section className="openapi-import" data-testid="openapi-import">
+            <h2>{t('Import')} OpenAPI</h2>
+            <Field label="OpenAPI">
+              <textarea data-testid="openapi-document" rows={7} value={openApiDocument}
+                onChange={(event) => setOpenApiDocument(event.target.value)} />
+            </Field>
+            <button type="button" data-testid="preview-openapi" disabled={previewBusy || !openApiDocument.trim()}
+              onClick={previewDocument}>
+              {previewBusy ? t('Loading...') : t('Preview')}
+            </button>
+            {openApiPreview && (
+              <ul className="openapi-operation-list" data-testid="openapi-operation-list">
+                {openApiPreview.operations.map((operation) => (
+                  <li key={operation.operationId}>
+                    <span><strong>{operation.suggestedResource.displayName}</strong>
+                      <small>{operation.method} {operation.path}</small></span>
+                    <button type="button" data-testid={`use-openapi-operation-${operation.operationId}`}
+                      onClick={() => setDraft(formDraftFromOpenApiOperation(draft, operation))}>
+                      {t('Use')}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
           <section>
             <h2>{t('API identity')}</h2>
             <div className="object-form-grid">
@@ -216,13 +268,14 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
             <div className="object-form-grid operation-grid">
               <Field label={t('Method')}>
                 <select data-testid="api-method" value={draft.method}
-                  onChange={(event) => setDraft({ ...draft, method: event.target.value as ApiResourceFormDraft['method'] })}>
+                  onChange={(event) => setDraft({ ...draft,
+                    method: event.target.value as ApiResourceFormDraft['method'], importedResource: null })}>
                   {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
                 </select>
               </Field>
               <Field label={t('Path')}>
                 <input data-testid="api-path" value={draft.path}
-                  onChange={(event) => setDraft({ ...draft, path: event.target.value })} required />
+                  onChange={(event) => setDraft({ ...draft, path: event.target.value, importedResource: null })} required />
               </Field>
             </div>
           </section>
@@ -232,14 +285,22 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
             <div className="object-example-grid">
               <Field label={t('Request example')}>
                 <textarea data-testid="api-request-example" rows={9} value={draft.requestExample}
-                  onChange={(event) => setDraft({ ...draft, requestExample: event.target.value })} />
+                  onChange={(event) => setDraft({ ...draft,
+                    requestExample: event.target.value, importedResource: null })} />
               </Field>
               <Field label={t('Response example')}>
                 <textarea data-testid="api-response-example" rows={9} value={draft.responseExample}
-                  onChange={(event) => setDraft({ ...draft, responseExample: event.target.value })} />
+                  onChange={(event) => setDraft({ ...draft,
+                    responseExample: event.target.value, importedResource: null })} />
               </Field>
             </div>
           </section>
+          {draft.importedResource && (
+            <p className="openapi-binding-summary" data-testid="openapi-binding-summary">
+              {t('Transport bindings')}: {draft.importedResource.operation.bindings
+                .map((binding) => `${binding.from} → ${binding.to.location}:${binding.to.name}`).join(' · ')}
+            </p>
+          )}
           <button className="primary-object-action" data-testid="save-and-simulate" disabled={busy}>
             <TestTube2 aria-hidden="true" />
             {busy ? t('Saving and simulating...') : t('Save and simulate')}

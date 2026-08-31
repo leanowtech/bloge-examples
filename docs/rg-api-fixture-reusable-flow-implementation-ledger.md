@@ -1853,12 +1853,72 @@ BUILD SUCCESS
 
 ### 当前差距评估
 
-用户主路径现在已经形成统一、可重载、可见的对象工作台：接入 API Resource → 为 Resource 保存 Default
+用户主路径已经形成统一、可重载、可见的对象工作台：接入 API Resource → 为 Resource 保存 Default
 Fixture 并模拟 → 用多个 exact API Resource 编排 Tool/Solution DAG → 保存/发布 Flow → 为 Flow Draft/Version
-设置 whole-flow Fixture → 从独立 Fixture 对象页保存并模拟。累计完成度保守调整为 **97.5%**，剩余差距
-**2.5%**。
+设置 whole-flow Fixture → 从独立 Fixture 对象页保存并模拟。此前基于这条主路径给出的 **97.5% / 2.5%**
+只是局部路径估算；它没有逐项覆盖已批准的 OpenAPI、Fixture share/promotion、legacy migration、部署认证和
+可操作性指标，因此自 Iteration 44 起撤回，不再作为当前完成度或停止条件证据。
 
-剩余 2.5% 不属于上述核心本地创作链的隐藏断点：Fixture share/promotion 尚未进入简化工作台；新 workbench
-纵向链尚未在部署方的真实外部 Vault/provider 与 production PostgreSQL migration 环境中做专项认证。全量 Maven
-包含既有 PostgreSQL 认证测试，但不能替代这条新增 UI/application 路径的部署级认证。因此当前实现满足
-“剩余差距低于 3%”的停止条件，但不把这两个 deployment/lifecycle 边界写成已完成。
+## 44. Iteration 43 — OpenAPI 内联预览与可见 Resource 投影
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增纯应用模块 `OpenApiPreviewModule` 和冻结 wire model：inline OpenAPI JSON/YAML 经既有 importer 发现并
+  投影为标准 `ApiResourceCommand`；模块不保存 Connection、Resource、Fixture 或原始文档，也不发起网络请求。
+- 新增 `POST /api/authoring/resources:preview-openapi`。Controller 使用独立 authoring purpose 和 trusted
+  identity boundary，严格反序列化、`no-store`，错误保持 payload-free。`REMOTE` 在 authenticated egress seam
+  落地前稳定返回 `424`，不以服务器 URL fetch 冒充支持。
+- 默认预览只列出可安全导入的 GET/POST/PUT/DELETE 操作，因此规范中一个 PATCH/blocked operation 不会让可用
+  操作一起消失；显式请求未知或不可导入 operation 仍 fail-closed。
+- `/workbench/` API Resource 对象页新增可见的 paste → Preview → Use 流程。选择后把 exact path/query/header/body
+  binding、扁平 schema、success matcher 和 deterministic example 带入既有 Save and simulate 流程；编辑 Method、
+  Path 或 examples 会退出 imported projection，避免 UI 展示与提交 authority 漂移。
+- 页面专用文案复用既有全局翻译，避免把局部标签继续推入所有路由共享的 locale startup closure；未提高预算。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=OpenApiPreviewModuleTest,AuthoringProtocolSchemaTest,\
+ApiResourceAuthoringControllerTest,ApiResourceAuthoringApplicationConfigurationTest test
+
+Tests run: 55; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/model.test.ts \
+  src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 3 passed; Tests: 13 passed
+
+npm run build
+
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 189.43 KiB / 11 files
+AuthorCanvas startup closure: 349.93 KiB / 22 files (budget 350 KiB)
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#apiResourcePageVisiblyImportsAnOpenApiOperationWithoutPersistence test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,207; Failures: 0; Errors: 0; Skipped: 35
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+本轮关闭了“设计中有 OpenAPI、对象页却只能手填 Method/Path/example”的明显接入断点，但不能据此重新宣称
+低于 3%。按已批准需求逐项复核，当前证据差距仍 **大于 3%（约 8–10%）**：
+
+1. `REMOTE` OpenAPI authenticated egress 尚未实现；
+2. Fixture share/promotion 尚未进入简化对象工作台；
+3. legacy 默认入口与已有资产迁移/兼容验收尚未闭合；
+4. 新对象工作台的完整 API → 多节点 Tool/Solution → Fixture lifecycle 浏览器链、production PostgreSQL/Vault
+   专项认证与用户任务时长/步骤数指标仍未形成同一份验收证据。
+
+因此继续实施，下一刀优先收敛 Fixture share/promotion 的对象页生命周期与真实浏览器证据；不以局部代码覆盖率
+替代整体可操作性和部署证据。

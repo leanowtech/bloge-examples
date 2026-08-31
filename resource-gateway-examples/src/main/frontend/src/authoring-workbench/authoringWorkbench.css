@@ -146,6 +146,31 @@
 }
 
 .primary-object-action:disabled { opacity: .55; cursor: wait; }
+.openapi-import > button,
+.openapi-operation-list button {
+  justify-self: start;
+  border: 1px solid var(--border, #cbd0d8);
+  border-radius: 9px;
+  padding: 9px 13px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.openapi-operation-list { display: grid; gap: 10px; padding: 0; list-style: none; }
+.openapi-operation-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--border, #d6d9df);
+  border-radius: 10px;
+}
+.openapi-operation-list span,
+.openapi-operation-list small { display: block; }
+.openapi-operation-list small { margin-top: 3px; color: var(--muted, #5d6470); }
+.openapi-binding-summary { overflow-wrap: anywhere; }
 .object-message { padding: 12px 14px; border-radius: 10px; background: #eef3ff; }
 .flow-add-resource { display: flex; gap: 0.75rem; }
 .flow-add-resource input { flex: 1; }
@@ -201,4 +226,5 @@
   .simulation-summary { grid-template-columns: 1fr; }
   .api-resource-object-header { display: block; }
   .object-tabs { overflow-x: auto; }
+  .openapi-operation-list li { align-items: stretch; flex-direction: column; }
 }

@@ -21,9 +21,15 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceip
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreview;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemDetail;
 import org.junit.jupiter.api.Test;
 
@@ -66,6 +72,43 @@ class AuthoringProtocolSchemaTest {
             Map.entry("simulation-request", "simulation-request-v1.schema.json"),
             Map.entry("simulation-run", "simulation-run-v1.schema.json"),
             Map.entry("problem-detail", "problem-detail-v1.schema.json"));
+
+    @Test
+    void openApiPreviewCommandAndGeneratedViewRoundTripAgainstFrozenSchemas() throws Exception {
+        OpenApiPreviewCommand command = new OpenApiPreviewCommand(
+                OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Inline("""
+                        openapi: 3.0.3
+                        info: { title: Profile, version: 1.0.0 }
+                        paths:
+                          /profile:
+                            get:
+                              operationId: getProfile
+                              responses:
+                                '200':
+                                  description: Profile
+                                  content:
+                                    application/json:
+                                      schema:
+                                        type: object
+                                        properties: { name: { type: string } }
+                                        required: [name]
+                        """),
+                List.of("getProfile"));
+        Path commandPath = SCHEMA_ROOT.resolve("openapi-preview-command-v1.schema.json");
+        JsonNode commandWire = MAPPER.valueToTree(command);
+        assertThat(validationErrors(read(commandPath), commandWire, commandPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(commandWire, OpenApiPreviewCommand.class).source())
+                .isInstanceOf(OpenApiPreviewCommand.Inline.class);
+
+        OpenApiPreview preview = new OpenApiPreviewModule(
+                new OpenApiResourceDesignContractImporter(), new JsonSchemaSampleGenerator(),
+                MAPPER, new ApiResourceDecisions(MAPPER)).preview(command);
+        Path viewPath = SCHEMA_ROOT.resolve("openapi-preview-view-v1.schema.json");
+        JsonNode viewWire = MAPPER.valueToTree(preview);
+        assertThat(validationErrors(read(viewPath), viewWire, viewPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(viewWire, OpenApiPreview.class)).isEqualTo(preview);
+    }
 
     @Test
     void allAuthoringSchemasAreDraft202012StrictAndReferencesResolve() throws Exception {

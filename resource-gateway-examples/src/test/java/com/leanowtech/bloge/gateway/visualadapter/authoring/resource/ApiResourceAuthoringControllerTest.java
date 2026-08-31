@@ -12,6 +12,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringResult;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreview;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.StoredApiResource;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,6 +52,59 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiResourceAuthoringControllerTest {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Instant NOW = Instant.parse("2026-08-31T00:00:00Z");
+
+    @Test
+    void previewsInlineOpenApiAfterTrustedAuthenticationWithoutPersistence() throws Exception {
+        ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
+        OpenApiPreviewModule previewModule = mock(OpenApiPreviewModule.class);
+        when(previewModule.preview(any())).thenReturn(new OpenApiPreview(
+                OpenApiPreview.SCHEMA_VERSION, "preview-0123456789abcdef", List.of()));
+
+        mvc(facade, previewModule, Set.of("API_RESOURCE_AUTHORING"))
+                .perform(post("/api/authoring/resources:preview-openapi")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("X-Correlation-Id", "corr-01")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.openApiPreviewCommand.v1",
+                                 "source":{"kind":"INLINE","documentText":"openapi: 3.0.3"},
+                                 "operationIds":[]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Pragma", "no-cache"))
+                .andExpect(jsonPath("$.schemaVersion").value("bloge.openApiPreview.v1"))
+                .andExpect(jsonPath("$.discoveryId").value("preview-0123456789abcdef"));
+
+        verify(previewModule).preview(any());
+        verify(facade, never()).save(any());
+    }
+
+    @Test
+    void remoteOpenApiFailureUsesTheAuthoringProblemShapeWithoutEchoingTheUrl() throws Exception {
+        ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
+        OpenApiPreviewModule previewModule = mock(OpenApiPreviewModule.class);
+        when(previewModule.preview(any())).thenThrow(
+                new OpenApiPreviewFailure(OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE));
+
+        mvc(facade, previewModule, Set.of("API_RESOURCE_AUTHORING"))
+                .perform(post("/api/authoring/resources:preview-openapi")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("X-Correlation-Id", "corr-01")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.openApiPreviewCommand.v1",
+                                 "source":{"kind":"REMOTE","url":"https://secret.example.test/openapi.yaml"}}
+                                """))
+                .andExpect(status().isFailedDependency())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.OPENAPI.CAPABILITY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.detail").value("Remote OpenAPI preview is unavailable."))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.not(
+                                org.hamcrest.Matchers.containsString("secret.example.test"))));
+    }
 
     @Test
     void readUsesTrustedScopeAndReturnsExactResourceEtag() throws Exception {
@@ -340,6 +397,11 @@ class ApiResourceAuthoringControllerTest {
     }
 
     private static MockMvc mvc(ApiResourceAuthoringFacade facade, Set<String> purposes) {
+        return mvc(facade, mock(OpenApiPreviewModule.class), purposes);
+    }
+
+    private static MockMvc mvc(ApiResourceAuthoringFacade facade, OpenApiPreviewModule previewModule,
+                               Set<String> purposes) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "authoring-client", "tenant-a", "org-a", "project-a", "test", "local",
                 "WORKLOAD", "author", "", purposes, Instant.MAX, true,
@@ -347,7 +409,9 @@ class ApiResourceAuthoringControllerTest {
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("author-token", identity, false),
                 new RecordingAudit());
-        return MockMvcBuilders.standaloneSetup(new ApiResourceAuthoringController(facade, authenticator, JSON))
+        return MockMvcBuilders.standaloneSetup(
+                        new ApiResourceAuthoringController(facade, authenticator, JSON),
+                        new OpenApiPreviewController(previewModule, authenticator, JSON))
                 .setControllerAdvice(new ApiResourceAuthoringProblemHandler(
                         Clock.fixed(NOW, ZoneOffset.UTC)))
                 .build();

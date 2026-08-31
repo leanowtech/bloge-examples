@@ -10,7 +10,7 @@ vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
-    saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
+    previewOpenApi: vi.fn(), saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
   };
 });
 
@@ -39,6 +39,51 @@ describe('simple authoring workbench', () => {
     expect(link('create-api-resource').getAttribute('href')).toBe('/workbench/?create=api');
     expect(link('create-tool').getAttribute('href')).toBe('/workbench/?create=flow&kind=TOOL');
     expect(link('create-solution').getAttribute('href')).toBe('/workbench/?create=flow&kind=SOLUTION');
+  });
+
+  it('previews and visibly applies one OpenAPI operation before save', async () => {
+    window.history.replaceState(null, '', '/workbench/?create=api');
+    vi.mocked(authoringApi.previewOpenApi).mockResolvedValue({
+      schemaVersion: 'bloge.openApiPreview.v1', discoveryId: 'preview-1',
+      operations: [{
+        operationId: 'getCustomer', method: 'GET', path: '/customers/{customerId}', diagnostics: [],
+        suggestedResource: {
+          displayName: 'Get customer',
+          operation: {
+            method: 'GET', path: '/customers/{customerId}',
+            bindings: [{ from: '$.customerId', to: { location: 'PATH', name: 'customerId' } }],
+          },
+          contract: {
+            input: { format: 'json-schema', version: '2020-12', schema: {
+              type: 'object', properties: { customerId: { type: 'string' } },
+              required: ['customerId'], additionalProperties: false,
+            } },
+            output: { format: 'json-schema', version: '2020-12', schema: {
+              type: 'object', properties: { name: { type: 'string' } },
+              required: ['name'], additionalProperties: false,
+            } },
+          },
+          response: { success: { kind: 'HTTP_STATUS', codes: [200] } },
+          effect: { kind: 'READ_ONLY' },
+          examples: [{ name: 'openapi-example', input: { customerId: 'string' }, output: { name: 'string' } }],
+        },
+      }],
+    });
+
+    await act(async () => root.render(<AuthoringWorkbench />));
+    await act(async () => {
+      change('api-connection-id', 'crm');
+      change('openapi-document', 'openapi: 3.0.3');
+    });
+    await act(async () => button('preview-openapi').click());
+    await act(async () => button('use-openapi-operation-getCustomer').click());
+
+    expect(authoringApi.previewOpenApi).toHaveBeenCalledWith('openapi: 3.0.3');
+    expect(element<HTMLInputElement>('api-name').value).toBe('Get customer');
+    expect(element<HTMLInputElement>('api-resource-id').value).toBe('getCustomer');
+    expect(element<HTMLInputElement>('api-connection-id').value).toBe('crm');
+    expect(element<HTMLInputElement>('api-path').value).toBe('/customers/{customerId}');
+    expect(element('openapi-binding-summary').textContent).toContain('PATH:customerId');
   });
 
   it('saves one compound Resource command and immediately runs its exact Default Fixture Case', async () => {
@@ -136,8 +181,9 @@ describe('simple authoring workbench', () => {
   });
 
   function change(testId: string, value: string) {
-    const input = element<HTMLInputElement>(testId);
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+    const input = element<HTMLInputElement | HTMLTextAreaElement>(testId);
+    const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 

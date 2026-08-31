@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFailure;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
@@ -30,7 +31,7 @@ import java.util.regex.Pattern;
 /** Maps API Resource and Connection failures to one Authoring Problem Detail shape. */
 @RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class,
         ApiConnectionAuthoringController.class, ApiFixtureSetAuthoringController.class,
-        ApiSimulationController.class})
+        ApiSimulationController.class, OpenApiPreviewController.class})
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringProblemHandler {
     private static final Pattern CORRELATION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -133,6 +134,23 @@ public final class ApiResourceAuthoringProblemHandler {
                 mapping.type(), mapping.title(), mapping.status(), failure.getMessage(),
                 mapping.code(), correlation("", request),
                 List.of(), mapping.actions());
+        return response(problem, null, false);
+    }
+
+    /** Converts OpenAPI parse/projection failures without echoing source documents. */
+    @ExceptionHandler(OpenApiPreviewFailure.class)
+    public ResponseEntity<ApiResourceAuthoringProblemDetail> openApiPreview(
+            OpenApiPreviewFailure failure, HttpServletRequest request) {
+        boolean unavailable = failure.code() == OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE;
+        ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
+                unavailable ? "urn:bloge:problem:authoring-capability-unavailable"
+                        : "urn:bloge:problem:authoring-validation",
+                unavailable ? "Remote OpenAPI preview is unavailable" : "OpenAPI preview is invalid",
+                unavailable ? 424 : 422, failure.getMessage(),
+                unavailable ? "RG.AUTHORING.OPENAPI.CAPABILITY_UNAVAILABLE"
+                        : "RG.AUTHORING.OPENAPI.VALIDATION_FAILED",
+                correlation("", request), List.of(),
+                unavailable ? List.of() : List.of(action("OPEN_FIELD", "/source")));
         return response(problem, null, false);
     }
 

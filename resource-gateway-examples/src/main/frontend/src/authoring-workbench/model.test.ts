@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildApiResourceSaveCommand, formDraftFromSpec, type ApiResourceSpec } from './model';
+import {
+  buildApiResourceSaveCommand,
+  formDraftFromOpenApiOperation,
+  formDraftFromSpec,
+  type ApiResourceSpec,
+  type OpenApiPreview,
+} from './model';
 
 describe('simple API Resource authoring model', () => {
   it('turns flat examples into one server-owned Resource and Default Fixture command', () => {
@@ -12,6 +18,7 @@ describe('simple API Resource authoring model', () => {
       path: '/customers/{id}',
       requestExample: '{"id":"c-1","active":true}',
       responseExample: '{"name":"Ada","score":42.5}',
+      importedResource: null,
     });
 
     expect(command).toEqual({
@@ -60,6 +67,7 @@ describe('simple API Resource authoring model', () => {
       resourceId: 'update-profile', displayName: 'Update profile', connectionId: 'crm',
       method: 'POST' as const, path: '/customers', requestExample: '{"name":"Ada"}',
       responseExample: '{"ok":true}',
+      importedResource: null,
     };
     expect(buildApiResourceSaveCommand(base).resource.effect).toEqual({ kind: 'FIXTURE_ONLY_WRITE' });
     expect(() => buildApiResourceSaveCommand({ ...base, requestExample: '{"items":[]}' }))
@@ -70,6 +78,7 @@ describe('simple API Resource authoring model', () => {
     const command = buildApiResourceSaveCommand({
       resourceId: 'profile', displayName: 'Profile', connectionId: 'crm', method: 'GET', path: '/profile',
       requestExample: '{"id":"c-1"}', responseExample: '{"name":"Ada"}',
+      importedResource: null,
     });
     const spec = {
       schemaVersion: 'bloge.apiResourceSpec.v1', resourceId: 'profile', revision: 3,
@@ -80,6 +89,41 @@ describe('simple API Resource authoring model', () => {
     expect(formDraftFromSpec(spec)).toEqual({
       resourceId: 'profile', displayName: 'Profile', connectionId: 'crm', method: 'GET', path: '/profile',
       requestExample: '{\n  "id": "c-1"\n}', responseExample: '{\n  "name": "Ada"\n}',
+      importedResource: expect.objectContaining({ displayName: 'Profile' }),
+    });
+  });
+
+  it('applies a previewed operation without losing its exact transport bindings', () => {
+    const base = buildApiResourceSaveCommand({
+      resourceId: 'manual', displayName: 'Manual', connectionId: 'crm', method: 'GET', path: '/customers',
+      requestExample: '{"customerId":"c-1"}', responseExample: '{"name":"Ada"}', importedResource: null,
+    });
+    const suggested = {
+      ...base.resource,
+      displayName: 'Get customer',
+      operation: {
+        method: 'GET' as const, path: '/customers/{customerId}',
+        bindings: [{ from: '$.customerId', to: { location: 'PATH' as const, name: 'customerId' } }],
+      },
+      examples: [{ name: 'openapi-example', input: { customerId: 'c-1' }, output: { name: 'Ada' } }],
+    };
+    const operation = {
+      operationId: 'getCustomer', method: 'GET' as const, path: '/customers/{customerId}',
+      suggestedResource: suggested, diagnostics: [],
+    } satisfies OpenApiPreview['operations'][number];
+
+    const draft = formDraftFromOpenApiOperation({
+      resourceId: '', displayName: '', connectionId: 'crm', method: 'GET', path: '/',
+      requestExample: '{}', responseExample: '{}', importedResource: null,
+    }, operation);
+
+    expect(draft).toMatchObject({
+      resourceId: 'getCustomer', displayName: 'Get customer', connectionId: 'crm',
+      method: 'GET', path: '/customers/{customerId}',
+    });
+    expect(buildApiResourceSaveCommand(draft)).toMatchObject({
+      resource: { operation: { bindings: suggested.operation.bindings } },
+      defaultFixture: { exampleNames: ['openapi-example'] },
     });
   });
 });

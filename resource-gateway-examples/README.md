@@ -379,6 +379,21 @@ with `Tests run: 8,198; failures: 0; errors: 0; skipped: 34` and `BUILD SUCCESS`
 separate lifecycle action; this new browser path also does not claim deployment-specific external Vault/provider or
 the exact workbench flow on a production PostgreSQL installation.
 
+The API Resource object page now accepts inline OpenAPI JSON or YAML through the side-effect-free
+`POST /api/authoring/resources:preview-openapi` preview endpoint. The endpoint uses the trusted authoring identity,
+returns `no-store`, performs no persistence or network egress, and projects only safely importable GET/POST/PUT/DELETE
+operations into the same typed Resource save command used by manual authoring. Path, query, header, and body bindings,
+flat request/response schemas, success matching, and deterministic examples survive the visible operation-selection
+step; unrelated blocked operations do not hide valid choices. Explicitly requested invalid operations still fail
+closed. `REMOTE` remains an honest `424` capability boundary until authenticated egress exists. The focused backend
+gate is **55/55 green**; frontend model/transport/component tests are **13/13**, i18n **39/39**, UX **52/52**, and
+host contracts **21/21**; TypeScript, Vite, and the bundle budget pass with AuthoringWorkbench at **189.43 KiB / 11
+files** and AuthorCanvas at **349.93 KiB / 22 files**. A real Chrome method verifies visible import, selection, exact
+field projection, zero persistence, and 1280/390 px layout (**1/1 green**). The final serial `clean verify` completed
+with `Tests run: 8,207; failures: 0; errors: 0; skipped: 35` and `BUILD SUCCESS`. Remote OpenAPI fetch, simplified
+workbench Fixture share/promotion, production PostgreSQL/Vault certification, and measured user-task complexity remain
+open rather than being inferred from this local preview slice.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

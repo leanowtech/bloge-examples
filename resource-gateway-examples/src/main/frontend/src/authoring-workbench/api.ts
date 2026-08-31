@@ -4,6 +4,7 @@ import type {
   ApiResourceSaveCommand,
   ApiResourceSpec,
   FixtureSetSummary,
+  OpenApiPreview,
   SimulationRun,
 } from './model';
 
@@ -13,6 +14,24 @@ export interface StoredResponse<T> {
   value: T;
   strongEtag: string;
   replayed: boolean;
+}
+
+/** Previews inline OpenAPI operations without persistence or remote egress. */
+export async function previewOpenApi(
+  documentText: string,
+  operationIds: string[] = [],
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<OpenApiPreview> {
+  const response = await transport('/api/authoring/resources:preview-openapi', {
+    method: 'POST',
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING', { 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      schemaVersion: 'bloge.openApiPreviewCommand.v1',
+      source: { kind: 'INLINE', documentText },
+      operationIds,
+    }),
+  });
+  return body<OpenApiPreview>(response);
 }
 
 /** Lists payload-free Fixture summaries for one exact Resource revision. */
