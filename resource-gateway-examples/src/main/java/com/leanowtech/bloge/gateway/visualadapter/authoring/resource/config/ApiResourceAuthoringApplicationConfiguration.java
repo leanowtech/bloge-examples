@@ -2,14 +2,19 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.resource.config;
 
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiConnectionStoreResourceProjectionResolver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Opt-in adapter-side assembly for the first compound Resource-save tracer. */
 @Configuration(proxyBeanMethods = false)
@@ -29,7 +34,19 @@ public class ApiResourceAuthoringApplicationConfiguration {
     @ConditionalOnMissingBean
     ApiResourceAuthoringFacade apiResourceAuthoringFacade(ApiResourceCommitStore resources,
                                                            ApiConnectionAuthoringStore connections,
-                                                           ApiResourceDecisions decisions) {
-        return new ApiResourceAuthoringFacade(resources, connections, decisions);
+                                                           ApiResourceDecisions decisions,
+                                                           ObjectProvider<ApiFixtureSetCommitStore> fixtures,
+                                                           ObjectProvider<DefaultFixtureSetMaterializer> materializer,
+                                                           ObjectProvider<PlatformTransactionManager> transactionManager) {
+        ApiFixtureSetCommitStore fixtureStore = fixtures.getIfAvailable();
+        DefaultFixtureSetMaterializer fixtureMaterializer = materializer.getIfAvailable();
+        if (fixtureStore == null && fixtureMaterializer == null) {
+            return new ApiResourceAuthoringFacade(resources, connections, decisions);
+        }
+        if (fixtureStore == null || fixtureMaterializer == null || transactionManager.getIfAvailable() == null) {
+            throw new IllegalStateException("Default Fixture persistence requires one transaction manager");
+        }
+        return new ApiResourceAuthoringFacade(resources, connections, decisions, fixtureStore,
+                fixtureMaterializer, new TransactionTemplate(transactionManager.getObject()));
     }
 }

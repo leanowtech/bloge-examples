@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -13,9 +15,10 @@ import java.util.regex.Pattern;
 /**
  * Strict, payload-free closure for the API Resource save receipt protocol.
  *
- * <p>{@code defaultFixture} is deliberately rejected: this connection child
- * boundary has no fixture authority to verify yet, so accepting an optional
- * fixture would create an unverifiable receipt claim.</p>
+ * <p>The optional {@code defaultFixture} branch has a separate exact generated
+ * authority check. Generic Resource/Connection readers validate its closed
+ * metadata shape; the compound facade and Fixture store additionally bind it
+ * to the full generated Fixture Set.</p>
  */
 public final class ApiResourceSaveReceiptClosure {
     public static final String SCHEMA_VERSION = "bloge.apiResourceSaveReceipt.v1";
@@ -26,6 +29,11 @@ public final class ApiResourceSaveReceiptClosure {
 
     /** Builds the canonical NONE-Fixture receipt from one exact staged authority. */
     public static CommandReceipt create(StagedApiResource staged) {
+        return create(staged, null);
+    }
+
+    /** Builds a canonical receipt with an exact generated Default Fixture child. */
+    public static CommandReceipt create(StagedApiResource staged, GeneratedDefaultFixture fixture) {
         if (staged == null) throw new IllegalArgumentException("staged Resource is required");
         ApiResourceSpec resource = staged.resource();
         ApiResourceConnectionSnapshot connection = staged.projections().connectionSnapshot();
@@ -39,6 +47,7 @@ public final class ApiResourceSaveReceiptClosure {
         resourceBody.put("resourceId", resource.resourceId());
         putRevision(resourceBody, resource.revision());
         resourceBody.put("fingerprint", resource.fingerprint());
+        if (fixture != null) putDefaultFixture(body, resource, fixture);
         body.putObject("projections")
                 .put("descriptor", "READY")
                 .put("designContract", "READY")
@@ -46,6 +55,7 @@ public final class ApiResourceSaveReceiptClosure {
         CommandReceipt receipt = new CommandReceipt(SCHEMA_VERSION, body,
                 AuthoringFingerprints.of(body), staged.strongEtag());
         require(receipt, resource, connection);
+        if (fixture != null) requireDefaultFixture(receipt, fixture);
         return receipt;
     }
 
@@ -70,7 +80,12 @@ public final class ApiResourceSaveReceiptClosure {
             throw new IllegalArgumentException("resource receipt fingerprint or schema drift");
         }
         JsonNode body = receipt.body();
-        exact(body, "schemaVersion", "connection", "resource", "projections");
+        if (body.has("defaultFixture")) {
+            exact(body, "schemaVersion", "connection", "resource", "defaultFixture", "projections");
+            validateDefaultFixtureShape(body.get("defaultFixture"));
+        } else {
+            exact(body, "schemaVersion", "connection", "resource", "projections");
+        }
         JsonNode schemaVersion = body.get("schemaVersion");
         if (schemaVersion == null || !schemaVersion.isTextual()
                 || !SCHEMA_VERSION.equals(schemaVersion.asText())) invalid();
@@ -93,6 +108,62 @@ public final class ApiResourceSaveReceiptClosure {
         for (String projection : new String[]{"descriptor", "designContract", "operator"}) {
             JsonNode state = projections.get(projection);
             if (state == null || !state.isTextual() || !"READY".equals(state.asText())) invalid();
+        }
+    }
+
+    /** Requires that a NONE command produced no Fixture receipt branch. */
+    public static void requireNoDefaultFixture(CommandReceipt receipt) {
+        if (receipt == null || receipt.body().has("defaultFixture")) invalid();
+    }
+
+    /** Binds the optional receipt branch to one exact generated Fixture authority. */
+    public static void requireDefaultFixture(CommandReceipt receipt, GeneratedDefaultFixture generated) {
+        if (receipt == null || generated == null) invalid();
+        if (!(generated.view().subject() instanceof FixtureSubjectRef.ApiResource)) invalid();
+        FixtureSubjectRef.ApiResource subject = (FixtureSubjectRef.ApiResource) generated.view().subject();
+        JsonNode resource = receipt.body().get("resource");
+        if (resource == null || !subject.resourceId().equals(resource.path("resourceId").asText(null))
+                || subject.revision() != resource.path("revision").asInt(-1)
+                || !subject.fingerprint().equals(resource.path("fingerprint").asText(null))) invalid();
+        JsonNode fixture = receipt.body().get("defaultFixture");
+        validateDefaultFixtureShape(fixture);
+        if (!generated.view().fixtureSetId().equals(fixture.path("fixtureSetId").asText(null))
+                || generated.view().revision() != fixture.path("revision").asInt(-1)
+                || !generated.view().fingerprint().equals(fixture.path("fingerprint").asText(null))
+                || fixture.path("cases").size() != generated.caseMappings().size()) invalid();
+        for (int index = 0; index < generated.caseMappings().size(); index++) {
+            GeneratedDefaultFixture.CaseMapping mapping = generated.caseMappings().get(index);
+            JsonNode actual = fixture.path("cases").path(index);
+            if (!mapping.exampleName().equals(actual.path("exampleName").asText(null))
+                    || !mapping.caseId().equals(actual.path("caseId").asText(null))) invalid();
+        }
+    }
+
+    private static void putDefaultFixture(ObjectNode body, ApiResourceSpec resource,
+                                          GeneratedDefaultFixture generated) {
+        if (!FixtureSubjectRef.apiResource(resource.ref()).equals(generated.view().subject())) invalid();
+        ObjectNode fixture = body.putObject("defaultFixture");
+        fixture.put("fixtureSetId", generated.view().fixtureSetId());
+        putRevision(fixture, generated.view().revision());
+        fixture.put("fingerprint", generated.view().fingerprint());
+        var cases = fixture.putArray("cases");
+        for (GeneratedDefaultFixture.CaseMapping mapping : generated.caseMappings()) {
+            cases.addObject().put("exampleName", mapping.exampleName()).put("caseId", mapping.caseId());
+        }
+    }
+
+    private static void validateDefaultFixtureShape(JsonNode fixture) {
+        exact(fixture, "fixtureSetId", "revision", "fingerprint", "cases");
+        if (!identifier(fixture.get("fixtureSetId")) || !revision(fixture.get("revision"), 0)
+                || !fingerprint(fixture.get("fingerprint")) || !fixture.get("cases").isArray()
+                || fixture.get("cases").isEmpty()) invalid();
+        Set<String> examples = new HashSet<>();
+        Set<String> cases = new HashSet<>();
+        for (JsonNode mapping : fixture.get("cases")) {
+            exact(mapping, "exampleName", "caseId");
+            if (!identifier(mapping.get("exampleName")) || !identifier(mapping.get("caseId"))
+                    || !examples.add(mapping.get("exampleName").asText())
+                    || !cases.add(mapping.get("caseId").asText())) invalid();
         }
     }
 

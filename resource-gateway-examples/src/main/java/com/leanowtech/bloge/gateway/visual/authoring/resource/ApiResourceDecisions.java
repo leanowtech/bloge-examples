@@ -72,6 +72,20 @@ public final class ApiResourceDecisions {
     /** Validates pure command content before an idempotency claim is consumed. */
     public void validateForAuthoring(ApiResourceCommand command) { validate(command); }
 
+    /** Recomputes and validates one persisted immutable Resource authority. */
+    public void validateStoredSpec(ApiResourceSpec resource) {
+        if (resource == null || !ApiResourceSpec.SCHEMA_VERSION.equals(resource.schemaVersion())
+                || resource.revision() < 1 || !ApiResourceSpec.DRAFT.equals(resource.status())) {
+            invalid("stored API Resource authority is invalid");
+        }
+        ApiResourceCommand command = new ApiResourceCommand(resource.displayName(), resource.description(),
+                resource.operation(), resource.contract(), resource.response(), resource.effect(), resource.examples());
+        validate(command);
+        if (!fingerprint(resource.resourceId(), resource.connectionId(), command).equals(resource.fingerprint())) {
+            invalid("stored API Resource fingerprint drift");
+        }
+    }
+
     /**
      * Fingerprints the currently supported compound-save subset explicitly.
      * The body contains no credentials, protected Fixture material, revision,
@@ -79,6 +93,22 @@ public final class ApiResourceDecisions {
      */
     public String requestFingerprint(String resourceId, String connectionId,
                                      ApiResourceCommand command) {
+        return requestFingerprint(resourceId, connectionId, command, null, null);
+    }
+
+    /** Fingerprints the explicit FROM_EXAMPLES selection without embedding Case material twice. */
+    public String requestFingerprintFromExamples(String resourceId, String connectionId,
+                                                 ApiResourceCommand command, String displayName,
+                                                 List<String> exampleNames) {
+        if (displayName == null || displayName.isBlank() || exampleNames == null || exampleNames.isEmpty()) {
+            invalid("default Fixture selection is invalid");
+        }
+        return requestFingerprint(resourceId, connectionId, command, displayName, List.copyOf(exampleNames));
+    }
+
+    private String requestFingerprint(String resourceId, String connectionId,
+                                      ApiResourceCommand command, String fixtureDisplayName,
+                                      List<String> exampleNames) {
         requireIdentifier(resourceId, "resourceId");
         requireIdentifier(connectionId, "connectionId");
         validate(command);
@@ -86,7 +116,14 @@ public final class ApiResourceDecisions {
         payload.put("schemaVersion", "bloge.apiResourceSaveCommand.v1");
         payload.putObject("connection").put("mode", "EXISTING").put("connectionId", connectionId);
         payload.set("resource", mapper.valueToTree(command));
-        payload.putObject("defaultFixture").put("kind", "NONE");
+        ObjectNode fixture = payload.putObject("defaultFixture");
+        if (fixtureDisplayName == null) {
+            fixture.put("kind", "NONE");
+        } else {
+            fixture.put("kind", "FROM_EXAMPLES");
+            fixture.put("displayName", fixtureDisplayName);
+            fixture.set("exampleNames", mapper.valueToTree(exampleNames));
+        }
         return AuthoringFingerprints.of(payload);
     }
 

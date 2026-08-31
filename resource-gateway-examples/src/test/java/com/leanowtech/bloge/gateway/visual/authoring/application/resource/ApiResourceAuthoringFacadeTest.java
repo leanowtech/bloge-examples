@@ -9,9 +9,12 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCom
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshot;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.InMemoryApiResourceCommitStore;
@@ -30,7 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 /** Behavior proof for the EXISTING-Connection/NONE-Fixture Resource tracer. */
@@ -57,6 +62,60 @@ class ApiResourceAuthoringFacadeTest {
         assertThat(first.stored().projections().connectionSnapshot()).isEqualTo(
                 new ApiResourceConnectionSnapshot("customer", 1,
                         fixture.connections().findHead(SCOPE, "customer").orElseThrow().metadataFingerprint()));
+    }
+
+    @Test
+    void selectedExamplesPublishOneDefaultFixtureOnlyWithTheResourceReceipt() {
+        Fixture fixture = fixture();
+        ApiResourceSaveCommand command = new ApiResourceSaveCommand(
+                ApiResourceSaveCommand.SCHEMA_VERSION,
+                ApiResourceSaveCommand.Connection.existing("customer"), command("Profile with defaults"),
+                ApiResourceSaveCommand.DefaultFixture.fromExamples("Profile defaults", List.of("one")));
+        ApiResourceAuthoringRequest request = request("fixture", "fixture-key",
+                ApiResourceAuthoringPrecondition.create(), command);
+
+        ApiResourceAuthoringResult first = fixture.facade().save(request);
+        ApiResourceAuthoringResult replay = fixture.facade().save(request);
+
+        assertThat(first.replayed()).isFalse();
+        assertThat(replay.replayed()).isTrue();
+        assertThat(first.stored().receipt().body().path("defaultFixture").path("fixtureSetId").asText())
+                .isEqualTo("profile:r1");
+        assertThat(first.stored().receipt().body().path("defaultFixture").path("cases").get(0)
+                .path("exampleName").asText()).isEqualTo("one");
+        assertThat(fixture.fixtures().findHead(SCOPE, "profile:r1")).isPresent();
+        assertThat(fixture.fixtures().listSummariesBySubject(SCOPE,
+                fixture.fixtures().findHead(SCOPE, "profile:r1").orElseThrow().generated().view().subject()))
+                .hasSize(1);
+    }
+
+    @Test
+    void fixtureSelectionParticipatesInIdempotencyAndFailedOuterCommitLeavesNoVisibleFixture() {
+        Fixture fixture = fixture();
+        ApiResourceSaveCommand first = fixtureCommand("Profile defaults");
+        fixture.facade().save(request("fixture", "fixture-key",
+                ApiResourceAuthoringPrecondition.create(), first));
+
+        assertThatThrownBy(() -> fixture.facade().save(request("fixture", "fixture-key",
+                ApiResourceAuthoringPrecondition.create(), fixtureCommand("Changed defaults"))))
+                .isInstanceOf(ApiResourceAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiResourceAuthoringFailure.Code.CONFLICT);
+
+        ApiConnectionDecisions connectionDecisions = new ApiConnectionDecisions();
+        InMemoryApiConnectionCommitStore connections = seededConnections(connectionDecisions);
+        InMemoryApiResourceCommitStore resourceDelegate = resources(connections);
+        InMemoryApiResourceCommitStore failingResources = spy(resourceDelegate);
+        doThrow(new ApiResourceCommitStoreException(ApiResourceCommitStoreException.Code.INTEGRITY,
+                "forced resource commit failure")).when(failingResources).commit(any(), any());
+        InMemoryApiFixtureSetCommitStore fixtures = new InMemoryApiFixtureSetCommitStore();
+        ApiResourceAuthoringFacade facade = new ApiResourceAuthoringFacade(failingResources, connections,
+                new ApiResourceDecisions(), fixtures, new DefaultFixtureSetMaterializer(),
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction());
+
+        assertThatThrownBy(() -> facade.save(request("failed", "failed-key",
+                ApiResourceAuthoringPrecondition.create(), first)))
+                .isInstanceOf(ApiResourceAuthoringFailure.class);
+        assertThat(fixtures.findHead(SCOPE, "profile:r1")).isEmpty();
     }
 
     @Test
@@ -193,19 +252,31 @@ class ApiResourceAuthoringFacadeTest {
 
     private static Fixture fixture() {
         ApiConnectionDecisions connectionDecisions = new ApiConnectionDecisions();
+        InMemoryApiConnectionCommitStore connections = seededConnections(connectionDecisions);
+        InMemoryApiResourceCommitStore resources = resources(connections);
+        InMemoryApiFixtureSetCommitStore fixtures = new InMemoryApiFixtureSetCommitStore();
+        return new Fixture(new ApiResourceAuthoringFacade(resources, connections,
+                new ApiResourceDecisions(), fixtures, new DefaultFixtureSetMaterializer(),
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction()),
+                connections, fixtures);
+    }
+
+    private static InMemoryApiConnectionCommitStore seededConnections(ApiConnectionDecisions decisions) {
         InMemoryApiConnectionCommitStore connections = new InMemoryApiConnectionCommitStore(
-                Clock.systemUTC(), connectionDecisions, Duration.ofSeconds(30), JSON);
-        new ApiConnectionAuthoringFacade(connections, connectionDecisions).save(
+                Clock.systemUTC(), decisions, Duration.ofSeconds(30), JSON);
+        new ApiConnectionAuthoringFacade(connections, decisions).save(
                 new ApiConnectionAuthoringRequest(SCOPE, "seed", "customer", "connection-key",
                         ApiConnectionAuthoringPrecondition.create(), new ApiConnectionCommand(
                         "Customer", "https://customer.example.test", ApiConnectionCommand.Auth.none(),
                         new ApiConnectionCommand.Defaults(5000, Map.of("X-Mode", "demo")))));
-        InMemoryApiResourceCommitStore resources = new InMemoryApiResourceCommitStore(
+        return connections;
+    }
+
+    private static InMemoryApiResourceCommitStore resources(InMemoryApiConnectionCommitStore connections) {
+        return new InMemoryApiResourceCommitStore(
                 Clock.systemUTC(), Duration.ofSeconds(30), new ApiResourceDecisions(),
                 new DefaultApiResourceProjectionCompiler(
                         new ApiConnectionStoreResourceProjectionResolver(connections)));
-        return new Fixture(new ApiResourceAuthoringFacade(resources, connections,
-                new ApiResourceDecisions()), connections);
     }
 
     private static ApiResourceAuthoringRequest request(String actor, String key,
@@ -220,6 +291,12 @@ class ApiResourceAuthoringFacadeTest {
                 ApiResourceSaveCommand.DefaultFixture.none());
     }
 
+    private static ApiResourceSaveCommand fixtureCommand(String displayName) {
+        return new ApiResourceSaveCommand(ApiResourceSaveCommand.SCHEMA_VERSION,
+                ApiResourceSaveCommand.Connection.existing("customer"), command("Profile with defaults"),
+                ApiResourceSaveCommand.DefaultFixture.fromExamples(displayName, List.of("one")));
+    }
+
     private static ApiResourceCommand command(String displayName) {
         SchemaEnvelope schema = SchemaEnvelope.object(Map.of("id", Map.of("type", "string")), List.of("id"));
         JsonNode value = JSON.createObjectNode().put("id", "one");
@@ -232,5 +309,6 @@ class ApiResourceAuthoringFacadeTest {
     }
 
     private record Fixture(ApiResourceAuthoringFacade facade,
-                           InMemoryApiConnectionCommitStore connections) { }
+                           InMemoryApiConnectionCommitStore connections,
+                           InMemoryApiFixtureSetCommitStore fixtures) { }
 }

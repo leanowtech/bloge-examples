@@ -22,7 +22,7 @@ class DefaultFixtureSetMaterializerTest {
 
     @Test
     void selectedExamplesBecomeOrderedPrivateSubjectReturnCases() {
-        GeneratedDefaultFixture generated = new DefaultFixtureSetMaterializer(JSON).generate(
+        GeneratedDefaultFixture generated = new DefaultFixtureSetMaterializer().generate(
                 resource(), new ApiResourceSaveCommand.DefaultFixture.FromExamples(
                         "Default customer cases", List.of("missing", "happy")));
 
@@ -56,7 +56,7 @@ class DefaultFixtureSetMaterializerTest {
 
     @Test
     void selectionMustBeNonEmptyUniqueAndReferenceKnownExamples() {
-        DefaultFixtureSetMaterializer materializer = new DefaultFixtureSetMaterializer(JSON);
+        DefaultFixtureSetMaterializer materializer = new DefaultFixtureSetMaterializer();
 
         assertThatThrownBy(() -> materializer.generate(resource(), request(List.of())))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -68,7 +68,7 @@ class DefaultFixtureSetMaterializerTest {
 
     @Test
     void generatedMaterialAndCollectionsAreDefensivelyCopiedAndFingerprintIsStable() {
-        DefaultFixtureSetMaterializer materializer = new DefaultFixtureSetMaterializer(JSON);
+        DefaultFixtureSetMaterializer materializer = new DefaultFixtureSetMaterializer();
         GeneratedDefaultFixture first = materializer.generate(resource(), request(List.of("happy")));
         GeneratedDefaultFixture second = materializer.generate(resource(), request(List.of("happy")));
 

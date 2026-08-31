@@ -400,7 +400,7 @@ class AuthoringProtocolSchemaTest {
     @Test
     void generatedDefaultFixtureRoundTripsAgainstCommandViewSummaryAndReceiptSchemas() throws Exception {
         ApiResourceSpec resource = spec("orders", minimalCommand());
-        GeneratedDefaultFixture generated = new DefaultFixtureSetMaterializer(MAPPER).generate(resource,
+        GeneratedDefaultFixture generated = new DefaultFixtureSetMaterializer().generate(resource,
                 new ApiResourceSaveCommand.DefaultFixture.FromExamples("Default orders", List.of("happy")));
         FixtureSetView view = generated.view();
         FixtureSetCommand command = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,

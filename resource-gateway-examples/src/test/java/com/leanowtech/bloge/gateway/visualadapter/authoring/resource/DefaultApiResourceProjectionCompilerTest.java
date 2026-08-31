@@ -106,12 +106,14 @@ class DefaultApiResourceProjectionCompilerTest {
     }
 
     @Test
-    void projectionBodiesAreDefensiveAndFingerprintsAreDerivedFromCanonicalBodies() {
+    void projectionBodiesAreDefensiveAndFingerprintsSurviveJdbcJsonRoundTrip() throws Exception {
         ReadyApiResourceProjections projections = compiler().compile(SCOPE,
                 resource(new ApiResourceCommand.Effect.ReadOnly(), new ApiResourceCommand.HttpStatus(List.of(200))));
         ((com.fasterxml.jackson.databind.node.ObjectNode) projections.operator().body()).put("operatorRef", "tampered");
         assertThat(projections.operator().body().get("operatorRef").asText()).isEqualTo("resource:customer.get-profile");
         assertThat(projections.descriptor().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.descriptor().body()));
+        assertThat(projections.descriptor().fingerprint()).isEqualTo(AuthoringFingerprints.of(
+                JSON.readTree(JSON.writeValueAsBytes(projections.descriptor().body()))));
         assertThat(projections.designContract().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.designContract().body()));
         assertThat(projections.operator().fingerprint()).isEqualTo(AuthoringFingerprints.of(projections.operator().body()));
     }

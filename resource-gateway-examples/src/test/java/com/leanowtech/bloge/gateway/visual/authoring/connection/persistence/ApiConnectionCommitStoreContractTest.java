@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -571,9 +572,18 @@ abstract class ApiConnectionCommitStoreContractTest {
         fixture.putObject("defaultFixture").put("fixtureSetId", "fixtures").put("revision", 1)
                 .put("fingerprint", "sha256:" + "c".repeat(64)).putArray("cases")
                 .addObject().put("exampleName", "happy").put("caseId", "case-1");
-        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+        assertThatCode(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
                 ApiResourceSaveReceiptClosure.SCHEMA_VERSION, fixture,
                 com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(fixture),
+                "\"outer\""), "profile", "customer", 1)).doesNotThrowAnyException();
+
+        var incompleteFixture = fixture.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) incompleteFixture.get("defaultFixture"))
+                .remove("fingerprint");
+        assertThatThrownBy(() -> ApiResourceSaveReceiptClosure.require(new CommandReceipt(
+                ApiResourceSaveReceiptClosure.SCHEMA_VERSION, incompleteFixture,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(
+                        incompleteFixture),
                 "\"outer\""), "profile", "customer", 1)).isInstanceOf(IllegalArgumentException.class);
 
         var hugeRevision = body.deepCopy();

@@ -1054,3 +1054,58 @@ Resource 复合事务、HTTP 查询/保存或 Simulation 编译/执行，不能�
 Default Fixture 已从“只有 schema”推进到可测试的后端物化权威，但用户主路径仍缺持久化、复合保存和首次
 Simulation，Reusable Flow/DAG、Tool/Solution 与对象页也未闭合。累计完成度保守调整为 **47%**，剩余差距
 **53%**。
+
+## 28. Iteration 27 — C7 Default Fixture persistence and compound Resource save
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 V012 `rg_api_fixture_set_identities/revisions/heads`，把 Resource examples 物化出的
+  `PRIVATE_DRAFT` Fixture Set 作为不可变私有 revision 持久化；staged revision 在 outer Resource receipt
+  提交前不可见。
+- 新增 in-memory/JDBC `ApiFixtureSetCommitStore`。JDBC stage、Fixture child commit 与 Resource commit 使用
+  同一 DataSource/应用事务；outer receipt 提交后才 publish，失败时 Resource 与 Fixture child 一起回滚或
+  精确清理。takeover 只保留 replacement attempt 的 staged child。
+- `FROM_EXAMPLES` 在 claim 前验证具名 examples；保存时生成 Fixture，随后以 Fixture+Resource 复合事务提交。
+  exact replay 重建并核对同一 Fixture authority，不重复创建 revision。
+- committed read 同时闭合 Fixture row/head、immutable command attempt、outer Resource journal、精确 committed
+  Resource subject revision 与 canonical `bloge.apiResourceSaveReceipt.v1`。authority 缺失、歧义或篡改返回
+  `INTEGRITY`，不会伪装成对象不存在。
+- `GeneratedDefaultFixture` 构造即重算完整 Fixture command fingerprint，Case input/output 同步篡改也不能绕过；
+  Summary 仍只暴露 metadata。
+- `ApiFixtureSetSchemaReadiness` 绑定当前 catalog/schema，验证 V012 columns、PK/FK/index 和 exact CHECK clause；
+  同名弱约束、错误 schema 或不同 DataSource transaction manager 都在启动/提交前失败关闭。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='AuthoringProtocolSchemaTest,DefaultApiResourceProjectionCompilerTest,\
+DefaultFixtureSetMaterializerTest,InMemoryApiFixtureSetCommitStoreTest,\
+ApiFixtureSetSchemaReadinessTest,ApiFixtureSetRuntimeConfigurationTest,\
+ApiResourceAuthoringFacadeTest,JdbcApiResourceAuthoringFacadeTest,\
+ApiResourceAuthoringApplicationConfigurationTest,ApiResourceCommitStoreContractTest,\
+ApiConnectionSchemaReadinessTest' test
+
+Tests run: 98, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+其中 C7 schema/materializer/facade/store/configuration 为 **70/70**，共享 Connection readiness 回归为
+**28/28**。随后串行执行完整门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8090, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+本切片仍不声明 standalone Fixture HTTP、share、simulation compiler/runtime、Reusable Flow/DAG、
+Tool/Solution 或对象页完成。
+
+### 当前差距评估
+
+Default Fixture 已闭合到 Resource 复合保存和可复核私有持久化，但用户还不能在独立对象页管理 Fixture，
+也未完成首次 Simulation 与 Reusable Flow/DAG 主路径。累计完成度保守调整为 **49%**，剩余差距 **51%**。

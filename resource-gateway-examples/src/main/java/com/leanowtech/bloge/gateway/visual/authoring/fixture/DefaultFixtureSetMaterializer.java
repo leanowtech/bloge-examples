@@ -1,48 +1,38 @@
 package com.leanowtech.bloge.gateway.visual.authoring.fixture;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /** Materializes selected named Resource examples into one immutable private Fixture Set. */
 public final class DefaultFixtureSetMaterializer {
-    private final ObjectMapper mapper;
-
-    /** @param mapper mapper used only for canonical Fixture content fingerprinting */
-    public DefaultFixtureSetMaterializer(ObjectMapper mapper) {
-        this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
-    }
-
     /**
      * Creates a deterministic new Fixture Set revision for one exact Resource revision.
      * The requested example order is preserved in Cases and the compound receipt mapping.
      */
     public GeneratedDefaultFixture generate(ApiResourceSpec resource,
                                             ApiResourceSaveCommand.DefaultFixture.FromExamples request) {
-        if (resource == null || request == null || request.displayName() == null
-                || request.displayName().isBlank() || request.displayName().length() > 200
-                || request.exampleNames().isEmpty()) {
-            throw new IllegalArgumentException("default fixture request is invalid");
-        }
-        Map<String, ApiResourceCommand.Example> examples = new LinkedHashMap<>();
-        for (ApiResourceCommand.Example example : resource.examples()) {
-            if (example == null || examples.putIfAbsent(example.name(), example) != null) {
-                throw new IllegalArgumentException("resource examples are ambiguous");
-            }
-        }
-        HashSet<String> selected = new HashSet<>();
+        if (resource == null) throw new IllegalArgumentException("resource is required");
+        Map<String, ApiResourceCommand.Example> examples = examples(resource.examples(), request);
+        return generate(resource, request, examples);
+    }
+
+    /** Validates a FROM_EXAMPLES request before an idempotency claim is consumed. */
+    public void validateRequest(ApiResourceCommand resource,
+                                ApiResourceSaveCommand.DefaultFixture.FromExamples request) {
+        if (resource == null) throw new IllegalArgumentException("resource is required");
+        examples(resource.examples(), request);
+    }
+
+    private GeneratedDefaultFixture generate(ApiResourceSpec resource,
+                                              ApiResourceSaveCommand.DefaultFixture.FromExamples request,
+                                              Map<String, ApiResourceCommand.Example> examples) {
         List<FixtureSetCommand.Case> cases = request.exampleNames().stream().map(name -> {
-            if (name == null || !selected.add(name) || !examples.containsKey(name)) {
-                throw new IllegalArgumentException("default fixture example selection is invalid");
-            }
             ApiResourceCommand.Example example = examples.get(name);
             FixtureSetCommand.Control control = new FixtureSetCommand.Control(
                     FixtureSetCommand.Target.subject(),
@@ -53,7 +43,7 @@ public final class DefaultFixtureSetMaterializer {
         FixtureSetCommand command = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,
                 request.displayName(), subject, cases);
         String fixtureSetId = defaultId(resource);
-        String fingerprint = AuthoringFingerprints.of(mapper.valueToTree(command));
+        String fingerprint = FixtureSetFingerprints.of(command.displayName(), command.subject(), command.cases());
         FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, fixtureSetId, 1,
                 fingerprint, 1, request.displayName(), subject, cases, FixtureSetView.Status.PRIVATE_DRAFT);
         List<String> caseIds = cases.stream().map(FixtureSetCommand.Case::caseId).toList();
@@ -66,6 +56,28 @@ public final class DefaultFixtureSetMaterializer {
         List<GeneratedDefaultFixture.CaseMapping> mappings = request.exampleNames().stream()
                 .map(name -> new GeneratedDefaultFixture.CaseMapping(name, name)).toList();
         return new GeneratedDefaultFixture(view, receipt, summary, mappings);
+    }
+
+    private static Map<String, ApiResourceCommand.Example> examples(
+            List<ApiResourceCommand.Example> source,
+            ApiResourceSaveCommand.DefaultFixture.FromExamples request) {
+        if (request == null || request.displayName() == null || request.displayName().isBlank()
+                || request.displayName().length() > 200 || request.exampleNames().isEmpty()) {
+            throw new IllegalArgumentException("default fixture request is invalid");
+        }
+        Map<String, ApiResourceCommand.Example> examples = new LinkedHashMap<>();
+        for (ApiResourceCommand.Example example : source) {
+            if (example == null || examples.putIfAbsent(example.name(), example) != null) {
+                throw new IllegalArgumentException("resource examples are ambiguous");
+            }
+        }
+        HashSet<String> selected = new HashSet<>();
+        for (String name : request.exampleNames()) {
+            if (name == null || !selected.add(name) || !examples.containsKey(name)) {
+                throw new IllegalArgumentException("default fixture example selection is invalid");
+            }
+        }
+        return examples;
     }
 
     private static String defaultId(ApiResourceSpec resource) {

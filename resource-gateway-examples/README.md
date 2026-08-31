@@ -68,6 +68,7 @@ db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql
 db/postgresql/V20260831_009__authoring_command_attempt_authority.sql
 db/postgresql/V20260831_010__attempt_provenance_closure.sql
 db/postgresql/V20260831_011__api_resource_connection_snapshot.sql
+db/postgresql/V20260831_012__api_fixture_set_authority.sql
 ```
 
 Then enable the production wiring explicitly:
@@ -91,13 +92,14 @@ used for compilation. Because V001-V010 did not retain that historical fact, V01
 Resource rows rather than inventing a migration-time snapshot; such rows require a separately audited export and
 re-authoring migration.
 
-J3-C2 adds `ApiResourceAuthoringFacade` for the first honest compound-save subset: one `EXISTING` committed
-`Auth.NONE` Connection, one API Resource command, and `defaultFixture.kind=NONE`. It validates before claim,
+J3-C2 added `ApiResourceAuthoringFacade` for the first honest compound-save subset: one `EXISTING` committed
+`Auth.NONE` Connection, one API Resource command, and initially `defaultFixture.kind=NONE`. It validates before claim,
 resolves opaque historical Resource ETags, preserves receipt-first exact replay after heads advance, stages all
 three `READY` projections, verifies that compilation used the same committed Connection snapshot seen during
-preflight, and persists an exact `bloge.apiResourceSaveReceipt.v1` receipt. Nested Connection `CREATE` and
-`FROM_EXAMPLES` default Fixture generation return typed capability-unavailable failures before claim; neither is
-ignored or partially saved. The feature-scoped application configuration requires an explicit lifecycle-complete
+preflight, and persists an exact `bloge.apiResourceSaveReceipt.v1` receipt. At that slice, nested Connection
+`CREATE` and `FROM_EXAMPLES` returned typed capability-unavailable failures before claim; neither was ignored or
+partially saved. C7 now enables `FROM_EXAMPLES` through the durable private Fixture child authority below. The
+feature-scoped application configuration requires an explicit lifecycle-complete
 `ApiConnectionAuthoringStore`, so enabling the feature without Connection authority fails startup.
 
 The focused C2 command covering facade, same-database JDBC integration, adapter-side configuration, the visual
@@ -117,8 +119,9 @@ shapes. Request decoding is strict at root and nested fields.
 
 The combined C2+C3 focused gate completed at **141/141 green** with no failures, errors, or skips: the prior 100
 application/persistence tests plus 28 controller tests, 2 transport configuration tests, and 11 protocol-schema
-tests. This transport still deliberately rejects Connection `CREATE` and `defaultFixture.kind=FROM_EXAMPLES`
-through the facade. Credential providers, Default Fixture Sets, reusable Flow/DAG authoring, real PostgreSQL
+tests. This transport still deliberately rejects Connection `CREATE`; C7 later enables
+`defaultFixture.kind=FROM_EXAMPLES` without changing the HTTP envelope. Credential providers, reusable Flow/DAG
+authoring, real PostgreSQL
 certification, and UI acceptance remain open. The post-C3 full gate completed with
 `Tests run: 8,021; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
@@ -135,7 +138,7 @@ facade when the feature is enabled. A dedicated V010 readiness gate checks immut
 Connection revision/head provenance, the `SUPERSEDED` lifecycle closure and recovery indexes; pre-V010, missing or
 altered schema fails startup. The current tracer deliberately accepts only `auth.kind=NONE`; BEARER, BASIC and
 API_KEY commands return a typed 424 before claim until a production external secret provider is wired. Connection
-check, Default Fixture generation, simulation and reusable Flow/DAG authoring remain subsequent slices.
+check, Default Fixture simulation and reusable Flow/DAG authoring remain subsequent slices.
 
 The C4 focused gate completed at **145/145 green** with no failures, errors, or skips across Connection facade/JDBC,
 Connection controller/configuration/runtime readiness, Resource transport regressions, protocol schemas and the
@@ -163,17 +166,31 @@ execution path can enforce simulation-equivalent authorization and redaction. Th
 transport/authority gate completed at **206/206 green** with no failures, errors or skips. The post-C6 serial
 `clean verify` completed with `Tests run: 8,065; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
-J3-C7 begins the Default Fixture vertical slice with one pure, schema-closed materialization authority.
+J3-C7 began the Default Fixture vertical slice with one pure, schema-closed materialization authority.
 `DefaultFixtureSetMaterializer` converts an exact committed API Resource revision plus an ordered
 `FROM_EXAMPLES` selection into one immutable `PRIVATE_DRAFT` Fixture Set. Each selected example becomes one
 Subject `RETURN` control with inline output material; Case inputs, Case mappings and order remain exact. Unknown,
 empty or duplicate selections fail closed. The server-derived identity is `{resourceId}:r{resourceRevision}` so
 it remains inside the frozen public identifier alphabet; exceptionally long resource ids use an exact Resource
 fingerprint fallback. Command, full View, metadata-only Summary and Save Receipt all validate against the frozen
-JSON Schemas and round-trip through Jackson. This slice is deliberately authority-only: it does not yet persist,
-publish, expose or simulate the generated Fixture Set. The focused materializer/schema gate is **16/16 green**
+JSON Schemas and round-trip through Jackson. The first C7 commit was deliberately authority-only. The focused
+materializer/schema gate was **16/16 green**
 with no failures, errors or skips. The post-C7 serial `clean verify` completed with
 `Tests run: 8,069; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
+The next C7 persistence slice adds V012 identities/revisions/heads and a private Fixture child store. A
+`FROM_EXAMPLES` Resource save now validates named examples before claim, stages the generated Fixture Set,
+commits Fixture and Resource in one application transaction, and makes the child readable only after the exact
+outer `bloge.apiResourceSaveReceipt.v1` is committed. Replay rematerializes the selection and checks the exact
+immutable Fixture revision; altered generated JSON, V012 authority columns, or outer receipt fail closed. Missing
+V012 prevents opt-in startup. No standalone Fixture write endpoint, share flow, simulation compiler, or object page
+is claimed by this slice. Fixture reads close the exact committed Resource subject revision and outer
+command-attempt authority; damaged authority fails with integrity instead of appearing absent. V012 readiness
+checks the active schema's columns, keys, indexes and exact CHECK definitions, and child commit requires the
+coordinator transaction bound to the store's own DataSource. The focused schema/materializer/facade/store/
+configuration gate is **70/70 green** with no failures, errors or skips. The wider gate including the shared
+Connection readiness contract is **98/98 green** with no failures, errors or skips. The post-persistence C7
+serial `clean verify` completed with `Tests run: 8,090; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

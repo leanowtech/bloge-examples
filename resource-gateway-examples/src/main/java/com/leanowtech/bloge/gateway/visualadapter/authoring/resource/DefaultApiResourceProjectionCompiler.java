@@ -222,9 +222,15 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
     }
 
     private static ProjectionDocument document(ProjectionDocument.Kind kind, ApiResourceSpec resource, Object value) {
-        JsonNode body = JSON.valueToTree(value);
-        return new ProjectionDocument(kind, resource.ref(), body, AuthoringFingerprints.of(body),
-                ProjectionDocument.State.READY);
+        try {
+            // Fingerprint the exact JSON representation that the JDBC store reloads. Jackson can
+            // represent Duration-backed decimals differently in TokenBuffer and textual JSON.
+            JsonNode body = JSON.readTree(JSON.writeValueAsBytes(value));
+            return new ProjectionDocument(kind, resource.ref(), body, AuthoringFingerprints.of(body),
+                    ProjectionDocument.State.READY);
+        } catch (java.io.IOException ex) {
+            throw new IllegalArgumentException("projection cannot be serialized", ex);
+        }
     }
 
     private static void validate(ApiResourceSpec resource) {

@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CheckConstraintDefinition;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,8 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Fail-closed, read-only startup probe for the API Connection staging schema
@@ -280,27 +279,9 @@ public final class ApiConnectionSchemaReadiness {
      */
     static boolean equivalentCheckClause(String checkClause, String targetColumn,
                                          Set<String> allowedLiterals) {
-        if (checkClause == null || targetColumn == null || allowedLiterals == null
-                || allowedLiterals.isEmpty()) return false;
         if ("revision_state".equalsIgnoreCase(targetColumn)
                 && !allowedLiterals.equals(Set.of("COMMITTED"))) return false;
-        String clause = stripOuterParens(checkClause.replaceAll("\\s+", ""));
-        String stringCast = "(?:::(?:text|varchar|charactervarying))*";
-        String arrayStringCast = "(?:::(?:text|varchar|charactervarying)\\[\\])*";
-        String column = "\\(*\\\"?" + Pattern.quote(targetColumn) + "\\\"?\\)*" + stringCast;
-        String literal = "'([^']*)'" + stringCast;
-
-        Matcher in = Pattern.compile("(?i)^(" + column + ")in\\((.*)\\)$").matcher(clause);
-        if (in.matches() && exactLiterals(parseLiteralList(in.group(2), literal), allowedLiterals)) return true;
-
-        Matcher any = Pattern.compile("(?i)^(" + column + ")=any\\(*array\\[(.*?)\\](?:(?:" + arrayStringCast
-                + ")|\\))*(?:\\))$")
-                .matcher(clause);
-        if (any.matches() && exactLiterals(parseLiteralList(any.group(2), literal), allowedLiterals)) return true;
-
-        Matcher equality = Pattern.compile("(?i)^(" + column + ")=(" + literal + ")$").matcher(clause);
-        return equality.matches() && allowedLiterals.size() == 1
-                && allowedLiterals.contains(equality.group(3));
+        return CheckConstraintDefinition.exactLiteralSet(checkClause, targetColumn, allowedLiterals);
     }
 
     /**
@@ -309,13 +290,13 @@ public final class ApiConnectionSchemaReadiness {
      */
     static boolean equivalentAuthClosureClause(String checkClause) {
         if (checkClause == null) return false;
-        String clause = stripOuterParens(checkClause.replaceAll("\\s+", ""));
+        String clause = CheckConstraintDefinition.stripOuterParens(checkClause.replaceAll("\\s+", ""));
         List<String> branches = splitTopLevel(clause, "OR");
         if (branches.size() != 4) return false;
 
         Set<Set<String>> actual = new HashSet<>();
         for (String branch : branches) {
-            List<String> atoms = splitTopLevel(stripOuterParens(branch), "AND");
+            List<String> atoms = splitTopLevel(CheckConstraintDefinition.stripOuterParens(branch), "AND");
             if (atoms.isEmpty()) return false;
             Set<String> canonical = new HashSet<>();
             for (String atom : atoms) canonical.add(canonicalAuthAtom(atom));
@@ -333,7 +314,7 @@ public final class ApiConnectionSchemaReadiness {
     }
 
     private static String canonicalAuthAtom(String atom) {
-        String canonical = stripOuterParens(atom.replaceAll("\\s+", ""))
+        String canonical = CheckConstraintDefinition.stripOuterParens(atom.replaceAll("\\s+", ""))
                 .replace("\"", "")
                 .replaceAll("(?i)::(?:text|varchar|charactervarying)(?:\\[\\])?", "")
                 .replaceAll("(?i)bothfrom", "")
@@ -367,46 +348,6 @@ public final class ApiConnectionSchemaReadiness {
         if (quoted || depth != 0) return List.of();
         parts.add(expression.substring(start));
         return parts.stream().allMatch(part -> !part.isEmpty()) ? parts : List.of();
-    }
-
-    private static String stripOuterParens(String clause) {
-        while (clause.startsWith("(") && clause.endsWith(")") && enclosesWholeClause(clause)) {
-            clause = clause.substring(1, clause.length() - 1);
-        }
-        return clause;
-    }
-
-    private static boolean enclosesWholeClause(String clause) {
-        int depth = 0;
-        for (int i = 0; i < clause.length(); i++) {
-            char current = clause.charAt(i);
-            if (current == '(') depth++;
-            if (current == ')' && --depth == 0 && i < clause.length() - 1) return false;
-            if (depth < 0) return false;
-        }
-        return depth == 0;
-    }
-
-    private static List<String> parseLiteralList(String body, String literalPattern) {
-        if (body.isEmpty()) return List.of();
-        Pattern pattern = Pattern.compile(literalPattern, Pattern.CASE_INSENSITIVE);
-        List<String> values = new ArrayList<>();
-        int offset = 0;
-        while (offset < body.length()) {
-            Matcher literal = pattern.matcher(body);
-            literal.region(offset, body.length());
-            if (!literal.lookingAt()) return List.of();
-            values.add(literal.group(1));
-            offset = literal.end();
-            if (offset == body.length()) break;
-            if (body.charAt(offset) != ',') return List.of();
-            offset++;
-        }
-        return values;
-    }
-
-    private static boolean exactLiterals(List<String> actual, Set<String> expected) {
-        return actual.size() == expected.size() && new HashSet<>(actual).equals(expected);
     }
 
     private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,
