@@ -866,3 +866,58 @@ BUILD SUCCESS
 Connection `CREATE`、credential provider、Default Fixture Set、Flow/DAG application facade、真实 PostgreSQL
 certification 和 UI acceptance 均未实现/验收。受保护的 `GraphNodeFixtureControls.tsx` 与两份未跟踪
 reusable-flow 文档不属于本切片。
+
+## 24. Iteration 23 — C4 Connection HTTP transport and production wiring
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 feature-scoped `PUT /api/authoring/connections/{connectionId}` 与
+  `GET /api/authoring/connections/{connectionId}`。两个入口只把 trusted integration identity 投影为
+  `AuthoringScope`/actor；create/update 的 `If-None-Match`、strong `If-Match`、`Idempotency-Key`、ETag、replay
+  marker 与 no-store 协议和 Resource authoring 一致。
+- `IntegrationOperation.AUTHORING_API_CONNECTION_READ/WRITE` 统一要求 `API_RESOURCE_AUTHORING` purpose。
+  无凭证、错误 purpose、自报 scope drift、weak/list ETag、双 precondition、非法 key、unknown field、malformed
+  JSON 与缺失 content type 均在 facade/store 前拒绝。
+- Connection 与 Resource transport 共用一个 Authoring Problem Detail mapper 和 trusted correlation attribute；
+  malformed Connection 请求仍返回 Connection code，不退化为 Resource code。Credential capability 424 的
+  response 不回显一次性 secret。
+- 新增 opt-in Connection application/runtime configuration：一个 application `ObjectMapper` 创建共享
+  `ApiConnectionDecisions`，一个 `DataSource` 创建 lifecycle-complete `JdbcApiConnectionAuthoringStore`。缺 store、
+  schema 或非正 lease duration 时启动失败，没有 in-memory fallback。
+- 新增 V010 production readiness：以只读方式验证 immutable attempt PK/journal FK、Connection revision exact
+  attempt PK/FK、head exact provenance、`SUPERSEDED` status closure、recovery/head indexes 与非空 attempt 坐标。
+  V009、缺 schema、改变 status closure 或 provenance index 均不能启用 runtime。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,\
+ApiConnectionAuthoringControllerTest,ApiConnectionAuthoringTransportConfigurationTest,\
+ApiConnectionAuthoringConfigurationTest,ApiConnectionAuthorityTest,ApiConnectionSchemaReadinessTest,\
+ApiResourceAuthoringControllerTest,ApiResourceAuthoringTransportConfigurationTest,\
+ApiResourceAuthoringApplicationConfigurationTest,ApiResourceAuthoringRuntimeConfigurationTest,\
+AuthoringProtocolSchemaTest,VisualRuntimeBoundaryTest' test
+
+Tests run: 145, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 8,051, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该证据含 H2 `MODE=PostgreSQL` 的 V001-V010 production wiring create/read，以及 Connection/Resource MockMvc
+安全协议；它不替代真实 PostgreSQL lock/isolation certification。当前未实现 Connection list/check、production
+credential provider、Default Fixture Set、首次模拟、Reusable Flow/DAG、Tool/Solution 对象页或 UI acceptance。
+
+### 当前差距评估
+
+按顶部九项用户可观察能力重新校准：Wire Schema 与 API Resource/Connection authority 已形成可运行的后端和
+HTTP tracer，但用户侧对象页、Default Fixture/Simulation、Reusable Flow、Tool/Solution 和 DAG 编排仍是主要
+缺口。当前累计完成度保守记为 **44%**，剩余差距 **56%**；不能把 145 个聚焦测试或既有 Visual Authoring
+能力折算成新简化工作流已经完成。

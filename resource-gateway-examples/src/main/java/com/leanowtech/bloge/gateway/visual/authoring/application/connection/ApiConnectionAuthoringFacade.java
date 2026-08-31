@@ -97,6 +97,29 @@ public final class ApiConnectionAuthoringFacade {
         }
     }
 
+    /**
+     * Reads the current committed, payload-free Connection authority.
+     *
+     * @param scope trusted tenant/project/environment scope
+     * @param connectionId stable Connection identifier
+     * @return current view and its opaque strong validator
+     * @throws ApiConnectionAuthoringFailure when the target is invalid, absent, or unverifiable
+     */
+    public ApiConnectionAuthoringRead read(AuthoringScope scope, String connectionId) {
+        if (scope == null || !validIdentifier(connectionId, 128)) {
+            throw failure(ApiConnectionAuthoringFailure.Code.VALIDATION);
+        }
+        try {
+            var stored = store.findHead(scope, connectionId)
+                    .orElseThrow(() -> failure(ApiConnectionAuthoringFailure.Code.NOT_FOUND));
+            return new ApiConnectionAuthoringRead(stored.view(), stored.strongEtag());
+        } catch (ApiConnectionAuthoringFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw mapFailure(failure);
+        }
+    }
+
     private Preflight preflight(ApiConnectionAuthoringRequest request) {
         if (request == null || request.scope() == null || request.command() == null
                 || request.precondition() == null || !validIdentifier(request.actorId(), 256)

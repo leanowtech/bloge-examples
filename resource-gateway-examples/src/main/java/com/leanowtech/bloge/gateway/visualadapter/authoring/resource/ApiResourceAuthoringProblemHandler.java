@@ -2,7 +2,10 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.resource;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFailure;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
@@ -20,8 +23,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/** Maps every API Resource transport failure to one Authoring Problem Detail shape. */
-@RestControllerAdvice(assignableTypes = ApiResourceAuthoringController.class)
+/** Maps API Resource and Connection failures to one Authoring Problem Detail shape. */
+@RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class, ApiConnectionAuthoringController.class})
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringProblemHandler {
     private static final Pattern CORRELATION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -61,14 +64,30 @@ public final class ApiResourceAuthoringProblemHandler {
         return response(problem, retryAfter(failure.retryAt()), false);
     }
 
+    /** Converts closed Connection application failures without exposing credential material. */
+    @ExceptionHandler(ApiConnectionAuthoringFailure.class)
+    public ResponseEntity<ApiResourceAuthoringProblemDetail> connection(
+            ApiConnectionAuthoringFailure failure, HttpServletRequest request) {
+        Mapping mapping = connectionMapping(failure.code());
+        ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
+                mapping.type(), mapping.title(), mapping.status(), failure.getMessage(), mapping.code(),
+                correlation("", request), List.of(), mapping.actions());
+        return response(problem, retryAfter(failure.retryAt()), false);
+    }
+
     /** Converts malformed JSON before it reaches the facade. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResourceAuthoringProblemDetail> malformed(
             HttpMessageNotReadableException failure, HttpServletRequest request) {
+        boolean connection = isConnectionRequest(request);
         ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
-                "urn:bloge:problem:bad-authoring-request", "API Resource request is invalid", 400,
-                "The API Resource request body is malformed or incomplete.",
-                "RG.AUTHORING.API_RESOURCE.REQUEST_INVALID", correlation("", request), List.of(),
+                "urn:bloge:problem:bad-authoring-request",
+                connection ? "API Connection request is invalid" : "API Resource request is invalid", 400,
+                connection ? "The API Connection request body is malformed or incomplete."
+                        : "The API Resource request body is malformed or incomplete.",
+                connection ? "RG.AUTHORING.API_CONNECTION.REQUEST_INVALID"
+                        : "RG.AUTHORING.API_RESOURCE.REQUEST_INVALID",
+                correlation("", request), List.of(),
                 List.of(action("OPEN_FIELD", "/")));
         return response(problem, null, false);
     }
@@ -107,7 +126,7 @@ public final class ApiResourceAuthoringProblemHandler {
 
     private static String correlation(String supplied, HttpServletRequest request) {
         if (validCorrelation(supplied)) return supplied;
-        Object trusted = request.getAttribute(ApiResourceAuthoringController.CORRELATION_ATTRIBUTE);
+        Object trusted = request.getAttribute(AuthoringRequestAttributes.CORRELATION_ID);
         if (trusted instanceof String value && validCorrelation(value)) return value;
         String header = request.getHeader("X-Correlation-Id");
         return validCorrelation(header) ? header : UUID.randomUUID().toString();
@@ -115,6 +134,10 @@ public final class ApiResourceAuthoringProblemHandler {
 
     private static boolean validCorrelation(String value) {
         return value != null && CORRELATION.matcher(value).matches();
+    }
+
+    private static boolean isConnectionRequest(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/authoring/connections/");
     }
 
     private static ApiResourceAuthoringProblemDetail.RecoveryAction action(String kind, String path) {
@@ -151,6 +174,38 @@ public final class ApiResourceAuthoringProblemHandler {
                     "API Resource persistence is unavailable", "PERSISTENCE_FAILED",
                     List.of(action("RETRY", null)));
         };
+    }
+
+    private static Mapping connectionMapping(ApiConnectionAuthoringFailure.Code code) {
+        return switch (code) {
+            case CAPABILITY_UNAVAILABLE -> connectionMapping(424, "authoring-capability-unavailable",
+                    "API Connection authentication is unavailable", "CAPABILITY_UNAVAILABLE", List.of());
+            case VALIDATION -> connectionMapping(422, "authoring-validation",
+                    "API Connection cannot be saved", "VALIDATION_FAILED",
+                    List.of(action("OPEN_FIELD", "/")));
+            case NOT_FOUND -> connectionMapping(404, "authoring-resource-not-found",
+                    "API Connection was not found", "NOT_FOUND",
+                    List.of(action("OPEN_LIST", "/api/authoring/connections")));
+            case BUSY -> connectionMapping(409, "authoring-conflict",
+                    "API Connection save is already in progress", "BUSY", List.of(action("RETRY", null)));
+            case LEASE_LOST -> connectionMapping(409, "authoring-conflict",
+                    "API Connection save lease was lost", "LEASE_LOST", List.of(action("RETRY", null)));
+            case CONFLICT -> connectionMapping(409, "authoring-conflict",
+                    "Idempotency key is already in use", "IDEMPOTENCY_CONFLICT", List.of());
+            case CAS_MISMATCH -> connectionMapping(412, "authoring-precondition-failed",
+                    "API Connection changed", "PRECONDITION_FAILED", List.of(action("RELOAD", null)));
+            case INTEGRITY -> connectionMapping(500, "authoring-integrity",
+                    "API Connection integrity check failed", "INTEGRITY_FAILED", List.of());
+            case PERSISTENCE -> connectionMapping(503, "authoring-service-unavailable",
+                    "API Connection persistence is unavailable", "PERSISTENCE_FAILED",
+                    List.of(action("RETRY", null)));
+        };
+    }
+
+    private static Mapping connectionMapping(int status, String type, String title, String code,
+                                              List<ApiResourceAuthoringProblemDetail.RecoveryAction> actions) {
+        return new Mapping(status, "urn:bloge:problem:" + type, title,
+                "RG.AUTHORING.API_CONNECTION." + code, actions);
     }
 
     private static Mapping mapping(int status, String type, String title, String code,

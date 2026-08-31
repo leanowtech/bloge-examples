@@ -49,7 +49,7 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
-### API Resource authoring persistence, application tracer, and HTTP transport (J2/J3-C3)
+### API Resource and Connection authoring persistence, application tracers, and HTTP transport (J2/J3-C4)
 
 The JDBC authoring store, first Resource application facade, and HTTP adapter are opt-in. The transport exposes
 `PUT /api/authoring/resources/{resourceId}` only when `gateway.authoring.api-resource.enabled=true`; the default
@@ -121,6 +121,26 @@ tests. This transport still deliberately rejects Connection `CREATE` and `defaul
 through the facade. Credential providers, Default Fixture Sets, reusable Flow/DAG authoring, real PostgreSQL
 certification, and UI acceptance remain open. The post-C3 full gate completed with
 `Tests run: 8,021; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
+J3-C4 exposes the payload-free Connection tracer as `PUT /api/authoring/connections/{connectionId}` and
+`GET /api/authoring/connections/{connectionId}` under the same opt-in feature flag and trusted
+`API_RESOURCE_AUTHORING` purpose. Create and update use the same strict `If-None-Match: *` / single strong
+`If-Match` protocol, `Idempotency-Key`, no-store responses, replay marker, and unified Authoring Problem Detail as
+Resource authoring. Tenant/project/environment and actor remain derived exclusively from the verified integration
+identity; malformed bodies, scope drift, invalid validators and unsupported media fail before the facade. Error
+responses and committed Connection views never echo credential values or protected provider locators.
+
+The production Connection application/runtime configuration now supplies one lifecycle-complete JDBC store and
+facade when the feature is enabled. A dedicated V010 readiness gate checks immutable attempt authority, exact
+Connection revision/head provenance, the `SUPERSEDED` lifecycle closure and recovery indexes; pre-V010, missing or
+altered schema fails startup. The current tracer deliberately accepts only `auth.kind=NONE`; BEARER, BASIC and
+API_KEY commands return a typed 424 before claim until a production external secret provider is wired. Connection
+list/check, Default Fixture generation, simulation and reusable Flow/DAG authoring remain subsequent slices.
+
+The C4 focused gate completed at **145/145 green** with no failures, errors, or skips across Connection facade/JDBC,
+Connection controller/configuration/runtime readiness, Resource transport regressions, protocol schemas and the
+visual package boundary. The post-C4 serial `clean verify` completed with
+`Tests run: 8,051; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

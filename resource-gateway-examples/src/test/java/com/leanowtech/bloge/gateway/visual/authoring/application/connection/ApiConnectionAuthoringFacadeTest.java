@@ -56,6 +56,21 @@ class ApiConnectionAuthoringFacadeTest {
     }
 
     @Test
+    void readReturnsTheCurrentPayloadFreeViewAndFailsClosedWhenMissing() {
+        var facade = facade();
+        ApiConnectionAuthoringResult saved = facade.save(request("create", "customer", "read-key",
+                ApiConnectionAuthoringPrecondition.create(), command("Customer API")));
+
+        ApiConnectionAuthoringRead read = facade.read(SCOPE, "customer");
+
+        assertThat(read.view()).isEqualTo(saved.view());
+        assertThat(read.strongEtag()).isEqualTo(saved.strongEtag());
+        assertThatThrownBy(() -> facade.read(SCOPE, "missing"))
+                .isInstanceOf(ApiConnectionAuthoringFailure.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringFailure.Code.NOT_FOUND);
+    }
+
+    @Test
     void inMemoryResolveReplayRejectsIndependentReceiptAndTargetTampering() {
         ObjectMapper mapper = new ObjectMapper();
         var decisions = new ApiConnectionDecisions();

@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
@@ -37,7 +38,6 @@ import java.util.regex.Pattern;
 @RequestMapping("/api/authoring/resources")
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringController {
-    static final String CORRELATION_ATTRIBUTE = ApiResourceAuthoringController.class.getName() + ".correlationId";
     private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]*");
 
     private final ApiResourceAuthoringFacade facade;
@@ -63,7 +63,7 @@ public final class ApiResourceAuthoringController {
                                          HttpServletRequest servletRequest) {
         IntegrationRequestContext context = authenticator.authenticate(
                 headers, IntegrationOperation.AUTHORING_API_RESOURCE_WRITE);
-        servletRequest.setAttribute(CORRELATION_ATTRIBUTE, context.correlationId());
+        servletRequest.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
         AuthoringScope scope = trustedScope(context);
         String idempotencyKey = idempotencyKey(headers, context.correlationId());
         ApiResourceAuthoringPrecondition precondition = precondition(headers, context.correlationId());
@@ -97,7 +97,7 @@ public final class ApiResourceAuthoringController {
                                                      HttpServletRequest servletRequest) {
         IntegrationRequestContext context = authenticator.authenticate(
                 headers, IntegrationOperation.AUTHORING_API_RESOURCE_WRITE);
-        servletRequest.setAttribute(CORRELATION_ATTRIBUTE, context.correlationId());
+        servletRequest.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
         throw invalid("RG.AUTHORING.API_RESOURCE.CONTENT_TYPE_REQUIRED",
                 "API Resource commands must use application/json.", context.correlationId(), 415,
                 "urn:bloge:problem:unsupported-authoring-media");
