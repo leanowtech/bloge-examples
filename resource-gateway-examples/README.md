@@ -278,6 +278,21 @@ store is missing. The focused compiler/module/JDBC/readiness/catalog/configurati
 `Tests run: 8,151; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`. Immutable Flow publication,
 whole-flow Fixture simulation, and Tool/Solution object pages remain subsequent vertical slices.
 
+The immutable Flow publication slice adds V015 publication identities, append-only versions, and committed
+publish commands behind `ReusableFlowPublicationStore`. Publishing recompiles one exact Flow Draft revision,
+checks its draft id and content fingerprint, and snapshots the authored business graph, schemas, mappings, and
+dependency coordinates without carrying editor layout into the immutable version. A stable server-owned
+publication id receives monotonically increasing revisions; same-key exact replay returns the persisted receipt,
+while changed intent conflicts. `POST /api/authoring/flows/{flowId}:publish` derives scope and actor only from the
+trusted integration identity and requires a bounded `Idempotency-Key`. The production composable catalog now
+resolves exact `FLOW_VERSION` publication id, revision, and fingerprint coordinates, so a published Flow can be a
+dependency of another Tool or Solution. The opt-in runtime fails startup when the read-only V015 readiness probe
+cannot prove table, key, foreign-key, and `PUBLISHED` state closure. The focused compiler/module/draft/publication/
+readiness/catalog/configuration/controller/schema gate is **58/58 green** with no failures, errors, or skips. The
+serial `clean verify` completed with `Tests run: 8,166; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+JDBC/readiness evidence remains H2 PostgreSQL mode rather than real PostgreSQL certification. Whole-flow Fixture
+simulation and the Tool/Solution object pages remain the next vertical slices.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -161,13 +161,84 @@ class ReusableFlowModuleTest {
         assertThat(moved.strongEtag()).isNotEqualTo(created.strongEtag());
     }
 
+    @Test
+    void publishesExactDraftAsImmutableVersionAndReplaysWithoutNewRevision() {
+        ReusableFlowModule module = publishingModule();
+        ReusableFlowSaveResult saved = module.save(SCOPE, "alice", "customer-tool",
+                ExpectedRevision.create(), "create-1", command("Customer tool", 0));
+        ReusableFlowPublishCommand publish = new ReusableFlowPublishCommand(
+                ReusableFlowPublishCommand.SCHEMA_VERSION, saved.draft().subject());
+
+        ReusableFlowPublishResult first = module.publish(
+                SCOPE, "alice", "customer-tool", "publish-1", publish);
+        ReusableFlowPublishResult replay = module.publish(
+                SCOPE, "alice", "customer-tool", "publish-1", publish);
+
+        assertThat(first.replayed()).isFalse();
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.version()).isEqualTo(first.version());
+        assertThat(first.version().source()).isEqualTo(new ReusableFlowVersion.Source(
+                saved.draft().draftId(), 1, saved.draft().fingerprint()));
+        assertThat(first.version().graph()).isEqualTo(saved.draft().graph());
+        assertThat(module.findVersion(SCOPE, first.version().publicationId(), 1))
+                .contains(first.version());
+    }
+
+    @Test
+    void laterPublishUsesStablePublicationIdentityAndExactSourceLineage() {
+        ReusableFlowModule module = publishingModule();
+        ReusableFlowSaveResult created = module.save(SCOPE, "alice", "customer-tool",
+                ExpectedRevision.create(), "create-1", command("Customer tool", 0));
+        ReusableFlowPublishResult first = module.publish(SCOPE, "alice", "customer-tool", "publish-1",
+                new ReusableFlowPublishCommand(null, created.draft().subject()));
+        ReusableFlowSaveResult moved = module.save(SCOPE, "alice", "customer-tool",
+                ExpectedRevision.match(1), "move-1", command("Customer tool", 240));
+        ReusableFlowPublishResult second = module.publish(SCOPE, "alice", "customer-tool", "publish-2",
+                new ReusableFlowPublishCommand(null, moved.draft().subject()));
+
+        assertThat(second.version().publicationId()).isEqualTo(first.version().publicationId());
+        assertThat(second.version().revision()).isEqualTo(2);
+        assertThat(moved.draft().fingerprint()).isEqualTo(created.draft().fingerprint());
+        assertThat(second.version().fingerprint()).isNotEqualTo(first.version().fingerprint());
+        assertThat(second.version().source().revision()).isEqualTo(2);
+    }
+
+    @Test
+    void publishRejectsDriftedOrMissingDraftBeforePublicationStoreMutation() {
+        ReusableFlowModule module = publishingModule();
+        ReusableFlowSaveResult saved = module.save(SCOPE, "alice", "customer-tool",
+                ExpectedRevision.create(), "create-1", command("Customer tool", 0));
+        assertThatThrownBy(() -> module.publish(SCOPE, "alice", "customer-tool", "publish-1",
+                new ReusableFlowPublishCommand(null,
+                        new com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef.FlowDraft(
+                                saved.draft().draftId(), 1, "sha256:" + "b".repeat(64)))))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(value -> ((ReusableFlowFailure) value).code())
+                .isEqualTo(ReusableFlowFailure.Code.DEPENDENCY_DRIFT);
+        assertThatThrownBy(() -> module.publish(SCOPE, "alice", "missing", "publish-1",
+                new ReusableFlowPublishCommand(null, saved.draft().subject())))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(value -> ((ReusableFlowFailure) value).code())
+                .isEqualTo(ReusableFlowFailure.Code.NOT_FOUND);
+    }
+
     private static ReusableFlowModule module() {
+        return module(null);
+    }
+
+    private static ReusableFlowModule publishingModule() {
+        return module(new InMemoryReusableFlowPublicationStore(
+                () -> "publication-customer-tool", java.time.Clock.fixed(
+                        java.time.Instant.parse("2026-09-01T00:00:00Z"), java.time.ZoneOffset.UTC)));
+    }
+
+    private static ReusableFlowModule module(ReusableFlowPublicationStore publications) {
         ComposableDefinition dependency = new ComposableDefinition(
                 new ReusableFlowCommand.ComposableRef.ApiResource("customer.profile", 3, DEPENDENCY),
                 schema("customerId"), schema("tier"));
         ReusableFlowCompiler compiler = new ReusableFlowCompiler((scope, reference) ->
                 reference.equals(dependency.reference()) ? Optional.of(dependency) : Optional.empty());
-        return new ReusableFlowModule(compiler, new InMemoryReusableFlowDraftStore());
+        return new ReusableFlowModule(compiler, new InMemoryReusableFlowDraftStore(), publications);
     }
 
     private static ReusableFlowCommand command(String displayName, double x) {

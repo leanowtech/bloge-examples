@@ -39,13 +39,13 @@ public final class ReusableFlowAuthoringProblemHandler {
             case DEPENDENCY_DRIFT, CAS_MISMATCH -> new Mapping(412, "authoring-precondition-failed",
                     "Reusable Flow dependency changed", "PRECONDITION_FAILED");
             case CONFLICT, BUSY -> new Mapping(409, "authoring-conflict",
-                    "Reusable Flow save conflicts", failure.code().name());
+                    "Reusable Flow operation conflicts", failure.code().name());
             case INTEGRITY -> new Mapping(500, "authoring-integrity",
                     "Reusable Flow integrity check failed", "INTEGRITY_FAILED");
             case PERSISTENCE -> new Mapping(503, "authoring-service-unavailable",
                     "Reusable Flow persistence is unavailable", "PERSISTENCE_FAILED");
             default -> new Mapping(422, "authoring-validation",
-                    "Reusable Flow cannot be saved", "VALIDATION_FAILED");
+                    "Reusable Flow operation is invalid", "VALIDATION_FAILED");
         };
         ApiResourceAuthoringProblemDetail problem = problem(
                 "urn:bloge:problem:" + mapping.type(), mapping.title(), mapping.status(),

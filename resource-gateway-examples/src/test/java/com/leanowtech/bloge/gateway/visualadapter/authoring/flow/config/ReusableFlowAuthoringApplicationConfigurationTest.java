@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ class ReusableFlowAuthoringApplicationConfigurationTest {
         runner.withPropertyValues("gateway.authoring.reusable-flow.enabled=true")
                 .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
+                .withBean(ReusableFlowPublicationStore.class, () -> mock(ReusableFlowPublicationStore.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).getBean(ComposableCatalog.class)
@@ -38,6 +40,12 @@ class ReusableFlowAuthoringApplicationConfigurationTest {
                 });
 
         runner.withPropertyValues("gateway.authoring.reusable-flow.enabled=true")
+                .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
+                .withBean(ReusableFlowPublicationStore.class, () -> mock(ReusableFlowPublicationStore.class))
+                .run(context -> assertThat(context).hasFailed());
+
+        runner.withPropertyValues("gateway.authoring.reusable-flow.enabled=true")
+                .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
                 .run(context -> assertThat(context).hasFailed());
     }

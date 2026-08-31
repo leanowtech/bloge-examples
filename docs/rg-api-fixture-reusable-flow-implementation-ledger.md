@@ -1429,3 +1429,62 @@ Flow 已闭合 wire、DAG compile、durable Draft authority、exact API Resource
 simulation，以及面向用户的 Tool/Solution 对象页与真实端到端验收。累计完成度保守调整为 **73%**，剩余
 差距 **27%**。下一刀先交付 immutable Flow Version publication 与 catalog 闭包，再进入 whole-flow Fixture
 simulation；UI 不与 authority migration 混在同一提交。
+
+## 36. Iteration 35 — immutable reusable Flow publication
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 V015 publication authority：稳定 publication identity、append-only immutable version 与 committed
+  publish command。版本以 exact Flow Draft id/revision/content fingerprint 作为来源坐标；相同 Flow 的版本号
+  单调递增，并发发布通过锁定 Flow identity 分配不同版本。
+- 新增 in-memory 与 JDBC `ReusableFlowPublicationStore`。same-key exact replay 返回同一 receipt；changed
+  intent conflict；JDBC read/replay 对 source draft、version JSON、fingerprint、receipt、scope、actor 与 command
+  provenance 做完整闭包。
+- `ReusableFlowModule.publish` 在任何幂等写入前读取并重新编译 exact Draft，拒绝 draft id、revision、content
+  fingerprint 或 dependency 漂移。发布版本快照 TOOL/SOLUTION 业务图、schema、mapping 与依赖坐标，不包含
+  editor layout；来源 Draft 坐标仍进入 version fingerprint，因此 lineage 不会被 layout-only 新 revision 混淆。
+- `ApiResourceComposableCatalog` 已支持 exact committed `FLOW_VERSION`，可把已发布 Flow 作为另一个 Tool 或
+  Solution 的依赖节点；不存在、revision/fingerprint 漂移或损坏 authority 均 fail-closed。
+- 新增认证 `POST /api/authoring/flows/{flowId}:publish`。scope/actor 仅来自 trusted integration identity，
+  请求必须携带 bounded `Idempotency-Key`；响应返回 exact receipt、`Idempotency-Replayed` 与 no-store。
+- 新增默认关闭的 publication runtime configuration 与 read-only V015 readiness；缺 table、PK、exact FK、
+  command/version closure 或 `PUBLISHED` 状态约束会阻止启动，运行时不创建或修复 schema。
+
+### 最新验证与证据边界
+
+聚焦门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowCompilerTest,ReusableFlowModuleTest,JdbcReusableFlowDraftStoreTest,\
+ReusableFlowDraftSchemaReadinessTest,ReusableFlowDraftRuntimeConfigurationTest,\
+InMemoryReusableFlowPublicationStoreTest,JdbcReusableFlowPublicationStoreTest,\
+ReusableFlowPublicationSchemaReadinessTest,ReusableFlowPublicationRuntimeConfigurationTest,\
+ApiResourceComposableCatalogTest,ReusableFlowAuthoringApplicationConfigurationTest,\
+ReusableFlowAuthoringControllerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 58, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+最终串行全量门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8166, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+JDBC/readiness 证据来自 H2 PostgreSQL mode；本轮未冒充真实 PostgreSQL certification。发布 HTTP 与 catalog
+测试证明 exact authority、trusted scope/actor、幂等重放和版本依赖解析，但还不是用户对象页或 whole-flow
+simulation 的真实浏览器验收。
+
+### 当前差距评估
+
+Flow 已闭合 wire、deterministic DAG compile、durable Draft、认证保存/读取、immutable publication 与 exact
+`FLOW_VERSION` catalog resolution。尚缺 whole-flow Fixture Set/Case、Flow simulation execution/evidence，
+以及面向用户的 Tool/Solution 对象页和真实端到端验收。累计完成度保守调整为 **78%**，剩余差距
+**22%**。下一刀进入 whole-flow Fixture simulation；UI 不与 simulation authority migration 混在同一提交。

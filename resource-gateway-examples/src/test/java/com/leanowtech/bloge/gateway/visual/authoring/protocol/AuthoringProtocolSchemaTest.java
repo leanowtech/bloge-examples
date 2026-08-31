@@ -15,7 +15,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
@@ -312,6 +315,28 @@ class AuthoringProtocolSchemaTest {
         JsonNode receiptWire = MAPPER.valueToTree(receipt);
         assertThat(validationErrors(read(receiptSchema), receiptWire, receiptSchema)).isEmpty();
         assertThat(MAPPER.treeToValue(receiptWire, ReusableFlowSaveReceipt.class)).isEqualTo(receipt);
+
+        ReusableFlowPublishCommand publishCommand = new ReusableFlowPublishCommand(null, draft.subject());
+        ReusableFlowVersion version = new ReusableFlowVersion(ReusableFlowVersion.SCHEMA_VERSION,
+                "publication-eligibility", 1, "sha256:" + "c".repeat(64),
+                new ReusableFlowVersion.Source(draft.draftId(), draft.revision(), draft.fingerprint()),
+                draft.flowId(), draft.displayName(), draft.kind(), draft.description(), draft.contract(),
+                draft.graph(), Instant.parse("2026-09-01T00:00:00Z"), "alice",
+                ReusableFlowVersion.Status.PUBLISHED);
+        ReusableFlowPublishReceipt publishReceipt = new ReusableFlowPublishReceipt(null,
+                draft.subject(), version.subject(), ReusableFlowPublishReceipt.Catalog.AVAILABLE);
+        ObjectMapper temporal = MAPPER.copy().findAndRegisterModules();
+        for (Object value : List.of(publishCommand, publishReceipt, version)) {
+            String schemaName = value instanceof ReusableFlowPublishCommand
+                    ? "reusable-flow-publish-command-v1.schema.json"
+                    : value instanceof ReusableFlowPublishReceipt
+                    ? "reusable-flow-publish-receipt-v1.schema.json"
+                    : "reusable-flow-version-v1.schema.json";
+            Path path = SCHEMA_ROOT.resolve(schemaName);
+            JsonNode valueWire = temporal.valueToTree(value);
+            assertThat(validationErrors(read(path), valueWire, path)).as(valueWire.toString()).isEmpty();
+            assertThat(temporal.treeToValue(valueWire, value.getClass())).isEqualTo(value);
+        }
     }
 
     @Test

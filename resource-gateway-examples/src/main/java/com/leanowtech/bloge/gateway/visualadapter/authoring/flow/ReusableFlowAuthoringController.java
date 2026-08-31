@@ -12,6 +12,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishResult;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
@@ -25,6 +28,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -106,6 +110,23 @@ public final class ReusableFlowAuthoringController {
                 "urn:bloge:problem:unsupported-authoring-media");
     }
 
+    /** Publishes one exact readable Draft as an immutable catalog version. */
+    @PostMapping(path = "/{flowId}:publish", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ReusableFlowPublishReceipt> publish(
+            @PathVariable String flowId, @RequestHeader HttpHeaders headers,
+            @RequestBody JsonNode commandWire, HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_REUSABLE_FLOW_WRITE, request);
+        ReusableFlowPublishResult result = module.publish(trustedScope(context), context.actorId(), flowId,
+                idempotencyKey(headers, context.correlationId()),
+                publishCommand(commandWire, context.correlationId()));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                .body(result.receipt());
+    }
+
     private IntegrationRequestContext authenticate(HttpHeaders headers, IntegrationOperation operation,
                                                      HttpServletRequest request) {
         IntegrationRequestContext context = authenticator.authenticate(headers, operation);
@@ -116,6 +137,19 @@ public final class ReusableFlowAuthoringController {
     private ReusableFlowCommand command(JsonNode wire, String correlationId) {
         try {
             ReusableFlowCommand command = strictMapper.treeToValue(wire, ReusableFlowCommand.class);
+            if (command == null) throw invalidRequest(correlationId);
+            return command;
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (RuntimeException | java.io.IOException failure) {
+            throw invalidRequest(correlationId);
+        }
+    }
+
+    private ReusableFlowPublishCommand publishCommand(JsonNode wire, String correlationId) {
+        try {
+            ReusableFlowPublishCommand command = strictMapper.treeToValue(
+                    wire, ReusableFlowPublishCommand.class);
             if (command == null) throw invalidRequest(correlationId);
             return command;
         } catch (IntegrationProblemException failure) {

@@ -22,10 +22,17 @@ public final class ReusableFlowModule {
 
     private final ReusableFlowCompiler compiler;
     private final ReusableFlowDraftStore store;
+    private final ReusableFlowPublicationStore publications;
 
     public ReusableFlowModule(ReusableFlowCompiler compiler, ReusableFlowDraftStore store) {
+        this(compiler, store, null);
+    }
+
+    public ReusableFlowModule(ReusableFlowCompiler compiler, ReusableFlowDraftStore store,
+                              ReusableFlowPublicationStore publications) {
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.store = Objects.requireNonNull(store, "store");
+        this.publications = publications;
     }
 
     /** Compiles then atomically saves one exact Flow intent. */
@@ -82,5 +89,46 @@ public final class ReusableFlowModule {
     /** Reads one exact committed historical draft revision in one trusted scope. */
     public Optional<ReusableFlowDraft> findRevision(AuthoringScope scope, String flowId, int revision) {
         return store.findRevision(scope, flowId, revision);
+    }
+
+    /** Publishes one exact readable draft as an immutable catalog version. */
+    public ReusableFlowPublishResult publish(AuthoringScope scope, String actorId, String flowId,
+                                             String idempotencyKey,
+                                             ReusableFlowPublishCommand command) {
+        Objects.requireNonNull(command, "command");
+        if (publications == null) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.PERSISTENCE);
+        }
+        ReusableFlowStoredDraft stored = store.findRevisionStored(
+                        scope, flowId, command.source().revision())
+                .orElseThrow(() -> new ReusableFlowFailure(ReusableFlowFailure.Code.NOT_FOUND));
+        ReusableFlowDraft draft = stored.draft();
+        if (!draft.subject().equals(command.source())) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.DEPENDENCY_DRIFT);
+        }
+        ReusableFlowCommand exact = command(draft);
+        compiler.compile(scope, exact);
+        ObjectNode fingerprintMaterial = JSON.createObjectNode();
+        fingerprintMaterial.set("source", JSON.valueToTree(command.source()));
+        fingerprintMaterial.put("flowId", draft.flowId());
+        fingerprintMaterial.set("flow", JSON.valueToTree(exact.flow()));
+        ((ObjectNode) fingerprintMaterial.get("flow")).remove("layout");
+        String versionFingerprint = AuthoringFingerprints.of(fingerprintMaterial);
+        return publications.publish(new ReusableFlowPublishIntent(scope, actorId, flowId,
+                idempotencyKey, AuthoringFingerprints.of(JSON.valueToTree(command)),
+                versionFingerprint, draft));
+    }
+
+    /** Reads one exact immutable published version. */
+    public Optional<ReusableFlowVersion> findVersion(
+            AuthoringScope scope, String publicationId, int revision) {
+        if (publications == null) return Optional.empty();
+        return publications.findVersion(scope, publicationId, revision);
+    }
+
+    private static ReusableFlowCommand command(ReusableFlowDraft draft) {
+        ReusableFlowCommand.Flow flow = new ReusableFlowCommand.Flow(draft.displayName(), draft.kind(),
+                draft.description(), draft.contract(), draft.graph(), draft.layout());
+        return new ReusableFlowCommand(ReusableFlowCommand.SCHEMA_VERSION, flow);
     }
 }

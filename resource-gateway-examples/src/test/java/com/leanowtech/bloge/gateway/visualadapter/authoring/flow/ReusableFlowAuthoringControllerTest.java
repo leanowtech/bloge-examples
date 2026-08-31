@@ -10,6 +10,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishResult;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
@@ -36,6 +40,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -129,6 +134,43 @@ class ReusableFlowAuthoringControllerTest {
                 .andExpect(jsonPath("$.code").value("RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH"));
         verify(module, never()).save(any(AuthoringScope.class), any(String.class), any(String.class),
                 any(ReusableFlowPrecondition.class), any(String.class), any(ReusableFlowCommand.class));
+    }
+
+    @Test
+    void publishUsesTrustedScopeAndReturnsExactImmutableCoordinate() throws Exception {
+        ReusableFlowModule module = mock(ReusableFlowModule.class);
+        ReusableFlowSaveResult saved = saved();
+        ReusableFlowVersion version = new ReusableFlowVersion(ReusableFlowVersion.SCHEMA_VERSION,
+                "publication-tool", 1, "sha256:" + "d".repeat(64),
+                new ReusableFlowVersion.Source(saved.draft().draftId(), 1, saved.draft().fingerprint()),
+                saved.draft().flowId(), saved.draft().displayName(), saved.draft().kind(),
+                saved.draft().description(), saved.draft().contract(), saved.draft().graph(),
+                Instant.parse("2026-09-01T00:00:00Z"), "author", ReusableFlowVersion.Status.PUBLISHED);
+        ReusableFlowPublishCommand command = new ReusableFlowPublishCommand(null, saved.draft().subject());
+        ReusableFlowPublishReceipt receipt = new ReusableFlowPublishReceipt(null, saved.draft().subject(),
+                version.subject(), ReusableFlowPublishReceipt.Catalog.AVAILABLE);
+        when(module.publish(any(), any(), any(), any(), any())).thenReturn(
+                new ReusableFlowPublishResult(version, receipt, false));
+
+        mvc(module).perform(post("/api/authoring/flows/customer-tool:publish")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("Idempotency-Key", "publish-1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JSON.writeValueAsString(command)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.source.draftId").value("draft-1"))
+                .andExpect(jsonPath("$.version.publicationId").value("publication-tool"))
+                .andExpect(jsonPath("$.catalog").value("AVAILABLE"));
+
+        verify(module).publish(org.mockito.ArgumentMatchers.eq(
+                        new AuthoringScope("tenant-a", "project-a", "test")),
+                org.mockito.ArgumentMatchers.eq("author"),
+                org.mockito.ArgumentMatchers.eq("customer-tool"),
+                org.mockito.ArgumentMatchers.eq("publish-1"),
+                org.mockito.ArgumentMatchers.eq(command));
     }
 
     private static MockMvc mvc(ReusableFlowModule module) {
