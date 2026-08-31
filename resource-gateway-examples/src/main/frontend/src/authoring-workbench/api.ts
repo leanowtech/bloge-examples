@@ -1,0 +1,115 @@
+import { integrationRequestHeaders } from '../api';
+import type {
+  ApiResourceReceipt,
+  ApiResourceSaveCommand,
+  ApiResourceSpec,
+  FixtureSetSummary,
+  SimulationRun,
+} from './model';
+
+export type AuthoringWorkbenchTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+export interface StoredResponse<T> {
+  value: T;
+  strongEtag: string;
+  replayed: boolean;
+}
+
+/** Lists payload-free Fixture summaries for one exact Resource revision. */
+export async function listApiResourceFixtures(
+  resource: Pick<ApiResourceSpec, 'resourceId' | 'revision' | 'fingerprint'>,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<FixtureSetSummary[]> {
+  const query = new URLSearchParams({
+    subjectKind: 'API_RESOURCE',
+    subjectId: resource.resourceId,
+    subjectRevision: String(resource.revision),
+    subjectFingerprint: resource.fingerprint,
+  });
+  const response = await transport(`/api/authoring/fixture-sets?${query}`, {
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+  });
+  return body<FixtureSetSummary[]>(response);
+}
+
+/** Reads one committed API Resource without exposing Connection secret metadata. */
+export async function readApiResource(
+  resourceId: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<ApiResourceSpec>> {
+  const response = await transport(`/api/authoring/resources/${encodeURIComponent(resourceId)}`, {
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+  });
+  return storedResponse(response, false);
+}
+
+/** Saves the Resource and its private Default Fixture as one compound command. */
+export async function saveApiResource(
+  resourceId: string,
+  command: ApiResourceSaveCommand,
+  strongEtag: string | null,
+  idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<ApiResourceReceipt>> {
+  const response = await transport(`/api/authoring/resources/${encodeURIComponent(resourceId)}`, {
+    method: 'PUT',
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING', {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+      ...(strongEtag ? { 'If-Match': strongEtag } : { 'If-None-Match': '*' }),
+    }),
+    body: JSON.stringify(command),
+  });
+  return storedResponse(response, true);
+}
+
+/** Executes the exact Default Fixture Case returned by the Resource save receipt. */
+export async function simulateFixtureCase(
+  fixtureSetId: string,
+  revision: number,
+  caseId: string,
+  idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<SimulationRun> {
+  const response = await transport('/api/authoring/simulations', {
+    method: 'POST',
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING', {
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey,
+    }),
+    body: JSON.stringify({
+      schemaVersion: 'bloge.simulationRequest.v1',
+      source: { kind: 'FIXTURE_CASE', fixtureSetId, revision, caseId },
+      executionPolicy: {
+        externalReads: { kind: 'DENY' },
+        externalWrites: { kind: 'DENY' },
+      },
+    }),
+  });
+  return body<SimulationRun>(response);
+}
+
+async function storedResponse<T>(response: Response, includeReplay: boolean): Promise<StoredResponse<T>> {
+  const value = await body<T>(response);
+  const strongEtag = response.headers.get('ETag');
+  if (!strongEtag) throw new Error('The server did not return a Resource ETag.');
+  return {
+    value,
+    strongEtag,
+    replayed: includeReplay && response.headers.get('Idempotency-Replayed') === 'true',
+  };
+}
+
+async function body<T>(response: Response): Promise<T> {
+  const text = await response.text();
+  let payload: unknown = null;
+  if (text) {
+    try { payload = JSON.parse(text); } catch { payload = null; }
+  }
+  if (!response.ok) {
+    const problem = payload as { detail?: string; title?: string; code?: string } | null;
+    throw new Error(problem?.detail || problem?.title || problem?.code || response.statusText);
+  }
+  if (payload === null) throw new Error('The server returned an empty response.');
+  return payload as T;
+}

@@ -39,6 +39,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,6 +48,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiResourceAuthoringControllerTest {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Instant NOW = Instant.parse("2026-08-31T00:00:00Z");
+
+    @Test
+    void readUsesTrustedScopeAndReturnsExactResourceEtag() throws Exception {
+        ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
+        ApiResourceAuthoringResult result = result(false);
+        when(facade.read(new AuthoringScope("tenant-a", "project-a", "test"), "profile", 2L))
+                .thenReturn(result.stored());
+
+        mvc(facade, Set.of("API_RESOURCE_AUTHORING"))
+                .perform(get("/api/authoring/resources/profile?revision=2")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("X-Correlation-Id", "corr-01"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("ETag", "\"resource-etag\""))
+                .andExpect(jsonPath("$.resourceId").value("profile"));
+
+        verify(facade).read(new AuthoringScope("tenant-a", "project-a", "test"), "profile", 2L);
+    }
 
     @Test
     void createUsesTrustedScopeAndReturnsCanonicalReceiptHeaders() throws Exception {
@@ -341,6 +362,23 @@ class ApiResourceAuthoringControllerTest {
         when(receipt.body()).thenReturn(body);
         StoredApiResource stored = mock(StoredApiResource.class);
         when(stored.receipt()).thenReturn(receipt);
+        when(stored.resource()).thenReturn(new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec(
+                null, "profile", 2, "sha256:" + "a".repeat(64), "Customer profile", null,
+                "customer", new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.Operation(
+                "GET", "/profile", List.of()),
+                new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.Contract(
+                        new com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope("json-schema", "2020-12",
+                                java.util.Map.of("type", "object", "properties", java.util.Map.of(),
+                                        "required", List.of(), "additionalProperties", false)),
+                        new com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope("json-schema", "2020-12",
+                                java.util.Map.of("type", "object", "properties", java.util.Map.of(),
+                                        "required", List.of(), "additionalProperties", false))),
+                new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.Response(
+                        new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.HttpStatus(
+                                List.of(200)), null),
+                com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.Effect.readOnly(),
+                List.of(new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand.Example(
+                        "default", JSON.createObjectNode(), JSON.createObjectNode())), "DRAFT"));
         return new ApiResourceAuthoringResult(stored, replayed);
     }
 

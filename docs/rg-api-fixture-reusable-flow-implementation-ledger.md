@@ -1644,3 +1644,60 @@ BUILD SUCCESS
 Fixture share/promotion、Tool/Solution/Fixture 对象页以及真实 UI/PostgreSQL acceptance。累计完成度保守调整为
 **89%**，剩余差距 **11%**；下一刀进入对象页 API/前端主路径和真实浏览器验收，再单独处理 share/promotion，
 不把这些边界隐藏在当前编译器里。
+
+## 40. Iteration 39 — API Resource 对象页与保存即模拟
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 `/workbench/` 懒加载对象工作台。首页只显示批准的三个入口：接入 API、创建工具、创建方案；Fixture
+  与 Simulation 不再成为新的顶层 Studio。
+- API Resource 对象页把普通作者输入压缩为名称、现有 Connection ID、Method/Path、请求样例和响应样例。
+  前端只为已批准的 flat object example 推导 first-level Schema 和 Query Mapping；数组、null、非法字段名和
+  非对象样例在请求前拒绝，不把 Descriptor、Design Contract、Operator Ref 或 Fixture JSON 暴露给用户。
+- “保存并模拟”只发送一个 `bloge.apiResourceSaveCommand.v1`：服务端原子保存 Resource 与
+  `FROM_EXAMPLES` 私有 Default Fixture；随后前端只按回执中的 Fixture Set revision + Case ID 发出一个
+  deny-all Simulation。页面分别展示 Design、Fixture、Simulation、Versions，四维 verdict 保持独立。
+- 新增 `GET /api/authoring/resources/{resourceId}`，使用 verified scope、新的 read purpose、no-store 和服务端
+  strong ETag，只返回已提交 `ApiResourceSpec`。对象页重载后按 exact Resource subject 查询 payload-free
+  Fixture summary，因此可以再次运行同一个已保存 Case，而不依赖浏览器内存或猜测 Fixture ID。
+- 新路由继续保持动态 chunk；bundle gate 现在显式要求并计算 `AuthoringWorkbench-*` startup closure。
+
+### 聚焦验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceAuthoringControllerTest,ApiResourceAuthoringFacadeTest test
+
+Tests run: 39, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+npm test -- --run src/authoring-workbench/model.test.ts \
+  src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx \
+  src/App.test.tsx src/ux/routeChunkContract.test.ts
+
+Test Files: 5 passed; Tests: 37 passed
+
+npm run check:i18n
+Test Files: 6 passed; Tests: 39 passed
+
+npx tsc --noEmit
+npm run build
+
+TypeScript, Vite production build, i18n/UX/host gates, and route chunk budget: PASS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,188; Failures: 0; Errors: 0; Skipped: 33
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+API Resource 已形成首条用户可见纵向链：标准表单 → 一个复合保存命令 → 私有 Default Fixture → exact
+Simulation → 可重载对象页。当前仍要求预先存在 Connection，且只自动推导 flat object example；Tool/Solution
+仍进入既有 Author workspace，尚未使用统一对象页，Fixture 也没有独立对象页/share 动作。真实浏览器与真实
+PostgreSQL 验收仍未执行。累计完成度保守调整为 **92%**，剩余差距 **8%**；下一刀进入 Tool/Solution 共用
+对象页与 DAG 表单，再补 Fixture share/promotion 和真实端到端，不回退到隐藏 JSON 编辑。

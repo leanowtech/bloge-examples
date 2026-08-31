@@ -17,7 +17,7 @@ import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
 
-type WorkspaceRoute = 'capabilities' | 'business-mirror' | 'author' | 'correctness' | 'libraries' | 'rehearsals' | 'showcase';
+type WorkspaceRoute = 'workbench' | 'capabilities' | 'business-mirror' | 'author' | 'correctness' | 'libraries' | 'rehearsals' | 'showcase';
 
 const loadCapabilityStudio = () => import('./capability-studio/CapabilityStudio');
 const loadBusinessMirrorWorkspace = () => import('./business-mirror/BusinessMirrorWorkspace');
@@ -26,6 +26,7 @@ const loadCorrectnessStudio = () => import('./correctness-studio/CorrectnessStud
 const loadLibraryWorkbench = () => import('./library-authoring/LibraryWorkbench');
 const loadRehearsalWorkbench = () => import('./RehearsalWorkbench');
 const loadShowcase = () => import('./Showcase');
+const loadAuthoringWorkbench = () => import('./authoring-workbench/AuthoringWorkbench');
 
 const CapabilityStudio = lazy(loadCapabilityStudio);
 const BusinessMirrorWorkspace = lazy(loadBusinessMirrorWorkspace);
@@ -36,8 +37,10 @@ const RehearsalWorkbench = lazy(loadRehearsalWorkbench);
 const Showcase = lazy(loadShowcase);
 const Launcher = lazy(() => import('./spine/Launcher'));
 const ToolObjectShell = lazy(() => import('./spine/ToolObjectShell'));
+const AuthoringWorkbench = lazy(loadAuthoringWorkbench);
 
 const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
+  workbench: loadAuthoringWorkbench,
   capabilities: loadCapabilityStudio,
   'business-mirror': loadBusinessMirrorWorkspace,
   author: loadAuthorCanvas,
@@ -48,6 +51,7 @@ const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
 };
 
 const NAVIGATION_ROUTES: Array<{ route: WorkspaceRoute; label: string; titleId?: MessageId }> = [
+  { route: 'workbench', label: 'Build' },
   { route: 'capabilities', label: 'Capability Studio', titleId: 'app.capabilityStudio' },
   { route: 'business-mirror', label: 'Business Mirror' },
   { route: 'author', label: 'Author' },
@@ -165,7 +169,9 @@ function AppShell() {
         <HostReadySignal route={route} />
         {toolCoordinate ? (
           <ToolObjectShell coordinate={toolCoordinate}>
-            {route === 'capabilities'
+            {route === 'workbench'
+              ? <AuthoringWorkbench />
+              : route === 'capabilities'
               ? <CapabilityStudio />
               : route === 'business-mirror'
               ? <BusinessMirrorWorkspace />
@@ -179,7 +185,9 @@ function AppShell() {
                 ? <RehearsalWorkbench />
                 : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
           </ToolObjectShell>
-        ) : route === 'capabilities'
+        ) : route === 'workbench'
+          ? <AuthoringWorkbench />
+          : route === 'capabilities'
           ? <CapabilityStudio />
           : route === 'business-mirror'
           ? <BusinessMirrorWorkspace />
@@ -224,13 +232,15 @@ function SpineLauncherFrame() {
 function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boolean): WorkspaceRoute {
   if (vscodeHost) {
     const requested = new URLSearchParams(search).get('workspaceRoute');
-    if (requested === 'capabilities' || requested === 'business-mirror' || requested === 'author' || requested === 'correctness' || requested === 'libraries'
+    if (requested === 'workbench' || requested === 'capabilities' || requested === 'business-mirror' || requested === 'author' || requested === 'correctness' || requested === 'libraries'
         || requested === 'rehearsals' || requested === 'showcase') {
       return requested;
     }
     return 'capabilities';
   }
-  return pathname.startsWith('/capabilities')
+  return pathname.startsWith('/workbench')
+    ? 'workbench'
+    : pathname.startsWith('/capabilities')
     ? 'capabilities'
     : pathname.startsWith('/business-mirror')
     ? 'business-mirror'
@@ -255,6 +265,7 @@ function workspaceEntryHref(
 ): string {
   if (!vscodeHost) {
     if (route === 'author') return authorWorkspaceEntryHref(search, authorVersion);
+    if (route === 'workbench') return '/workbench/';
     if (route === 'capabilities') return '/capabilities/';
     if (route === 'business-mirror') return '/business-mirror/';
     return `/${route}/`;

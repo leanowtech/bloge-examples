@@ -158,6 +158,35 @@ public final class ApiResourceAuthoringFacade {
         }
     }
 
+    /**
+     * Reads the current or one exact committed Resource revision.
+     *
+     * <p>The returned authority contains no Connection credential material.
+     * Staged revisions remain invisible and malformed coordinates fail before
+     * the persistence adapter is consulted.</p>
+     *
+     * @param scope verified authoring scope
+     * @param resourceId stable Resource identity
+     * @param revision optional one-based revision; {@code null} selects the head
+     * @return exact committed Resource authority and receipt
+     */
+    public StoredApiResource read(AuthoringScope scope, String resourceId, Long revision) {
+        if (scope == null || !validIdentifier(resourceId, 128)
+                || (revision != null && revision < 1)) {
+            throw failure(ApiResourceAuthoringFailure.Code.VALIDATION);
+        }
+        try {
+            return (revision == null
+                    ? resources.findHead(scope, resourceId)
+                    : resources.findRevision(scope, resourceId, revision))
+                    .orElseThrow(() -> failure(ApiResourceAuthoringFailure.Code.NOT_FOUND));
+        } catch (ApiResourceAuthoringFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw mapFailure(failure, null);
+        }
+    }
+
     private Preflight preflight(ApiResourceAuthoringRequest request) {
         if (request == null || request.scope() == null || request.precondition() == null
                 || request.command() == null || !validIdentifier(request.actorId(), 256)

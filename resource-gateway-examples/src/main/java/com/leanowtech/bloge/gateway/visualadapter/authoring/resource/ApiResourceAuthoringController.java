@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.StoredApiResource;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,11 +23,13 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -52,6 +55,25 @@ public final class ApiResourceAuthoringController {
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.strictMapper = Objects.requireNonNull(mapper, "mapper").copy()
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    }
+
+    /** Returns the current or one exact committed Resource for an object-page deep link. */
+    @GetMapping(path = "/{resourceId}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec> read(
+            @PathVariable String resourceId,
+            @RequestParam(required = false) String revision,
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest servletRequest) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.AUTHORING_API_RESOURCE_READ);
+        servletRequest.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
+        StoredApiResource stored = facade.read(trustedScope(context), resourceId,
+                revision == null ? null : positiveRevision(revision, context.correlationId()));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header(HttpHeaders.ETAG, stored.receipt().strongEtag())
+                .body(stored.resource());
     }
 
     /** Creates or updates one Resource under an explicit strong HTTP precondition. */
@@ -147,6 +169,16 @@ public final class ApiResourceAuthoringController {
     private static IntegrationProblemException invalidRequest(String correlationId) {
         return invalid("RG.AUTHORING.API_RESOURCE.REQUEST_INVALID",
                 "The API Resource request headers are malformed or incomplete.", correlationId);
+    }
+
+    private static long positiveRevision(String value, String correlationId) {
+        try {
+            long revision = Long.parseLong(value);
+            if (revision < 1) throw new NumberFormatException("revision must be positive");
+            return revision;
+        } catch (RuntimeException failure) {
+            throw invalidRequest(correlationId);
+        }
     }
 
     private static IntegrationProblemException invalid(String code, String title, String correlationId) {

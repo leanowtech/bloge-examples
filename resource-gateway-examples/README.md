@@ -329,6 +329,20 @@ failures, errors, or skips. The serial `clean verify` completed with `Tests run:
 skipped: 33` and `BUILD SUCCESS`. Tool/Solution/Fixture object pages and real browser/PostgreSQL acceptance remain
 open.
 
+The first simplified object page is now available at `/workbench/`. Its landing page exposes only the approved
+**Connect an API**, **Create a tool**, and **Create a solution** intents. The API Resource path asks for one name,
+an existing Connection id, Method/Path, and one request/response example; it infers the supported flat JSON Schema
+and bindings, sends one compound Resource command, creates the private Default Fixture from that example, and runs
+the exact returned Fixture Case with all external reads and writes denied. Design, Fixture, Simulation, and Version
+tasks stay on the same object page. `GET /api/authoring/resources/{resourceId}` provides a trusted-scope,
+no-store, strong-ETag deep link; a reload discovers payload-free Fixture summaries by the exact Resource subject
+and can rerun the saved Case. The route is lazy and its startup closure is enforced by the production bundle
+budget. The focused backend gate is **39/39 green**; the focused frontend model/transport/component/route gate is
+**37/37 green**, i18n is **39/39 green**, TypeScript passes, and the full frontend production build and bundle
+budget pass. The serial `clean verify` completed with `Tests run: 8,188; failures: 0; errors: 0; skipped: 33` and
+`BUILD SUCCESS`. This tracer deliberately supports existing Connections and flat object examples; Connection creation,
+advanced binding editing, and Tool/Solution/Fixture object pages remain separate slices rather than hidden JSON.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

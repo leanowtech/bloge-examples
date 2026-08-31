@@ -21,6 +21,7 @@ describe('Route chunk contract', () => {
     expect(appSource).not.toMatch(/^import Showcase/m);
     expect(appSource).not.toMatch(/^import LibraryWorkbench/m);
     expect(appSource).not.toMatch(/^import CapabilityStudio/m);
+    expect(appSource).not.toMatch(/^import AuthoringWorkbench/m);
     expect(appSource).toContain("lazy(loadBusinessMirrorWorkspace)");
     expect(appSource).toContain("lazy(loadAuthorCanvas)");
     expect(appSource).toContain("lazy(loadCorrectnessStudio)");
@@ -28,6 +29,7 @@ describe('Route chunk contract', () => {
     expect(appSource).toContain("lazy(loadRehearsalWorkbench)");
     expect(appSource).toContain("lazy(loadShowcase)");
     expect(appSource).toContain("lazy(loadCapabilityStudio)");
+    expect(appSource).toContain("lazy(loadAuthoringWorkbench)");
   });
 
   it('prefetches only after explicit navigation intent', () => {
@@ -60,6 +62,7 @@ describe('Route chunk contract', () => {
     expect(packageJson.scripts['check:host']).toContain('vscodeWebviewBridge.test.ts');
     expect(packageJson.scripts.build).toContain('vite build && npm run check:bundle');
     expect(budgetSource).toContain("'CapabilityStudio-'");
+    expect(budgetSource).toContain("'AuthoringWorkbench-'");
     expect(budgetSource).toContain("entry.isDynamicEntry === true");
     expect(budgetSource).toContain("entry.file.endsWith('.js')");
   });

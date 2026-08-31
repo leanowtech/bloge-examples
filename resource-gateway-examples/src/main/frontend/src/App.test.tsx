@@ -49,6 +49,10 @@ vi.mock('./correctness-studio/CorrectnessStudio', () => ({
   default: () => <div data-testid="correctness-mock">Correctness Studio</div>,
 }));
 
+vi.mock('./authoring-workbench/AuthoringWorkbench', () => ({
+  default: () => <div data-testid="authoring-workbench-mock">Authoring workbench</div>,
+}));
+
 describe('App route shell', () => {
   let root: Root | null = null;
   let host: HTMLDivElement;
@@ -123,6 +127,14 @@ describe('App route shell', () => {
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/capabilities/');
   });
 
+  it('renders the simple object workbench as its own lazy route', async () => {
+    await renderAt('/workbench/?create=api');
+
+    expect(query('[data-testid="authoring-workbench-mock"]')).toBeTruthy();
+    expect(document.title).toBe('BLOGE Visual Canvas - Build');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/workbench/');
+  });
+
   it('renders the canonical Business Mirror route', async () => {
     await renderAt('/business-mirror/?packageId=legacy%3AloanDecisionPolicy');
 
@@ -176,7 +188,7 @@ describe('App route shell', () => {
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
     expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
-    expect(document.querySelectorAll('.topbar-link')).toHaveLength(7);
+    expect(document.querySelectorAll('.topbar-link')).toHaveLength(8);
   });
 
   it('renders Correctness Studio as a first-class route', async () => {
