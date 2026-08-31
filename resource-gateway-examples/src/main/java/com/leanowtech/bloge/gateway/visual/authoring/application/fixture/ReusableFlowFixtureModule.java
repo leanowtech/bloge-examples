@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.application.fixture;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveIntent;
@@ -26,13 +28,23 @@ public final class ReusableFlowFixtureModule {
     private final ReusableFlowPublicationStore publications;
     private final StandaloneFixtureSetStore store;
     private final WholeFlowFixtureMaterializer materializer;
+    private final ParentFlowApplyCaseCompiler parentCompiler;
 
     public ReusableFlowFixtureModule(ReusableFlowPublicationStore publications,
                                      StandaloneFixtureSetStore store,
                                      WholeFlowFixtureMaterializer materializer) {
+        this(publications, store, materializer, null);
+    }
+
+    /** Creates a module that can also validate exact parent-Flow APPLY_CASE controls. */
+    public ReusableFlowFixtureModule(ReusableFlowPublicationStore publications,
+                                     StandaloneFixtureSetStore store,
+                                     WholeFlowFixtureMaterializer materializer,
+                                     ParentFlowApplyCaseCompiler parentCompiler) {
         this.publications = Objects.requireNonNull(publications, "publications");
         this.store = Objects.requireNonNull(store, "store");
         this.materializer = Objects.requireNonNull(materializer, "materializer");
+        this.parentCompiler = parentCompiler;
     }
 
     /** Resolves an immutable Flow Version, validates material, then atomically saves one revision. */
@@ -43,6 +55,12 @@ public final class ReusableFlowFixtureModule {
         if (scope == null || command == null) throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
         try {
             ReusableFlowVersion version = resolveVersion(scope, command);
+            if (hasNodeControls(command)) {
+                if (parentCompiler == null) {
+                    throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+                }
+                parentCompiler.validateCommand(scope, version, command);
+            }
             ExpectedRevision expected;
             int revision;
             if (precondition instanceof FixtureSetPrecondition.Create) {
@@ -80,7 +98,18 @@ public final class ReusableFlowFixtureModule {
             });
         } catch (ReusableFlowFailure failure) {
             throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+        } catch (ParentFlowApplyCaseFailure failure) {
+            throw failure(switch (failure.code()) {
+                case NOT_FOUND -> ApiFixtureSetAuthoringFailure.Code.NOT_FOUND;
+                case VALIDATION, UNSUPPORTED -> ApiFixtureSetAuthoringFailure.Code.VALIDATION;
+                case INTEGRITY -> ApiFixtureSetAuthoringFailure.Code.INTEGRITY;
+            });
         }
+    }
+
+    private static boolean hasNodeControls(FixtureSetCommand command) {
+        return command.cases().stream().flatMap(value -> value.controls().stream())
+                .anyMatch(value -> value.target() instanceof FixtureSetCommand.Target.Node);
     }
 
     private ReusableFlowVersion resolveVersion(AuthoringScope scope, FixtureSetCommand command) {

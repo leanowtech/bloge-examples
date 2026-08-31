@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -43,9 +46,16 @@ public class StandaloneFixtureSetRuntimeConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    ParentFlowApplyCaseCompiler parentFlowApplyCaseCompiler(
+            ComposableCatalog catalog, FixtureSetAuthorityReader fixtures) {
+        return new ParentFlowApplyCaseCompiler(catalog, fixtures);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     ReusableFlowFixtureModule reusableFlowFixtureModule(
             ReusableFlowPublicationStore publications, StandaloneFixtureSetStore store,
-            WholeFlowFixtureMaterializer materializer) {
-        return new ReusableFlowFixtureModule(publications, store, materializer);
+            WholeFlowFixtureMaterializer materializer, ParentFlowApplyCaseCompiler parentCompiler) {
+        return new ReusableFlowFixtureModule(publications, store, materializer, parentCompiler);
     }
 }

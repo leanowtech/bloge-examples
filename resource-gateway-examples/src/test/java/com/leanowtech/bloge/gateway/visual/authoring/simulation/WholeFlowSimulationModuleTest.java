@@ -1,9 +1,13 @@
 package com.leanowtech.bloge.gateway.visual.authoring.simulation;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
@@ -14,6 +18,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.command;
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.output;
@@ -88,5 +93,71 @@ class WholeFlowSimulationModuleTest {
                 .isInstanceOf(SimulationFailure.class)
                 .extracting(value -> ((SimulationFailure) value).code())
                 .isEqualTo(SimulationFailure.Code.INTEGRITY);
+    }
+
+    @Test
+    void parentFlowApplyCaseRunsMappingsWithoutExecutingTheChildFlow() {
+        ReusableFlowVersion child = version();
+        ReusableFlowCommand.Contract parentContract = new ReusableFlowCommand.Contract(
+                child.contract().input(), child.contract().output());
+        ReusableFlowCommand.ComposableRef.FlowVersion childRef =
+                new ReusableFlowCommand.ComposableRef.FlowVersion(
+                        child.publicationId(), child.revision(), child.fingerprint());
+        ReusableFlowCommand.Graph parentGraph = new ReusableFlowCommand.Graph(List.of(
+                new ReusableFlowCommand.Node("eligibility", "Eligibility", childRef,
+                        List.of(new ReusableFlowCommand.Input("$.customerId",
+                                new ReusableFlowCommand.MappingSource.FlowInput("$.customerId"))))),
+                new ReusableFlowCommand.Output("eligibility", "$"));
+        ReusableFlowVersion parent = new ReusableFlowVersion(ReusableFlowVersion.SCHEMA_VERSION,
+                "parent-v1", 1, "sha256:" + "e".repeat(64),
+                new ReusableFlowVersion.Source("parent-draft", 1, "sha256:" + "f".repeat(64)),
+                "parent", "Parent", ReusableFlowCommand.Kind.SOLUTION, "Parent solution",
+                parentContract, parentGraph, NOW, "author", ReusableFlowVersion.Status.PUBLISHED);
+        FixtureSetCommand childCommand = command(child.subject(), FixtureSetCommand.Target.subject(),
+                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output())), null);
+        GeneratedDefaultFixture childFixture = new WholeFlowFixtureMaterializer()
+                .generate("eligibility-cases", child, childCommand);
+        FixtureSetCommand.Case parentCase = new FixtureSetCommand.Case(
+                "parent-approved", "Parent approved", childCommand.cases().getFirst().input(),
+                List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.node("eligibility"),
+                        new FixtureSetCommand.Behavior.ApplyCase(
+                                "eligibility-cases", 1, "approved"), null)),
+                new FixtureSetCommand.Expect(output()));
+        FixtureSetCommand parentCommand = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,
+                "Parent cases", parent.subject(), List.of(parentCase));
+        GeneratedDefaultFixture parentFixture = new WholeFlowFixtureMaterializer()
+                .generate("parent-cases", parent, parentCommand);
+        ApiFixtureSetCommitStore fixtures = mock(ApiFixtureSetCommitStore.class);
+        when(fixtures.findRevision(SCOPE, "parent-cases", 1))
+                .thenReturn(Optional.of(new StoredFixtureSet(SCOPE, parentFixture)));
+        when(fixtures.findRevision(SCOPE, "eligibility-cases", 1))
+                .thenReturn(Optional.of(new StoredFixtureSet(SCOPE, childFixture)));
+        ReusableFlowPublicationStore publications = mock(ReusableFlowPublicationStore.class);
+        when(publications.findVersion(SCOPE, parent.publicationId(), parent.revision()))
+                .thenReturn(Optional.of(parent));
+        ParentFlowApplyCaseCompiler compiler = new ParentFlowApplyCaseCompiler(
+                (scope, reference) -> childRef.equals(reference)
+                        ? Optional.of(new ComposableDefinition(childRef,
+                        child.contract().input(), child.contract().output())) : Optional.empty(),
+                fixtures);
+        ApiResourceCommitStore resources = mock(ApiResourceCommitStore.class);
+        SimulationModule module = new SimulationModule(resources, fixtures, publications,
+                compiler, new InMemorySimulationRunStore(), Clock.fixed(NOW, ZoneOffset.UTC),
+                () -> "sim-parent");
+
+        SimulationRun run = module.run(SCOPE, "parent-flow-run",
+                SimulationRequest.fixtureCase("parent-cases", 1, "parent-approved"));
+
+        assertThat(run.status()).isEqualTo(SimulationRun.Status.SUCCEEDED);
+        assertThat(run.subject()).isEqualTo(parent.subject());
+        assertThat(run.output()).isEqualTo(output());
+        assertThat(run.nodes()).containsExactly(new SimulationRun.Node("eligibility",
+                SimulationRun.NodeStatus.COMPLETED, SimulationRun.Execution.MOCKED,
+                SimulationRun.FixtureSource.APPLY_CASE, SimulationRun.Fidelity.OUTPUT_LEVEL,
+                SimulationRun.Egress.notApplicable()));
+        assertThat(run.verdicts()).isEqualTo(new SimulationRun.Verdicts(
+                SimulationRun.ExecutionVerdict.PASSED_WITH_MOCKS, SimulationRun.Verdict.PASSED,
+                SimulationRun.Verdict.PASSED, SimulationRun.Verdict.NOT_CHECKED));
+        verifyNoInteractions(resources);
     }
 }

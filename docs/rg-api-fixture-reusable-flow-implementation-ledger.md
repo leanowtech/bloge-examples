@@ -1593,3 +1593,54 @@ subject-level Simulation；这关闭了 Iteration 36 最大的 production gap。
 `NODE + APPLY_CASE` 编译/运行、Fixture share/promotion、Tool/Solution/Fixture 对象页和真实浏览器/真实
 PostgreSQL 端到端。累计完成度保守调整为 **85%**，剩余差距 **15%**；下一刀进入父 Flow 对子 Flow Case
 的显式替代语义，再进入对象页，不扩充隐藏控制面。
+
+## 39. Iteration 38 — parent Flow `NODE + APPLY_CASE`
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 `ParentFlowApplyCaseCompiler` 作为唯一父 Flow Fixture 编译入口。每个父节点必须恰好有一个显式
+  `NODE + APPLY_CASE`；引用坐标固定为 Fixture Set id + revision + Case id。
+- 编译器通过 exact catalog 和 Fixture authority 验证：引用 Case 的 Subject 必须等于目标节点的精确
+  API Resource / Flow Version，且引用 Case 只能包含一个终止型 `SUBJECT + RETURN/INLINE`。Node control、
+  `REAL` 或再次 `APPLY_CASE` 均 fail-closed，因此不存在递归 Fixture 图。
+- 父 Case 输入按父 Flow 的 `FLOW_INPUT` / `NODE_OUTPUT` / `CONSTANT` Mapping 计算每个节点输入并逐节点
+  校验 contract；引用 Case 保存的 input 不参与父 Flow 执行。父输出继续由 graph output selection 唯一导出。
+- Simulation 只消费编译结果：节点全部记录为 `MOCKED + APPLY_CASE`；API 节点继承引用 Case fidelity，
+  子 Flow 只允许 output-level；全程不展开子 Flow、不访问网络。执行结论为 `PASSED_WITH_MOCKS`，contract、
+  assertion、governance 仍分别记录。
+- standalone Flow Fixture 保存会在占用 idempotency coordinate 前调用同一编译器；runtime/configuration
+  将 compiler 同时交给保存与 Simulation，避免 HTTP、workspace 与 runtime 各自解释一份合并规则。
+
+### 聚焦验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ParentFlowApplyCaseCompilerTest,WholeFlowFixtureMaterializerTest,\
+ReusableFlowFixtureModuleTest,StandaloneFixtureSetRuntimeConfigurationTest,\
+ApiFixtureSetApplicationConfigurationTest,ApiFixtureSetAuthoringFacadeTest,\
+ApiFixtureSetAuthoringControllerTest,SimulationModuleTest,WholeFlowSimulationModuleTest,\
+ApiSimulationApplicationConfigurationTest,JdbcStandaloneFixtureSetStoreTest,\
+AuthoringProtocolSchemaTest test
+
+Tests run: 51, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+完整 Resource Gateway 门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,187; Failures: 0; Errors: 0; Skipped: 33
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+后端现在具备“外部 API Resource → 可复用 Flow DAG → exact Fixture Case → 父 Flow APPLY_CASE Simulation”的
+最小完整语义链，且不会把引用 Case 的展示 input 错当父节点 input。仍未实现部分控制下的本地/真实节点执行、
+Fixture share/promotion、Tool/Solution/Fixture 对象页以及真实 UI/PostgreSQL acceptance。累计完成度保守调整为
+**89%**，剩余差距 **11%**；下一刀进入对象页 API/前端主路径和真实浏览器验收，再单独处理 share/promotion，
+不把这些边界隐藏在当前编译器里。

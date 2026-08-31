@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
@@ -20,10 +21,13 @@ public class ApiSimulationApplicationConfiguration {
     @ConditionalOnMissingBean
     SimulationModule simulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                                       SimulationRunStore runs,
-                                      ObjectProvider<ReusableFlowPublicationStore> flows) {
+                                      ObjectProvider<ReusableFlowPublicationStore> flows,
+                                      ObjectProvider<ParentFlowApplyCaseCompiler> parentCompilers) {
         ReusableFlowPublicationStore flowAuthority = flows.getIfAvailable();
-        return flowAuthority == null
-                ? new SimulationModule(resources, fixtures, runs)
-                : new SimulationModule(resources, fixtures, flowAuthority, runs);
+        ParentFlowApplyCaseCompiler parentCompiler = parentCompilers.getIfAvailable();
+        if (flowAuthority == null) return new SimulationModule(resources, fixtures, runs);
+        return parentCompiler == null
+                ? new SimulationModule(resources, fixtures, flowAuthority, runs)
+                : new SimulationModule(resources, fixtures, flowAuthority, parentCompiler, runs);
     }
 }

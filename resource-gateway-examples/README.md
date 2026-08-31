@@ -317,6 +317,18 @@ configuration/controller/simulation gate is **48/48 green** with no failures, er
 parent-Flow `NODE + APPLY_CASE`, sharing, and Tool/Solution object pages remain subsequent slices. The serial
 `clean verify` completed with `Tests run: 8,182; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
+Parent reusable Flows can now consume exact leaf Fixture Cases through explicit `NODE + APPLY_CASE` controls.
+The compiler requires one control for every parent node, resolves the referenced Fixture Set revision and Case,
+proves that its Subject exactly matches the node's immutable API Resource or Flow Version, and accepts only a
+single terminating `SUBJECT + RETURN/INLINE`. Parent mappings use the parent Case input and preceding mocked
+outputs; the referenced Case's saved input is never substituted. Simulation evaluates the mapping-defined DAG,
+does not expand child Flows or perform egress, and returns per-node `APPLY_CASE` evidence with inherited API
+fidelity. Partial controls, `REAL`, governed assets, and recursive `APPLY_CASE` remain fail-closed. The focused
+compiler/materializer/application/configuration/controller/simulation/protocol gate is **51/51 green** with no
+failures, errors, or skips. The serial `clean verify` completed with `Tests run: 8,187; failures: 0; errors: 0;
+skipped: 33` and `BUILD SUCCESS`. Tool/Solution/Fixture object pages and real browser/PostgreSQL acceptance remain
+open.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
@@ -41,6 +42,8 @@ class ApiSimulationApplicationConfigurationTest {
                 .withBean(SimulationRunStore.class, () -> mock(SimulationRunStore.class))
                 .withBean(ReusableFlowPublicationStore.class,
                         () -> mock(ReusableFlowPublicationStore.class))
+                .withBean(ParentFlowApplyCaseCompiler.class,
+                        () -> mock(ParentFlowApplyCaseCompiler.class))
                 .run(context -> assertThat(context).hasSingleBean(SimulationModule.class));
     }
 }

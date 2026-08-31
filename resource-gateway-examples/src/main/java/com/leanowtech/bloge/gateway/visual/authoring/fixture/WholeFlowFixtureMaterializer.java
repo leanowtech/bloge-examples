@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Materializes the only non-recursive whole-flow Fixture shape accepted by simulation. */
+/** Materializes non-recursive whole-flow and parent node APPLY_CASE Fixture shapes. */
 public final class WholeFlowFixtureMaterializer {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -20,9 +20,10 @@ public final class WholeFlowFixtureMaterializer {
     /**
      * Creates revision one of a private Fixture Set for one exact immutable Flow Version.
      *
-     * <p>Each Case must contain exactly one {@code SUBJECT + RETURN/INLINE} control. Node
-     * controls, nested APPLY_CASE, real execution and transport fidelity are deliberately
-     * rejected, so applying this Case never executes or recursively expands the Flow graph.</p>
+     * <p>A Case either contains one {@code SUBJECT + RETURN/INLINE}, or exactly one
+     * {@code NODE + APPLY_CASE} for every parent node. The materializer validates the static
+     * shape; {@link ParentFlowApplyCaseCompiler} resolves referenced authorities and proves that
+     * every referenced Case terminates in one Subject Return.</p>
      */
     public GeneratedDefaultFixture generate(String fixtureSetId, ReusableFlowVersion version,
                                              FixtureSetCommand command) {
@@ -76,19 +77,50 @@ public final class WholeFlowFixtureMaterializer {
                 || !IDENTIFIER.matcher(fixtureCase.caseId()).matches()
                 || !caseIds.add(fixtureCase.caseId()) || fixtureCase.name() == null
                 || fixtureCase.name().isBlank() || fixtureCase.name().length() > 200
-                || fixtureCase.controls().size() != 1
                 || !valid(version.contract().input(), fixtureCase.input())) {
             throw new IllegalArgumentException("whole-flow Fixture Case is invalid");
         }
+        if (fixtureCase.expect() != null
+                && !valid(version.contract().output(), fixtureCase.expect().output())) {
+            throw new IllegalArgumentException("whole-flow Fixture Case control is invalid");
+        }
+        if (isSubjectReturn(version, fixtureCase)) return;
+        requireParentApplyCase(version, fixtureCase);
+    }
+
+    private static boolean isSubjectReturn(ReusableFlowVersion version,
+                                           FixtureSetCommand.Case fixtureCase) {
+        if (fixtureCase.controls().size() != 1) return false;
         FixtureSetCommand.Control control = fixtureCase.controls().getFirst();
         if (!(control.target() instanceof FixtureSetCommand.Target.Subject)
                 || !(control.behavior() instanceof FixtureSetCommand.Behavior.Return returned)
                 || !(returned.material() instanceof FixtureSetCommand.Material.Inline inline)
-                || control.fidelity() != null && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL
-                || !valid(version.contract().output(), inline.value())
-                || fixtureCase.expect() != null
-                && !valid(version.contract().output(), fixtureCase.expect().output())) {
+                || control.fidelity() != null
+                && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL
+                || !valid(version.contract().output(), inline.value())) {
+            return false;
+        }
+        return true;
+    }
+
+    private static void requireParentApplyCase(ReusableFlowVersion version,
+                                               FixtureSetCommand.Case fixtureCase) {
+        Set<String> nodeIds = version.graph().nodes().stream()
+                .map(com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand.Node::nodeId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> controlled = new HashSet<>();
+        if (fixtureCase.controls().size() != nodeIds.size()) {
             throw new IllegalArgumentException("whole-flow Fixture Case control is invalid");
+        }
+        for (FixtureSetCommand.Control control : fixtureCase.controls()) {
+            if (!(control.target() instanceof FixtureSetCommand.Target.Node target)
+                    || !(control.behavior() instanceof FixtureSetCommand.Behavior.ApplyCase apply)
+                    || control.fidelity() != null || !nodeIds.contains(target.nodeId())
+                    || !controlled.add(target.nodeId()) || apply.fixtureSetId() == null
+                    || !IDENTIFIER.matcher(apply.fixtureSetId()).matches() || apply.revision() < 1
+                    || apply.caseId() == null || !IDENTIFIER.matcher(apply.caseId()).matches()) {
+                throw new IllegalArgumentException("whole-flow Fixture Case control is invalid");
+            }
         }
     }
 

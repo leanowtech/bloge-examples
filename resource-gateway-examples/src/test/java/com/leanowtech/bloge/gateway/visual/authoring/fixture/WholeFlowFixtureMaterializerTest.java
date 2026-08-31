@@ -63,6 +63,25 @@ public class WholeFlowFixtureMaterializerTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void materializesStructurallyCompleteParentApplyCase() {
+        ReusableFlowVersion version = version();
+        FixtureSetCommand.Case fixtureCase = new FixtureSetCommand.Case(
+                "approved", "Approved customer",
+                JSON.createObjectNode().put("customerId", "customer-1"),
+                List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.node("decision"),
+                        new FixtureSetCommand.Behavior.ApplyCase(
+                                "decision-cases", 3, "approved"), null)),
+                new FixtureSetCommand.Expect(output()));
+        FixtureSetCommand command = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,
+                "Parent cases", version.subject(), List.of(fixtureCase));
+
+        GeneratedDefaultFixture generated = new WholeFlowFixtureMaterializer()
+                .generate("parent-cases", version, command);
+
+        assertThat(generated.view().cases()).containsExactly(fixtureCase);
+    }
+
     public static ReusableFlowVersion version() {
         SchemaEnvelope input = SchemaEnvelope.object(
                 Map.of("customerId", Map.of("type", "string")), List.of("customerId"));

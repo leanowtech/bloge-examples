@@ -3,10 +3,12 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.io.ClassPathResource;
@@ -25,6 +27,7 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(StandaloneFixtureSetRuntimeConfiguration.class)
             .withBean(ObjectMapper.class, ObjectMapper::new)
+            .withBean(ComposableCatalog.class, () -> mock(ComposableCatalog.class))
             .withBean(ReusableFlowPublicationStore.class,
                     () -> mock(ReusableFlowPublicationStore.class));
 
@@ -48,6 +51,7 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                     assertThat(context).getBean(StandaloneFixtureSetStore.class)
                             .isInstanceOf(JdbcStandaloneFixtureSetStore.class);
                     assertThat(context).hasSingleBean(WholeFlowFixtureMaterializer.class);
+                    assertThat(context).hasSingleBean(ParentFlowApplyCaseCompiler.class);
                     assertThat(context).hasSingleBean(ReusableFlowFixtureModule.class);
                 });
     }

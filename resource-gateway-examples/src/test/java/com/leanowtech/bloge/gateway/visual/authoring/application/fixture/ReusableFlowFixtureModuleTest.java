@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.fixture;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
@@ -17,6 +18,8 @@ import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFix
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.version;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 public class ReusableFlowFixtureModuleTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
@@ -76,9 +79,42 @@ public class ReusableFlowFixtureModuleTest {
                 ApiFixtureSetAuthoringFailure.Code.NOT_FOUND);
     }
 
+    @Test
+    void validatesParentApplyCaseBeforeSavingTheRevision() {
+        ReusableFlowVersion version = version();
+        InMemoryStandaloneFixtureSetStore store = new InMemoryStandaloneFixtureSetStore();
+        ReusableFlowPublicationStore publications = publications(version);
+        ParentFlowApplyCaseCompiler compiler = mock(ParentFlowApplyCaseCompiler.class);
+        ReusableFlowFixtureModule module = new ReusableFlowFixtureModule(
+                publications, store, new WholeFlowFixtureMaterializer(), compiler);
+        FixtureSetCommand.Case fixtureCase = new FixtureSetCommand.Case(
+                "approved", "Approved customer",
+                command(version.subject(), FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(
+                                FixtureSetCommand.Material.inline(output())), null)
+                        .cases().getFirst().input(),
+                java.util.List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.node("decision"),
+                        new FixtureSetCommand.Behavior.ApplyCase(
+                                "decision-cases", 1, "approved"), null)),
+                new FixtureSetCommand.Expect(output()));
+        FixtureSetCommand parent = new FixtureSetCommand(FixtureSetCommand.SCHEMA_VERSION,
+                "Parent cases", version.subject(), java.util.List.of(fixtureCase));
+
+        module.save(SCOPE, "author", "parent-cases", FixtureSetPrecondition.create(),
+                "parent-create", parent);
+
+        verify(compiler).validateCommand(SCOPE, version, parent);
+        assertThat(store.findHead(SCOPE, "parent-cases")).isPresent();
+    }
+
     private static ReusableFlowFixtureModule module(
             ReusableFlowVersion version, InMemoryStandaloneFixtureSetStore store) {
-        ReusableFlowPublicationStore publications = new ReusableFlowPublicationStore() {
+        return new ReusableFlowFixtureModule(
+                publications(version), store, new WholeFlowFixtureMaterializer());
+    }
+
+    private static ReusableFlowPublicationStore publications(ReusableFlowVersion version) {
+        return new ReusableFlowPublicationStore() {
             @Override public com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishResult publish(
                     com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishIntent intent) {
                 throw new UnsupportedOperationException();
@@ -90,8 +126,6 @@ public class ReusableFlowFixtureModuleTest {
                         && version.revision() == revision ? Optional.of(version) : Optional.empty();
             }
         };
-        return new ReusableFlowFixtureModule(
-                publications, store, new WholeFlowFixtureMaterializer());
     }
 
     private static void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable call,
