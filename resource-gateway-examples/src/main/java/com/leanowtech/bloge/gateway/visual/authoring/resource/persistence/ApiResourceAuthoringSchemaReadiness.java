@@ -126,8 +126,7 @@ public final class ApiResourceAuthoringSchemaReadiness {
                             "target_id", "idempotency_key"));
             requireUniqueColumns(metadata, "rg_authoring_command_journal", "attempt unique",
                     List.of("command_id", "attempt_no", "attempt_token"));
-            requireForeignKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_command_fk",
-                    "rg_authoring_command_journal", List.of(
+            requireResourceCommandForeignKey(metadata, List.of(
                             pair("command_id", "command_id"), pair("attempt_no", "attempt_no"),
                             pair("attempt_token", "attempt_token")));
             requireForeignKey(metadata, "rg_api_resource_projection_revisions",
@@ -152,6 +151,17 @@ public final class ApiResourceAuthoringSchemaReadiness {
                     "rg_api_resource_revisions_staging_cleanup_idx", List.of("state", "updated_at"));
             return null;
         });
+    }
+
+    private static void requireResourceCommandForeignKey(DatabaseMetaData metadata,
+                                                         List<ColumnPair> columns) throws SQLException {
+        try {
+            requireForeignKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_command_fk",
+                    "rg_authoring_command_journal", columns);
+        } catch (IllegalStateException legacyMiss) {
+            requireForeignKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_command_fk",
+                    "rg_authoring_command_attempts", columns);
+        }
     }
 
     private static void requirePrimaryKey(DatabaseMetaData metadata, String table, String expected,

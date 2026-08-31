@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceAuthoringSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshotSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.config.ApiResourceProjectionAdapterConfiguration;
@@ -52,6 +53,7 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(ApiResourceAuthoringSchemaReadiness.class);
+                    assertThat(context).hasSingleBean(ApiResourceConnectionSnapshotSchemaReadiness.class);
                     assertThat(context).hasSingleBean(ApiResourceCommitStore.class);
                     assertThat(context).getBean(ApiResourceCommitStore.class)
                             .isInstanceOf(JdbcApiResourceCommitStore.class);
@@ -138,6 +140,7 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(ApiResourceCommitStore.class);
                     assertThat(context).getBean(ApiResourceCommitStore.class).isSameAs(customStore);
                     assertThat(context).hasSingleBean(ApiResourceAuthoringSchemaReadiness.class);
+                    assertThat(context).hasSingleBean(ApiResourceConnectionSnapshotSchemaReadiness.class);
                 });
     }
 
@@ -147,7 +150,25 @@ class ApiResourceAuthoringRuntimeConfigurationTest {
                 new org.springframework.core.io.ClassPathResource(
                         "db/postgresql/V20260830_001__api_resource_authoring.sql"),
                 new org.springframework.core.io.ClassPathResource(
-                        "db/postgresql/V20260830_002__api_resource_concurrent_staging.sql"))
+                        "db/postgresql/V20260830_002__api_resource_concurrent_staging.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260830_003__api_connection_secret_staging.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260830_004__connection_metadata_authority.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260830_005__pending_secret_store_protocol.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260830_006__pending_secret_store_hardening.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260831_009__authoring_command_attempt_authority.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260831_010__attempt_provenance_closure.sql"),
+                new org.springframework.core.io.ClassPathResource(
+                        "db/postgresql/V20260831_011__api_resource_connection_snapshot.sql"))
                 .execute(dataSource);
         return dataSource;
     }

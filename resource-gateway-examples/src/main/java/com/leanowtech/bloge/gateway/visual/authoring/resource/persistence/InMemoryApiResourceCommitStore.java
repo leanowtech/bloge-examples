@@ -231,7 +231,8 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
     }
 
     private static void verifyProjections(ApiResourceSpec resource, ReadyApiResourceProjections projections) {
-        if (projections == null || !resource.ref().equals(projections.subject())) {
+        if (projections == null || !resource.ref().equals(projections.subject())
+                || !resource.connectionId().equals(projections.connectionSnapshot().connectionId())) {
             throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift");
         }
         for (ProjectionDocument document : new ProjectionDocument[]{projections.descriptor(), projections.designContract(), projections.operator()}) {

@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshot;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ProjectionDocument;
@@ -54,6 +55,8 @@ class DefaultApiResourceProjectionCompilerTest {
         assertThat(projections.operator().body().get("source").get("urlTemplate").asText())
                 .isEqualTo("https://api.example.test/customers/{customerId}");
         assertThat(projections.operator().body().get("state")).isNull();
+        assertThat(projections.connectionSnapshot()).isEqualTo(new ApiResourceConnectionSnapshot(
+                "customer-service", 7, "sha256:" + "c".repeat(64)));
     }
 
     @Test
@@ -155,6 +158,15 @@ class DefaultApiResourceProjectionCompilerTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("api-key");
         assertThatThrownBy(() -> compiler().compile(SCOPE, resourceWithOutputPath("$.data..profile")))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("outputPath");
+        DefaultApiResourceProjectionCompiler mismatched = new DefaultApiResourceProjectionCompiler(
+                (scope, connectionId) -> Optional.of(new ApiResourceConnectionProjectionResolver.ResolvedConnection(
+                        new ApiResourceConnectionSnapshot("other-connection", 7, "sha256:" + "c".repeat(64)),
+                        new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
+                                "https://api.example.test", Map.of(), Duration.ofSeconds(10)))));
+        assertThatThrownBy(() -> mismatched.compile(SCOPE, resource(
+                new ApiResourceCommand.Effect.ReadOnly(), new ApiResourceCommand.HttpStatus(List.of(200)))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("identity drift");
     }
 
     private static void assertReadyAndExactSubject(ReadyApiResourceProjections projections) {
@@ -192,8 +204,10 @@ class DefaultApiResourceProjectionCompilerTest {
     private static DefaultApiResourceProjectionCompiler compilerWithConnection(String apiKeyHeader,
                                                                                  Map<String, String> defaults) {
         return new DefaultApiResourceProjectionCompiler((scope, connectionId) -> Optional.of(
-                new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
-                        "https://api.example.test", defaults, Duration.ofSeconds(10), apiKeyHeader)));
+                new ApiResourceConnectionProjectionResolver.ResolvedConnection(
+                        new ApiResourceConnectionSnapshot(connectionId, 7, "sha256:" + "c".repeat(64)),
+                        new ApiResourceConnectionProjectionResolver.ConnectionMetadata(
+                                "https://api.example.test", defaults, Duration.ofSeconds(10), apiKeyHeader))));
     }
 
     private static ApiResourceSpec resourceAt(String path, ApiResourceCommand.Effect effect) {

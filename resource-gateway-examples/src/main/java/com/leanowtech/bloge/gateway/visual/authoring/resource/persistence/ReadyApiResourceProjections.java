@@ -5,13 +5,16 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import java.util.EnumMap;
 import java.util.Map;
 
-/** Exactly one READY descriptor, design-contract and operator projection. */
+/** Three READY projections bound to one exact committed Connection snapshot. */
 public record ReadyApiResourceProjections(ProjectionDocument descriptor,
                                           ProjectionDocument designContract,
-                                          ProjectionDocument operator) {
+                                          ProjectionDocument operator,
+                                          ApiResourceConnectionSnapshot connectionSnapshot) {
     /** Validates kind uniqueness, exact subject identity and READY state. */
     public ReadyApiResourceProjections {
-        if (descriptor == null || designContract == null || operator == null) throw new IllegalArgumentException("three projections are required");
+        if (descriptor == null || designContract == null || operator == null || connectionSnapshot == null) {
+            throw new IllegalArgumentException("three projections and a connection snapshot are required");
+        }
         Map<ProjectionDocument.Kind, ProjectionDocument> all = new EnumMap<>(ProjectionDocument.Kind.class);
         for (ProjectionDocument projection : new ProjectionDocument[]{descriptor, designContract, operator}) {
             if (projection.state() != ProjectionDocument.State.READY || all.put(projection.kind(), projection) != null) {

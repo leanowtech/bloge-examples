@@ -79,6 +79,7 @@ class JdbcApiResourceCommitStoreMutationTest {
         applyMigration("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql", dataSource);
         applyMigration("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql", dataSource);
         applyMigration("db/postgresql/V20260831_010__attempt_provenance_closure.sql", dataSource);
+        applyMigration("db/postgresql/V20260831_011__api_resource_connection_snapshot.sql", dataSource);
         jdbc.update("INSERT INTO rg_api_connection_identities"
                 + " (tenant_id, project_id, environment_id, connection_id) VALUES ('tenant', 'project', 'dev', 'connection')");
         jdbc.update("INSERT INTO rg_api_connection_identities"
@@ -152,6 +153,19 @@ class JdbcApiResourceCommitStoreMutationTest {
         assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void connectionSnapshotTamperingFailsClosed() {
+        JdbcApiResourceCommitStore store = store();
+        CommandLease lease = acquire(store, KEY, ExpectedRevision.create(), FP1);
+        StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_metadata_fingerprint=?", FP2);
+
+        assertThatThrownBy(() -> store.commit(lease, receipt(staged)))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(store.findHead(SCOPE, "profile")).isEmpty();
     }
 
     @Test
@@ -624,7 +638,9 @@ class JdbcApiResourceCommitStoreMutationTest {
     private static ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource) {
         return new ReadyApiResourceProjections(document(ProjectionDocument.Kind.DESCRIPTOR, resource),
                 document(ProjectionDocument.Kind.DESIGN_CONTRACT, resource),
-                document(ProjectionDocument.Kind.OPERATOR, resource));
+                document(ProjectionDocument.Kind.OPERATOR, resource),
+                new ApiResourceConnectionSnapshot(resource.connectionId(), 1,
+                        "sha256:" + "c".repeat(64)));
     }
 
     private static ProjectionDocument document(ProjectionDocument.Kind kind, ApiResourceSpec resource) {

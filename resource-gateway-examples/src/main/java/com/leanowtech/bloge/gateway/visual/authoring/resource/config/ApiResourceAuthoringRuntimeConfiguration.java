@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceAuthoringSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshotSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.JdbcApiResourceCommitStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +41,14 @@ public class ApiResourceAuthoringRuntimeConfiguration {
         return new ApiResourceAuthoringSchemaReadiness(jdbc);
     }
 
+    /** Creates the V011 gate for exact Connection snapshot provenance. */
+    @Bean
+    @ConditionalOnMissingBean
+    ApiResourceConnectionSnapshotSchemaReadiness apiResourceConnectionSnapshotSchemaReadiness(
+            JdbcTemplate jdbc) {
+        return new ApiResourceConnectionSnapshotSchemaReadiness(jdbc);
+    }
+
     /** Creates the stateless decision engine used by all API Resource mutations. */
     @Bean
     @ConditionalOnMissingBean
@@ -60,6 +69,7 @@ public class ApiResourceAuthoringRuntimeConfiguration {
             PlatformTransactionManager transactionManager,
             ObjectMapper mapper,
             ApiResourceAuthoringSchemaReadiness readiness,
+            ApiResourceConnectionSnapshotSchemaReadiness snapshotReadiness,
             ApiResourceDecisions decisions,
             ApiResourceProjectionCompiler compiler,
             @Value("${gateway.authoring.api-resource.lease-seconds:30}") long leaseSeconds) {
@@ -68,7 +78,7 @@ public class ApiResourceAuthoringRuntimeConfiguration {
                     "gateway.authoring.api-resource.lease-seconds must be positive");
         }
         // Keep readiness in the method signature: resolving it is the startup gate.
-        if (readiness == null) {
+        if (readiness == null || snapshotReadiness == null) {
             throw new IllegalStateException("API Resource authoring schema is not ready");
         }
         return new JdbcApiResourceCommitStore(

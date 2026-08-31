@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceTransportSafetyPolicy;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver.ResolvedConnection;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ProjectionDocument;
@@ -64,21 +65,25 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
     public ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource) {
         Objects.requireNonNull(scope, "scope");
         validate(resource);
-        ResourceDescriptor descriptor = descriptor(scope, resource);
+        ResolvedConnection connection = connections.resolve(scope, resource.connectionId())
+                .orElseThrow(() -> new IllegalArgumentException("connection projection is unavailable"));
+        if (!resource.connectionId().equals(connection.snapshot().connectionId())) {
+            throw new IllegalArgumentException("connection projection identity drift");
+        }
+        ResourceDescriptor descriptor = descriptor(resource, connection.metadata());
         VisualResourceDescriptor visual = ResourceRegistryVisualAdapter.toVisual(descriptor);
         ResourceDesignContract contract = designContract(resource);
         OperatorDefinition operator = operator(resource, visual, contract);
         return new ReadyApiResourceProjections(
                 document(ProjectionDocument.Kind.DESCRIPTOR, resource, descriptor),
                 document(ProjectionDocument.Kind.DESIGN_CONTRACT, resource, contract),
-                document(ProjectionDocument.Kind.OPERATOR, resource, operator));
+                document(ProjectionDocument.Kind.OPERATOR, resource, operator),
+                connection.snapshot());
     }
 
-    private ResourceDescriptor descriptor(AuthoringScope scope, ApiResourceSpec resource) {
+    private ResourceDescriptor descriptor(ApiResourceSpec resource,
+                                          ApiResourceConnectionProjectionResolver.ConnectionMetadata connection) {
         ApiResourceCommand.Operation operation = resource.operation();
-        ApiResourceConnectionProjectionResolver.ConnectionMetadata connection = connections
-                .resolve(scope, resource.connectionId())
-                .orElseThrow(() -> new IllegalArgumentException("connection projection is unavailable"));
         return new ResourceDescriptor(resource.resourceId(), join(connection.baseUrl(), operation.path()), operation.method(),
                 connection.defaultHeaders(), null, connection.timeout(), mapping(operation.bindings(), connection.apiKeyHeader()),
                 response(resource.response()), runtimePayloadPath(resource.response().outputPath()),

@@ -9,22 +9,33 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Read-only seam for resolving non-secret Connection metadata during projection.
+ * Read-only seam for resolving exact Connection authority and non-secret metadata.
  *
  * <p>The authoritative API Resource stores only a Connection id.  Implementations
- * must return a safe base URL, defaults and timeout; credentials are deliberately
- * not part of this DTO and must remain in the Connection/Secret runtime.</p>
+ * must return the exact committed revision and metadata fingerprint together
+ * with a safe base URL, defaults and timeout. Credentials are deliberately not
+ * part of this DTO and must remain in the Connection/Secret runtime.</p>
  */
 @FunctionalInterface
 public interface ApiResourceConnectionProjectionResolver {
     /**
-     * Resolves metadata for an exact authoring scope and connection id.
+     * Resolves one committed snapshot for an exact scope and connection id.
      *
      * @param scope authoring scope
      * @param connectionId connection identity from the resource authority
-     * @return metadata, or empty when the connection is not projection-ready
+     * @return authority and metadata, or empty when the connection is not projection-ready
      */
-    Optional<ConnectionMetadata> resolve(AuthoringScope scope, String connectionId);
+    Optional<ResolvedConnection> resolve(AuthoringScope scope, String connectionId);
+
+    /** Exact authority plus the non-secret metadata consumed by projection compilation. */
+    record ResolvedConnection(ApiResourceConnectionSnapshot snapshot, ConnectionMetadata metadata) {
+        /** Ensures both halves are present before compilation. */
+        public ResolvedConnection {
+            if (snapshot == null || metadata == null) {
+                throw new IllegalArgumentException("resolved connection is incomplete");
+            }
+        }
+    }
 
     /** Non-secret Connection metadata needed by a runtime descriptor. */
     record ConnectionMetadata(String baseUrl, Map<String, String> defaultHeaders, Duration timeout,

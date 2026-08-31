@@ -38,10 +38,11 @@ import java.util.function.Consumer;
 /**
  * JDBC-backed, transactionally fenced API Resource authoring store.
  *
- * <p>V001 through V010 migrations must be installed before this class is
+ * <p>V001 through V011 migrations must be installed before this class is
  * constructed; this repository intentionally never applies or falls back from
- * migrations. V009 stores immutable command-attempt authority and V010 binds
- * Connection provenance to the exact attempt. Current stage, commit, and
+ * migrations. V009 stores immutable command-attempt authority, V010 binds
+ * committed projections to exact attempts, and V011 records the Connection
+ * snapshot used by every Resource projection. Current stage, commit, and
  * failure mutations require the exact current {@code PREPARING} attempt;
  * recovery may inspect a historical {@code PREPARING} or {@code SUPERSEDED}
  * attempt under the journal-to-attempt lock order.</p>
@@ -53,7 +54,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             + "failure_code, created_at, updated_at";
     private static final String READ_JOIN = """
             SELECT h.tenant_id, h.project_id, h.environment_id, h.resource_id, h.revision, h.strong_etag,
-                   r.spec_json, r.spec_fingerprint, r.connection_id, r.command_id,
+                   r.spec_json, r.spec_fingerprint, r.connection_id, r.connection_revision,
+                   r.connection_metadata_fingerprint, r.command_id,
                    p.descriptor_json, p.descriptor_fingerprint, p.descriptor_state,
                    p.design_contract_json, p.design_contract_fingerprint, p.design_contract_state,
                    p.operator_json, p.operator_fingerprint, p.operator_state, p.set_fingerprint,
@@ -82,7 +84,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             """;
     private static final String REVISION_READ_JOIN = """
             SELECT r.tenant_id, r.project_id, r.environment_id, r.resource_id, r.revision, r.strong_etag,
-                   r.spec_json, r.spec_fingerprint, r.connection_id, r.command_id,
+                   r.spec_json, r.spec_fingerprint, r.connection_id, r.connection_revision,
+                   r.connection_metadata_fingerprint, r.command_id,
                    p.descriptor_json, p.descriptor_fingerprint, p.descriptor_state,
                    p.design_contract_json, p.design_contract_fingerprint, p.design_contract_state,
                    p.operator_json, p.operator_fingerprint, p.operator_state, p.set_fingerprint,
@@ -391,7 +394,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     row.designContractJson(), row.designContractFingerprint());
             ProjectionDocument operator = projection(ProjectionDocument.Kind.OPERATOR, resource,
                     row.operatorJson(), row.operatorFingerprint());
-            ReadyApiResourceProjections projections = new ReadyApiResourceProjections(descriptor, design, operator);
+            ReadyApiResourceProjections projections = new ReadyApiResourceProjections(descriptor, design, operator,
+                    new ApiResourceConnectionSnapshot(row.connectionId(), row.connectionRevision(),
+                            row.connectionMetadataFingerprint()));
             if (!row.setFingerprint().equals(projectionSetFingerprint(resource, projections))) {
                 throw new IllegalArgumentException("projection set fingerprint drift");
             }
@@ -494,7 +499,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 rs.getString("environment_id"), rs.getString("resource_id"),
                 rs.getLong("revision"), rs.getString("strong_etag"),
                 rs.getString("spec_json"), rs.getString("spec_fingerprint"),
-                rs.getString("connection_id"), rs.getString("command_id"),
+                rs.getString("connection_id"), rs.getLong("connection_revision"),
+                rs.getString("connection_metadata_fingerprint"), rs.getString("command_id"),
                 rs.getString("descriptor_json"), rs.getString("descriptor_fingerprint"),
                 rs.getString("descriptor_state"), rs.getString("design_contract_json"),
                 rs.getString("design_contract_fingerprint"), rs.getString("design_contract_state"),
@@ -542,6 +548,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     private record StoredRow(String tenantId, String projectId, String environmentId, String resourceId, long revision,
                              String strongEtag, String specJson, String specFingerprint, String connectionId,
+                             long connectionRevision, String connectionMetadataFingerprint,
                              String commandId, String descriptorJson, String descriptorFingerprint, String descriptorState,
                              String designContractJson, String designContractFingerprint, String designContractState,
                              String operatorJson, String operatorFingerprint, String operatorState, String setFingerprint,
@@ -597,11 +604,14 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             if (jdbc.update("""
                     INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json, spec_fingerprint,
-                     connection_id, strong_etag, command_id, attempt_no, attempt_token)
-                    VALUES (?, ?, ?, ?, ?, 'STAGED', ?, ?, ?, ?, ?, ?, ?)""",
+                     connection_id, connection_revision, connection_metadata_fingerprint,
+                     strong_etag, command_id, attempt_no, attempt_token)
+                    VALUES (?, ?, ?, ?, ?, 'STAGED', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     lease.key().scope().tenantId(), lease.key().scope().projectId(),
                     lease.key().scope().environmentId(), lease.key().targetId(), next.revision(),
-                    specJson, next.fingerprint(), connectionId, etag,
+                    specJson, next.fingerprint(), connectionId,
+                    projections.connectionSnapshot().revision(),
+                    projections.connectionSnapshot().metadataFingerprint(), etag,
                     lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
                 throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage insert failed");
             }
@@ -647,6 +657,11 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             fingerprint.put("bodyFingerprint", document.fingerprint());
             root.set(document.kind().name(), fingerprint);
         }
+        var connection = mapper.createObjectNode();
+        connection.put("connectionId", projections.connectionSnapshot().connectionId());
+        connection.put("revision", projections.connectionSnapshot().revision());
+        connection.put("metadataFingerprint", projections.connectionSnapshot().metadataFingerprint());
+        root.set("connectionSnapshot", connection);
         return AuthoringFingerprints.of(root);
     }
 
@@ -822,7 +837,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         List<StagedRow> rows = jdbc.query("""
                 SELECT r.tenant_id, r.project_id, r.environment_id, r.resource_id,
                        r.revision, r.command_id, r.attempt_no, r.attempt_token,
-                       r.spec_json, r.spec_fingerprint, r.connection_id, r.strong_etag,
+                       r.spec_json, r.spec_fingerprint, r.connection_id, r.connection_revision,
+                       r.connection_metadata_fingerprint, r.strong_etag,
                        p.descriptor_json, p.descriptor_fingerprint, p.descriptor_state,
                        p.design_contract_json, p.design_contract_fingerprint, p.design_contract_state,
                        p.operator_json, p.operator_fingerprint, p.operator_state, p.set_fingerprint
@@ -842,10 +858,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 (rs, n) -> new StagedRow(
                         rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
                         rs.getLong(5), rs.getString(6), rs.getInt(7), rs.getString(8),
-                        rs.getString(9), rs.getString(10), rs.getString(11), rs.getString(12),
+                        rs.getString(9), rs.getString(10), rs.getString(11), rs.getLong(12),
                         rs.getString(13), rs.getString(14), rs.getString(15), rs.getString(16),
                         rs.getString(17), rs.getString(18), rs.getString(19), rs.getString(20),
-                        rs.getString(21), rs.getString(22)),
+                        rs.getString(21), rs.getString(22), rs.getString(23), rs.getString(24)),
                 lease.commandId(), lease.attemptNo(), lease.attemptToken());
         if (rows.size() > 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
@@ -863,7 +879,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     projection(ProjectionDocument.Kind.DESIGN_CONTRACT, resource,
                             row.designJson(), row.designFingerprint()),
                     projection(ProjectionDocument.Kind.OPERATOR, resource,
-                            row.operatorJson(), row.operatorFingerprint()));
+                            row.operatorJson(), row.operatorFingerprint()),
+                    new ApiResourceConnectionSnapshot(row.connectionId(), row.connectionRevision(),
+                            row.connectionMetadataFingerprint()));
             return new StagedApiResource(lease, resource, projections, row.etag());
         } catch (Exception ex) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged resource is invalid");
@@ -882,6 +900,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             String specJson,
             String specFingerprint,
             String connectionId,
+            long connectionRevision,
+            String connectionMetadataFingerprint,
             String etag,
             String descriptorJson,
             String descriptorFingerprint,
@@ -907,7 +927,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             ReadyApiResourceProjections p = new ReadyApiResourceProjections(
                     projection(ProjectionDocument.Kind.DESCRIPTOR, actual, r.descriptorJson(), r.descriptorFingerprint()),
                     projection(ProjectionDocument.Kind.DESIGN_CONTRACT, actual, r.designJson(), r.designFingerprint()),
-                    projection(ProjectionDocument.Kind.OPERATOR, actual, r.operatorJson(), r.operatorFingerprint()));
+                    projection(ProjectionDocument.Kind.OPERATOR, actual, r.operatorJson(), r.operatorFingerprint()),
+                    new ApiResourceConnectionSnapshot(r.connectionId(), r.connectionRevision(),
+                            r.connectionMetadataFingerprint()));
             if (!r.tenantId().equals(lease.key().scope().tenantId())
                     || !r.projectId().equals(lease.key().scope().projectId())
                     || !r.environmentId().equals(lease.key().scope().environmentId())
@@ -917,6 +939,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     || r.attemptNo() != lease.attemptNo()
                     || !r.attemptToken().equals(lease.attemptToken())
                     || !r.connectionId().equals(connectionId)
+                    || r.connectionRevision() != p.connectionSnapshot().revision()
+                    || !r.connectionMetadataFingerprint().equals(
+                            p.connectionSnapshot().metadataFingerprint())
                     || !actual.equals(expected)
                     || !r.specFingerprint().equals(expected.fingerprint())
                     || !r.setFingerprint().equals(projectionSetFingerprint(actual, p))) {
@@ -940,7 +965,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
 
     private static void verifyProjections(ApiResourceSpec resource, ReadyApiResourceProjections projections) {
-        if (projections == null || !resource.ref().equals(projections.subject())) {
+        if (projections == null || !resource.ref().equals(projections.subject())
+                || !resource.connectionId().equals(projections.connectionSnapshot().connectionId())) {
             throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift");
         }
         for (ProjectionDocument document : new ProjectionDocument[]{projections.descriptor(), projections.designContract(), projections.operator()}) {

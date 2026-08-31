@@ -205,7 +205,7 @@ class ApiResourceCommitStoreContractTest {
                 (scope, resource) -> new ReadyApiResourceProjections(
                         doc(ProjectionDocument.Kind.DESCRIPTOR, resource),
                         new ProjectionDocument(ProjectionDocument.Kind.DESIGN_CONTRACT, new ApiResourceSpec.ResourceRef("API_RESOURCE", "other", resource.revision(), resource.fingerprint()), JSON.createObjectNode(), AuthoringFingerprints.of(JSON.createObjectNode()), ProjectionDocument.State.READY),
-                        doc(ProjectionDocument.Kind.OPERATOR, resource)));
+                        doc(ProjectionDocument.Kind.OPERATOR, resource), snapshot(resource)));
         CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
         assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
@@ -283,7 +283,12 @@ class ApiResourceCommitStoreContractTest {
 
     private static ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource) {
         return new ReadyApiResourceProjections(doc(ProjectionDocument.Kind.DESCRIPTOR, resource),
-                doc(ProjectionDocument.Kind.DESIGN_CONTRACT, resource), doc(ProjectionDocument.Kind.OPERATOR, resource));
+                doc(ProjectionDocument.Kind.DESIGN_CONTRACT, resource), doc(ProjectionDocument.Kind.OPERATOR, resource),
+                snapshot(resource));
+    }
+
+    private static ApiResourceConnectionSnapshot snapshot(ApiResourceSpec resource) {
+        return new ApiResourceConnectionSnapshot(resource.connectionId(), 1, "sha256:" + "c".repeat(64));
     }
 
     private static ProjectionDocument doc(ProjectionDocument.Kind kind, ApiResourceSpec resource) {
