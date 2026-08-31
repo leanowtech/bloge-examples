@@ -47,6 +47,11 @@ class JdbcReusableFlowDraftStoreTest {
         assertThat(replay.draft()).isEqualTo(updated.draft());
         assertThat(reopened.findHead(SCOPE, "tool")).contains(updated.draft());
         assertThat(reopened.findRevision(SCOPE, "tool", 1)).contains(created.draft());
+        assertThat(reopened.findDraftRevisionStored(
+                SCOPE, created.draft().draftId(), created.draft().revision()))
+                .hasValueSatisfying(stored -> assertThat(stored.draft()).isEqualTo(created.draft()));
+        assertThat(reopened.findDraftRevisionStored(
+                new AuthoringScope("other", "project", "dev"), created.draft().draftId(), 1)).isEmpty();
         assertThat(reopened.findRevisionByStrongEtag(SCOPE, "tool", created.strongEtag()))
                 .hasValueSatisfying(stored -> {
                     assertThat(stored.draft()).isEqualTo(created.draft());

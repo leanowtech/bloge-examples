@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcSta
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -54,8 +55,9 @@ public class StandaloneFixtureSetRuntimeConfiguration {
     @Bean
     @ConditionalOnMissingBean
     ReusableFlowFixtureModule reusableFlowFixtureModule(
-            ReusableFlowPublicationStore publications, StandaloneFixtureSetStore store,
+            ReusableFlowPublicationStore publications, ReusableFlowDraftStore drafts,
+            StandaloneFixtureSetStore store,
             WholeFlowFixtureMaterializer materializer, ParentFlowApplyCaseCompiler parentCompiler) {
-        return new ReusableFlowFixtureModule(publications, store, materializer, parentCompiler);
+        return new ReusableFlowFixtureModule(publications, drafts, store, materializer, parentCompiler);
     }
 }

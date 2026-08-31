@@ -1747,3 +1747,49 @@ API Resource、Tool 和 Solution 已具备统一入口和同构对象任务，�
 组成可重载、可发布、可设置 whole-flow Fixture、可模拟的 DAG。尚未闭合的是 Fixture 独立对象页及 share/
 promotion 可见动作，以及当前新工作台的真实浏览器与真实 PostgreSQL acceptance。累计完成度保守调整为
 **96%**，剩余差距 **4%**；下一刀先闭合 Fixture 生命周期和独立对象页，再做最终真实端到端证据。
+
+## 42. Iteration 41 — Flow Draft Fixture 权威闭环
+
+日期：2026-09-01。
+
+### 已完成
+
+- `ReusableFlowDraftStore` 新增按 trusted scope、draft id 和 revision 读取 exact committed Draft 的窄接口；
+  JDBC 与内存实现都对 0/1/多条结果 fail closed，并在返回前复用完整 Draft authority closure。
+- standalone Fixture application 现在同时接受 `FLOW_VERSION` 与 `FLOW_DRAFT` Subject。Draft 必须与已提交
+  authority 的 fingerprint 精确一致；不存在返回 NOT_FOUND，漂移返回 INTEGRITY，不按 graph 内容猜 Draft。
+- Draft Fixture 只允许 whole-flow `SUBJECT + RETURN/INLINE`。节点级 `APPLY_CASE` 仍只属于 immutable
+  Flow Version，避免作者在未发布 Draft 上建立隐含的子节点控制合同。
+- opt-in runtime 必须显式装配 `ReusableFlowDraftStore`，缺失时启动失败；HTTP controller 的真实 wire 测试证明
+  `FLOW_DRAFT` Subject 可以通过原有 Fixture Set PUT 协议保存，且 verified identity、strong ETag 和 receipt
+  coordinate 不变。
+
+### TDD 与验证
+
+首个 `ReusableFlowFixtureModuleTest` 在新增 store seam/constructor 前按预期编译失败；实现后，以下聚焦门禁通过：
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowModuleTest,ReusableFlowFixtureModuleTest,WholeFlowFixtureMaterializerTest,\
+JdbcReusableFlowDraftStoreTest,StandaloneFixtureSetRuntimeConfigurationTest,\
+ApiFixtureSetAuthoringControllerTest test
+
+Tests run: 34, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+完整 Resource Gateway 门禁：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,192; Failures: 0; Errors: 0; Skipped: 55
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+本轮关闭的是 Tool/Solution 对象页此前被前端 mock 掩盖的生产断点：可见 Flow Draft 现在确实能保存并运行
+whole-flow Fixture，而不是只在组件测试中成立。它没有新增 share/promotion 或独立 Fixture 页面，因此累计完成度
+维持 **96%**、剩余差距 **4%**。下一刀应形成 Fixture 独立对象页与可见生命周期，再用真实浏览器串起 API
+Resource → 多节点 Tool/Solution → Fixture → Simulation；真实 PostgreSQL 证据与外部 Vault/provider 保持明确边界。

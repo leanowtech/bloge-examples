@@ -7,11 +7,17 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.Fixture
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
+import java.util.Map;
 
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.command;
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.output;
@@ -20,9 +26,73 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class ReusableFlowFixtureModuleTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
+
+    @Test
+    void createsWholeFlowFixtureForAnExactSavedDraft() {
+        ReusableFlowVersion version = version();
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        ReusableFlowDraftStore drafts = mock(ReusableFlowDraftStore.class);
+        ReusableFlowStoredDraft storedDraft = new ReusableFlowStoredDraft(draft,
+                new ReusableFlowSaveReceipt(ReusableFlowSaveReceipt.SCHEMA_VERSION,
+                        draft.flowId(), draft.subject(), ReusableFlowSaveReceipt.Validation.VALID),
+                "\"draft-etag\"");
+        when(drafts.findDraftRevisionStored(SCOPE, draft.draftId(), draft.revision()))
+                .thenReturn(Optional.of(storedDraft));
+        InMemoryStandaloneFixtureSetStore store = new InMemoryStandaloneFixtureSetStore();
+        ReusableFlowFixtureModule module = new ReusableFlowFixtureModule(
+                publications(version), drafts, store, new WholeFlowFixtureMaterializer(), null);
+        FixtureSetCommand command = command(draft.subject(), FixtureSetCommand.Target.subject(),
+                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output())), null);
+
+        StandaloneFixtureSetSaveResult created = module.save(SCOPE, "author", "draft-cases",
+                FixtureSetPrecondition.create(), "create-draft", command);
+
+        assertThat(created.view().subject()).isEqualTo(draft.subject());
+        assertThat(created.view().revision()).isEqualTo(1);
+    }
+
+    @Test
+    void draftSubjectsFailClosedForDriftAndNodeLevelControls() {
+        ReusableFlowVersion version = version();
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        ReusableFlowDraftStore drafts = mock(ReusableFlowDraftStore.class);
+        ReusableFlowStoredDraft stored = new ReusableFlowStoredDraft(draft,
+                new ReusableFlowSaveReceipt(ReusableFlowSaveReceipt.SCHEMA_VERSION,
+                        draft.flowId(), draft.subject(), ReusableFlowSaveReceipt.Validation.VALID),
+                "\"draft-etag\"");
+        when(drafts.findDraftRevisionStored(SCOPE, draft.draftId(), draft.revision()))
+                .thenReturn(Optional.of(stored));
+        ReusableFlowFixtureModule module = new ReusableFlowFixtureModule(
+                publications(version), drafts, new InMemoryStandaloneFixtureSetStore(),
+                new WholeFlowFixtureMaterializer(), mock(ParentFlowApplyCaseCompiler.class));
+        FixtureSetCommand drifted = command(new com.leanowtech.bloge.gateway.visual.authoring.fixture
+                        .FixtureSubjectRef.FlowDraft(draft.draftId(), draft.revision(),
+                        "sha256:" + "f".repeat(64)), FixtureSetCommand.Target.subject(),
+                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output())), null);
+        FixtureSetCommand nodeControl = command(draft.subject(), FixtureSetCommand.Target.node("decision"),
+                new FixtureSetCommand.Behavior.ApplyCase("child-cases", 1, "approved"), null);
+
+        assertCode(() -> module.save(SCOPE, "author", "drifted-cases",
+                        FixtureSetPrecondition.create(), "drifted", drifted),
+                ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+        assertCode(() -> module.save(SCOPE, "author", "node-cases",
+                        FixtureSetPrecondition.create(), "node", nodeControl),
+                ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+    }
 
     @Test
     void createsUpdatesAndExactlyReplaysAWholeFlowFixture() {

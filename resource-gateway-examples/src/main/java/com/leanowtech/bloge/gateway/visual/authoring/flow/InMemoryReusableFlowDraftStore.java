@@ -70,6 +70,21 @@ public final class InMemoryReusableFlowDraftStore implements ReusableFlowDraftSt
         return Optional.ofNullable(history.get(new RevisionKey(scope, flowId, revision)));
     }
 
+    @Override public synchronized Optional<ReusableFlowStoredDraft> findDraftRevisionStored(
+            AuthoringScope scope, String draftId, int revision) {
+        if (scope == null || draftId == null || draftId.isBlank() || revision < 1) {
+            return Optional.empty();
+        }
+        java.util.List<ReusableFlowStoredDraft> matches = history.entrySet().stream()
+                .filter(entry -> entry.getKey().scope().equals(scope)
+                        && entry.getValue().draft().draftId().equals(draftId)
+                        && entry.getValue().draft().revision() == revision)
+                .map(Map.Entry::getValue)
+                .toList();
+        if (matches.size() > 1) throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
+        return matches.stream().findFirst();
+    }
+
     @Override public synchronized Optional<ReusableFlowStoredDraft> findRevisionByStrongEtag(
             AuthoringScope scope, String flowId, String strongEtag) {
         if (scope == null || flowId == null || flowId.isBlank() || strongEtag == null) return Optional.empty();

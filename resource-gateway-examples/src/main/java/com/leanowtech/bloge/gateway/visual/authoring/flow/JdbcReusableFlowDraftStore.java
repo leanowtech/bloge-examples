@@ -107,6 +107,28 @@ public final class JdbcReusableFlowDraftStore implements ReusableFlowDraftStore 
         }
     }
 
+    @Override public Optional<ReusableFlowStoredDraft> findDraftRevisionStored(
+            AuthoringScope scope, String draftId, int revision) {
+        if (!validRead(scope, draftId) || revision < 1) return Optional.empty();
+        try {
+            List<Row> rows = jdbc.query("""
+                    SELECT flow_id, revision, draft_id, content_fingerprint, draft_json,
+                           receipt_json, strong_etag
+                      FROM rg_authoring_flow_revisions
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                       AND draft_id=? AND revision=?
+                    """, (rs, row) -> new Row(scope, rs.getString(1),
+                            Math.toIntExact(rs.getLong(2)), rs.getString(3), rs.getString(4),
+                            rs.getString(5), rs.getString(6), rs.getString(7)),
+                    scope.tenantId(), scope.projectId(), scope.environmentId(), draftId, revision);
+            return exact(rows).map(this::decode);
+        } catch (ReusableFlowFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
+        }
+    }
+
     @Override public Optional<ReusableFlowStoredDraft> findRevisionByStrongEtag(
             AuthoringScope scope, String flowId, String strongEtag) {
         if (!validRead(scope, flowId) || !ReusableFlowStrongEtag.isValid(strongEtag)) return Optional.empty();

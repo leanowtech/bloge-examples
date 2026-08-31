@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,28 @@ public class WholeFlowFixtureMaterializerTest {
                 new FixtureSetSummary.CaseSummary("approved", "Approved customer"));
         assertThat(generated.caseMappings()).containsExactly(
                 new GeneratedDefaultFixture.CaseMapping("approved", "approved"));
+    }
+
+    @Test
+    void materializesWholeSubjectReturnForAnExactDraftButRejectsNodeControls() {
+        ReusableFlowVersion version = version();
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        WholeFlowFixtureMaterializer materializer = new WholeFlowFixtureMaterializer();
+        FixtureSetCommand whole = command(draft.subject(), FixtureSetCommand.Target.subject(),
+                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output())), null);
+
+        GeneratedDefaultFixture generated = materializer.generate("draft-cases", 1, draft, whole);
+
+        assertThat(generated.view().subject()).isEqualTo(draft.subject());
+        assertThatThrownBy(() -> materializer.generate("draft-node-cases", 1, draft,
+                command(draft.subject(), FixtureSetCommand.Target.node("decision"),
+                        new FixtureSetCommand.Behavior.ApplyCase("child-cases", 1, "approved"), null)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

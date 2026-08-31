@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.Standal
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredStandaloneFixtureSet;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
@@ -26,6 +28,7 @@ import java.util.Optional;
 public final class ReusableFlowFixtureModule {
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private final ReusableFlowPublicationStore publications;
+    private final ReusableFlowDraftStore drafts;
     private final StandaloneFixtureSetStore store;
     private final WholeFlowFixtureMaterializer materializer;
     private final ParentFlowApplyCaseCompiler parentCompiler;
@@ -33,7 +36,7 @@ public final class ReusableFlowFixtureModule {
     public ReusableFlowFixtureModule(ReusableFlowPublicationStore publications,
                                      StandaloneFixtureSetStore store,
                                      WholeFlowFixtureMaterializer materializer) {
-        this(publications, store, materializer, null);
+        this(publications, null, store, materializer, null);
     }
 
     /** Creates a module that can also validate exact parent-Flow APPLY_CASE controls. */
@@ -41,7 +44,17 @@ public final class ReusableFlowFixtureModule {
                                      StandaloneFixtureSetStore store,
                                      WholeFlowFixtureMaterializer materializer,
                                      ParentFlowApplyCaseCompiler parentCompiler) {
+        this(publications, null, store, materializer, parentCompiler);
+    }
+
+    /** Creates a module that resolves both saved Draft and published Version subjects. */
+    public ReusableFlowFixtureModule(ReusableFlowPublicationStore publications,
+                                     ReusableFlowDraftStore drafts,
+                                     StandaloneFixtureSetStore store,
+                                     WholeFlowFixtureMaterializer materializer,
+                                     ParentFlowApplyCaseCompiler parentCompiler) {
         this.publications = Objects.requireNonNull(publications, "publications");
+        this.drafts = drafts;
         this.store = Objects.requireNonNull(store, "store");
         this.materializer = Objects.requireNonNull(materializer, "materializer");
         this.parentCompiler = parentCompiler;
@@ -54,12 +67,12 @@ public final class ReusableFlowFixtureModule {
         Objects.requireNonNull(precondition, "precondition");
         if (scope == null || command == null) throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
         try {
-            ReusableFlowVersion version = resolveVersion(scope, command);
+            ResolvedFlow flow = resolveFlow(scope, command);
             if (hasNodeControls(command)) {
-                if (parentCompiler == null) {
+                if (parentCompiler == null || flow.version() == null) {
                     throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
                 }
-                parentCompiler.validateCommand(scope, version, command);
+                parentCompiler.validateCommand(scope, flow.version(), command);
             }
             ExpectedRevision expected;
             int revision;
@@ -80,8 +93,9 @@ public final class ReusableFlowFixtureModule {
                 expected = ExpectedRevision.match(priorRevision);
                 revision = Math.addExact(priorRevision, 1);
             }
-            GeneratedDefaultFixture generated = materializer.generate(
-                    fixtureSetId, revision, version, command);
+            GeneratedDefaultFixture generated = flow.version() == null
+                    ? materializer.generate(fixtureSetId, revision, flow.draft(), command)
+                    : materializer.generate(fixtureSetId, revision, flow.version(), command);
             return store.save(new StandaloneFixtureSetSaveIntent(scope, actorId, fixtureSetId,
                     expected, idempotencyKey,
                     AuthoringFingerprints.of(JSON.valueToTree(command)), generated));
@@ -112,21 +126,35 @@ public final class ReusableFlowFixtureModule {
                 .anyMatch(value -> value.target() instanceof FixtureSetCommand.Target.Node);
     }
 
-    private ReusableFlowVersion resolveVersion(AuthoringScope scope, FixtureSetCommand command) {
-        if (!(command.subject() instanceof com.leanowtech.bloge.gateway.visual.authoring.fixture
-                .FixtureSubjectRef.FlowVersion subject)) {
-            throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
+    private ResolvedFlow resolveFlow(AuthoringScope scope, FixtureSetCommand command) {
+        if (command.subject() instanceof com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .FixtureSubjectRef.FlowVersion subject) {
+            ReusableFlowVersion version = publications.findVersion(
+                            scope, subject.publicationId(), subject.revision())
+                    .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
+            if (!version.subject().equals(subject)) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+            }
+            return new ResolvedFlow(null, version);
         }
-        ReusableFlowVersion version = publications.findVersion(
-                        scope, subject.publicationId(), subject.revision())
-                .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
-        if (!version.subject().equals(subject)) {
-            throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+        if (command.subject() instanceof com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .FixtureSubjectRef.FlowDraft subject) {
+            if (drafts == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+            ReusableFlowDraft draft = drafts.findDraftRevisionStored(
+                            scope, subject.draftId(), subject.revision())
+                    .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND))
+                    .draft();
+            if (!draft.subject().equals(subject)) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+            }
+            return new ResolvedFlow(draft, null);
         }
-        return version;
+        throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
     }
 
     private static ApiFixtureSetAuthoringFailure failure(ApiFixtureSetAuthoringFailure.Code code) {
         return new ApiFixtureSetAuthoringFailure(code);
     }
+
+    private record ResolvedFlow(ReusableFlowDraft draft, ReusableFlowVersion version) { }
 }

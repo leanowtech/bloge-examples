@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcSta
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -29,7 +30,9 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
             .withBean(ObjectMapper.class, ObjectMapper::new)
             .withBean(ComposableCatalog.class, () -> mock(ComposableCatalog.class))
             .withBean(ReusableFlowPublicationStore.class,
-                    () -> mock(ReusableFlowPublicationStore.class));
+                    () -> mock(ReusableFlowPublicationStore.class))
+            .withBean(ReusableFlowDraftStore.class,
+                    () -> mock(ReusableFlowDraftStore.class));
 
     @Test
     void disabledRuntimeIsAbsentAndEnabledV016CreatesExactModule() {

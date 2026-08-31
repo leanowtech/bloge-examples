@@ -355,6 +355,15 @@ green**, TypeScript passes, and the production Vite/UX/host/bundle gates pass; t
 closure is **186.90 KiB / 10 files**, below the 350 KiB ceiling. Fixture sharing/promotion and real browser/
 PostgreSQL acceptance remain open.
 
+The standalone Fixture writer now resolves a `FLOW_DRAFT` Subject against the exact committed scope, draft id,
+revision, and content fingerprint before materializing a Case. A draft Fixture intentionally supports only one
+whole-subject `RETURN`; node-level `APPLY_CASE` controls remain a published Flow Version capability. This closes the
+object page's former mock-only gap without weakening immutable-version controls or exposing Fixture material. The
+focused draft-store/materializer/application/configuration/controller gate is **34/34 green** with no failures,
+errors, or skips. The serial `clean verify` completed with `Tests run: 8,192; failures: 0; errors: 0; skipped: 55`
+and `BUILD SUCCESS`. Fixture sharing/promotion, an independent Fixture object page, and real browser/real PostgreSQL
+acceptance remain open.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

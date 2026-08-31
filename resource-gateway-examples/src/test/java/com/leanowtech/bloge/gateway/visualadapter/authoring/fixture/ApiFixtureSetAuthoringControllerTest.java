@@ -9,10 +9,13 @@ import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityR
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -25,6 +28,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,6 +163,44 @@ class ApiFixtureSetAuthoringControllerTest {
 
         verify(facade).save(new AuthoringScope("tenant-a", "project-a", "test"), "author",
                 "eligibility-cases", FixtureSetPrecondition.create(), "fixture-create-1", command);
+    }
+
+    @Test
+    void acceptsTheExactFlowDraftSubjectReturnedByFlowSave() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        var version = com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .WholeFlowFixtureMaterializerTest.version();
+        var draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        var command = com.leanowtech.bloge.gateway.visual.authoring.fixture
+                .WholeFlowFixtureMaterializerTest.command(draft.subject(),
+                        FixtureSetCommand.Target.subject(), FixtureSetCommand.Behavior.returned(
+                                FixtureSetCommand.Material
+                                        .inline(com.leanowtech.bloge.gateway.visual.authoring.fixture
+                                                .WholeFlowFixtureMaterializerTest.output())), null);
+        GeneratedDefaultFixture generated = new WholeFlowFixtureMaterializer()
+                .generate("draft-cases", 1, draft, command);
+        when(facade.save(any(), any(), any(), any(), any(), any())).thenReturn(
+                new StandaloneFixtureSetSaveResult(generated.view(), generated.receipt(),
+                        "\"draft-fixture-etag\"", false));
+
+        mvc(facade).perform(put("/api/authoring/fixture-sets/draft-cases")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(command))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-None-Match", "*")
+                        .header("Idempotency-Key", "draft-fixture-create"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subject.kind").value("FLOW_DRAFT"))
+                .andExpect(jsonPath("$.subject.draftId").value(draft.draftId()));
+
+        verify(facade).save(new AuthoringScope("tenant-a", "project-a", "test"), "author",
+                "draft-cases", FixtureSetPrecondition.create(), "draft-fixture-create", command);
     }
 
     @Test

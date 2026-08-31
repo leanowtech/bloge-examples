@@ -12,6 +12,9 @@ public interface ReusableFlowDraftStore {
     Optional<ReusableFlowStoredDraft> findHeadStored(AuthoringScope scope, String flowId);
     /** Reads one exact committed historical revision and its strong validator. */
     Optional<ReusableFlowStoredDraft> findRevisionStored(AuthoringScope scope, String flowId, int revision);
+    /** Reads one exact committed draft subject without requiring callers to know its Flow identity. */
+    Optional<ReusableFlowStoredDraft> findDraftRevisionStored(
+            AuthoringScope scope, String draftId, int revision);
     /** Resolves one exact committed historical revision by opaque strong validator. */
     Optional<ReusableFlowStoredDraft> findRevisionByStrongEtag(
             AuthoringScope scope, String flowId, String strongEtag);
