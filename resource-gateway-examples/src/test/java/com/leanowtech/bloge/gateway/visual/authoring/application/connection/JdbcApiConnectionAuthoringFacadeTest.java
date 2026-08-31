@@ -63,11 +63,17 @@ class JdbcApiConnectionAuthoringFacadeTest {
 
         ApiConnectionAuthoringResult first = facade.save(request);
         ApiConnectionAuthoringResult replay = facade.save(request);
+        facade.save(new ApiConnectionAuthoringRequest(SCOPE, "actor", "billing", "jdbc-billing",
+                ApiConnectionAuthoringPrecondition.create(),
+                new ApiConnectionCommand("Billing API", "https://billing.example.com",
+                        ApiConnectionCommand.Auth.none())));
 
         assertThat(first.replayed()).isFalse();
         assertThat(replay.replayed()).isTrue();
         assertThat(replay.view()).isEqualTo(first.view());
         assertThat(replay.strongEtag()).isEqualTo(first.strongEtag());
+        assertThat(facade.list(SCOPE)).extracting(ApiConnectionView::connectionId)
+                .containsExactly("billing", "customer");
 
         ObjectNode body = mapper.valueToTree(first.view());
         CommandReceipt valid = new CommandReceipt(ApiConnectionView.SCHEMA_VERSION, body,

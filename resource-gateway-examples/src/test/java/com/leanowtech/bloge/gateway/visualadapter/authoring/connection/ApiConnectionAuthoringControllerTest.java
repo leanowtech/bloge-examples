@@ -93,6 +93,26 @@ class ApiConnectionAuthoringControllerTest {
     }
 
     @Test
+    void listReturnsPayloadFreeConnectionsFromTheTrustedScope() throws Exception {
+        ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
+        when(facade.list(any())).thenReturn(List.of(
+                view("alpha", "Alpha API"), view("zeta", "Zeta API")));
+
+        mvc(facade).perform(get("/api/authoring/connections")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$[0].connectionId").value("alpha"))
+                .andExpect(jsonPath("$[1].connectionId").value("zeta"))
+                .andExpect(jsonPath("$[0].auth.configured").value(false))
+                .andExpect(jsonPath("$[0].token").doesNotExist())
+                .andExpect(jsonPath("$[0].password").doesNotExist());
+
+        verify(facade).list(new AuthoringScope("tenant-a", "project-a", "test"));
+    }
+
+    @Test
     void updateAcceptsOneStrongEtagAndMarksReplay() throws Exception {
         ApiConnectionAuthoringFacade facade = mock(ApiConnectionAuthoringFacade.class);
         when(facade.save(any())).thenReturn(new ApiConnectionAuthoringResult(view(), "\"connection-etag\"", true));
@@ -324,8 +344,12 @@ class ApiConnectionAuthoringControllerTest {
     }
 
     private static ApiConnectionView view() {
-        return new ApiConnectionView(ApiConnectionView.SCHEMA_VERSION, "customer", 1,
-                "Customer API", "https://customer.example.com", new ApiConnectionView.Auth("NONE", false),
+        return view("customer", "Customer API");
+    }
+
+    private static ApiConnectionView view(String connectionId, String displayName) {
+        return new ApiConnectionView(ApiConnectionView.SCHEMA_VERSION, connectionId, 1,
+                displayName, "https://customer.example.com", new ApiConnectionView.Auth("NONE", false),
                 new ApiConnectionCommand.Defaults(5000, Map.of("Accept", "application/json")));
     }
 

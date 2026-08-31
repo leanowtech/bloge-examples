@@ -68,6 +68,18 @@ public final class ApiConnectionAuthoringController {
         return response(result.view(), result.strongEtag(), null);
     }
 
+    /** Returns current payload-free Connections in stable Connection-id order. */
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<ApiConnectionView>> list(@RequestHeader HttpHeaders headers,
+                                                         HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_API_CONNECTION_READ, request);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(facade.list(trustedScope(context)));
+    }
+
     /** Creates or updates one Connection under an explicit HTTP precondition. */
     @PutMapping(path = "/{connectionId}", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)

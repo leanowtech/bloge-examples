@@ -922,6 +922,34 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         return read(requireScope(scope), requireConnectionId(connectionId), null);
     }
 
+    /** Lists committed heads after applying the same receipt and metadata integrity checks as single reads. */
+    @Override
+    public List<StoredApiConnection> listHeads(AuthoringScope scope) {
+        AuthoringScope exactScope = requireScope(scope);
+        String sql = "SELECT " + REVISION_COLUMNS + """
+                  FROM rg_api_connection_heads h
+                  JOIN rg_api_connection_revisions r
+                    ON h.tenant_id=r.tenant_id AND h.project_id=r.project_id
+                   AND h.environment_id=r.environment_id AND h.connection_id=r.connection_id
+                   AND h.revision=r.revision AND h.command_id=r.command_id
+                   AND h.attempt_no=r.attempt_no AND h.attempt_token=r.attempt_token
+                   AND h.strong_etag=r.strong_etag AND h.revision_state=r.state
+                  JOIN rg_authoring_command_attempts a
+                    ON a.command_id=r.command_id AND a.attempt_no=r.attempt_no
+                   AND a.attempt_token=r.attempt_token AND a.status='COMMITTED'
+                  JOIN rg_authoring_command_journal j
+                    ON j.command_id=r.command_id AND j.attempt_no=r.attempt_no
+                   AND j.attempt_token=r.attempt_token AND j.status='COMMITTED'
+                 WHERE h.tenant_id=? AND h.project_id=? AND h.environment_id=?
+                   AND r.state='COMMITTED'
+                 ORDER BY r.connection_id
+                """;
+        return jdbc.query(sql, revisionRowMapper(), exactScope.tenantId(), exactScope.projectId(),
+                        exactScope.environmentId()).stream()
+                .map(this::stored)
+                .toList();
+    }
+
     /** Reads one committed historical revision after checking persisted integrity. */
     @Override
     public Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,

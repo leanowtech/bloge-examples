@@ -16,10 +16,11 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Comman
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import java.time.Instant;
 
 /**
  * Standalone Connection application tracer for the API_CONNECTION_SAVE
@@ -115,6 +116,24 @@ public final class ApiConnectionAuthoringFacade {
             return new ApiConnectionAuthoringRead(stored.view(), stored.strongEtag());
         } catch (ApiConnectionAuthoringFailure failure) {
             throw failure;
+        } catch (RuntimeException failure) {
+            throw mapFailure(failure);
+        }
+    }
+
+    /**
+     * Lists current payload-free Connection views for one trusted scope.
+     *
+     * @param scope trusted tenant/project/environment scope
+     * @return immutable views sorted by Connection id
+     */
+    public List<ApiConnectionView> list(AuthoringScope scope) {
+        if (scope == null) throw failure(ApiConnectionAuthoringFailure.Code.VALIDATION);
+        try {
+            return store.listHeads(scope).stream()
+                    .map(com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection::view)
+                    .sorted(java.util.Comparator.comparing(ApiConnectionView::connectionId))
+                    .toList();
         } catch (RuntimeException failure) {
             throw mapFailure(failure);
         }

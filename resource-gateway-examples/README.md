@@ -135,12 +135,21 @@ facade when the feature is enabled. A dedicated V010 readiness gate checks immut
 Connection revision/head provenance, the `SUPERSEDED` lifecycle closure and recovery indexes; pre-V010, missing or
 altered schema fails startup. The current tracer deliberately accepts only `auth.kind=NONE`; BEARER, BASIC and
 API_KEY commands return a typed 424 before claim until a production external secret provider is wired. Connection
-list/check, Default Fixture generation, simulation and reusable Flow/DAG authoring remain subsequent slices.
+check, Default Fixture generation, simulation and reusable Flow/DAG authoring remain subsequent slices.
 
 The C4 focused gate completed at **145/145 green** with no failures, errors, or skips across Connection facade/JDBC,
 Connection controller/configuration/runtime readiness, Resource transport regressions, protocol schemas and the
 visual package boundary. The post-C4 serial `clean verify` completed with
 `Tests run: 8,051; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
+
+J3-C5 adds `GET /api/authoring/connections` for the standard Connection picker. The endpoint derives one exact
+tenant/project/environment scope from the verified integration identity and returns only current committed
+`ApiConnectionView` records in stable `connectionId` order. Staged revisions and other scopes remain invisible;
+the JDBC adapter applies the same attempt, receipt and metadata-integrity closure as a single Connection read.
+No credential value or provider locator enters the list wire. The focused Connection authority/application/HTTP
+gate completed at **186/186 green** with no failures, errors or skips. Explicit network/authentication check remains
+a separate governed-egress slice; this list endpoint does not claim that a Connection is reachable. The post-C5
+serial `clean verify` completed with `Tests run: 8,055; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

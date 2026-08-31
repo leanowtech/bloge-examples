@@ -921,3 +921,47 @@ credential provider、Default Fixture Set、首次模拟、Reusable Flow/DAG、T
 HTTP tracer，但用户侧对象页、Default Fixture/Simulation、Reusable Flow、Tool/Solution 和 DAG 编排仍是主要
 缺口。当前累计完成度保守记为 **44%**，剩余差距 **56%**；不能把 145 个聚焦测试或既有 Visual Authoring
 能力折算成新简化工作流已经完成。
+
+## 25. Iteration 24 — C5 scoped Connection discovery
+
+日期：2026-08-31。
+
+### 已完成
+
+- 新增 `GET /api/authoring/connections`，只使用 trusted integration identity 的
+  tenant/project/environment 查询当前 Connection heads；结果按 `connectionId` 稳定排序。
+- `ApiConnectionAuthoringStore` 与 metadata store 新增 scope-local `listHeads` 深接口。内存/JDBC 两个 adapter
+  都排除 staged revision 和其他 scope；JDBC 列表复用单对象读取的 committed attempt、journal receipt、ETag、
+  metadata fingerprint 与 canonical view 完整性校验。
+- wire 继续只返回 payload-free `ApiConnectionView`；不返回 secret value、SecretRef、provider locator 或
+  pending lease。列表也不把“已保存”错误表达成“网络可达”。
+- `ConnectionCheckCommand.NETWORK_ONLY/SAFE_READ` 需要独立的 egress、timeout、审计与 credential resolution
+  authority，本切片没有用任意 socket/HTTP 探测绕过该边界。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,\
+ApiConnectionAuthoringControllerTest,ApiConnectionAuthoringTransportConfigurationTest,\
+ApiConnectionAuthoringConfigurationTest,InMemoryApiConnectionCommitStoreTest,\
+JdbcApiConnectionCommitStoreTest,ApiConnectionAuthorityTest,ApiConnectionSchemaReadinessTest,\
+AuthoringProtocolSchemaTest' test
+
+Tests run: 186, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,055, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+该证据证明内存/JDBC 的 scope、顺序、staged invisibility 和 payload-free HTTP list；它不等于真实 PostgreSQL
+lock/isolation certification，也不覆盖网络连通性检查、credential provider、Default Fixture、Simulation、
+Reusable Flow/DAG、Tool/Solution 对象页或 UI acceptance。
+
+### 当前差距评估
+
+Connection 的创建、读取和选择列表已经具备最小后端操作链，但用户目标中的 Fixture/Simulation 与可复用
+多 API DAG 仍未开始形成新 authoring surface。累计完成度保守调整为 **45%**，剩余差距 **55%**。

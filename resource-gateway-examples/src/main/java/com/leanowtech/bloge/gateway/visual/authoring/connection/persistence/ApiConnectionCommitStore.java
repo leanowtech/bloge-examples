@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -71,6 +72,9 @@ public interface ApiConnectionCommitStore {
 
     /** Reads the committed head in the exact authoring scope. */
     Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId);
+
+    /** Lists current committed heads in stable Connection-id order for one exact scope. */
+    List<StoredApiConnection> listHeads(AuthoringScope scope);
 
     /** Reads one committed historical revision in the exact authoring scope. */
     Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision);

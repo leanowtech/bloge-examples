@@ -1,12 +1,13 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -34,6 +35,9 @@ public interface ApiConnectionAuthoringStore extends AuthoringCommandClaimStore 
 
     /** Reads the current committed head in the exact authoring scope. */
     Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId);
+
+    /** Lists current committed heads in stable Connection-id order for one exact scope. */
+    List<StoredApiConnection> listHeads(AuthoringScope scope);
 
     /** Reads one committed historical revision by exact persisted strong ETag. */
     Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,

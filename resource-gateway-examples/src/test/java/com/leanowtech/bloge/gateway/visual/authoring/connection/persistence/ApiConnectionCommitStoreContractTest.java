@@ -80,6 +80,30 @@ abstract class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void listHeadsIsScopedOrderedAndExcludesStagedRevisions() {
+        ApiConnectionCommitStore store = newStore();
+        for (String connectionId : List.of("zeta", "alpha")) {
+            CommandLease lease = lease("list-" + connectionId, 1, "token-" + connectionId,
+                    SCOPE, connectionId, ExpectedRevision.create());
+            stage(store, lease, connectionId, ExpectedRevision.create(),
+                    renamedCommand(connectionId + " API"));
+            store.commit(lease);
+        }
+        CommandLease other = lease("list-other", 1, "token-other", OTHER_SCOPE,
+                "hidden", ExpectedRevision.create());
+        stage(store, other, "hidden", ExpectedRevision.create(), renamedCommand("Hidden API"));
+        store.commit(other);
+        CommandLease staged = lease("list-staged", 1, "token-staged", SCOPE,
+                "pending", ExpectedRevision.create());
+        stage(store, staged, "pending", ExpectedRevision.create(), renamedCommand("Pending API"));
+
+        assertThat(store.listHeads(SCOPE)).extracting(item -> item.view().connectionId())
+                .containsExactly("alpha", "zeta");
+        assertThat(store.listHeads(OTHER_SCOPE)).extracting(item -> item.view().connectionId())
+                .containsExactly("hidden");
+    }
+
+    @Test
     void createUpdateAndHistoryUseTheAuthorityCas() {
         ApiConnectionCommitStore store = newStore();
         CommandLease create = lease("create-2", 1, "a-2", SCOPE, "customer", ExpectedRevision.create());

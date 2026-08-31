@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -401,6 +402,17 @@ public final class InMemoryApiConnectionCommitStore
     /** {@inheritDoc} */
     @Override public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return Optional.ofNullable(heads.get(new ConnectionKey(scope, connectionId)));
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public synchronized List<StoredApiConnection> listHeads(AuthoringScope scope) {
+        return heads.entrySet().stream()
+                .filter(entry -> entry.getKey().scope().equals(scope))
+                .sorted(Map.Entry.comparingByKey(
+                        java.util.Comparator.comparing(ConnectionKey::connectionId)))
+                .map(Map.Entry::getValue)
+                .toList();
     }
 
     /** {@inheritDoc} */

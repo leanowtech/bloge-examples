@@ -17,6 +17,7 @@ import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -74,6 +75,9 @@ public final class JdbcApiConnectionAuthoringStore
     @Override public void fail(CommandLease lease) { connections.fail(lease); }
     @Override public Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return connections.findHead(scope, connectionId);
+    }
+    @Override public List<StoredApiConnection> listHeads(AuthoringScope scope) {
+        return connections.listHeads(scope);
     }
     @Override public Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                                                String strongEtag) {

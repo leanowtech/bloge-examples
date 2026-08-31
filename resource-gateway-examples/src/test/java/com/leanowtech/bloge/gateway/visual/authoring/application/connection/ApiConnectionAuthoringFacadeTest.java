@@ -71,6 +71,25 @@ class ApiConnectionAuthoringFacadeTest {
     }
 
     @Test
+    void listReturnsOnlyCurrentScopeHeadsInStableConnectionOrder() {
+        var facade = facade();
+        facade.save(request("author", "zeta", "list-zeta", ApiConnectionAuthoringPrecondition.create(),
+                command("Zeta API")));
+        facade.save(request("author", "alpha", "list-alpha", ApiConnectionAuthoringPrecondition.create(),
+                command("Alpha API")));
+        AuthoringScope otherScope = new AuthoringScope("tenant", "project", "prod");
+        facade.save(new ApiConnectionAuthoringRequest(otherScope, "author", "hidden", "list-hidden",
+                ApiConnectionAuthoringPrecondition.create(), command("Hidden API")));
+
+        assertThat(facade.list(SCOPE))
+                .extracting(ApiConnectionView::connectionId)
+                .containsExactly("alpha", "zeta");
+        assertThat(facade.list(otherScope))
+                .extracting(ApiConnectionView::connectionId)
+                .containsExactly("hidden");
+    }
+
+    @Test
     void inMemoryResolveReplayRejectsIndependentReceiptAndTargetTampering() {
         ObjectMapper mapper = new ObjectMapper();
         var decisions = new ApiConnectionDecisions();
