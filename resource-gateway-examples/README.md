@@ -577,7 +577,8 @@ The frozen authoring wire catalog now has an executable completeness gate. All *
 minimal, complete, and invalid golden examples. The protocol test compares that map with the schema directory, so
 adding a new top-level wire schema without its golden family fails immediately; family routing also uses exact
 minimal/complete/invalid qualifiers instead of ambiguous filename prefixes. The focused
-`AuthoringProtocolSchemaTest` gate is **18/18 green** with no failures, errors, or skips.
+`AuthoringProtocolSchemaTest` gate is **18/18 green** with no failures, errors, or skips. The post-golden serial
+`clean verify` completed with `Tests run: 8,266; failures: 0; errors: 0; skipped: 39` and `BUILD SUCCESS` in 11:56.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

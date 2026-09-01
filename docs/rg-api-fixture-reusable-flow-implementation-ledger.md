@@ -2770,6 +2770,11 @@ mvn -f resource-gateway-examples/pom.xml -Dtest=AuthoringProtocolSchemaTest test
 
 Tests run: 18; Failures: 0; Errors: 0; Skipped: 0
 BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,266; Failures: 0; Errors: 0; Skipped: 39
+BUILD SUCCESS; Total time: 11:56 min
 ```
 
 ### 当前差距评估
@@ -2777,3 +2782,8 @@ BUILD SUCCESS
 冻结 Wire Schema 的逐 family golden 覆盖已闭合。该证据只证明协议结构、引用解析、安全边界与样例正负例，
 不替代 HTTP、持久化、浏览器任务或部署环境验证。后续只继续处理可由本仓库关闭的协议负例；真实
 PostgreSQL/Vault/REMOTE egress 和 8 位外部目标用户计时仍保持为外部证据边界。
+
+最终 requirement matrix 复核同时确认：批准方案列出的最小 HTTP 面均有生产 adapter；J3/U1/F1/G1/M1 的
+本地负例与对象页主链已闭合；三 API Resource DAG 在 1280 px 与 390 px 均完成 41 个主动作。`v1.1` 执行计划
+已同步为当前事实。本地代码与验收剩余差距评估为约 **1%**，低于 3% 停止条件；该 1% 不被虚构实现填充，
+对应真实 PostgreSQL/Vault/REMOTE authenticated egress 和外部目标用户研究证据。
