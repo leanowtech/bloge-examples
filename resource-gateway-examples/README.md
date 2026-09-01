@@ -469,6 +469,20 @@ The focused migration/schema/boundary gate is **23/23 green**, frontend transpor
 and the production frontend build plus the real Chrome inventory method are green. The final serial
 `clean verify` completed with `Tests run: 8,240; failures: 0; errors: 0; skipped: 37` and `BUILD SUCCESS`.
 
+Each `READY_TO_REAUTHOR` Resource row now opens an authenticated, read-only Descriptor + Contract preview at
+`GET /api/authoring/migrations/legacy-assets/resources/{resourceId}:preview`. The preview contains only the relative
+path, supported request bindings, response success/output-path rules, simplified schemas, and one generated example;
+it never carries the legacy host, default headers, authentication, credentials, Fixture contents, or protected
+material references. The API form is visibly prefilled but its Connection remains blank, so an author must choose a
+committed Connection before the existing save-and-simulate action creates the new Resource and Default Fixture.
+Nothing is mutated by opening the preview. Write resources, ambiguous mappings, unsafe paths, and unsupported
+contracts remain `NEEDS_REPAIR` instead of being guessed or silently migrated.
+The focused backend migration/schema gate is **28/28 green**, focused frontend model/transport/component tests are
+**19/19**, i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass
+(AuthoringWorkbench **193.66 KiB / 12 files**, AuthorCanvas **349.98 KiB / 22 files**). A real Chrome method follows
+the visible inventory → preview → Connection selection → save-and-simulate path and is **1/1 green**. The final serial
+`clean verify` completed with `Tests run: 8,247; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS` in 11:48.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

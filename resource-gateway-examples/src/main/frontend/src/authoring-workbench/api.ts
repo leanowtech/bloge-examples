@@ -8,6 +8,7 @@ import type {
   SimulationRun,
   ApiConnectionView,
   LegacyAssetMigrationInventory,
+  LegacyApiResourceReauthorPreview,
 } from './model';
 
 export type AuthoringWorkbenchTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -34,6 +35,18 @@ export async function readLegacyAssetMigrationInventory(
   return body(await transport('/api/authoring/migrations/legacy-assets', {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   }));
+}
+
+/** Reads one safe command preview; the author must still choose a Connection and save it explicitly. */
+export async function readLegacyApiResourcePreview(
+  resourceId: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<LegacyApiResourceReauthorPreview> {
+  return body(await transport(
+    `/api/authoring/migrations/legacy-assets/resources/${encodeURIComponent(resourceId)}:preview`, {
+      headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+    },
+  ));
 }
 
 /** Previews inline OpenAPI operations without persistence or remote egress. */

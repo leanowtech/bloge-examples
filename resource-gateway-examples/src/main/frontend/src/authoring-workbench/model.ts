@@ -51,6 +51,14 @@ export interface LegacyAssetMigrationItem {
   };
 }
 
+/** Connection-independent, transport-redacted command projected from one exact legacy Resource. */
+export interface LegacyApiResourceReauthorPreview {
+  schemaVersion: 'bloge.legacyApiResourceReauthorPreview.v1';
+  source: { kind: 'API_RESOURCE'; resourceId: string; sourceRevision: 0 };
+  suggestedResource: ApiResourceSaveCommand['resource'];
+  diagnostics: Array<{ code: string; message: string }>;
+}
+
 export interface ApiResourceBinding {
   from: string;
   to: { location: 'PATH' | 'QUERY' | 'HEADER' | 'BODY'; name: string };
@@ -67,7 +75,11 @@ export interface ApiResourceSaveCommand {
       bindings: ApiResourceBinding[];
     };
     contract: { input: SchemaEnvelope; output: SchemaEnvelope };
-    response: { success: { kind: 'HTTP_STATUS'; codes: number[] } };
+    response: {
+      success: { kind: 'HTTP_STATUS'; codes: number[] }
+        | { kind: 'BODY_MATCH'; path: string; values: unknown[] };
+      outputPath?: string;
+    };
     effect: { kind: 'READ_ONLY' | 'FIXTURE_ONLY_WRITE' };
     examples: Array<{ name: string; input: JsonObject; output: JsonObject }>;
   };
@@ -246,6 +258,24 @@ export function formDraftFromOpenApiOperation(
     requestExample: JSON.stringify(example?.input ?? {}, null, 2),
     responseExample: JSON.stringify(example?.output ?? {}, null, 2),
     importedResource: operation.suggestedResource,
+  };
+}
+
+/** Applies a reviewed legacy projection while deliberately requiring a new visible Connection choice. */
+export function formDraftFromLegacyPreview(
+  preview: LegacyApiResourceReauthorPreview,
+): ApiResourceFormDraft {
+  const suggested = preview.suggestedResource;
+  const example = suggested.examples[0];
+  return {
+    resourceId: preview.source.resourceId,
+    displayName: suggested.displayName,
+    connectionId: '',
+    method: suggested.operation.method,
+    path: suggested.operation.path,
+    requestExample: JSON.stringify(example?.input ?? {}, null, 2),
+    responseExample: JSON.stringify(example?.output ?? {}, null, 2),
+    importedResource: suggested,
   };
 }
 

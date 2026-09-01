@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationInventory;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,6 +47,19 @@ public final class LegacyAssetMigrationController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .body(module.inventory(trustedScope(context)));
+    }
+
+    /** Returns one connection-independent command that the author must visibly review and save. */
+    @GetMapping(path = "/resources/{resourceId}:preview", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<LegacyApiResourceReauthorPreview> previewResource(
+            @PathVariable String resourceId, @RequestHeader HttpHeaders headers, HttpServletRequest request) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.AUTHORING_LEGACY_MIGRATION_READ);
+        request.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
+        trustedScope(context);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(module.previewResource(resourceId));
     }
 
     private static AuthoringScope trustedScope(IntegrationRequestContext context) {

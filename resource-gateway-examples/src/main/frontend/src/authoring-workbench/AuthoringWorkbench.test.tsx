@@ -12,6 +12,7 @@ vi.mock('./api', async () => {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
     listApiConnections: vi.fn(), previewOpenApi: vi.fn(),
     readLegacyAssetMigrationInventory: vi.fn(),
+    readLegacyApiResourcePreview: vi.fn(),
     saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
   };
 });
@@ -116,6 +117,44 @@ describe('simple authoring workbench', () => {
     expect(element<HTMLInputElement>('api-resource-id').value).toBe('getCustomer');
     expect(element<HTMLSelectElement>('api-connection-id').value).toBe('crm');
     expect(element<HTMLInputElement>('api-path').value).toBe('/customers/{customerId}');
+    expect(element('openapi-binding-summary').textContent).toContain('PATH:customerId');
+  });
+
+  it('opens a ready legacy Resource as a reviewed draft and still requires Connection selection', async () => {
+    window.history.replaceState(null, '', '/workbench/?create=api&legacyResourceId=customer.get');
+    vi.mocked(authoringApi.readLegacyApiResourcePreview).mockResolvedValue({
+      schemaVersion: 'bloge.legacyApiResourceReauthorPreview.v1',
+      source: { kind: 'API_RESOURCE', resourceId: 'customer.get', sourceRevision: 0 },
+      suggestedResource: {
+        displayName: 'Get customer',
+        operation: { method: 'GET', path: '/customers/{customerId}', bindings: [{
+          from: '$.customerId', to: { location: 'PATH', name: 'customerId' },
+        }] },
+        contract: {
+          input: { format: 'json-schema', version: '2020-12', schema: {
+            type: 'object', properties: { customerId: { type: 'string' } },
+            required: ['customerId'], additionalProperties: false,
+          } },
+          output: { format: 'json-schema', version: '2020-12', schema: {
+            type: 'object', properties: { name: { type: 'string' } }, required: ['name'],
+            additionalProperties: false,
+          } },
+        },
+        response: { success: { kind: 'HTTP_STATUS', codes: [200] } },
+        effect: { kind: 'READ_ONLY' },
+        examples: [{ name: 'legacy-example', input: { customerId: 'string' }, output: { name: 'string' } }],
+      },
+      diagnostics: [{ code: 'CONNECTION_SELECTION_REQUIRED', message: 'Choose a committed Connection.' }],
+    });
+
+    await act(async () => root.render(<AuthoringWorkbench />));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(authoringApi.readLegacyApiResourcePreview).toHaveBeenCalledWith('customer.get');
+    expect(element<HTMLInputElement>('api-resource-id').value).toBe('customer.get');
+    expect(element<HTMLInputElement>('api-name').value).toBe('Get customer');
+    expect(element<HTMLSelectElement>('api-connection-id').value).toBe('');
+    expect(element('legacy-reauthor-preview').textContent).toContain('Choose a committed Connection.');
     expect(element('openapi-binding-summary').textContent).toContain('PATH:customerId');
   });
 

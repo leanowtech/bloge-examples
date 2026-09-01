@@ -10,7 +10,6 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFailur
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
-import com.leanowtech.bloge.gateway.visualadapter.authoring.migration.LegacyAssetMigrationController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,7 +31,7 @@ import java.util.regex.Pattern;
 /** Maps API Resource and Connection failures to one Authoring Problem Detail shape. */
 @RestControllerAdvice(assignableTypes = {ApiResourceAuthoringController.class,
         ApiConnectionAuthoringController.class, ApiFixtureSetAuthoringController.class,
-        ApiSimulationController.class, OpenApiPreviewController.class, LegacyAssetMigrationController.class})
+        ApiSimulationController.class, OpenApiPreviewController.class})
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public final class ApiResourceAuthoringProblemHandler {
     private static final Pattern CORRELATION = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");

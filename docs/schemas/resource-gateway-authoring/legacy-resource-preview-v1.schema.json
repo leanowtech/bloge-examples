@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/legacy-resource-preview-v1.schema.json",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "API_RESOURCE" },
+        "resourceId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "sourceRevision": { "const": 0 }
+      },
+      "required": ["kind", "resourceId", "sourceRevision"],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.legacyApiResourceReauthorPreview.v1" },
+    "source": { "$ref": "#/$defs/source" },
+    "suggestedResource": { "$ref": "api-resource-command-v1.schema.json#/$defs/resourceCommand" },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" },
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true
+    }
+  },
+  "required": ["schemaVersion", "source", "suggestedResource", "diagnostics"],
+  "additionalProperties": false
+}

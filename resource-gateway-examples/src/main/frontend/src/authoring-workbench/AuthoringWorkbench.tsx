@@ -9,6 +9,7 @@ import {
   listApiConnections,
   previewOpenApi,
   readLegacyAssetMigrationInventory,
+  readLegacyApiResourcePreview,
   readApiResource,
   saveApiResource,
   simulateFixtureCase,
@@ -16,12 +17,14 @@ import {
 import {
   buildApiResourceSaveCommand,
   formDraftFromOpenApiOperation,
+  formDraftFromLegacyPreview,
   formDraftFromSpec,
   type ApiResourceFormDraft,
   type ApiConnectionView,
   type FixtureSetSummary,
   type LegacyAssetMigrationInventory,
   type LegacyAssetMigrationItem,
+  type LegacyApiResourceReauthorPreview,
   type OpenApiPreview,
   type SimulationRun,
 } from './model';
@@ -50,6 +53,7 @@ export default function AuthoringWorkbench() {
   const createApi = params.get('create') === 'api';
   const createFlow = params.get('create') === 'flow';
   const legacyInventory = params.get('legacy') === 'inventory';
+  const legacyResourceId = params.get('legacyResourceId')?.trim() || '';
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
   if (requestedFixtureSetId) {
@@ -64,7 +68,8 @@ export default function AuthoringWorkbench() {
   if (!requestedResourceId && !createApi) {
     return <AuthoringHome />;
   }
-  return <ApiResourceObjectPage initialResourceId={requestedResourceId} t={t} />;
+  return <ApiResourceObjectPage initialResourceId={requestedResourceId}
+    initialLegacyResourceId={legacyResourceId} t={t} />;
 }
 
 function AuthoringHome() {
@@ -184,8 +189,9 @@ function actionLabel(kind: LegacyAssetMigrationItem['action']['kind']): string {
   return 'Open';
 }
 
-function ApiResourceObjectPage({ initialResourceId, t }: {
+function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }: {
   initialResourceId: string;
+  initialLegacyResourceId: string;
   t: (source: string) => string;
 }) {
   const [draft, setDraft] = useState<ApiResourceFormDraft>({
@@ -197,12 +203,13 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
   const [fixture, setFixture] = useState<FixtureSetSummary | null>(null);
   const [run, setRun] = useState<SimulationRun | null>(null);
   const [activeTab, setActiveTab] = useState<ObjectTab>('design');
-  const [busy, setBusy] = useState(initialResourceId.length > 0);
+  const [busy, setBusy] = useState(initialResourceId.length > 0 || initialLegacyResourceId.length > 0);
   const [message, setMessage] = useState('');
   const [openApiDocument, setOpenApiDocument] = useState('');
   const [openApiPreview, setOpenApiPreview] = useState<OpenApiPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [connections, setConnections] = useState<ApiConnectionView[]>([]);
+  const [legacyPreview, setLegacyPreview] = useState<LegacyApiResourceReauthorPreview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,6 +239,22 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
     });
     return () => { cancelled = true; };
   }, [initialResourceId, t]);
+
+  useEffect(() => {
+    if (!initialLegacyResourceId || initialResourceId) return;
+    let cancelled = false;
+    void readLegacyApiResourcePreview(initialLegacyResourceId).then((preview) => {
+      if (cancelled) return;
+      setLegacyPreview(preview);
+      setDraft(formDraftFromLegacyPreview(preview));
+      setMessage(t('Review the legacy operation and choose a Connection before saving.'));
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    }).finally(() => {
+      if (!cancelled) setBusy(false);
+    });
+    return () => { cancelled = true; };
+  }, [initialLegacyResourceId, initialResourceId, t]);
 
   const saveAndSimulate = async (event: FormEvent) => {
     event.preventDefault();
@@ -327,6 +350,15 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
 
       {activeTab === 'design' && (
         <form className="api-resource-design" onSubmit={saveAndSimulate}>
+          {legacyPreview && (
+            <section className="legacy-reauthor-preview" data-testid="legacy-reauthor-preview">
+              <h2>{t('Legacy Resource review')}</h2>
+              <p>{t('Nothing has been migrated. Review this safe projection, choose a Connection, then save.')}</p>
+              <ul>{legacyPreview.diagnostics.map((diagnostic) => (
+                <li key={diagnostic.code}><strong>{diagnostic.code}</strong> · {t(diagnostic.message)}</li>
+              ))}</ul>
+            </section>
+          )}
           <section className="openapi-import" data-testid="openapi-import">
             <h2>{t('Import')} OpenAPI</h2>
             <Field label="OpenAPI">

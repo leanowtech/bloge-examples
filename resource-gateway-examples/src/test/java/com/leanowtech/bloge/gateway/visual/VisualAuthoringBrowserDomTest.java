@@ -1226,6 +1226,9 @@ class VisualAuthoringBrowserDomTest {
     private InMemoryStandaloneFixtureSetStore browserStandaloneFixtureSetStore;
 
     @Autowired
+    private InMemoryApiResourceCommitStore browserApiResourceCommitStore;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @LocalServerPort
@@ -1387,6 +1390,47 @@ class VisualAuthoringBrowserDomTest {
         assertThat(inventory.findElements(By.cssSelector(".legacy-inventory-list li"))).isNotEmpty();
         assertThat(inventory.getText()).containsAnyOf("READY_TO_REAUTHOR", "NEEDS_REPAIR", "LEGACY_ONLY")
                 .doesNotContain("urlTemplate", "defaultHeaders", "fixturePayload", "https://");
+    }
+
+    /** Re-authors one safe legacy Resource only after visible review and a fresh Connection choice. */
+    @Test
+    @Timeout(60)
+    void simpleWorkbenchReauthorsLegacyResourceThroughVisibleReview() {
+        assumeAuthoringWorkbenchBundlePresent();
+        driver = newChromeDriverOrSkip();
+        driver.manage().window().setSize(new Dimension(1280, 900));
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+
+        driver.get("http://localhost:" + port + "/workbench/?legacy=inventory");
+        WebElement item = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='legacy-item:API_RESOURCE:user-service.getProfile']")));
+        assertThat(item.getText()).contains("READY_TO_REAUTHOR", "CONNECTION_SELECTION_REQUIRED");
+        item.findElement(By.tagName("a")).click();
+
+        WebElement review = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-reauthor-preview']")));
+        assertThat(review.getText()).contains("Nothing has been migrated", "Choose a committed Connection")
+                .doesNotContain("demo-upstream", "defaultHeaders", "authStrategy");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-resource-id']"))
+                .getAttribute("value")).isEqualTo("user-service.getProfile");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-path']"))
+                .getAttribute("value")).isEqualTo("/demo-upstream/api/users/{userId}/profile");
+        WebElement connection = driver.findElement(By.cssSelector("[data-testid='api-connection-id']"));
+        assertThat(connection.getAttribute("value")).isEmpty();
+
+        wait.until(ExpectedConditions.textToBePresentInElement(connection, "CRM"));
+        new Select(connection).selectByValue("crm");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='save-and-simulate']"))).click();
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='object-message']"),
+                "Resource and Default Fixture saved; simulation completed"));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simulation-output']"))).getText()).contains("userId", "name");
+
+        assertThat(browserApiResourceCommitStore.findHead(
+                new AuthoringScope("tenant-a", "local", "test"), "user-service.getProfile")
+                .orElseThrow().resource().connectionId()).isEqualTo("crm");
     }
 
     /**

@@ -6,6 +6,7 @@ import {
   previewOpenApi,
   readApiResource,
   readLegacyAssetMigrationInventory,
+  readLegacyApiResourcePreview,
   saveApiResource,
   simulateFixtureCase,
 } from './api';
@@ -32,6 +33,22 @@ describe('simple authoring transport', () => {
     expect(transport.mock.calls[0][0]).toBe('/api/authoring/migrations/legacy-assets');
     expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Purpose'))
       .toBe('API_RESOURCE_AUTHORING');
+  });
+  it('reads one transport-redacted legacy Resource preview without save authority headers', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.legacyApiResourceReauthorPreview.v1',
+      source: { kind: 'API_RESOURCE', resourceId: 'customer.get', sourceRevision: 0 },
+      suggestedResource: {}, diagnostics: [],
+    }));
+
+    await readLegacyApiResourcePreview('customer.get', transport);
+
+    expect(transport.mock.calls[0][0]).toBe(
+      '/api/authoring/migrations/legacy-assets/resources/customer.get:preview');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('API_RESOURCE_AUTHORING');
+    expect(headers.get('Idempotency-Key')).toBeNull();
+    expect(headers.get('If-Match')).toBeNull();
   });
   it('previews inline OpenAPI under the authoring purpose without save headers', async () => {
     const transport = vi.fn().mockResolvedValue(response({

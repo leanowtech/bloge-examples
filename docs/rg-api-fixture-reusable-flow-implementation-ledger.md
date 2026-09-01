@@ -2315,3 +2315,62 @@ BUILD SUCCESS; Total time: 11:43 min
 并保存新权威；高级 Graph edge 继续由 Legacy Author 承载；Fixture value 与 governed material 不会从旧资产复制。
 尚未实现逐项 re-author command、迁移覆盖率 receipt 或批量 mutation/replay，因此不能把清单计数当迁移完成率。
 外部 Vault/provider 与真实 PostgreSQL migration/concurrency 仍是部署环境证据，不能由本地 H2 或浏览器清单代替。
+
+## 51. Iteration 50 — Descriptor + Contract 显式重创闭环
+
+日期：2026-09-01。
+
+### 已完成
+
+- 为 `READY_TO_REAUTHOR` Resource 增加只读预览协议
+  `bloge.legacyApiResourceReauthorPreview.v1` 与端点
+  `GET /api/authoring/migrations/legacy-assets/resources/{resourceId}:preview`。预览只投影相对 path、可证明的
+  request bindings、response success/output path、简化 schema 与生成 example。
+- host、default headers、auth、credential、旧 Fixture value、governed material reference 均不进入 wire；打开预览
+  不执行写入。非 GET、unsafe path、ambiguous/unsupported mapping 或不可证明 contract 一律 `NEEDS_REPAIR`。
+- Existing assets 的 READY 动作进入默认对象工作台并加载预填 API 表单。Connection 有意保持为空，作者必须可见地
+  选择一个已提交 Connection，随后复用既有 save-and-simulate：保存新 Resource、创建 Default Fixture、用该 Fixture
+  完成模拟。真实浏览器只在动作完成后读取服务端权威，确认新 Resource 使用作者选择的 `crm` Connection。
+- 迁移预览在 durable Resource 写入关闭时仍可读取；独立 scoped problem handler 保持认证、no-store、401 challenge
+  与 payload-free 404/422 错误，不依赖写路径的条件装配。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=LegacyAssetMigrationModuleTest,LegacyAssetMigrationControllerTest,\
+LegacyAssetMigrationConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 28; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/model.test.ts \
+  src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 3 passed; Tests: 19 passed
+npm run check:i18n: 39/39
+npx tsc --noEmit: PASS
+
+npm run build
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 193.66 KiB / 12 files
+AuthorCanvas startup closure: 349.98 KiB / 22 files
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchReauthorsLegacyResourceThroughVisibleReview test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,247; Failures: 0; Errors: 0; Skipped: 38
+BUILD SUCCESS; Total time: 11:48 min
+```
+
+### 当前差距评估
+
+本轮关闭了 Resource Descriptor + Design Contract 的逐项、显式、安全重创路径，不提供批量自动迁移。Graph Draft /
+Publication 仍需逐项投影到 Tool/Flow，Fixture reference 仍需显式重建且不得复制旧 payload 或 protected material。
+真实 PostgreSQL migration/concurrency、Remote OpenAPI egress 与外部 Vault/provider 认证继续属于部署环境证据。

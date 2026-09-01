@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildApiResourceSaveCommand,
+  formDraftFromLegacyPreview,
   formDraftFromOpenApiOperation,
   formDraftFromSpec,
   type ApiResourceSpec,
   type OpenApiPreview,
+  type LegacyApiResourceReauthorPreview,
 } from './model';
 
 describe('simple API Resource authoring model', () => {
@@ -124,6 +126,44 @@ describe('simple API Resource authoring model', () => {
     expect(buildApiResourceSaveCommand(draft)).toMatchObject({
       resource: { operation: { bindings: suggested.operation.bindings } },
       defaultFixture: { exampleNames: ['openapi-example'] },
+    });
+  });
+
+  it('applies a legacy preview while requiring a fresh visible Connection choice', () => {
+    const base = buildApiResourceSaveCommand({
+      resourceId: 'customer.get', displayName: 'Customer', connectionId: 'old-connection', method: 'GET',
+      path: '/customers/{customerId}', requestExample: '{"customerId":"c-1"}',
+      responseExample: '{"name":"Ada"}', importedResource: null,
+    });
+    const preview = {
+      schemaVersion: 'bloge.legacyApiResourceReauthorPreview.v1',
+      source: { kind: 'API_RESOURCE', resourceId: 'customer.get', sourceRevision: 0 },
+      suggestedResource: {
+        ...base.resource,
+        operation: { ...base.resource.operation, bindings: [{
+          from: '$.customerId', to: { location: 'PATH' as const, name: 'customerId' },
+        }] },
+        response: { success: { kind: 'BODY_MATCH' as const, path: '$.code', values: [0] },
+          outputPath: '$.data' },
+        examples: [{ name: 'legacy-example', input: { customerId: 'c-1' }, output: { name: 'Ada' } }],
+      },
+      diagnostics: [{ code: 'CONNECTION_SELECTION_REQUIRED', message: 'Choose a committed Connection.' }],
+    } satisfies LegacyApiResourceReauthorPreview;
+
+    const draft = formDraftFromLegacyPreview(preview);
+
+    expect(draft).toMatchObject({
+      resourceId: 'customer.get', displayName: 'Customer', connectionId: '', method: 'GET',
+      path: '/customers/{customerId}', importedResource: preview.suggestedResource,
+    });
+    expect(() => buildApiResourceSaveCommand(draft)).toThrow('Connection ID must be a simple identifier.');
+    expect(buildApiResourceSaveCommand({ ...draft, connectionId: 'crm' })).toMatchObject({
+      connection: { mode: 'EXISTING', connectionId: 'crm' },
+      resource: {
+        operation: { bindings: preview.suggestedResource.operation.bindings },
+        response: preview.suggestedResource.response,
+      },
+      defaultFixture: { exampleNames: ['legacy-example'] },
     });
   });
 });
