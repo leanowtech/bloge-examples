@@ -6,13 +6,14 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import java.util.List;
 
 /** Single canonical fingerprint authority for immutable Fixture Set content. */
-final class FixtureSetFingerprints {
+public final class FixtureSetFingerprints {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private FixtureSetFingerprints() { }
 
-    static String of(String displayName, FixtureSubjectRef subject,
-                     List<FixtureSetCommand.Case> cases) {
+    /** Returns the canonical fingerprint of immutable Fixture Set content. */
+    public static String of(String displayName, FixtureSubjectRef subject,
+                            List<FixtureSetCommand.Case> cases) {
         FixtureSetCommand authority = new FixtureSetCommand(
                 FixtureSetCommand.SCHEMA_VERSION, displayName, subject, cases);
         return AuthoringFingerprints.of(JSON.valueToTree(authority));

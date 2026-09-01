@@ -6,7 +6,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Closed result of materializing one Resource revision's selected examples. */
+/** Closed materialized Fixture revision shared by Resource defaults and standalone authorities. */
 public record GeneratedDefaultFixture(FixtureSetView view, FixtureSetSaveReceipt receipt,
                                       FixtureSetSummary summary, List<CaseMapping> caseMappings) {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -19,8 +19,8 @@ public record GeneratedDefaultFixture(FixtureSetView view, FixtureSetSaveReceipt
                 || !FixtureSetSaveReceipt.SCHEMA_VERSION.equals(receipt.schemaVersion())
                 || !FixtureSetSummary.SCHEMA_VERSION.equals(summary.schemaVersion())
                 || !identifier(view.fixtureSetId()) || !fingerprint(view.fingerprint())
-                || view.revision() < 1 || view.statusRevision() != 1
-                || view.status() != FixtureSetView.Status.PRIVATE_DRAFT || view.cases().isEmpty()
+                || view.revision() < 1 || view.statusRevision() < 1
+                || view.status() == null || view.cases().isEmpty()
                 || !view.fixtureSetId().equals(receipt.fixtureSetId())
                 || view.revision() != receipt.revision()
                 || !view.fingerprint().equals(receipt.fingerprint())

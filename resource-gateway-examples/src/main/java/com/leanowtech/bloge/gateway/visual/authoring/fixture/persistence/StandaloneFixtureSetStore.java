@@ -9,6 +9,10 @@ public interface StandaloneFixtureSetStore extends FixtureSetAuthorityReader {
     /** Saves one validated materialization or returns its exact committed replay. */
     StandaloneFixtureSetSaveResult save(StandaloneFixtureSetSaveIntent intent);
 
+    /** Derives one governed revision after replay and exact source CAS are closed. */
+    StandaloneFixtureSetShareResult share(
+            StandaloneFixtureSetShareIntent intent, FixtureSetShareDeriver deriver);
+
     /** Resolves one exact committed historical revision by opaque strong validator. */
     Optional<StoredStandaloneFixtureSet> findRevisionByStrongEtag(
             AuthoringScope scope, String fixtureSetId, String strongEtag);

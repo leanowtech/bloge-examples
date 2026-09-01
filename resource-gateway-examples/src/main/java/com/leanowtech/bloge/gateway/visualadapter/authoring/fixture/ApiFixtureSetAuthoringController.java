@@ -7,14 +7,18 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringRead;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureShareIdentity;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetStrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetShareResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.List;
 import java.util.Objects;
@@ -104,6 +109,27 @@ public final class ApiFixtureSetAuthoringController {
                 .body(result.receipt());
     }
 
+    /** Derives protected material and submits one immutable Fixture revision for review. */
+    @PostMapping(path = "/{fixtureSetId}:share", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<FixtureShareReceipt> share(
+            @PathVariable String fixtureSetId,
+            @RequestHeader HttpHeaders headers,
+            @RequestBody FixtureShareCommand command,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_FIXTURE_SET_SHARE, request);
+        StandaloneFixtureSetShareResult result = facade.share(
+                shareIdentity(context), fixtureSetId,
+                sharePrecondition(headers, context.correlationId()),
+                idempotencyKey(headers, context.correlationId()), command);
+        return ResponseEntity.accepted().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header(HttpHeaders.ETAG, result.strongEtag())
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                .body(result.receipt());
+    }
+
     private IntegrationRequestContext authenticate(HttpHeaders headers, HttpServletRequest request) {
         return authenticate(headers, IntegrationOperation.AUTHORING_FIXTURE_SET_READ, request);
     }
@@ -123,6 +149,15 @@ public final class ApiFixtureSetAuthoringController {
                 && headers.get(HttpHeaders.IF_MATCH).size() == 1
                 && FixtureSetStrongEtag.isValid(ifMatch)) {
             return FixtureSetPrecondition.match(ifMatch);
+        }
+        throw invalid(correlationId);
+    }
+
+    private static String sharePrecondition(HttpHeaders headers, String correlationId) {
+        List<String> values = headers.get(HttpHeaders.IF_MATCH);
+        if (headers.getFirst(HttpHeaders.IF_NONE_MATCH) == null && values != null && values.size() == 1
+                && FixtureSetStrongEtag.isValid(values.getFirst())) {
+            return values.getFirst();
         }
         throw invalid(correlationId);
     }
@@ -163,6 +198,16 @@ public final class ApiFixtureSetAuthoringController {
     private static AuthoringScope trustedScope(IntegrationRequestContext context) {
         try {
             return new AuthoringScope(context.tenantId(), context.projectId(), context.environmentId());
+        } catch (IllegalArgumentException failure) {
+            throw invalid(context.correlationId());
+        }
+    }
+
+    private static FixtureShareIdentity shareIdentity(IntegrationRequestContext context) {
+        try {
+            return new FixtureShareIdentity(trustedScope(context), context.organizationId(),
+                    context.region(), context.actorType(), context.actorId(), context.clearance(),
+                    context.correlationId());
         } catch (IllegalArgumentException failure) {
             throw invalid(context.correlationId());
         }

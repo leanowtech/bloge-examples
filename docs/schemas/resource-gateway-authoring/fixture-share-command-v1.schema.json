@@ -19,12 +19,17 @@
       "type": "object",
       "properties": {
         "classification": { "enum": ["INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
-        "retentionDays": { "type": "integer", "minimum": 1 },
+        "retentionDays": { "type": "integer", "minimum": 1, "maximum": 365 },
         "redaction": {
           "type": "object",
           "properties": {
             "profileVersion": { "$ref": "common-v1.schema.json#/$defs/identifier" },
-            "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            "paths": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 2, "maxLength": 512, "pattern": "^/.+" }
+            }
           },
           "required": ["profileVersion", "paths"],
           "additionalProperties": false

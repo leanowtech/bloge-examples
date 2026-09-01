@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixt
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
@@ -19,6 +21,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetShareResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
 import org.junit.jupiter.api.Test;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -233,10 +237,82 @@ class ApiFixtureSetAuthoringControllerTest {
         verify(facade, never()).save(any(), any(), any(), any(), any(), any());
     }
 
+    @Test
+    void sharesOneExactPrivateRevisionUnderDedicatedMaterialPurpose() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        FixtureShareCommand command = shareCommand();
+        FixtureSetView pending = pendingView();
+        FixtureShareReceipt receipt = new FixtureShareReceipt(FixtureShareReceipt.SCHEMA_VERSION,
+                pending.fixtureSetId(), 1, pending.revision(), pending.fingerprint(),
+                pending.status(), pending.statusRevision(), "review-customer-2");
+        when(facade.share(any(), any(), any(), any(), any())).thenReturn(
+                new StandaloneFixtureSetShareResult(pending, receipt, "\"fixture-share-etag\"", false));
+
+        mvc(facade).perform(post("/api/authoring/fixture-sets/customer.get:r1:share")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(command))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "CORRECTNESS_FIXTURE_MATERIAL_WRITE")
+                        .header("If-Match", "\"fixture-source-etag\"")
+                        .header("Idempotency-Key", "share-customer-fixture"))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("ETag", "\"fixture-share-etag\""))
+                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andExpect(jsonPath("$.schemaVersion").value(FixtureShareReceipt.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.status").value("SHARING_PENDING"))
+                .andExpect(jsonPath("$.reviewRequestId").value("review-customer-2"))
+                .andExpect(jsonPath("$.cases").doesNotExist());
+
+        ArgumentCaptor<com.leanowtech.bloge.gateway.visual.authoring.application.fixture
+                .FixtureShareIdentity> identity = ArgumentCaptor.forClass(
+                        com.leanowtech.bloge.gateway.visual.authoring.application.fixture
+                                .FixtureShareIdentity.class);
+        verify(facade).share(identity.capture(), eq("customer.get:r1"),
+                eq("\"fixture-source-etag\""), eq("share-customer-fixture"), eq(command));
+        assertThat(identity.getValue().scope().tenantId()).isEqualTo("tenant-a");
+        assertThat(identity.getValue().scope().projectId()).isEqualTo("project-a");
+        assertThat(identity.getValue().actorId()).isEqualTo("author");
+    }
+
+    @Test
+    void shareRejectsWeakPreconditionBeforeFacadeAccess() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+
+        mvc(facade).perform(post("/api/authoring/fixture-sets/customer.get:r1:share")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(shareCommand()))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "CORRECTNESS_FIXTURE_MATERIAL_WRITE")
+                        .header("If-Match", "W/\"weak\"")
+                        .header("Idempotency-Key", "share-customer-fixture"))
+                .andExpect(status().isBadRequest());
+
+        verify(facade, never()).share(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void ordinaryAuthoringPurposeCannotShareProtectedMaterial() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+
+        mvc(facade).perform(post("/api/authoring/fixture-sets/customer.get:r1:share")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(shareCommand()))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-Match", "\"fixture-source-etag\"")
+                        .header("Idempotency-Key", "share-customer-fixture"))
+                .andExpect(status().isForbidden());
+
+        verify(facade, never()).share(any(), any(), any(), any(), any());
+    }
+
     private static MockMvc mvc(ApiFixtureSetAuthoringFacade facade) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "authoring-client", "tenant-a", "org-a", "project-a", "test", "local",
-                "WORKLOAD", "author", "", Set.of("API_RESOURCE_AUTHORING"), Instant.MAX, true,
+                "WORKLOAD", "author", "", Set.of(
+                        "API_RESOURCE_AUTHORING", "CORRECTNESS_FIXTURE_MATERIAL_WRITE"),
+                Instant.MAX, true,
                 Set.of("authors"), "INTERNAL", "", Instant.MAX);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("author-token", identity, false),
@@ -253,6 +329,21 @@ class ApiFixtureSetAuthoringControllerTest {
                         "happy", "Happy", new ObjectMapper().createObjectNode()
                         .put("customerId", "customer-1"), List.of(), null)),
                 FixtureSetView.Status.PRIVATE_DRAFT);
+    }
+
+    private static FixtureSetView pendingView() {
+        FixtureSetView source = view();
+        return new FixtureSetView(source.schemaVersion(), source.fixtureSetId(), 2,
+                "sha256:" + "c".repeat(64), 2, source.displayName(), source.subject(),
+                source.cases(), FixtureSetView.Status.SHARING_PENDING);
+    }
+
+    private static FixtureShareCommand shareCommand() {
+        return new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
+                new FixtureShareCommand.Source("customer.get:r1", 1,
+                        "sha256:" + "b".repeat(64), 1),
+                new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
+                        new FixtureShareCommand.Redaction("default-v1", List.of("/customer/email"))));
     }
 
     private static FixtureSetSummary summary() {

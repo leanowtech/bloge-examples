@@ -8,7 +8,8 @@ import * as flowApi from './flowApi';
 
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
-  readFixtureSet: vi.fn(), saveFixtureSet: vi.fn(), simulateFixtureSetCase: vi.fn(),
+  readFixtureSet: vi.fn(), saveFixtureSet: vi.fn(), shareFixtureSet: vi.fn(),
+  simulateFixtureSetCase: vi.fn(),
 }));
 
 describe('Fixture object page', () => {
@@ -122,10 +123,91 @@ describe('Fixture object page', () => {
     );
   });
 
+  it('visibly submits a protected revision and keeps pending material non-runnable', async () => {
+    const subject = { kind: 'FLOW_VERSION' as const, publicationId: 'flow-overview', revision: 1,
+      fingerprint: hash('a') };
+    const privateView = {
+      schemaVersion: 'bloge.fixtureSet.v1' as const, fixtureSetId: 'overview.default', revision: 1,
+      fingerprint: hash('b'), statusRevision: 1, displayName: 'Overview default', subject,
+      cases: [{
+        caseId: 'default', name: 'Default', input: { customerId: 'c-1' },
+        controls: [{ target: { kind: 'SUBJECT' as const }, behavior: {
+          kind: 'RETURN' as const, material: { kind: 'INLINE' as const, value: { result: 'private' } },
+        } }],
+        expect: { output: { result: 'private' } },
+      }],
+      status: 'PRIVATE_DRAFT' as const,
+    };
+    const pendingView = {
+      ...privateView, revision: 2, fingerprint: hash('c'), statusRevision: 2,
+      status: 'SHARING_PENDING' as const,
+      cases: [{ ...privateView.cases[0], controls: [{
+        target: { kind: 'SUBJECT' as const }, behavior: {
+          kind: 'RETURN' as const, material: {
+            kind: 'FIXTURE_ASSET' as const, fixtureAssetId: 'overview-default-default',
+            revision: 2, schemaFingerprint: hash('d'),
+          },
+        },
+      }] }],
+    };
+    vi.mocked(flowApi.readFixtureSet)
+      .mockResolvedValueOnce({ value: privateView, strongEtag: '"fixture-r1"', replayed: false })
+      .mockResolvedValueOnce({ value: pendingView, strongEtag: '"fixture-r2"', replayed: false });
+    vi.mocked(flowApi.shareFixtureSet).mockResolvedValue({
+      strongEtag: '"fixture-r2"', replayed: false,
+      value: {
+        schemaVersion: 'bloge.fixtureShareReceipt.v1', fixtureSetId: 'overview.default',
+        derivedFromRevision: 1, revision: 2, fingerprint: hash('c'), status: 'SHARING_PENDING',
+        statusRevision: 2, reviewRequestId: 'review-overview-r2',
+      },
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve(); await Promise.resolve();
+    });
+    expect(element('fixture-share-panel').textContent).toContain('Share with team');
+    await act(async () => setControl('fixture-share-classification', 'CONFIDENTIAL'));
+    await act(async () => setControl('fixture-share-retention', '45'));
+    await act(async () => setControl('fixture-share-redaction-paths', '/customer/email\n/token'));
+    await act(async () => {
+      button('share-fixture-object').click();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(flowApi.shareFixtureSet).toHaveBeenCalledWith(
+      'overview.default', {
+        schemaVersion: 'bloge.fixtureShareCommand.v1',
+        source: {
+          fixtureSetId: 'overview.default', revision: 1,
+          fingerprint: hash('b'), statusRevision: 1,
+        },
+        policy: {
+          classification: 'CONFIDENTIAL', retentionDays: 45,
+          redaction: { profileVersion: 'default-v1', paths: ['/customer/email', '/token'] },
+        },
+      }, '"fixture-r1"', expect.stringMatching(/^share-fixture:overview.default-1:/),
+    );
+    expect(flowApi.readFixtureSet).toHaveBeenLastCalledWith('overview.default', 2);
+    expect(element('fixture-status').textContent).toContain('SHARING_PENDING');
+    expect(element('fixture-sharing-pending').textContent).toContain('cannot run or be reused');
+    expect(button('run-fixture-case').disabled).toBe(true);
+    expect(host.querySelector('[data-testid="fixture-share-panel"]')).toBeNull();
+    expect(element('fixture-message').textContent).toContain('review-overview-r2');
+    expect(flowApi.simulateFixtureSetCase).not.toHaveBeenCalled();
+  });
+
   function change(testId: string, value: string) {
     const input = element<HTMLTextAreaElement>(testId);
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function setControl(testId: string, value: string) {
+    const control = element<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(testId);
+    const prototype = control instanceof HTMLSelectElement ? HTMLSelectElement.prototype
+      : control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(control, value);
+    control.dispatchEvent(new Event(control instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
   }
   function button(testId: string): HTMLButtonElement { return element(testId); }
   function element<T extends Element = HTMLElement>(testId: string): T {

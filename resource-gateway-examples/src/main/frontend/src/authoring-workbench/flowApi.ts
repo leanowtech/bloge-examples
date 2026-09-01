@@ -3,6 +3,8 @@ import type { FixtureSetSummary, SimulationRun } from './model';
 import type {
   FixtureSetCommand,
   FixtureSetSaveReceipt,
+  FixtureShareCommand,
+  FixtureShareReceipt,
   FixtureSetView,
   FlowDraftRef,
   ReusableFlowCommand,
@@ -127,6 +129,23 @@ export async function saveFixtureSet(
   transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<StoredResponse<FixtureSetSaveReceipt>> {
   return saveFlowFixture(fixtureSetId, command, strongEtag, idempotencyKey, transport);
+}
+
+/** Derives protected material and submits one exact private Fixture revision for review. */
+export async function shareFixtureSet(
+  fixtureSetId: string, command: FixtureShareCommand, strongEtag: string, idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<FixtureShareReceipt>> {
+  return storedResponse(await transport(
+    `/api/authoring/fixture-sets/${encodeURIComponent(fixtureSetId)}:share`,
+    {
+      method: 'POST',
+      headers: integrationRequestHeaders('CORRECTNESS_FIXTURE_MATERIAL_WRITE', {
+        'Content-Type': 'application/json', 'If-Match': strongEtag, 'Idempotency-Key': idempotencyKey,
+      }),
+      body: JSON.stringify(command),
+    },
+  ), true);
 }
 
 /** Runs one exact Case from an independently addressed Fixture object. */

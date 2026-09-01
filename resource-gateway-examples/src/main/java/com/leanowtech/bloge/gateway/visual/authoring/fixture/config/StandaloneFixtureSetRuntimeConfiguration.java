@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
@@ -13,13 +15,14 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Opt-in V016 assembly for standalone whole-flow Fixture Set authoring. */
+/** Opt-in V016-V017 assembly for standalone Fixture authoring and governed sharing. */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "gateway.authoring.reusable-flow", name = "enabled", havingValue = "true")
 public class StandaloneFixtureSetRuntimeConfiguration {
@@ -59,5 +62,15 @@ public class StandaloneFixtureSetRuntimeConfiguration {
             StandaloneFixtureSetStore store,
             WholeFlowFixtureMaterializer materializer, ParentFlowApplyCaseCompiler parentCompiler) {
         return new ReusableFlowFixtureModule(publications, drafts, store, materializer, parentCompiler);
+    }
+
+    /** Creates share orchestration even when the governed writer is intentionally unavailable. */
+    @Bean
+    @ConditionalOnMissingBean
+    ReusableFlowFixtureShareModule reusableFlowFixtureShareModule(
+            StandaloneFixtureSetStore store, ReusableFlowPublicationStore publications,
+            ObjectProvider<FixtureSetShareMaterialWriter> materialWriter) {
+        return new ReusableFlowFixtureShareModule(store, publications,
+                materialWriter.getIfAvailable(FixtureSetShareMaterialWriter::unavailable));
     }
 }

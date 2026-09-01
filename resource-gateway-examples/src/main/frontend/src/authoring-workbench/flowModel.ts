@@ -80,8 +80,10 @@ export interface FixtureSetView {
   displayName: string;
   subject: FixtureSubjectRef;
   cases: FixtureSetCommand['cases'];
-  status: string;
+  status: FixtureSetStatus;
 }
+
+export type FixtureSetStatus = 'PRIVATE_DRAFT' | 'SHARING_PENDING' | 'TEAM_AVAILABLE' | 'STALE' | 'REVOKED';
 
 export interface ReusableFlowSaveReceipt {
   schemaVersion: 'bloge.reusableFlowSaveReceipt.v1';
@@ -106,12 +108,25 @@ export interface FixtureSetCommand {
     name: string;
     input: JsonObject;
     controls: Array<{
-      target: { kind: 'SUBJECT' };
-      behavior: { kind: 'RETURN'; material: { kind: 'INLINE'; value: JsonObject } };
+      target: { kind: 'SUBJECT' } | { kind: 'NODE'; nodeId: string };
+      behavior: FixtureBehavior;
+      fidelity?: 'OUTPUT_LEVEL' | 'PROTOCOL_DERIVED' | 'TRANSPORT_LEVEL';
     }>;
-    expect: { output: JsonObject };
+    expect?: { output: JsonObject };
   }>;
 }
+
+export type FixtureMaterial =
+  | { kind: 'INLINE'; value: JsonObject }
+  | { kind: 'FIXTURE_ASSET'; fixtureAssetId: string; revision: number; schemaFingerprint: string };
+
+export type FixtureBehavior =
+  | { kind: 'REAL' }
+  | { kind: 'RETURN'; material: FixtureMaterial }
+  | { kind: 'APPLY_CASE'; fixtureSetId: string; revision: number; caseId: string }
+  | { kind: 'ERROR'; code: string; message: string }
+  | { kind: 'TIMEOUT'; afterMs: number }
+  | { kind: 'REPLAY'; replayId: string; fingerprint: string };
 
 export interface FixtureSetSaveReceipt {
   schemaVersion: 'bloge.fixtureSetSaveReceipt.v1';
@@ -120,8 +135,34 @@ export interface FixtureSetSaveReceipt {
   fingerprint: string;
   subject: FixtureSubjectRef;
   caseIds: string[];
-  status: string;
+  status: FixtureSetStatus;
   statusRevision: number;
+}
+
+export interface FixtureShareCommand {
+  schemaVersion: 'bloge.fixtureShareCommand.v1';
+  source: {
+    fixtureSetId: string;
+    revision: number;
+    fingerprint: string;
+    statusRevision: number;
+  };
+  policy: {
+    classification: 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+    retentionDays: number;
+    redaction: { profileVersion: string; paths: string[] };
+  };
+}
+
+export interface FixtureShareReceipt {
+  schemaVersion: 'bloge.fixtureShareReceipt.v1';
+  fixtureSetId: string;
+  derivedFromRevision: number;
+  revision: number;
+  fingerprint: string;
+  status: 'SHARING_PENDING';
+  statusRevision: number;
+  reviewRequestId: string;
 }
 
 /** Builds an exact API-only reusable DAG and derives edges solely from input mappings. */

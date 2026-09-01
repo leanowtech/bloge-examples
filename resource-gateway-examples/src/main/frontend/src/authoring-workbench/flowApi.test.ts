@@ -6,11 +6,12 @@ import {
   readFixtureSet,
   readFlow,
   saveFixtureSet,
+  shareFixtureSet,
   saveFlow,
   saveFlowFixture,
   simulateFixtureSetCase,
 } from './flowApi';
-import type { FixtureSetCommand, ReusableFlowCommand } from './flowModel';
+import type { FixtureSetCommand, FixtureShareCommand, ReusableFlowCommand } from './flowModel';
 
 describe('reusable Flow object transport', () => {
   it('reads and saves one Flow under authenticated strong-CAS transport', async () => {
@@ -77,6 +78,34 @@ describe('reusable Flow object transport', () => {
       strongEtag: null,
       value: { subject: { kind: 'API_RESOURCE' } },
     });
+  });
+
+  it('submits one exact private Fixture revision under the protected-material purpose', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.fixtureShareReceipt.v1', fixtureSetId: 'overview.default',
+      derivedFromRevision: 1, revision: 2, fingerprint: hash('c'),
+      status: 'SHARING_PENDING', statusRevision: 2, reviewRequestId: 'review-overview-r2',
+    }, { ETag: '"fixture-r2"', 'Idempotency-Replayed': 'false' }, 202));
+    const command: FixtureShareCommand = {
+      schemaVersion: 'bloge.fixtureShareCommand.v1',
+      source: {
+        fixtureSetId: 'overview.default', revision: 1,
+        fingerprint: hash('b'), statusRevision: 1,
+      },
+      policy: {
+        classification: 'CONFIDENTIAL', retentionDays: 30,
+        redaction: { profileVersion: 'default-v1', paths: ['/email'] },
+      },
+    };
+
+    await shareFixtureSet('overview.default', command, '"fixture-r1"', 'share-fixture-1', transport);
+
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/fixture-sets/overview.default:share');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('CORRECTNESS_FIXTURE_MATERIAL_WRITE');
+    expect(headers.get('If-Match')).toBe('"fixture-r1"');
+    expect(headers.get('Idempotency-Key')).toBe('share-fixture-1');
+    expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toEqual(command);
   });
 });
 

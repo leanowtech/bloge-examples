@@ -58,7 +58,9 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
@@ -67,6 +69,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowDr
 import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishIntent;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveIntent;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
@@ -83,6 +86,7 @@ import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegist
 import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetShareMaterialWriter;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.OpenApiPreviewController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
@@ -352,12 +356,33 @@ class VisualAuthoringBrowserDomTest {
                     publications, drafts, fixtures, new WholeFlowFixtureMaterializer(), null);
         }
 
+        /** Uses production protected-material and catalog services for visible Fixture sharing. */
+        @Bean
+        @Primary
+        FixtureSetShareMaterialWriter browserFixtureSetShareMaterialWriter(
+                FixtureMaterialService materials,
+                FixtureCatalogService catalog,
+                ObjectMapper mapper) {
+            return new CorrectnessFixtureSetShareMaterialWriter(
+                    materials, catalog, mapper, Clock.systemUTC());
+        }
+
+        /** Uses the production share orchestrator over the browser's exact in-memory authorities. */
+        @Bean
+        ReusableFlowFixtureShareModule browserReusableFlowFixtureShareModule(
+                InMemoryStandaloneFixtureSetStore fixtures,
+                InMemoryReusableFlowPublicationStore publications,
+                FixtureSetShareMaterialWriter materialWriter) {
+            return new ReusableFlowFixtureShareModule(fixtures, publications, materialWriter);
+        }
+
         /** Exposes the production Fixture application boundary over the shared test authorities. */
         @Bean
         ApiFixtureSetAuthoringFacade browserApiFixtureSetAuthoringFacade(
                 InMemoryStandaloneFixtureSetStore fixtures,
-                ReusableFlowFixtureModule writer) {
-            return new ApiFixtureSetAuthoringFacade(fixtures, writer);
+                ReusableFlowFixtureModule writer,
+                ReusableFlowFixtureShareModule shareModule) {
+            return new ApiFixtureSetAuthoringFacade(fixtures, writer, shareModule);
         }
 
         /** Exposes the production authenticated Fixture transport without enabling JDBC migrations. */
@@ -1052,6 +1077,9 @@ class VisualAuthoringBrowserDomTest {
     private InMemoryReusableFlowDraftStore browserReusableFlowDraftStore;
 
     @Autowired
+    private InMemoryReusableFlowPublicationStore browserReusableFlowPublicationStore;
+
+    @Autowired
     private ReusableFlowFixtureModule browserReusableFlowFixtureModule;
 
     @Autowired
@@ -1201,7 +1229,7 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
-    void fixtureObjectPageVisiblySavesAndSimulatesAnExactFlowDraftFixture() {
+    void fixtureObjectPageVisiblySavesSimulatesAndSubmitsAProtectedRevisionForReview() {
         assumeAuthoringWorkbenchBundlePresent();
         AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
         SchemaEnvelope input = SchemaEnvelope.object(
@@ -1229,8 +1257,13 @@ class VisualAuthoringBrowserDomTest {
                 new ReusableFlowSaveIntent(scope, "browser-author", "browser-fixture-flow",
                         ExpectedRevision.create(), "browser-flow-create", requestFingerprint,
                         requestFingerprint, command));
+        var publishedFlow = browserReusableFlowPublicationStore.publish(
+                new ReusableFlowPublishIntent(scope, "browser-author", "browser-fixture-flow",
+                        "browser-flow-publish", requestFingerprint, requestFingerprint,
+                        savedFlow.draft()));
         FixtureSetCommand fixtureCommand = new FixtureSetCommand(
-                FixtureSetCommand.SCHEMA_VERSION, "Browser Flow Fixture", savedFlow.draft().subject(),
+                FixtureSetCommand.SCHEMA_VERSION, "Browser Flow Fixture",
+                publishedFlow.version().subject(),
                 List.of(new FixtureSetCommand.Case(
                         "approved", "Approved customer",
                         OBJECT_MAPPER.createObjectNode().put("customerId", "customer-1"),
@@ -1280,6 +1313,40 @@ class VisualAuthoringBrowserDomTest {
                 (FixtureSetCommand.Material.Inline) returned.material();
         assertThat(inline.value()).isEqualTo(
                 OBJECT_MAPPER.createObjectNode().put("eligible", false));
+
+        WebElement redaction = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-share-redaction-paths']")));
+        redaction.sendKeys("/eligible");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='share-fixture-object']"))).click();
+
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='fixture-status']"), "SHARING_PENDING"));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-sharing-pending']"))).getText())
+                .contains("cannot run or be reused");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='run-fixture-case']"))
+                .isEnabled()).isFalse();
+        assertThat(driver.findElements(By.cssSelector("[data-testid='fixture-share-panel']")))
+                .isEmpty();
+
+        var pending = browserStandaloneFixtureSetStore.findHead(scope, "browser-flow-fixture")
+                .orElseThrow(() -> new AssertionError("visible Fixture share did not persist a head"));
+        assertThat(pending.generated().view().revision()).isEqualTo(3);
+        assertThat(pending.generated().view().status())
+                .isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.fixture
+                        .FixtureSetView.Status.SHARING_PENDING);
+        FixtureSetCommand.Behavior.Return governed = (FixtureSetCommand.Behavior.Return)
+                pending.generated().view().cases().getFirst().controls().getFirst().behavior();
+        FixtureSetCommand.Material.FixtureAsset asset =
+                (FixtureSetCommand.Material.FixtureAsset) governed.material();
+        StoredFixtureAsset proposed = fixtureAssetRepository
+                .findHead(BROWSER_FIXTURE_SCOPE, asset.fixtureAssetId())
+                .orElseThrow(() -> new AssertionError("protected Fixture asset was not submitted"));
+        assertThat(proposed.descriptor().lifecycle())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureAssetDescriptor.FixtureLifecycle.PROPOSED);
+        assertThat(proposed.descriptor().materialRef()).isNotNull();
 
         driver.manage().window().setSize(new Dimension(390, 844));
         wait.until(ExpectedConditions.visibilityOfElementLocated(

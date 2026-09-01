@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcStandaloneFixtureSetStore;
@@ -35,10 +36,11 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                     () -> mock(ReusableFlowDraftStore.class));
 
     @Test
-    void disabledRuntimeIsAbsentAndEnabledV016CreatesExactModule() {
+    void disabledRuntimeIsAbsentAndEnabledV016V017CreatesExactModules() {
         runner.run(context -> {
             assertThat(context).doesNotHaveBean(StandaloneFixtureSetStore.class);
             assertThat(context).doesNotHaveBean(ReusableFlowFixtureModule.class);
+            assertThat(context).doesNotHaveBean(ReusableFlowFixtureShareModule.class);
         });
 
         DataSource dataSource = source("ready");
@@ -56,6 +58,7 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(WholeFlowFixtureMaterializer.class);
                     assertThat(context).hasSingleBean(ParentFlowApplyCaseCompiler.class);
                     assertThat(context).hasSingleBean(ReusableFlowFixtureModule.class);
+                    assertThat(context).hasSingleBean(ReusableFlowFixtureShareModule.class);
                 });
     }
 
@@ -73,7 +76,8 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
         new ResourceDatabasePopulator(
                 new ClassPathResource("db/postgresql/V20260901_014__reusable_flow_drafts.sql"),
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
-                new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"))
+                new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
+                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"))
                 .execute(source);
     }
 

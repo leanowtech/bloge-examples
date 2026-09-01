@@ -2,6 +2,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetFingerprints;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareMaterialization;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.JdbcReusableFlowDraftStore;
@@ -24,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.command;
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.output;
@@ -95,6 +103,78 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 StandaloneFixtureSetStoreException.Code.INTEGRITY);
     }
 
+    @Test
+    void shareDerivationIsAtomicDurableAndReplaysBeforeProtectedMaterialWrite() {
+        Fixture fixture = fixture("share");
+        GeneratedDefaultFixture source = materialize("cases", 1, fixture.version(), "Cases");
+        StandaloneFixtureSetSaveResult saved = fixture.store().save(intent(
+                ExpectedRevision.create(), "create", source, "sha256:" + "1".repeat(64)));
+        FixtureShareCommand command = new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
+                new FixtureShareCommand.Source("cases", 1, source.view().fingerprint(), 1),
+                new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
+                        new FixtureShareCommand.Redaction("default-v1", List.of("/email"))));
+        StandaloneFixtureSetShareIntent shareIntent = new StandaloneFixtureSetShareIntent(
+                SCOPE, "author", "cases", saved.strongEtag(), "share",
+                "sha256:" + "2".repeat(64), command);
+        AtomicInteger writes = new AtomicInteger();
+
+        StandaloneFixtureSetShareResult shared = fixture.store().share(shareIntent,
+                (stored, revision, statusRevision, reviewRequestId) -> {
+                    writes.incrementAndGet();
+                    return pending(stored.generated(), revision, statusRevision, reviewRequestId);
+                });
+        StandaloneFixtureSetShareResult replay = store(fixture.jdbc()).share(shareIntent,
+                (stored, revision, statusRevision, reviewRequestId) -> {
+                    writes.incrementAndGet();
+                    throw new AssertionError("replay must not repeat protected material writes");
+                });
+
+        assertThat(shared.view().status()).isEqualTo(FixtureSetView.Status.SHARING_PENDING);
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.receipt()).isEqualTo(shared.receipt());
+        assertThat(writes).hasValue(1);
+        assertThat(store(fixture.jdbc()).findRevision(SCOPE, "cases", 1)).get()
+                .extracting(value -> value.generated().view().status())
+                .isEqualTo(FixtureSetView.Status.PRIVATE_DRAFT);
+        assertThat(fixture.jdbc().queryForMap("""
+                SELECT status, source_revision, derived_revision, policy_json
+                  FROM rg_authoring_fixture_review_requests
+                 WHERE review_request_id=?
+                """, shared.receipt().reviewRequestId()))
+                .containsEntry("STATUS", "PENDING")
+                .containsEntry("SOURCE_REVISION", 1L)
+                .containsEntry("DERIVED_REVISION", 2L)
+                .satisfies(row -> assertThat((String) row.get("POLICY_JSON"))
+                        .contains("CONFIDENTIAL").doesNotContain("eligible", "customerId"));
+    }
+
+    @Test
+    void failedDeriverRollsBackReviewAndPendingRevision() {
+        Fixture fixture = fixture("share-rollback");
+        GeneratedDefaultFixture source = materialize("cases", 1, fixture.version(), "Cases");
+        StandaloneFixtureSetSaveResult saved = fixture.store().save(intent(
+                ExpectedRevision.create(), "create", source, "sha256:" + "1".repeat(64)));
+        FixtureShareCommand command = new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
+                new FixtureShareCommand.Source("cases", 1, source.view().fingerprint(), 1),
+                new FixtureShareCommand.Policy("INTERNAL", 30,
+                        new FixtureShareCommand.Redaction("default-v1", List.of())));
+        fixture.jdbc().execute("CREATE TABLE share_callback_probe (id VARCHAR(128) PRIMARY KEY)");
+
+        assertCode(() -> fixture.store().share(new StandaloneFixtureSetShareIntent(
+                        SCOPE, "author", "cases", saved.strongEtag(), "share",
+                        "sha256:" + "2".repeat(64), command),
+                (stored, revision, statusRevision, reviewRequestId) -> {
+                    fixture.jdbc().update(
+                            "INSERT INTO share_callback_probe (id) VALUES (?)", reviewRequestId);
+                    throw new IllegalStateException("injected failure");
+                }), StandaloneFixtureSetStoreException.Code.INTEGRITY);
+
+        assertThat(fixture.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM share_callback_probe", Integer.class)).isZero();
+        assertThat(fixture.store().findHead(SCOPE, "cases")).get()
+                .extracting(value -> value.generated().view().revision()).isEqualTo(1);
+    }
+
     private static Fixture fixture(String name) {
         JdbcDataSource source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:standalone-fixture-" + name
@@ -102,7 +182,8 @@ public class JdbcStandaloneFixtureSetStoreTest {
         new ResourceDatabasePopulator(
                 new ClassPathResource("db/postgresql/V20260901_014__reusable_flow_drafts.sql"),
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
-                new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"))
+                new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
+                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"))
                 .execute(source);
         JdbcTemplate jdbc = new JdbcTemplate(source);
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -138,6 +219,39 @@ public class JdbcStandaloneFixtureSetStoreTest {
         FixtureSetCommand exact = new FixtureSetCommand(
                 FixtureSetCommand.SCHEMA_VERSION, displayName, version.subject(), template.cases());
         return new WholeFlowFixtureMaterializer().generate(id, revision, version, exact);
+    }
+
+    private static FixtureShareMaterialization pending(
+            GeneratedDefaultFixture source, int revision, int statusRevision, String reviewRequestId) {
+        List<FixtureSetCommand.Case> cases = source.view().cases().stream().map(fixtureCase -> {
+            FixtureSetCommand.Control control = fixtureCase.controls().getFirst();
+            return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
+                    fixtureCase.input(), List.of(new FixtureSetCommand.Control(control.target(),
+                    FixtureSetCommand.Behavior.returned(new FixtureSetCommand.Material.FixtureAsset(
+                            "asset-approved", 2, "sha256:" + "a".repeat(64))), control.fidelity())),
+                    fixtureCase.expect());
+        }).toList();
+        String fingerprint = FixtureSetFingerprints.of(
+                source.view().displayName(), source.view().subject(), cases);
+        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, "cases", revision,
+                fingerprint, statusRevision, source.view().displayName(), source.view().subject(),
+                cases, FixtureSetView.Status.SHARING_PENDING);
+        FixtureSetSaveReceipt saveReceipt = new FixtureSetSaveReceipt(
+                FixtureSetSaveReceipt.SCHEMA_VERSION, "cases", revision, fingerprint,
+                view.subject(), cases.stream().map(FixtureSetCommand.Case::caseId).toList(),
+                view.status(), statusRevision);
+        FixtureSetSummary summary = new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION,
+                "cases", revision, fingerprint, view.displayName(), view.subject(),
+                cases.stream().map(value -> new FixtureSetSummary.CaseSummary(
+                        value.caseId(), value.name())).toList(),
+                view.status(), statusRevision);
+        GeneratedDefaultFixture generated = new GeneratedDefaultFixture(view, saveReceipt, summary,
+                cases.stream().map(value -> new GeneratedDefaultFixture.CaseMapping(
+                        value.caseId(), value.caseId())).toList());
+        FixtureShareReceipt receipt = new FixtureShareReceipt(FixtureShareReceipt.SCHEMA_VERSION,
+                "cases", source.view().revision(), revision, fingerprint,
+                FixtureSetView.Status.SHARING_PENDING, statusRevision, reviewRequestId);
+        return new FixtureShareMaterialization(generated, receipt);
     }
 
     private static ReusableFlowCommand flowCommand() {

@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareMaterialization;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -18,6 +20,7 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
     private final Map<FixtureKey, StoredStandaloneFixtureSet> heads = new HashMap<>();
     private final Map<RevisionKey, StoredStandaloneFixtureSet> history = new HashMap<>();
     private final Map<CommandKey, Completion> commands = new HashMap<>();
+    private final Map<CommandKey, ShareCompletion> shareCommands = new HashMap<>();
     private final Supplier<String> identifiers;
 
     public InMemoryStandaloneFixtureSetStore() {
@@ -45,6 +48,10 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
 
         StoredStandaloneFixtureSet current = heads.get(fixtureKey);
         checkExpected(current, intent.expectedRevision());
+        if (current != null && current.stored().generated().view().status()
+                != FixtureSetView.Status.PRIVATE_DRAFT) {
+            throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
+        }
         int expectedRevision = current == null ? 1 : current.stored().generated().view().revision() + 1;
         GeneratedDefaultFixture generated = intent.generated();
         if (generated.view().revision() != expectedRevision) {
@@ -59,6 +66,47 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
         history.put(new RevisionKey(intent.scope(), intent.fixtureSetId(), expectedRevision), authority);
         commands.put(commandKey, new Completion(
                 intent.requestFingerprint(), intent.expectedRevision(), result));
+        return result;
+    }
+
+    @Override public synchronized StandaloneFixtureSetShareResult share(
+            StandaloneFixtureSetShareIntent intent, FixtureSetShareDeriver deriver) {
+        if (intent == null || deriver == null) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+        CommandKey commandKey = new CommandKey(intent.scope(), intent.actorId(),
+                intent.fixtureSetId(), intent.idempotencyKey());
+        ShareCompletion prior = shareCommands.get(commandKey);
+        if (prior != null) {
+            if (!prior.requestFingerprint().equals(intent.requestFingerprint())
+                    || !prior.sourceStrongEtag().equals(intent.sourceStrongEtag())) {
+                throw failure(StandaloneFixtureSetStoreException.Code.CONFLICT);
+            }
+            StandaloneFixtureSetShareResult result = prior.result();
+            return new StandaloneFixtureSetShareResult(
+                    result.view(), result.receipt(), result.strongEtag(), true);
+        }
+        FixtureKey fixtureKey = new FixtureKey(intent.scope(), intent.fixtureSetId());
+        StoredStandaloneFixtureSet current = heads.get(fixtureKey);
+        requireExactShareSource(current, intent);
+        int revision = Math.addExact(current.stored().generated().view().revision(), 1);
+        int statusRevision = Math.addExact(
+                current.stored().generated().view().statusRevision(), 1);
+        String reviewRequestId = nextIdentifier();
+        FixtureShareMaterialization materialization = deriver.derive(
+                current.stored(), revision, statusRevision, reviewRequestId);
+        requireExactShareMaterialization(current, materialization, revision,
+                statusRevision, reviewRequestId);
+        String strongEtag = "\"" + nextIdentifier() + "\"";
+        StoredFixtureSet stored = new StoredFixtureSet(
+                intent.scope(), materialization.generated(), strongEtag);
+        StoredStandaloneFixtureSet authority = new StoredStandaloneFixtureSet(stored, strongEtag);
+        StandaloneFixtureSetShareResult result = new StandaloneFixtureSetShareResult(
+                materialization.generated().view(), materialization.receipt(), strongEtag, false);
+        heads.put(fixtureKey, authority);
+        history.put(new RevisionKey(intent.scope(), intent.fixtureSetId(), revision), authority);
+        shareCommands.put(commandKey, new ShareCompletion(
+                intent.requestFingerprint(), intent.sourceStrongEtag(), result));
         return result;
     }
 
@@ -107,6 +155,34 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
         if (mismatch) throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
     }
 
+    private static void requireExactShareSource(
+            StoredStandaloneFixtureSet current, StandaloneFixtureSetShareIntent intent) {
+        if (current == null || !current.strongEtag().equals(intent.sourceStrongEtag())) {
+            throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
+        }
+        var source = intent.command().source();
+        var view = current.stored().generated().view();
+        if (view.status() != FixtureSetView.Status.PRIVATE_DRAFT
+                || view.revision() != source.revision()
+                || !view.fingerprint().equals(source.fingerprint())
+                || view.statusRevision() != source.statusRevision()) {
+            throw failure(StandaloneFixtureSetStoreException.Code.CAS_MISMATCH);
+        }
+    }
+
+    private static void requireExactShareMaterialization(
+            StoredStandaloneFixtureSet source, FixtureShareMaterialization materialization,
+            int revision, int statusRevision, String reviewRequestId) {
+        if (materialization == null
+                || materialization.receipt().derivedFromRevision()
+                != source.stored().generated().view().revision()
+                || materialization.receipt().revision() != revision
+                || materialization.receipt().statusRevision() != statusRevision
+                || !materialization.receipt().reviewRequestId().equals(reviewRequestId)) {
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+    }
+
     private String nextIdentifier() {
         String value = identifiers.get();
         if (value == null || !value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) {
@@ -125,4 +201,6 @@ public final class InMemoryStandaloneFixtureSetStore implements StandaloneFixtur
                               String fixtureSetId, String idempotencyKey) { }
     private record Completion(String requestFingerprint, ExpectedRevision expectedRevision,
                               StandaloneFixtureSetSaveResult result) { }
+    private record ShareCompletion(String requestFingerprint, String sourceStrongEtag,
+                                   StandaloneFixtureSetShareResult result) { }
 }

@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
@@ -565,6 +567,33 @@ class AuthoringProtocolSchemaTest {
         assertThat(MAPPER.treeToValue(summaryWire, FixtureSetSummary.class)).isEqualTo(generated.summary());
         assertThat(MAPPER.treeToValue(receiptWire, FixtureSetSaveReceipt.class)).isEqualTo(generated.receipt());
         assertThat(summaryWire.toString()).doesNotContain("input", "material", "output");
+    }
+
+    @Test
+    void fixtureShareCommandAndPayloadFreeReceiptRoundTripAgainstFrozenSchemas() throws Exception {
+        FixtureShareCommand command = new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
+                new FixtureShareCommand.Source("orders:r1", 1,
+                        "sha256:" + "a".repeat(64), 1),
+                new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
+                        new FixtureShareCommand.Redaction(
+                                "default-v1", List.of("/customer/email", "/customer/phone"))));
+        FixtureShareReceipt receipt = new FixtureShareReceipt(FixtureShareReceipt.SCHEMA_VERSION,
+                "orders:r1", 1, 2, "sha256:" + "b".repeat(64),
+                FixtureSetView.Status.SHARING_PENDING, 2, "review-orders-r2");
+        Path commandPath = SCHEMA_ROOT.resolve("fixture-share-command-v1.schema.json");
+        Path receiptPath = SCHEMA_ROOT.resolve("fixture-share-receipt-v1.schema.json");
+        JsonNode commandWire = MAPPER.valueToTree(command);
+        JsonNode receiptWire = MAPPER.valueToTree(receipt);
+
+        assertThat(validationErrors(read(commandPath), commandWire, commandPath)).isEmpty();
+        assertThat(validationErrors(read(receiptPath), receiptWire, receiptPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(commandWire, FixtureShareCommand.class)).isEqualTo(command);
+        assertThat(MAPPER.treeToValue(receiptWire, FixtureShareReceipt.class)).isEqualTo(receipt);
+        assertThat(receiptWire.toString())
+                .doesNotContain("cases", "input", "output", "fixtureAssetId", "materialRef");
+        assertThatThrownBy(() -> new FixtureShareCommand.Redaction(
+                "default-v1", List.of("$.customer.email")))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

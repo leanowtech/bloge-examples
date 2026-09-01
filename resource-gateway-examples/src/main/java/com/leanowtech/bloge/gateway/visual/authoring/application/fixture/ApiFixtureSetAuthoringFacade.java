@@ -21,17 +21,26 @@ public final class ApiFixtureSetAuthoringFacade {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private final FixtureSetAuthorityReader store;
     private final ReusableFlowFixtureModule writer;
+    private final ReusableFlowFixtureShareModule shareModule;
 
     /** Creates the read module over one authority store. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store) {
-        this(store, null);
+        this(store, null, null);
     }
 
     /** Creates the complete read/write module when standalone Flow Fixture authoring is available. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
                                         ReusableFlowFixtureModule writer) {
+        this(store, writer, null);
+    }
+
+    /** Creates the complete read/write/share module. */
+    public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
+                                        ReusableFlowFixtureModule writer,
+                                        ReusableFlowFixtureShareModule shareModule) {
         this.store = Objects.requireNonNull(store, "store");
         this.writer = writer;
+        this.shareModule = shareModule;
     }
 
     /** Creates or updates one independently authored whole-flow Fixture Set. */
@@ -41,6 +50,16 @@ public final class ApiFixtureSetAuthoringFacade {
             com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand command) {
         if (writer == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
         return writer.save(scope, actorId, fixtureSetId, precondition, idempotencyKey, command);
+    }
+
+    /** Derives one protected, independently reviewed Fixture revision. */
+    public com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence
+            .StandaloneFixtureSetShareResult share(
+            FixtureShareIdentity identity,
+            String fixtureSetId, String sourceStrongEtag, String idempotencyKey,
+            com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand command) {
+        if (shareModule == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+        return shareModule.share(identity, fixtureSetId, sourceStrongEtag, idempotencyKey, command);
     }
 
     /** Returns the current or one exact immutable private Fixture revision. */

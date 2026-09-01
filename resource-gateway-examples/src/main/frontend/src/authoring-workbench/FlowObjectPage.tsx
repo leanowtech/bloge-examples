@@ -76,7 +76,8 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
           setFixtureEtag(savedFixture.strongEtag);
           setFixtureInput(JSON.stringify(savedFixture.value.cases[0]?.input ?? {}, null, 2));
           const control = savedFixture.value.cases[0]?.controls[0];
-          const material = control?.behavior.kind === 'RETURN' ? control.behavior.material.value : {};
+          const material = control?.behavior.kind === 'RETURN'
+            && control.behavior.material.kind === 'INLINE' ? control.behavior.material.value : {};
           setFixtureOutput(JSON.stringify(material, null, 2));
         }
       }

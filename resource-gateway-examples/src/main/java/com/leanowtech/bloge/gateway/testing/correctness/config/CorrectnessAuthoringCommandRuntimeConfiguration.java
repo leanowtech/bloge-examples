@@ -293,6 +293,22 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
                 fixtures, materials, schemas, authorizer, receipts, mapper, Clock.systemUTC());
     }
 
+    /** Exposes whole-flow Fixture sharing only when material and catalog governance are present. */
+    @Bean
+    @ConditionalOnBean({FixtureMaterialService.class, FixtureCatalogService.class})
+    @ConditionalOnMissingBean(
+            com.leanowtech.bloge.gateway.visual.authoring.application.fixture
+                    .FixtureSetShareMaterialWriter.class)
+    com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter
+            fixtureSetShareMaterialWriter(
+            FixtureMaterialService materials,
+            FixtureCatalogService catalog,
+            ObjectMapper mapper) {
+        return new com.leanowtech.bloge.gateway.visualadapter.authoring.fixture
+                .CorrectnessFixtureSetShareMaterialWriter(
+                materials, catalog, mapper, Clock.systemUTC());
+    }
+
     /**
      * Exposes the graph-node promotion slice only when protected materials are also available.
      *

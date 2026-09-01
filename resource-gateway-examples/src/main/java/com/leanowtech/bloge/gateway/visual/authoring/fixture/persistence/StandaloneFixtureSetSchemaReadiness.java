@@ -4,7 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Objects;
 
-/** Read-only startup probe for the externally applied V016 standalone Fixture schema. */
+/** Read-only startup probe for the externally applied V016–V017 standalone Fixture schema. */
 public final class StandaloneFixtureSetSchemaReadiness {
     /** Fails startup before authoring is exposed when any required authority column is absent. */
     public StandaloneFixtureSetSchemaReadiness(JdbcTemplate jdbc) {
@@ -28,6 +28,19 @@ public final class StandaloneFixtureSetSchemaReadiness {
                        expected_mode, expected_revision, committed_revision,
                        receipt_json, strong_etag
                   FROM rg_authoring_standalone_fixture_commands WHERE 1=0
+                """);
+        probe(jdbc, """
+                SELECT actor_id, fixture_set_id, idempotency_key, request_fingerprint,
+                       source_revision, source_fingerprint, source_status_revision,
+                       source_strong_etag, committed_revision, receipt_json, strong_etag
+                  FROM rg_authoring_fixture_share_commands WHERE 1=0
+                """);
+        probe(jdbc, """
+                SELECT review_request_id, fixture_set_id, source_revision, source_fingerprint,
+                       source_status_revision, source_strong_etag, derived_revision,
+                       derived_fingerprint, derived_status_revision, derived_strong_etag,
+                       policy_json, status, created_by
+                  FROM rg_authoring_fixture_review_requests WHERE 1=0
                 """);
     }
 

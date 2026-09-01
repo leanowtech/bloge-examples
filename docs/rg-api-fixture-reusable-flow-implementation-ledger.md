@@ -1922,3 +1922,78 @@ BUILD SUCCESS
 
 因此继续实施，下一刀优先收敛 Fixture share/promotion 的对象页生命周期与真实浏览器证据；不以局部代码覆盖率
 替代整体可操作性和部署证据。
+
+## 45. Iteration 44 — Fixture 受保护分享与待评审修订版
+
+日期：2026-09-01。
+
+### 已完成
+
+- 冻结 `bloge.fixtureShareCommand.v1` 和 payload-free `bloge.fixtureShareReceipt.v1`。命令绑定 exact
+  Fixture Set revision/fingerprint/statusRevision/strong ETag，并且只接受分类、1–365 天保留期、
+  redaction profile 和非根 JSON Pointer；JSONPath 不再被误接受。
+- V017 新增幂等 share command 与 pending review request authority。JDBC 在同一事务中锁定
+  `PRIVATE_DRAFT` source，通过受保护 material/catalog adapter 写入 Fixture Asset，把 asset 提交为
+  `PROPOSED`，再派生 `SHARING_PENDING` Fixture Set revision。重放不重复写受保护 material。
+- 原私有 revision 保持不变，可按 exact coordinate 继续读取/运行；当前 head 变为
+  `SHARING_PENDING`，对象页只读且禁止运行、编辑或复用。
+- 独立 Fixture 对象页新增可见的 classification/retention/redaction 表单和 Share 动作；
+  Controller 复用 trusted author identity，强 ETag、`Idempotency-Key`、`no-store` 和独立写 purpose。
+- production correctness runtime 现在在 material/catalog Bean 注册后组装真实 share writer；
+  `ApplicationContextRunner` 明确防止浏览器专用 Bean 掩盖生产缺口。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='InMemoryStandaloneFixtureSetShareTest,JdbcStandaloneFixtureSetStoreTest,\
+StandaloneFixtureSetSchemaReadinessTest,StandaloneFixtureSetRuntimeConfigurationTest,\
+CorrectnessFixtureSetShareMaterialWriterTest,ReusableFlowFixtureShareModuleTest,\
+ApiFixtureSetAuthoringControllerTest,\
+AuthoringProtocolSchemaTest#fixtureShareCommandAndPayloadFreeReceiptRoundTripAgainstFrozenSchemas' test
+
+Tests run: 26; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=CorrectnessAuthoringCommandRuntimeConfigurationTest test
+
+Tests run: 3; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/FixtureObjectPage.test.tsx
+
+Test Files: 2 passed; Tests: 8 passed
+npx tsc --noEmit: PASS
+npm run check:i18n: 39/39
+
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+fixtureObjectPageVisiblySavesSimulatesAndSubmitsAProtectedRevisionForReview test
+
+frontend build: i18n 39/39; UX 52/52; host 21/21; TypeScript/Vite/bundle PASS
+AuthorCanvas startup closure: 349.93 KiB / 22 files
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,218; Failures: 0; Errors: 0; Skipped: 35
+BUILD SUCCESS
+```
+
+全量门首次运行以 `VisualRuntimeBoundaryTest` 精确暴露内层 share module 对 integration/correctness
+实现类型的反向依赖（8,218 run，1 failure）。修复后内层改用 transport-neutral `FixtureShareIdentity`
+和 material writer port，外层 adapter 才执行认证上下文与 correctness 错误翻译；19/19 边界/分享聚焦门
+通过后，上述最终 `clean verify` 在最终源码上全绿。
+
+### 当前差距评估
+
+本轮闭合了“私有 Fixture 无法通过简化对象页进入受保护评审”的主断点，但尚不能宣称
+余下差距低于 3%。重新按已批准需求评估，当前证据差距约 **5–7%**：
+
+1. review request 还没有从独立 reviewer 验证/批准/激活推进到 Fixture Set `TEAM_AVAILABLE`；
+2. `REMOTE` OpenAPI authenticated egress 和 legacy 默认入口/既有资产迁移验收仍未闭合；
+3. production PostgreSQL/Vault 专项认证、完整 API → Tool/Solution → Fixture lifecycle 单链及用户任务
+   时长/步骤数尚未形成同一份验收证据。
+
+因此继续实施；下一刀优先复用现有 Fixture Asset verify/approve/activate 协议，把 pending review
+显式推进为 `TEAM_AVAILABLE`，不以 `PROPOSED` asset 或局部浏览器绿灯冒充生命周期完成。

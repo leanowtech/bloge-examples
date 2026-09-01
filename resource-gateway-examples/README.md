@@ -69,6 +69,11 @@ db/postgresql/V20260831_009__authoring_command_attempt_authority.sql
 db/postgresql/V20260831_010__attempt_provenance_closure.sql
 db/postgresql/V20260831_011__api_resource_connection_snapshot.sql
 db/postgresql/V20260831_012__api_fixture_set_authority.sql
+db/postgresql/V20260831_013__authoring_simulation_runs.sql
+db/postgresql/V20260901_014__reusable_flow_drafts.sql
+db/postgresql/V20260901_015__reusable_flow_publications.sql
+db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql
+db/postgresql/V20260901_017__fixture_share_requests.sql
 ```
 
 Then enable the production wiring explicitly:
@@ -393,6 +398,24 @@ field projection, zero persistence, and 1280/390 px layout (**1/1 green**). The 
 with `Tests run: 8,207; failures: 0; errors: 0; skipped: 35` and `BUILD SUCCESS`. Remote OpenAPI fetch, simplified
 workbench Fixture share/promotion, production PostgreSQL/Vault certification, and measured user-task complexity remain
 open rather than being inferred from this local preview slice.
+
+Standalone Flow Version Fixtures can now be shared from the same object page without exposing their inline material.
+The author supplies classification, bounded retention, a redaction-profile version, and non-root JSON Pointer paths;
+the server locks the exact `PRIVATE_DRAFT` source revision, writes protected Fixture Assets through the correctness
+material authority, submits each asset as `PROPOSED`, and atomically derives an immutable `SHARING_PENDING` Fixture
+Set revision plus a payload-free review receipt. The private source revision remains readable and runnable by exact
+coordinate, while the pending revision cannot run, be edited, or be reused. Exact idempotent replay does not repeat
+protected writes. V017 persists the share command and pending review authority; missing V016/V017 fails opt-in
+startup. The share application module keeps a transport-neutral trusted identity and protected-material port inside
+the visual boundary; the integration and correctness types are translated only by the outer adapter. The focused
+backend gate is **29/29 green** (including production correctness writer assembly); frontend
+transport/component tests are **8/8**, i18n **39/39**, and TypeScript passes. The production frontend build passes
+i18n **39/39**, UX **52/52**, host **21/21**, Vite and bundle gates, with AuthorCanvas at **349.93 KiB / 22 files**.
+A real Chrome method visibly saves, simulates, shares, reloads the derived revision, verifies disabled execution and
+the server-side `PROPOSED` protected asset (**1/1 green**). The final serial `clean verify` completed with
+`Tests run: 8,218; failures: 0; errors: 0; skipped: 35` and `BUILD SUCCESS`. Independent reviewer verification/approval/activation and
+the final `TEAM_AVAILABLE` Fixture transition remain a separate lifecycle slice; this evidence does not claim real
+PostgreSQL or external Vault certification.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
