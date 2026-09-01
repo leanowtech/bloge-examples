@@ -413,9 +413,21 @@ transport/component tests are **8/8**, i18n **39/39**, and TypeScript passes. Th
 i18n **39/39**, UX **52/52**, host **21/21**, Vite and bundle gates, with AuthorCanvas at **349.93 KiB / 22 files**.
 A real Chrome method visibly saves, simulates, shares, reloads the derived revision, verifies disabled execution and
 the server-side `PROPOSED` protected asset (**1/1 green**). The final serial `clean verify` completed with
-`Tests run: 8,218; failures: 0; errors: 0; skipped: 35` and `BUILD SUCCESS`. Independent reviewer verification/approval/activation and
-the final `TEAM_AVAILABLE` Fixture transition remain a separate lifecycle slice; this evidence does not claim real
-PostgreSQL or external Vault certification.
+`Tests run: 8,218; failures: 0; errors: 0; skipped: 35` and `BUILD SUCCESS`.
+
+The same Fixture object page now completes the independent-review lifecycle. A reviewer different from the creator
+opens the exact `SHARING_PENDING` revision, records redaction/schema/material attestations and a bounded comment, and
+submits one strong-ETag/idempotency-protected review command. The server verifies the immutable pending request,
+resumes each exact protected asset from `PROPOSED`, verified `PROPOSED`, `APPROVED`, or `ACTIVE`, and publishes one
+immutable `TEAM_AVAILABLE` Fixture Set only after every asset is active. Retry after a partial multi-asset activation
+does not duplicate or skip governance transitions. V018 persists the review intent and payload-free receipt; missing
+V016–V018 fails opt-in startup. The focused backend gate is **51/51 green**; frontend transport/component tests are
+**10/10**, TypeScript passes, and the production frontend build passes i18n **39/39**, UX **52/52**, host **21/21**,
+Vite and bundle gates, with AuthorCanvas at **349.95 KiB / 22 files**. A real Chrome method performs the visible
+creator-to-reviewer handoff, reaches `TEAM_AVAILABLE`, restores enabled execution, and verifies the protected asset is
+`ACTIVE` (**1/1 green**). The final serial `clean verify` completed with `Tests run: 8,225; failures: 0; errors: 0;
+skipped: 35` and `BUILD SUCCESS`. This local evidence does not claim external Vault certification, remote authenticated
+OpenAPI egress, or deployment migration evidence on a production PostgreSQL service.
 
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over

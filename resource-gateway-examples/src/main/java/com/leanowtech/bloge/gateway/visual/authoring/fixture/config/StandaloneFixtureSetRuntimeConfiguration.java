@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetReviewMaterialGate;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureReviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
@@ -22,7 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Opt-in V016-V017 assembly for standalone Fixture authoring and governed sharing. */
+/** Opt-in V016-V018 assembly for standalone Fixture authoring and governed sharing. */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "gateway.authoring.reusable-flow", name = "enabled", havingValue = "true")
 public class StandaloneFixtureSetRuntimeConfiguration {
@@ -72,5 +74,15 @@ public class StandaloneFixtureSetRuntimeConfiguration {
             ObjectProvider<FixtureSetShareMaterialWriter> materialWriter) {
         return new ReusableFlowFixtureShareModule(store, publications,
                 materialWriter.getIfAvailable(FixtureSetShareMaterialWriter::unavailable));
+    }
+
+    /** Creates review orchestration even when governed review is intentionally unavailable. */
+    @Bean
+    @ConditionalOnMissingBean
+    ReusableFlowFixtureReviewModule reusableFlowFixtureReviewModule(
+            StandaloneFixtureSetStore store,
+            ObjectProvider<FixtureSetReviewMaterialGate> materialGate) {
+        return new ReusableFlowFixtureReviewModule(store,
+                materialGate.getIfAvailable(FixtureSetReviewMaterialGate::unavailable));
     }
 }

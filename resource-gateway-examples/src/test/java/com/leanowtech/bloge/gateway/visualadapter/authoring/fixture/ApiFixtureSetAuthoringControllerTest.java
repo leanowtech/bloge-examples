@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
@@ -22,6 +24,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetShareResult;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetReviewResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
 import org.junit.jupiter.api.Test;
@@ -307,11 +310,50 @@ class ApiFixtureSetAuthoringControllerTest {
         verify(facade, never()).share(any(), any(), any(), any(), any());
     }
 
+    @Test
+    void reviewsOneExactPendingRevisionUnderIndependentReviewPurpose() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        FixtureSetView pending = pendingView();
+        FixtureReviewCommand command = new FixtureReviewCommand(FixtureReviewCommand.SCHEMA_VERSION,
+                new FixtureReviewCommand.Source("review-customer-2", pending.fixtureSetId(),
+                        pending.revision(), pending.fingerprint(), pending.statusRevision()),
+                new FixtureReviewCommand.Attestations(
+                        true, true, true, "Independent reviewer verified protected material"));
+        FixtureSetView active = new FixtureSetView(pending.schemaVersion(), pending.fixtureSetId(), 3,
+                "sha256:" + "d".repeat(64), 3, pending.displayName(), pending.subject(),
+                pending.cases(), FixtureSetView.Status.TEAM_AVAILABLE);
+        FixtureReviewReceipt receipt = new FixtureReviewReceipt(FixtureReviewReceipt.SCHEMA_VERSION,
+                "review-customer-2", active.fixtureSetId(), 2, 3, active.fingerprint(),
+                active.status(), active.statusRevision(), 1);
+        when(facade.review(any(), any(), any(), any(), any())).thenReturn(
+                new StandaloneFixtureSetReviewResult(active, receipt, "\"fixture-active-etag\"", false));
+
+        mvc(facade).perform(post("/api/authoring/fixture-sets/customer.get:r1:review")
+                        .contentType("application/json")
+                        .content(new ObjectMapper().writeValueAsBytes(command))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "CORRECTNESS_REVIEW")
+                        .header("If-Match", "\"fixture-pending-etag\"")
+                        .header("Idempotency-Key", "review-customer-fixture"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("ETag", "\"fixture-active-etag\""))
+                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andExpect(jsonPath("$.schemaVersion").value(FixtureReviewReceipt.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.status").value("TEAM_AVAILABLE"))
+                .andExpect(jsonPath("$.activatedAssetCount").value(1))
+                .andExpect(jsonPath("$.cases").doesNotExist());
+
+        verify(facade).review(any(), eq("customer.get:r1"), eq("\"fixture-pending-etag\""),
+                eq("review-customer-fixture"), eq(command));
+    }
+
     private static MockMvc mvc(ApiFixtureSetAuthoringFacade facade) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "authoring-client", "tenant-a", "org-a", "project-a", "test", "local",
                 "WORKLOAD", "author", "", Set.of(
-                        "API_RESOURCE_AUTHORING", "CORRECTNESS_FIXTURE_MATERIAL_WRITE"),
+                        "API_RESOURCE_AUTHORING", "CORRECTNESS_FIXTURE_MATERIAL_WRITE",
+                        "CORRECTNESS_REVIEW"),
                 Instant.MAX, true,
                 Set.of("authors"), "INTERNAL", "", Instant.MAX);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(

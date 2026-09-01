@@ -13,6 +13,10 @@ public interface StandaloneFixtureSetStore extends FixtureSetAuthorityReader {
     StandaloneFixtureSetShareResult share(
             StandaloneFixtureSetShareIntent intent, FixtureSetShareDeriver deriver);
 
+    /** Completes one exact pending review and commits its TEAM_AVAILABLE revision. */
+    StandaloneFixtureSetReviewResult review(
+            StandaloneFixtureSetReviewIntent intent, FixtureSetReviewDeriver deriver);
+
     /** Resolves one exact committed historical revision by opaque strong validator. */
     Optional<StoredStandaloneFixtureSet> findRevisionByStrongEtag(
             AuthoringScope scope, String fixtureSetId, String strongEtag);

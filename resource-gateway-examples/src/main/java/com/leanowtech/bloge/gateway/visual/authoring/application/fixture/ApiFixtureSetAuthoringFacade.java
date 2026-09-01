@@ -1,11 +1,13 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.fixture;
 
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetReviewResult;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
@@ -22,25 +24,35 @@ public final class ApiFixtureSetAuthoringFacade {
     private final FixtureSetAuthorityReader store;
     private final ReusableFlowFixtureModule writer;
     private final ReusableFlowFixtureShareModule shareModule;
+    private final ReusableFlowFixtureReviewModule reviewModule;
 
     /** Creates the read module over one authority store. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store) {
-        this(store, null, null);
+        this(store, null, null, null);
     }
 
     /** Creates the complete read/write module when standalone Flow Fixture authoring is available. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
                                         ReusableFlowFixtureModule writer) {
-        this(store, writer, null);
+        this(store, writer, null, null);
     }
 
     /** Creates the complete read/write/share module. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
                                         ReusableFlowFixtureModule writer,
                                         ReusableFlowFixtureShareModule shareModule) {
+        this(store, writer, shareModule, null);
+    }
+
+    /** Creates the complete read/write/share/review module. */
+    public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
+                                        ReusableFlowFixtureModule writer,
+                                        ReusableFlowFixtureShareModule shareModule,
+                                        ReusableFlowFixtureReviewModule reviewModule) {
         this.store = Objects.requireNonNull(store, "store");
         this.writer = writer;
         this.shareModule = shareModule;
+        this.reviewModule = reviewModule;
     }
 
     /** Creates or updates one independently authored whole-flow Fixture Set. */
@@ -60,6 +72,14 @@ public final class ApiFixtureSetAuthoringFacade {
             com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand command) {
         if (shareModule == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
         return shareModule.share(identity, fixtureSetId, sourceStrongEtag, idempotencyKey, command);
+    }
+
+    /** Completes one independent protected-material review. */
+    public StandaloneFixtureSetReviewResult review(
+            FixtureShareIdentity reviewer, String fixtureSetId, String sourceStrongEtag,
+            String idempotencyKey, FixtureReviewCommand command) {
+        if (reviewModule == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+        return reviewModule.review(reviewer, fixtureSetId, sourceStrongEtag, idempotencyKey, command);
     }
 
     /** Returns the current or one exact immutable private Fixture revision. */

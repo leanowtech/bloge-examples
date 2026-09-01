@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
@@ -69,6 +71,8 @@ class AuthoringProtocolSchemaTest {
             Map.entry("fixture-set", "fixture-set-command-v1.schema.json"),
             Map.entry("fixture-share-command", "fixture-share-command-v1.schema.json"),
             Map.entry("fixture-share-receipt", "fixture-share-receipt-v1.schema.json"),
+            Map.entry("fixture-review-command", "fixture-review-command-v1.schema.json"),
+            Map.entry("fixture-review-receipt", "fixture-review-receipt-v1.schema.json"),
             Map.entry("fixture-summary", "fixture-set-summary-v1.schema.json"),
             Map.entry("fixture-view", "fixture-set-view-v1.schema.json"),
             Map.entry("simulation-request", "simulation-request-v1.schema.json"),
@@ -594,6 +598,29 @@ class AuthoringProtocolSchemaTest {
         assertThatThrownBy(() -> new FixtureShareCommand.Redaction(
                 "default-v1", List.of("$.customer.email")))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void fixtureReviewCommandAndPayloadFreeReceiptRoundTripAgainstFrozenSchemas() throws Exception {
+        FixtureReviewCommand command = new FixtureReviewCommand(FixtureReviewCommand.SCHEMA_VERSION,
+                new FixtureReviewCommand.Source("review-orders-r2", "orders:r1", 2,
+                        "sha256:" + "b".repeat(64), 2),
+                new FixtureReviewCommand.Attestations(
+                        true, true, true, "Independent review completed"));
+        FixtureReviewReceipt receipt = new FixtureReviewReceipt(FixtureReviewReceipt.SCHEMA_VERSION,
+                "review-orders-r2", "orders:r1", 2, 3, "sha256:" + "c".repeat(64),
+                FixtureSetView.Status.TEAM_AVAILABLE, 3, 2);
+        Path commandPath = SCHEMA_ROOT.resolve("fixture-review-command-v1.schema.json");
+        Path receiptPath = SCHEMA_ROOT.resolve("fixture-review-receipt-v1.schema.json");
+        JsonNode commandWire = MAPPER.valueToTree(command);
+        JsonNode receiptWire = MAPPER.valueToTree(receipt);
+
+        assertThat(validationErrors(read(commandPath), commandWire, commandPath)).isEmpty();
+        assertThat(validationErrors(read(receiptPath), receiptWire, receiptPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(commandWire, FixtureReviewCommand.class)).isEqualTo(command);
+        assertThat(MAPPER.treeToValue(receiptWire, FixtureReviewReceipt.class)).isEqualTo(receipt);
+        assertThat(receiptWire.toString())
+                .doesNotContain("cases", "input", "output", "fixtureAssetId", "materialRef");
     }
 
     @Test

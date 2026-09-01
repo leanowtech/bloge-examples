@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/fixture-review-receipt-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureReviewReceipt.v1" },
+    "reviewRequestId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "derivedFromRevision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+    "status": { "const": "TEAM_AVAILABLE" },
+    "statusRevision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "activatedAssetCount": { "type": "integer", "minimum": 1 }
+  },
+  "required": ["schemaVersion", "reviewRequestId", "fixtureSetId", "derivedFromRevision", "revision", "fingerprint", "status", "statusRevision", "activatedAssetCount"],
+  "additionalProperties": false
+}

@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixt
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringRead;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureShareIdentity;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
@@ -19,6 +21,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.Fixture
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetStrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetShareResult;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetReviewResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
@@ -124,6 +127,27 @@ public final class ApiFixtureSetAuthoringController {
                 sharePrecondition(headers, context.correlationId()),
                 idempotencyKey(headers, context.correlationId()), command);
         return ResponseEntity.accepted().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header(HttpHeaders.ETAG, result.strongEtag())
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                .body(result.receipt());
+    }
+
+    /** Verifies and activates protected material under an independent reviewer identity. */
+    @PostMapping(path = "/{fixtureSetId}:review", consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<FixtureReviewReceipt> review(
+            @PathVariable String fixtureSetId,
+            @RequestHeader HttpHeaders headers,
+            @RequestBody FixtureReviewCommand command,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_FIXTURE_SET_REVIEW, request);
+        StandaloneFixtureSetReviewResult result = facade.review(
+                shareIdentity(context), fixtureSetId,
+                sharePrecondition(headers, context.correlationId()),
+                idempotencyKey(headers, context.correlationId()), command);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .header(HttpHeaders.ETAG, result.strongEtag())
                 .header("Idempotency-Replayed", Boolean.toString(result.replayed()))

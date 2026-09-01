@@ -9,6 +9,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareMaterialization;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewMaterialization;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.JdbcReusableFlowDraftStore;
@@ -175,6 +178,64 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 .extracting(value -> value.generated().view().revision()).isEqualTo(1);
     }
 
+    @Test
+    void independentReviewCompletesPendingRequestAndReplaysBeforeActivation() {
+        Fixture fixture = fixture("review");
+        GeneratedDefaultFixture source = materialize("cases", 1, fixture.version(), "Cases");
+        StandaloneFixtureSetSaveResult saved = fixture.store().save(intent(
+                ExpectedRevision.create(), "create", source, "sha256:" + "1".repeat(64)));
+        FixtureShareCommand shareCommand = new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
+                new FixtureShareCommand.Source("cases", 1, source.view().fingerprint(), 1),
+                new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
+                        new FixtureShareCommand.Redaction("default-v1", List.of("/email"))));
+        StandaloneFixtureSetShareResult shared = fixture.store().share(
+                new StandaloneFixtureSetShareIntent(SCOPE, "author", "cases", saved.strongEtag(),
+                        "share", "sha256:" + "2".repeat(64), shareCommand),
+                (stored, revision, statusRevision, reviewRequestId) ->
+                        pending(stored.generated(), revision, statusRevision, reviewRequestId));
+        FixtureReviewCommand reviewCommand = new FixtureReviewCommand(FixtureReviewCommand.SCHEMA_VERSION,
+                new FixtureReviewCommand.Source(shared.receipt().reviewRequestId(), "cases",
+                        shared.view().revision(), shared.view().fingerprint(),
+                        shared.view().statusRevision()),
+                new FixtureReviewCommand.Attestations(
+                        true, true, true, "Independent reviewer approved protected material"));
+        StandaloneFixtureSetReviewIntent reviewIntent = new StandaloneFixtureSetReviewIntent(
+                SCOPE, "reviewer", "cases", shared.strongEtag(), "review",
+                "sha256:" + "3".repeat(64), reviewCommand);
+        AtomicInteger activations = new AtomicInteger();
+
+        StandaloneFixtureSetReviewResult reviewed = fixture.store().review(reviewIntent,
+                (stored, revision, statusRevision) -> {
+                    activations.incrementAndGet();
+                    return active(stored.generated(), reviewCommand.source().reviewRequestId(),
+                            revision, statusRevision);
+                });
+        StandaloneFixtureSetReviewResult replay = store(fixture.jdbc()).review(reviewIntent,
+                (stored, revision, statusRevision) -> {
+                    activations.incrementAndGet();
+                    throw new AssertionError("replay must not repeat material activation");
+                });
+
+        assertThat(reviewed.view().status()).isEqualTo(FixtureSetView.Status.TEAM_AVAILABLE);
+        assertThat(reviewed.view().revision()).isEqualTo(3);
+        assertThat(reviewed.view().cases().getFirst().controls().getFirst().behavior())
+                .isInstanceOfSatisfying(FixtureSetCommand.Behavior.Return.class, returned ->
+                        assertThat(returned.material())
+                                .isEqualTo(new FixtureSetCommand.Material.FixtureAsset(
+                                        "asset-approved", 5, "sha256:" + "a".repeat(64))));
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.receipt()).isEqualTo(reviewed.receipt());
+        assertThat(activations).hasValue(1);
+        assertThat(fixture.jdbc().queryForMap("""
+                SELECT status, completed_revision, completed_by
+                  FROM rg_authoring_fixture_review_requests
+                 WHERE review_request_id=?
+                """, shared.receipt().reviewRequestId()))
+                .containsEntry("STATUS", "COMPLETED")
+                .containsEntry("COMPLETED_REVISION", 3L)
+                .containsEntry("COMPLETED_BY", "reviewer");
+    }
+
     private static Fixture fixture(String name) {
         JdbcDataSource source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:standalone-fixture-" + name
@@ -183,7 +244,8 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 new ClassPathResource("db/postgresql/V20260901_014__reusable_flow_drafts.sql"),
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
                 new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
-                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"))
+                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"),
+                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"))
                 .execute(source);
         JdbcTemplate jdbc = new JdbcTemplate(source);
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -252,6 +314,38 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 "cases", source.view().revision(), revision, fingerprint,
                 FixtureSetView.Status.SHARING_PENDING, statusRevision, reviewRequestId);
         return new FixtureShareMaterialization(generated, receipt);
+    }
+
+    private static FixtureReviewMaterialization active(
+            GeneratedDefaultFixture source, String reviewRequestId, int revision, int statusRevision) {
+        List<FixtureSetCommand.Case> cases = source.view().cases().stream().map(fixtureCase -> {
+            FixtureSetCommand.Control control = fixtureCase.controls().getFirst();
+            return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
+                    fixtureCase.input(), List.of(new FixtureSetCommand.Control(control.target(),
+                    FixtureSetCommand.Behavior.returned(new FixtureSetCommand.Material.FixtureAsset(
+                            "asset-approved", 5, "sha256:" + "a".repeat(64))), control.fidelity())),
+                    fixtureCase.expect());
+        }).toList();
+        String fingerprint = FixtureSetFingerprints.of(
+                source.view().displayName(), source.view().subject(), cases);
+        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, "cases", revision,
+                fingerprint, statusRevision, source.view().displayName(), source.view().subject(),
+                cases, FixtureSetView.Status.TEAM_AVAILABLE);
+        FixtureSetSaveReceipt saveReceipt = new FixtureSetSaveReceipt(
+                FixtureSetSaveReceipt.SCHEMA_VERSION, "cases", revision, fingerprint,
+                view.subject(), cases.stream().map(FixtureSetCommand.Case::caseId).toList(),
+                view.status(), statusRevision);
+        FixtureSetSummary summary = new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION,
+                "cases", revision, fingerprint, view.displayName(), view.subject(),
+                cases.stream().map(value -> new FixtureSetSummary.CaseSummary(
+                        value.caseId(), value.name())).toList(), view.status(), statusRevision);
+        GeneratedDefaultFixture generated = new GeneratedDefaultFixture(view, saveReceipt, summary,
+                cases.stream().map(value -> new GeneratedDefaultFixture.CaseMapping(
+                        value.caseId(), value.caseId())).toList());
+        FixtureReviewReceipt receipt = new FixtureReviewReceipt(FixtureReviewReceipt.SCHEMA_VERSION,
+                reviewRequestId, "cases", source.view().revision(), revision, fingerprint,
+                view.status(), statusRevision, 1);
+        return new FixtureReviewMaterialization(generated, receipt);
     }
 
     private static ReusableFlowCommand flowCommand() {

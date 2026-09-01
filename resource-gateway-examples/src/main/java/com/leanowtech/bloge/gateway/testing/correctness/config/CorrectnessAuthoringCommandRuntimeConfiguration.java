@@ -309,6 +309,18 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
                 materials, catalog, mapper, Clock.systemUTC());
     }
 
+    @Bean
+    @ConditionalOnBean(FixtureCatalogService.class)
+    @ConditionalOnMissingBean(
+            com.leanowtech.bloge.gateway.visual.authoring.application.fixture
+                    .FixtureSetReviewMaterialGate.class)
+    com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetReviewMaterialGate
+            fixtureSetReviewMaterialGate(
+            FixtureCatalogService catalog, FixtureAssetRepository fixtures, ObjectMapper mapper) {
+        return new com.leanowtech.bloge.gateway.visualadapter.authoring.fixture
+                .CorrectnessFixtureSetReviewMaterialGate(catalog, fixtures, mapper);
+    }
+
     /**
      * Exposes the graph-node promotion slice only when protected materials are also available.
      *

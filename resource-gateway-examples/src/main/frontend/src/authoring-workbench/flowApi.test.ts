@@ -4,6 +4,7 @@ import {
   listFlowDraftFixtures,
   publishFlow,
   readFixtureSet,
+  reviewFixtureSet,
   readFlow,
   saveFixtureSet,
   shareFixtureSet,
@@ -11,7 +12,7 @@ import {
   saveFlowFixture,
   simulateFixtureSetCase,
 } from './flowApi';
-import type { FixtureSetCommand, FixtureShareCommand, ReusableFlowCommand } from './flowModel';
+import type { FixtureReviewCommand, FixtureSetCommand, FixtureShareCommand, ReusableFlowCommand } from './flowModel';
 
 describe('reusable Flow object transport', () => {
   it('reads and saves one Flow under authenticated strong-CAS transport', async () => {
@@ -105,6 +106,34 @@ describe('reusable Flow object transport', () => {
     expect(headers.get('X-Purpose')).toBe('CORRECTNESS_FIXTURE_MATERIAL_WRITE');
     expect(headers.get('If-Match')).toBe('"fixture-r1"');
     expect(headers.get('Idempotency-Key')).toBe('share-fixture-1');
+    expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toEqual(command);
+  });
+
+  it('reviews one exact pending Fixture under the independent-review purpose', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.fixtureReviewReceipt.v1', reviewRequestId: 'review-overview-r2',
+      fixtureSetId: 'overview.default', derivedFromRevision: 2, revision: 3,
+      fingerprint: hash('d'), status: 'TEAM_AVAILABLE', statusRevision: 3, activatedAssetCount: 1,
+    }, { ETag: '"fixture-r3"', 'Idempotency-Replayed': 'false' }));
+    const command: FixtureReviewCommand = {
+      schemaVersion: 'bloge.fixtureReviewCommand.v1',
+      source: {
+        reviewRequestId: 'review-overview-r2', fixtureSetId: 'overview.default',
+        revision: 2, fingerprint: hash('c'), statusRevision: 2,
+      },
+      attestations: {
+        redactionReviewed: true, schemaValid: true, redactionVerified: true,
+        comment: 'Independent reviewer verified protected material',
+      },
+    };
+
+    await reviewFixtureSet('overview.default', command, '"fixture-r2"', 'review-fixture-1', transport);
+
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/fixture-sets/overview.default:review');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('CORRECTNESS_REVIEW');
+    expect(headers.get('If-Match')).toBe('"fixture-r2"');
+    expect(headers.get('Idempotency-Key')).toBe('review-fixture-1');
     expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toEqual(command);
   });
 });

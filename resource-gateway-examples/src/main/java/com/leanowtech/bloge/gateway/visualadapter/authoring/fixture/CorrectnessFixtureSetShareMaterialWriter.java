@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** Correctness material/catalog adapter for whole-flow Fixture Set sharing. */
 public final class CorrectnessFixtureSetShareMaterialWriter
@@ -119,8 +120,8 @@ public final class CorrectnessFixtureSetShareMaterialWriter
         return new IntegrationRequestContext(
                 identity.scope().tenantId(), identity.organizationId(), identity.scope().projectId(),
                 identity.scope().environmentId(), identity.region(), identity.actorType(),
-                identity.actorId(), identity.clearance(), FixtureMaterialService.WRITE_PURPOSE,
-                identity.correlationId());
+                identity.actorId(), "", FixtureMaterialService.WRITE_PURPOSE,
+                identity.correlationId(), Set.of(), identity.clearance(), "");
     }
 
     private static PrincipalKind principalKind(String actorType) {

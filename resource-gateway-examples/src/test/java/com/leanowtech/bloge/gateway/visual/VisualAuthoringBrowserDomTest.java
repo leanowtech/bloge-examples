@@ -59,8 +59,10 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetReviewMaterialGate;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureReviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
@@ -87,6 +89,7 @@ import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContrac
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetShareMaterialWriter;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetReviewMaterialGate;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.OpenApiPreviewController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
@@ -376,13 +379,30 @@ class VisualAuthoringBrowserDomTest {
             return new ReusableFlowFixtureShareModule(fixtures, publications, materialWriter);
         }
 
+        /** Advances protected assets only through the production correctness review lifecycle. */
+        @Bean
+        @Primary
+        FixtureSetReviewMaterialGate browserFixtureSetReviewMaterialGate(
+                FixtureCatalogService catalog, FixtureAssetRepository fixtures, ObjectMapper mapper) {
+            return new CorrectnessFixtureSetReviewMaterialGate(catalog, fixtures, mapper);
+        }
+
+        /** Uses the production review orchestrator over the browser's exact in-memory authority. */
+        @Bean
+        ReusableFlowFixtureReviewModule browserReusableFlowFixtureReviewModule(
+                InMemoryStandaloneFixtureSetStore fixtures,
+                FixtureSetReviewMaterialGate materialGate) {
+            return new ReusableFlowFixtureReviewModule(fixtures, materialGate);
+        }
+
         /** Exposes the production Fixture application boundary over the shared test authorities. */
         @Bean
         ApiFixtureSetAuthoringFacade browserApiFixtureSetAuthoringFacade(
                 InMemoryStandaloneFixtureSetStore fixtures,
                 ReusableFlowFixtureModule writer,
-                ReusableFlowFixtureShareModule shareModule) {
-            return new ApiFixtureSetAuthoringFacade(fixtures, writer, shareModule);
+                ReusableFlowFixtureShareModule shareModule,
+                ReusableFlowFixtureReviewModule reviewModule) {
+            return new ApiFixtureSetAuthoringFacade(fixtures, writer, shareModule, reviewModule);
         }
 
         /** Exposes the production authenticated Fixture transport without enabling JDBC migrations. */
@@ -1347,6 +1367,45 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
                         .FixtureAssetDescriptor.FixtureLifecycle.PROPOSED);
         assertThat(proposed.descriptor().materialRef()).isNotNull();
+
+        String reviewLink = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-review-link']"))).getAttribute("href");
+        driver.switchTo().newWindow(WindowType.TAB);
+        driver.get("http://localhost:" + port + "/test-auth/reviewer");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='test-sign-in-reviewer']"))).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='test-reviewer-session']")));
+        driver.get(reviewLink);
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-review-redaction-reviewed']"))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-review-schema-valid']"))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-review-redaction-verified']"))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-review-comment']")))
+                .sendKeys("Independent reviewer verified protected material");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='approve-fixture-object']"))).click();
+
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='fixture-status']"), "TEAM_AVAILABLE"));
+        assertThat(driver.findElement(By.cssSelector("[data-testid='run-fixture-case']"))
+                .isEnabled()).isTrue();
+        var activeFixture = browserStandaloneFixtureSetStore.findHead(scope, "browser-flow-fixture")
+                .orElseThrow(() -> new AssertionError("visible Fixture review did not persist a head"));
+        assertThat(activeFixture.generated().view().revision()).isEqualTo(4);
+        assertThat(activeFixture.generated().view().status())
+                .isEqualTo(com.leanowtech.bloge.gateway.visual.authoring.fixture
+                        .FixtureSetView.Status.TEAM_AVAILABLE);
+        StoredFixtureAsset activeAsset = fixtureAssetRepository
+                .findHead(BROWSER_FIXTURE_SCOPE, asset.fixtureAssetId())
+                .orElseThrow(() -> new AssertionError("protected Fixture asset was not activated"));
+        assertThat(activeAsset.descriptor().lifecycle())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
+        assertThat(activeAsset.descriptor().revision()).isEqualTo(5);
 
         driver.manage().window().setSize(new Dimension(390, 844));
         wait.until(ExpectedConditions.visibilityOfElementLocated(

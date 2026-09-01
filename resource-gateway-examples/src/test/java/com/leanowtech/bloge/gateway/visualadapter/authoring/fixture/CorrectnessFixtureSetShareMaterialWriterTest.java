@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.command;
@@ -88,6 +89,7 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
         assertThat(asset.schemaFingerprint()).startsWith("sha256:");
         ArgumentCaptor<WriteRequest> material = ArgumentCaptor.forClass(WriteRequest.class);
         verify(materials).write(material.capture(), eq(context));
+        assertThat(context.clearance()).isEqualTo("RESTRICTED");
         assertThat((com.fasterxml.jackson.databind.JsonNode)
                 mapper.valueToTree(material.getValue().payload())).isEqualTo(output());
         assertThat(material.getValue().classification()).isEqualTo("CONFIDENTIAL");
@@ -103,12 +105,13 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
 
     private static FixtureShareIdentity identity() {
         return new FixtureShareIdentity(new AuthoringScope("tenant", "project", "dev"),
-                "org", "sg", "HUMAN", "author", "", "corr");
+                "org", "sg", "HUMAN", "author", "RESTRICTED", "corr");
     }
 
     private static IntegrationRequestContext context(FixtureShareIdentity identity) {
         return new IntegrationRequestContext("tenant", "org", "project", "dev", "sg",
-                "HUMAN", "author", "", FixtureMaterialService.WRITE_PURPOSE, "corr");
+                "HUMAN", "author", "", FixtureMaterialService.WRITE_PURPOSE, "corr",
+                Set.of(), "RESTRICTED", "");
     }
 
     private static String fingerprint(char value) {

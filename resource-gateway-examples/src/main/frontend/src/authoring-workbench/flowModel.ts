@@ -165,6 +165,35 @@ export interface FixtureShareReceipt {
   reviewRequestId: string;
 }
 
+export interface FixtureReviewCommand {
+  schemaVersion: 'bloge.fixtureReviewCommand.v1';
+  source: {
+    reviewRequestId: string;
+    fixtureSetId: string;
+    revision: number;
+    fingerprint: string;
+    statusRevision: number;
+  };
+  attestations: {
+    redactionReviewed: true;
+    schemaValid: true;
+    redactionVerified: true;
+    comment: string;
+  };
+}
+
+export interface FixtureReviewReceipt {
+  schemaVersion: 'bloge.fixtureReviewReceipt.v1';
+  reviewRequestId: string;
+  fixtureSetId: string;
+  derivedFromRevision: number;
+  revision: number;
+  fingerprint: string;
+  status: 'TEAM_AVAILABLE';
+  statusRevision: number;
+  activatedAssetCount: number;
+}
+
 /** Builds an exact API-only reusable DAG and derives edges solely from input mappings. */
 export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedApiNode[]): ReusableFlowCommand {
   identifier(draft.flowId, 'Flow ID');

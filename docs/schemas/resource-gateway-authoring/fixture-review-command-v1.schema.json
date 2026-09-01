@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/fixture-review-command-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureReviewCommand.v1" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "reviewRequestId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+        "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+        "statusRevision": { "$ref": "common-v1.schema.json#/$defs/revision" }
+      },
+      "required": ["reviewRequestId", "fixtureSetId", "revision", "fingerprint", "statusRevision"],
+      "additionalProperties": false
+    },
+    "attestations": {
+      "type": "object",
+      "properties": {
+        "redactionReviewed": { "const": true },
+        "schemaValid": { "const": true },
+        "redactionVerified": { "const": true },
+        "comment": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      },
+      "required": ["redactionReviewed", "schemaValid", "redactionVerified", "comment"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schemaVersion", "source", "attestations"],
+  "additionalProperties": false
+}

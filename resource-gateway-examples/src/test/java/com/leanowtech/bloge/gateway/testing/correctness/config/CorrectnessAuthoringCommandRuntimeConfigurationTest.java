@@ -146,6 +146,9 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(
                             com.leanowtech.bloge.gateway.visual.authoring.application.fixture
                                     .FixtureSetShareMaterialWriter.class);
+                    assertThat(context).hasSingleBean(
+                            com.leanowtech.bloge.gateway.visual.authoring.application.fixture
+                                    .FixtureSetReviewMaterialGate.class);
                     assertThat(AopUtils.isCglibProxy(
                             context.getBean(CoverageInventoryRepository.class))).isTrue();
                     assertThat(AopUtils.isCglibProxy(

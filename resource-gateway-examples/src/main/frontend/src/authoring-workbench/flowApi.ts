@@ -5,6 +5,8 @@ import type {
   FixtureSetSaveReceipt,
   FixtureShareCommand,
   FixtureShareReceipt,
+  FixtureReviewCommand,
+  FixtureReviewReceipt,
   FixtureSetView,
   FlowDraftRef,
   ReusableFlowCommand,
@@ -141,6 +143,23 @@ export async function shareFixtureSet(
     {
       method: 'POST',
       headers: integrationRequestHeaders('CORRECTNESS_FIXTURE_MATERIAL_WRITE', {
+        'Content-Type': 'application/json', 'If-Match': strongEtag, 'Idempotency-Key': idempotencyKey,
+      }),
+      body: JSON.stringify(command),
+    },
+  ), true);
+}
+
+/** Completes independent protected-material review for one exact pending Fixture revision. */
+export async function reviewFixtureSet(
+  fixtureSetId: string, command: FixtureReviewCommand, strongEtag: string, idempotencyKey: string,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<FixtureReviewReceipt>> {
+  return storedResponse(await transport(
+    `/api/authoring/fixture-sets/${encodeURIComponent(fixtureSetId)}:review`,
+    {
+      method: 'POST',
+      headers: integrationRequestHeaders('CORRECTNESS_REVIEW', {
         'Content-Type': 'application/json', 'If-Match': strongEtag, 'Idempotency-Key': idempotencyKey,
       }),
       body: JSON.stringify(command),

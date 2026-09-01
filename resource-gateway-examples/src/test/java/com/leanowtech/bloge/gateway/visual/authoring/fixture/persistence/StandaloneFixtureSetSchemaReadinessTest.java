@@ -11,19 +11,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class StandaloneFixtureSetSchemaReadinessTest {
     @Test
-    void acceptsExactV016AndRejectsMissingAuthority() {
+    void acceptsExactV016ThroughV018AndRejectsMissingReviewCompletionAuthority() {
         JdbcDataSource ready = source("ready");
         new ResourceDatabasePopulator(
                 new ClassPathResource("db/postgresql/V20260901_014__reusable_flow_drafts.sql"),
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
                 new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
-                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"))
+                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"),
+                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"))
                 .execute(ready);
         assertThatCode(() -> new StandaloneFixtureSetSchemaReadiness(new JdbcTemplate(ready)))
                 .doesNotThrowAnyException();
 
+        JdbcDataSource v17Only = source("v17-only");
+        new ResourceDatabasePopulator(
+                new ClassPathResource("db/postgresql/V20260901_014__reusable_flow_drafts.sql"),
+                new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
+                new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
+                new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"))
+                .execute(v17Only);
         assertThatThrownBy(() -> new StandaloneFixtureSetSchemaReadiness(
-                new JdbcTemplate(source("missing")))).isInstanceOf(RuntimeException.class);
+                new JdbcTemplate(v17Only))).isInstanceOf(RuntimeException.class);
     }
 
     private static JdbcDataSource source(String name) {

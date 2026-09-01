@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Save, Share2, TestTube2 } from 'lucide-react';
+import { CheckCircle2, Save, Share2, TestTube2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import { buildFixtureObjectCommand, fixtureObjectDraft, type FixtureObjectDraft } from './fixtureModel';
-import { readFixtureSet, saveFixtureSet, shareFixtureSet, simulateFixtureSetCase } from './flowApi';
-import type { FixtureSetView, FixtureShareCommand } from './flowModel';
+import { readFixtureSet, reviewFixtureSet, saveFixtureSet, shareFixtureSet, simulateFixtureSetCase } from './flowApi';
+import type { FixtureReviewCommand, FixtureSetView, FixtureShareCommand } from './flowModel';
 import type { SimulationRun } from './model';
 
 /** Independent Fixture object page backed only by exact Fixture and Simulation protocols. */
@@ -21,6 +21,12 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
   const [retentionDays, setRetentionDays] = useState(30);
   const [redactionProfile, setRedactionProfile] = useState('default-v1');
   const [redactionPaths, setRedactionPaths] = useState('');
+  const [reviewRequestId, setReviewRequestId] = useState(() =>
+    new URLSearchParams(globalThis.location?.search ?? '').get('reviewRequestId') ?? '');
+  const [redactionReviewed, setRedactionReviewed] = useState(false);
+  const [schemaValid, setSchemaValid] = useState(false);
+  const [redactionVerified, setRedactionVerified] = useState(false);
+  const [reviewComment, setReviewComment] = useState('');
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('');
 
@@ -115,7 +121,43 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
       setStrongEtag(pending.strongEtag ?? shared.strongEtag);
       setSelectedCaseId(pending.value.cases[0]?.caseId ?? '');
       setRun(null);
+      setReviewRequestId(shared.value.reviewRequestId);
       setMessage(`${shareText.submitted} ${shared.value.reviewRequestId}`);
+    } catch (failure) {
+      setMessage(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const approve = async () => {
+    if (!view || view.status !== 'SHARING_PENDING' || !strongEtag || !reviewRequestId
+      || !redactionReviewed || !schemaValid || !redactionVerified || !reviewComment.trim()) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const command: FixtureReviewCommand = {
+        schemaVersion: 'bloge.fixtureReviewCommand.v1',
+        source: {
+          reviewRequestId, fixtureSetId: view.fixtureSetId, revision: view.revision,
+          fingerprint: view.fingerprint, statusRevision: view.statusRevision,
+        },
+        attestations: {
+          redactionReviewed: true, schemaValid: true, redactionVerified: true,
+          comment: reviewComment.trim(),
+        },
+      };
+      const reviewed = await reviewFixtureSet(
+        view.fixtureSetId, command, strongEtag,
+        operationKey('review-fixture', `${view.fixtureSetId}-${view.revision}`),
+      );
+      const active = await readFixtureSet(view.fixtureSetId, reviewed.value.revision);
+      setView(active.value);
+      setDraft(fixtureObjectDraft(active.value));
+      setStrongEtag(active.strongEtag ?? reviewed.strongEtag);
+      setSelectedCaseId(active.value.cases[0]?.caseId ?? '');
+      setRun(null);
+      setMessage(`${shareText.approved} ${reviewed.value.activatedAssetCount}`);
     } catch (failure) {
       setMessage(errorMessage(failure));
     } finally {
@@ -232,6 +274,31 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
         data-testid="fixture-sharing-pending">
         <h2>{shareText.pending}</h2>
         <p>{shareText.pendingDetail}</p>
+        {reviewRequestId ? <>
+          <a data-testid="fixture-review-link" href={`/workbench/?fixtureSetId=${encodeURIComponent(
+            view.fixtureSetId)}&reviewRequestId=${encodeURIComponent(reviewRequestId)}`}>
+            {shareText.reviewLink}
+          </a>
+          <div className="fixture-review-attestations" data-testid="fixture-review-panel">
+            <label><input data-testid="fixture-review-redaction-reviewed" type="checkbox"
+              checked={redactionReviewed} onChange={(event) => setRedactionReviewed(event.target.checked)} />
+              {shareText.redactionReviewed}</label>
+            <label><input data-testid="fixture-review-schema-valid" type="checkbox"
+              checked={schemaValid} onChange={(event) => setSchemaValid(event.target.checked)} />
+              {shareText.schemaValid}</label>
+            <label><input data-testid="fixture-review-redaction-verified" type="checkbox"
+              checked={redactionVerified} onChange={(event) => setRedactionVerified(event.target.checked)} />
+              {shareText.redactionVerified}</label>
+            <label className="object-field"><span>{shareText.reviewComment}</span>
+              <textarea data-testid="fixture-review-comment" rows={3} value={reviewComment}
+                onChange={(event) => setReviewComment(event.target.value)} /></label>
+            <button type="button" className="primary-object-action"
+              data-testid="approve-fixture-object" disabled={busy || !redactionReviewed || !schemaValid
+                || !redactionVerified || !reviewComment.trim()} onClick={() => { void approve(); }}>
+              <CheckCircle2 aria-hidden="true" /> {busy ? shareText.approving : shareText.approve}
+            </button>
+          </div>
+        </> : <p>{shareText.openReviewerLink}</p>}
       </section>}
 
       {run && <section className="object-task-panel" data-testid="fixture-simulation-panel">
@@ -269,6 +336,12 @@ function fixtureShareText(locale: 'en' | 'zh-CN') {
     pending: '等待评审',
     pendingDetail: '受保护修订版在独立评审通过前不能运行或复用。',
     invalidPaths: '脱敏路径必须使用非根 JSON Pointer，并以 / 开头。',
+    reviewLink: '打开独立评审链接',
+    redactionReviewed: '已审阅脱敏规则', schemaValid: 'Schema 有效',
+    redactionVerified: '已验证脱敏结果', reviewComment: '评审说明',
+    approve: '批准并发布', approving: '正在批准...',
+    approved: 'Fixture 已发布到团队，可运行的受保护资产数量：',
+    openReviewerLink: '请从提交者提供的独立评审链接打开此 Fixture。',
   } : {
     share: 'Share with team',
     description: 'Create a protected revision and submit it for independent review.',
@@ -278,6 +351,12 @@ function fixtureShareText(locale: 'en' | 'zh-CN') {
     pending: 'Review pending',
     pendingDetail: 'This protected revision cannot run or be reused until an independent reviewer approves it.',
     invalidPaths: 'Redaction paths must be non-root JSON Pointers and start with /.',
+    reviewLink: 'Open independent review link',
+    redactionReviewed: 'Redaction policy reviewed', schemaValid: 'Schema is valid',
+    redactionVerified: 'Redaction result verified', reviewComment: 'Review comment',
+    approve: 'Approve and publish', approving: 'Approving...',
+    approved: 'Fixture published to the team. Activated protected assets:',
+    openReviewerLink: 'Open this Fixture from the independent review link supplied by its author.',
   };
 }
 

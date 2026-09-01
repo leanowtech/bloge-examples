@@ -9,7 +9,7 @@ import * as flowApi from './flowApi';
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
   readFixtureSet: vi.fn(), saveFixtureSet: vi.fn(), shareFixtureSet: vi.fn(),
-  simulateFixtureSetCase: vi.fn(),
+  reviewFixtureSet: vi.fn(), simulateFixtureSetCase: vi.fn(),
 }));
 
 describe('Fixture object page', () => {
@@ -197,6 +197,73 @@ describe('Fixture object page', () => {
     expect(flowApi.simulateFixtureSetCase).not.toHaveBeenCalled();
   });
 
+  it('requires visible reviewer attestations before publishing an exact pending Fixture', async () => {
+    window.history.replaceState(null, '',
+      '/workbench/?fixtureSetId=overview.default&reviewRequestId=review-overview-r2');
+    const subject = { kind: 'FLOW_VERSION' as const, publicationId: 'flow-overview', revision: 1,
+      fingerprint: hash('a') };
+    const pendingView = {
+      schemaVersion: 'bloge.fixtureSet.v1' as const, fixtureSetId: 'overview.default', revision: 2,
+      fingerprint: hash('c'), statusRevision: 2, displayName: 'Overview default', subject,
+      cases: [{
+        caseId: 'default', name: 'Default', input: { customerId: 'c-1' },
+        controls: [{ target: { kind: 'SUBJECT' as const }, behavior: {
+          kind: 'RETURN' as const, material: {
+            kind: 'FIXTURE_ASSET' as const, fixtureAssetId: 'overview-default-default',
+            revision: 2, schemaFingerprint: hash('d'),
+          },
+        } }], expect: { output: { result: 'active' } },
+      }], status: 'SHARING_PENDING' as const,
+    };
+    const activeView = { ...pendingView, revision: 3, fingerprint: hash('e'), statusRevision: 3,
+      status: 'TEAM_AVAILABLE' as const, cases: [{ ...pendingView.cases[0], controls: [{
+        target: { kind: 'SUBJECT' as const }, behavior: { kind: 'RETURN' as const, material: {
+          kind: 'FIXTURE_ASSET' as const, fixtureAssetId: 'overview-default-default',
+          revision: 5, schemaFingerprint: hash('d'),
+        } },
+      }] }] };
+    vi.mocked(flowApi.readFixtureSet)
+      .mockResolvedValueOnce({ value: pendingView, strongEtag: '"fixture-r2"', replayed: false })
+      .mockResolvedValueOnce({ value: activeView, strongEtag: '"fixture-r3"', replayed: false });
+    vi.mocked(flowApi.reviewFixtureSet).mockResolvedValue({
+      strongEtag: '"fixture-r3"', replayed: false,
+      value: {
+        schemaVersion: 'bloge.fixtureReviewReceipt.v1', reviewRequestId: 'review-overview-r2',
+        fixtureSetId: 'overview.default', derivedFromRevision: 2, revision: 3,
+        fingerprint: hash('e'), status: 'TEAM_AVAILABLE', statusRevision: 3, activatedAssetCount: 1,
+      },
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve(); await Promise.resolve();
+    });
+    expect(button('approve-fixture-object').disabled).toBe(true);
+    await act(async () => toggle('fixture-review-redaction-reviewed'));
+    await act(async () => toggle('fixture-review-schema-valid'));
+    await act(async () => toggle('fixture-review-redaction-verified'));
+    await act(async () => change('fixture-review-comment', 'Independent reviewer verified protected material'));
+    expect(button('approve-fixture-object').disabled).toBe(false);
+    await act(async () => {
+      button('approve-fixture-object').click();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(flowApi.reviewFixtureSet).toHaveBeenCalledWith(
+      'overview.default', {
+        schemaVersion: 'bloge.fixtureReviewCommand.v1', source: {
+          reviewRequestId: 'review-overview-r2', fixtureSetId: 'overview.default',
+          revision: 2, fingerprint: hash('c'), statusRevision: 2,
+        }, attestations: {
+          redactionReviewed: true, schemaValid: true, redactionVerified: true,
+          comment: 'Independent reviewer verified protected material',
+        },
+      }, '"fixture-r2"', expect.stringMatching(/^review-fixture:overview.default-2:/),
+    );
+    expect(element('fixture-status').textContent).toContain('TEAM_AVAILABLE');
+    expect(button('run-fixture-case').disabled).toBe(false);
+  });
+
   function change(testId: string, value: string) {
     const input = element<HTMLTextAreaElement>(testId);
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(input, value);
@@ -208,6 +275,10 @@ describe('Fixture object page', () => {
       : control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(control, value);
     control.dispatchEvent(new Event(control instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+  }
+  function toggle(testId: string) {
+    const control = element<HTMLInputElement>(testId);
+    control.click();
   }
   function button(testId: string): HTMLButtonElement { return element(testId); }
   function element<T extends Element = HTMLElement>(testId: string): T {
