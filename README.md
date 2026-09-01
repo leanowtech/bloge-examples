@@ -72,6 +72,20 @@ Override ports with environment variables:
 GRAPH_ENGINE_PORT=18080 RESOURCE_GATEWAY_PORT=18081 ./scripts/start-examples.sh
 ```
 
+The repository startup scripts enable API Resource and reusable Flow authoring by
+default. Explicit opt-out remains available for read-only or partially migrated
+environments:
+
+```bash
+RG_API_RESOURCE_AUTHORING_ENABLED=false \
+RG_REUSABLE_FLOW_AUTHORING_ENABLED=false \
+./scripts/start-examples.sh resource-gateway
+```
+
+The application configuration itself remains fail-closed when the JAR is started
+directly. Apply the Resource Gateway authoring migrations before using either
+script against a new database.
+
 PID files are written to `target/example-pids/`, and logs are written to
 `target/example-logs/`. The start script runs Graph Engine through its Maven
 `spring-boot:run` target and runs Resource Gateway from its repackaged Spring

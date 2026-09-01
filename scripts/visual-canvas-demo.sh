@@ -29,6 +29,8 @@ CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-1}"
 CAPABILITY_STUDIO_DEMO="${BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO:-1}"
 CAPABILITY_STUDIO_REHEARSAL_TOKEN="${RG_INTEGRATION_DEMO_TOKEN:-bloge-aneke-demo-token}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
+RG_API_RESOURCE_AUTHORING_ENABLED="${RG_API_RESOURCE_AUTHORING_ENABLED:-true}"
+RG_REUSABLE_FLOW_AUTHORING_ENABLED="${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -84,6 +86,9 @@ Environment:
   BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 1; set to 0 or use --no-correctness to disable
   BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO default: 1; use --no-capability-studio to disable
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
+  RG_API_RESOURCE_AUTHORING_ENABLED default: true
+  RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true
+  Set either variable to false to disable that authoring surface.
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
   RG_MIRROR_SHADOW_JOB_ENVIRONMENT     exact enterprise non-production partition
@@ -2882,6 +2887,8 @@ start_service() {
     echo "Starting Visual Canvas demo..."
     (
         cd "${PROJECT_DIR}"
+        export RG_API_RESOURCE_AUTHORING_ENABLED
+        export RG_REUSABLE_FLOW_AUTHORING_ENABLED
         nohup "${JAVA_BIN}" --enable-preview -jar "$(jar_path)" "${args[@]}" > "${log}" 2>&1 &
         echo $! > "$(pid_file)"
     )

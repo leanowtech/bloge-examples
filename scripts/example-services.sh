@@ -10,6 +10,8 @@ GRAPH_ENGINE_PORT="${GRAPH_ENGINE_PORT:-8080}"
 RESOURCE_GATEWAY_PORT="${RESOURCE_GATEWAY_PORT:-8081}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-120}"
 JAVA_BIN="${JAVA_BIN:-java}"
+RG_API_RESOURCE_AUTHORING_ENABLED="${RG_API_RESOURCE_AUTHORING_ENABLED:-true}"
+RG_REUSABLE_FLOW_AUTHORING_ENABLED="${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -32,6 +34,9 @@ Environment:
   STARTUP_TIMEOUT         default: 120
   JAVA_BIN                default: java
   MVN                     default: /opt/apache-maven-3.9.16/bin/mvn when present, otherwise mvn
+  RG_API_RESOURCE_AUTHORING_ENABLED default: true
+  RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true
+  Set either variable to false to disable that authoring surface.
 EOF
 }
 
@@ -315,6 +320,8 @@ start_service() {
             jar="$(service_jar "${service}")"
             (
                 cd "${workdir}"
+                export RG_API_RESOURCE_AUTHORING_ENABLED
+                export RG_REUSABLE_FLOW_AUTHORING_ENABLED
                 nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"
             )

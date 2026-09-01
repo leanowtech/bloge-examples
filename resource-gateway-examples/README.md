@@ -57,7 +57,10 @@ see the [API, Fixture, and Tool authoring guide](../docs/resource-gateway-api-fi
 
 The JDBC authoring store, first Resource application facade, and HTTP adapter are opt-in. The transport exposes
 `PUT /api/authoring/resources/{resourceId}` only when `gateway.authoring.api-resource.enabled=true`; the default
-runtime remains disabled.
+application configuration remains disabled. The repository launchers `scripts/start-examples.sh` and
+`scripts/start-visual-canvas-demo.sh` default both API Resource and reusable Flow authoring to enabled after the
+required migrations are installed. Set either `RG_API_RESOURCE_AUTHORING_ENABLED=false` or
+`RG_REUSABLE_FLOW_AUTHORING_ENABLED=false` to opt out for a launcher invocation.
 Apply the migrations in order:
 
 ```text
@@ -80,7 +83,7 @@ db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql
 db/postgresql/V20260901_017__fixture_share_requests.sql
 ```
 
-Then enable the production wiring explicitly:
+Direct JAR or production launches still enable the wiring explicitly:
 
 ```bash
 RG_API_RESOURCE_AUTHORING_ENABLED=true
