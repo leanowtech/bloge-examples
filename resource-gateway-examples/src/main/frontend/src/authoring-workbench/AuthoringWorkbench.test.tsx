@@ -10,6 +10,7 @@ vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
+    readAuthoringAvailability: vi.fn(),
     listApiConnections: vi.fn(), previewOpenApi: vi.fn(),
     readLegacyAssetMigrationInventory: vi.fn(),
     readLegacyMigrationAssessment: vi.fn(),
@@ -28,6 +29,9 @@ describe('simple authoring workbench', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    availabilityApi().mockResolvedValue({
+      schemaVersion: 'bloge.authoringAvailability.v1', apiResource: true, reusableFlow: true,
+    });
     vi.mocked(authoringApi.listApiConnections).mockResolvedValue([{
       schemaVersion: 'bloge.apiConnectionView.v1', connectionId: 'crm', revision: 1,
       displayName: 'CRM', baseUrl: 'https://crm.example.test', auth: { kind: 'NONE', configured: false },
@@ -55,6 +59,23 @@ describe('simple authoring workbench', () => {
     expect(link('create-tool').getAttribute('href')).toBe('/workbench/?create=flow&kind=TOOL');
     expect(link('create-solution').getAttribute('href')).toBe('/workbench/?create=flow&kind=SOLUTION');
     expect(link('open-legacy-inventory').getAttribute('href')).toBe('/workbench/?legacy=inventory');
+  });
+
+  it('does not offer API authoring actions when the backend capability is disabled', async () => {
+    window.history.replaceState(null, '', '/workbench/?create=api');
+    availabilityApi().mockResolvedValue({
+      schemaVersion: 'bloge.authoringAvailability.v1', apiResource: false, reusableFlow: false,
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve();
+    });
+
+    expect(element('authoring-unavailable').textContent)
+      .toContain('API Resource authoring is not enabled for this deployment.');
+    expect(host.querySelector('[data-testid="save-and-simulate"]')).toBeNull();
+    expect(authoringApi.listApiConnections).not.toHaveBeenCalled();
   });
 
   it('shows a payload-free legacy summary and an explicit migration list', async () => {
@@ -296,6 +317,12 @@ describe('simple authoring workbench', () => {
         action: { kind: 'OPEN_LEGACY_FLOW', path: '/author/?authorWorkspace=legacy&draftId=approval' },
       }],
     };
+  }
+
+  function availabilityApi() {
+    return vi.mocked((authoringApi as typeof authoringApi & {
+      readAuthoringAvailability: ReturnType<typeof vi.fn>;
+    }).readAuthoringAvailability);
   }
 
   function assessment(): import('./model').LegacyMigrationAssessment {

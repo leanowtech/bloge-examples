@@ -9,6 +9,7 @@ import {
   listApiResourceFixtures,
   listApiConnections,
   previewOpenApi,
+  readAuthoringAvailability,
   readLegacyAssetMigrationInventory,
   readLegacyMigrationAssessment,
   readLegacyApiResourcePreview,
@@ -52,6 +53,7 @@ type ObjectTab = 'design' | 'fixture' | 'simulation' | 'versions';
 /** Unified entry and first API Resource object page for the simplified authoring model. */
 export default function AuthoringWorkbench() {
   const { t } = useI18n();
+  const [availability, setAvailability] = useState<Awaited<ReturnType<typeof readAuthoringAvailability>> | null>(null);
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedResourceId = params.get('resourceId')?.trim() || '';
   const requestedFlowId = params.get('flowId')?.trim() || '';
@@ -66,6 +68,29 @@ export default function AuthoringWorkbench() {
   const legacyFixtureDraftId = params.get('legacyFixtureDraftId')?.trim() || '';
   const legacyFixtureRevision = Number(params.get('legacyFixtureRevision'));
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
+
+  useEffect(() => {
+    let cancelled = false;
+    void readAuthoringAvailability().then((value) => {
+      if (!cancelled) setAvailability(value);
+    }).catch(() => {
+      if (!cancelled) setAvailability({
+        schemaVersion: 'bloge.authoringAvailability.v1', apiResource: false, reusableFlow: false,
+      });
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!availability) return <main className="simple-authoring-home"><p>{t('Loading...')}</p></main>;
+  if ((requestedResourceId || requestedFixtureSetId || createApi || legacyInventory || legacyResourceId)
+      && !availability.apiResource) {
+    return <AuthoringUnavailable objectName="API Resource"
+      enableCommand="RG_API_RESOURCE_AUTHORING_ENABLED=true" />;
+  }
+  if ((requestedFlowId || createFlow) && !availability.reusableFlow) {
+    return <AuthoringUnavailable objectName="Reusable Flow"
+      enableCommand="RG_REUSABLE_FLOW_AUTHORING_ENABLED=true" />;
+  }
 
   if (requestedFixtureSetId) {
     return <FixtureObjectPage initialFixtureSetId={requestedFixtureSetId} />;
@@ -94,6 +119,23 @@ export default function AuthoringWorkbench() {
   }
   return <ApiResourceObjectPage initialResourceId={requestedResourceId}
     initialLegacyResourceId={legacyResourceId} t={t} />;
+}
+
+function AuthoringUnavailable({ objectName, enableCommand }: {
+  objectName: 'API Resource' | 'Reusable Flow';
+  enableCommand: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <main className="simple-authoring-home" data-testid="authoring-unavailable">
+      <header>
+        <p className="eyebrow">Resource Gateway</p>
+        <h1>{t('{object} authoring is not enabled for this deployment.', { object: objectName })}</h1>
+        <p>{t('Apply the authoring migrations, enable the deployment feature, and restart the service.')}</p>
+        <code>{enableCommand}</code>
+      </header>
+    </main>
+  );
 }
 
 function AuthoringHome() {

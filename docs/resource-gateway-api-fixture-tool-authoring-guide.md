@@ -19,13 +19,17 @@
 
 ## 2. 前置条件与边界
 
-1. 部署已启用 API Resource authoring、Fixture Set、Simulation 与 Reusable Flow 模块。
+1. 默认启动不会启用 API Resource authoring。先按顺序应用 `V20260830_001` 至
+   `V20260901_017`，再设置 `RG_API_RESOURCE_AUTHORING_ENABLED=true`。需要编排 Tool 时，同时设置
+   `RG_REUSABLE_FLOW_AUTHORING_ENABLED=true`，然后重启服务。
 2. 当前身份具有 `API_RESOURCE_AUTHORING` 权限，并且 tenant、project、environment 由受信身份解析，不由页面 Header 自报。
 3. 生产环境已应用当前 authoring migrations，并配置所需外部 Secret Provider；没有 provider 时，受保护认证与真实出站必须保持 fail-closed。
 4. 本手册只使用 `RETURN · OUTPUT_LEVEL` 和 whole-flow `RETURN` Fixture，因此运行时不会访问 `api.example.test`。
 5. `SIMULATED_ONLY`、`MOCKED`、`NO_EGRESS` 表示本次运行没有真实外部副作用；`Governance: NOT_CHECKED` 不得解读为可发布或已审批。
 
 入口：API Resource 与 Tool 使用 `/workbench/`；Operator 与 built-in function 使用 `/libraries/`。
+工作台会先读取 `/api/authoring/availability`。部署未启用对应模块时，页面显示配置说明，不再发送必然返回
+`404` 的 Preview、保存或模拟请求。
 
 ## 3. 配置一个 API Resource
 

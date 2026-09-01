@@ -1226,6 +1226,9 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'No Scenario rehearsal batches are visible in this scope.': '当前作用域内没有可见的测试场景演练批次。',
   'Explore samples': '浏览示例',
   'Scenario rehearsals are not enabled for this deployment.': '当前部署未启用测试场景演练。',
+  '{object} authoring is not enabled for this deployment.': '当前部署未启用 {object} 编排。',
+  'Apply the authoring migrations, enable the deployment feature, and restart the service.':
+    '请应用编排迁移、启用部署功能，然后重启服务。',
   'Loading older batches...': '正在加载更早批次...',
   'Load older batches': '加载更早批次',
   'Selected batch': '所选批次',

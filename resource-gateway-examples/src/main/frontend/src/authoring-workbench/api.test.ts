@@ -4,6 +4,7 @@ import {
   listApiResourceFixtures,
   listApiConnections,
   previewOpenApi,
+  readAuthoringAvailability,
   readApiResource,
   readLegacyAssetMigrationInventory,
   readLegacyMigrationAssessment,
@@ -14,6 +15,15 @@ import {
 import type { ApiResourceSaveCommand } from './model';
 
 describe('simple authoring transport', () => {
+  it('reads the public deployment gate before authoring requests', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.authoringAvailability.v1', apiResource: false, reusableFlow: false,
+    }));
+
+    expect(await readAuthoringAvailability(transport)).toMatchObject({ apiResource: false });
+    expect(transport).toHaveBeenCalledWith('/api/authoring/availability');
+  });
+
   it('lists safe committed Connections for visible selection', async () => {
     const transport = vi.fn().mockResolvedValue(response([]));
 

@@ -87,6 +87,11 @@ RG_API_RESOURCE_AUTHORING_ENABLED=true
 # Optional: RG_API_RESOURCE_AUTHORING_LEASE_SECONDS=60
 ```
 
+`GET /api/authoring/availability` remains available while the feature is disabled. The static workbench reads this
+payload before rendering Resource or Flow mutation controls, so a default deployment shows an explicit setup message
+instead of offering an action that can only return `404`. The endpoint exposes feature booleans only; it does not
+report database, secret-provider, or identity details.
+
 When enabled, missing migrations or compiler/readiness prerequisites fail startup; the runtime does not
 silently fall back to the in-memory store. J2 covers scoped claim, committed reads, concurrent staging,
 transactional stage/commit/fail, lease fencing, restart-safe history, and tamper rejection. The opt-in compiler

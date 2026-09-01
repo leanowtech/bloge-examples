@@ -20,6 +20,19 @@ export interface StoredResponse<T> {
   replayed: boolean;
 }
 
+export interface AuthoringAvailability {
+  schemaVersion: 'bloge.authoringAvailability.v1';
+  apiResource: boolean;
+  reusableFlow: boolean;
+}
+
+/** Reads the always-available deployment gate before rendering authoring actions. */
+export async function readAuthoringAvailability(
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<AuthoringAvailability> {
+  return body(await transport('/api/authoring/availability'));
+}
+
 /** Lists safe committed Connections for visible selection on the API object page. */
 export async function listApiConnections(
   transport: AuthoringWorkbenchTransport = fetch,
