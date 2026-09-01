@@ -1,6 +1,6 @@
 {
   "schemaVersion": "bloge.legacyAssetMigrationInventory.v1",
-  "summary": { "total": 2, "readyToReauthor": 1, "needsRepair": 0, "legacyOnly": 1 },
+  "summary": { "total": 3, "readyToReauthor": 2, "needsRepair": 0, "legacyOnly": 1 },
   "items": [
     {
       "kind": "API_RESOURCE",
@@ -11,6 +11,16 @@
       "fixtureReferences": 0,
       "reasonCodes": ["CONNECTION_SELECTION_REQUIRED"],
       "action": { "kind": "REAUTHOR_RESOURCE", "path": "/workbench/?create=api" }
+    },
+    {
+      "kind": "REUSABLE_FLOW_DRAFT",
+      "sourceId": "customer-tool-draft",
+      "sourceRevision": 2,
+      "displayName": "Customer tool",
+      "status": "READY_TO_REAUTHOR",
+      "fixtureReferences": 1,
+      "reasonCodes": ["EXPLICIT_REAUTHORING_REQUIRED"],
+      "action": { "kind": "REAUTHOR_FLOW", "path": "/workbench/?create=flow" }
     },
     {
       "kind": "REUSABLE_FLOW_DRAFT",

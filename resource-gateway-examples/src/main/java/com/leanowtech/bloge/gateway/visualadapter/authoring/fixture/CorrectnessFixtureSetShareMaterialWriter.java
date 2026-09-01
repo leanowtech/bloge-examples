@@ -74,9 +74,7 @@ public final class CorrectnessFixtureSetShareMaterialWriter
 
     private Result writeProtected(
             Request request, FixtureShareIdentity identity, IntegrationRequestContext context) {
-        if (!(request.source().subject() instanceof FixtureSubjectRef.FlowVersion subject)) {
-            throw new IllegalArgumentException("Shared Fixture requires an exact Flow Version subject");
-        }
+        FlowCoordinate subject = flowCoordinate(request.source().subject());
         Instant now = clock.instant();
         PrincipalRef owner = new PrincipalRef(identity.actorId(), principalKind(identity.actorType()), "");
         EnterpriseScope scope = new EnterpriseScope(
@@ -87,12 +85,12 @@ public final class CorrectnessFixtureSetShareMaterialWriter
                 request.source().fingerprint());
         FixtureSource source = new FixtureSource(SourceKind.SCENARIO, sourceRef);
         ExactTargetRef target = new ExactTargetRef(
-                TargetKind.GRAPH, subject.publicationId(), subject.revision(), subject.fingerprint());
+                TargetKind.GRAPH, subject.id(), subject.revision(), subject.fingerprint());
         String schemaFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(mapper, Map.of(
                 "subjectFingerprint", subject.fingerprint(),
                 "schema", request.outputSchema().schema()));
         ExactSchemaRef schemaRef = new ExactSchemaRef(
-                subject.publicationId() + ":output", subject.revision(), schemaFingerprint);
+                subject.id() + ":output", subject.revision(), schemaFingerprint);
         RetentionDescriptor retention = new RetentionDescriptor(
                 "fixture-share-retention-v1", request.policy().retentionDays(),
                 now.plus(Duration.ofDays(request.policy().retentionDays())));
@@ -142,4 +140,18 @@ public final class CorrectnessFixtureSetShareMaterialWriter
             default -> throw new IllegalArgumentException("Fixture share actor type is invalid");
         };
     }
+
+    /** Narrows the governed boundary to exact reusable Flow coordinates only. */
+    private static FlowCoordinate flowCoordinate(FixtureSubjectRef subject) {
+        if (subject instanceof FixtureSubjectRef.FlowVersion version) {
+            return new FlowCoordinate(
+                    version.publicationId(), version.revision(), version.fingerprint());
+        }
+        if (subject instanceof FixtureSubjectRef.FlowDraft draft) {
+            return new FlowCoordinate(draft.draftId(), draft.revision(), draft.fingerprint());
+        }
+        throw new IllegalArgumentException("Shared Fixture requires an exact Flow subject");
+    }
+
+    private record FlowCoordinate(String id, int revision, String fingerprint) { }
 }

@@ -499,6 +499,25 @@ the visible two-Resource -> legacy inventory -> Flow save/publish -> Fixture/sim
 actions and is **1/1 green**. The final serial `clean verify` completed with `Tests run: 8,250; failures: 0; errors: 0;
 skipped: 38` and `BUILD SUCCESS` in 11:51.
 
+Legacy `GraphDraft.nodeFixtures` now have a separate explicit re-authoring path. Before a structurally exact reusable
+Flow draft exists, the inventory reports `NEEDS_REPAIR` and directs the author to `REAUTHOR_FLOW`. After the author
+saves that Flow, the same legacy item becomes `READY_TO_REAUTHOR` and opens the exact Flow draft's Fixture tab. The
+`bloge.legacyFixtureReauthorPreview.v1` response contains only the legacy draft coordinate, exact target Flow draft,
+suggested Fixture Set identifier, node identifier, material kind, fidelity, and whether an expected input existed.
+Legacy inline input/output, governed asset identifiers, fingerprints, receipts, credentials, and protected material
+never enter the response or the new Fixture. The author enters new whole-Flow input and output, then uses the existing
+save, simulation, share, independent review, and governed-run path. Sharing resolves the exact committed Flow draft
+contract and retains that draft coordinate as the Fixture authority; it does not silently retarget the Fixture to a
+later publication. The focused backend migration/schema/share gate is **39/39 green**, and focused frontend transport/
+component tests are **20/20 green**. i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates
+pass (AuthoringWorkbench **194.65 KiB / 12 files**, AuthorCanvas **349.96 KiB / 22 files**). A real Chrome method
+completes the visible two-Resource -> legacy Flow -> legacy Fixture re-authoring -> simulation -> share -> review ->
+governed-run chain in **28 primary actions** and **9.574 seconds** (**1/1 green**, no skips). The final serial
+`clean verify` completed with `Tests run: 8,253; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS` in 11:44.
+This closes the approved local single-item Fixture re-authoring path. Batch mutation, migration coverage receipts,
+real PostgreSQL migration/concurrency, remote authenticated OpenAPI egress, and external Vault/provider certification
+remain separate work or deployment evidence.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -495,8 +495,9 @@ class VisualAuthoringBrowserDomTest {
         ReusableFlowFixtureShareModule browserReusableFlowFixtureShareModule(
                 InMemoryStandaloneFixtureSetStore fixtures,
                 InMemoryReusableFlowPublicationStore publications,
+                InMemoryReusableFlowDraftStore drafts,
                 FixtureSetShareMaterialWriter materialWriter) {
-            return new ReusableFlowFixtureShareModule(fixtures, publications, materialWriter);
+            return new ReusableFlowFixtureShareModule(fixtures, publications, drafts, materialWriter);
         }
 
         /** Advances protected assets only through the production correctness review lifecycle. */
@@ -1529,7 +1530,11 @@ class VisualAuthoringBrowserDomTest {
                 List.of(new GraphDraft.DraftEdge("profile-orders", "data",
                         new GraphDraft.Endpoint("profile", "out", "customerId"),
                         new GraphDraft.Endpoint("orders", "in", "customerId"))),
-                Map.of(), Map.of(), new GraphDraft.OutputSelection("orders", ""),
+                Map.of(), Map.of("profile", new GraphDraft.NodeFixture(
+                        Map.of("legacyCustomerLabel", "must-not-be-copied"),
+                        Map.of("customerId", "legacy-input"), null,
+                        GraphDraft.NodeFixture.ResourceFidelity.OUTPUT_LEVEL)),
+                new GraphDraft.OutputSelection("orders", ""),
                 Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty()));
 
         trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
@@ -1543,8 +1548,8 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='legacy-item:REUSABLE_FLOW_DRAFT:" + legacyFlow.draftId() + "'] a"), actions);
         WebElement flowReview = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='legacy-flow-reauthor-preview']")));
-        assertThat(flowReview.getText()).contains("Nothing is migrated automatically", "0 Fixture references")
-                .doesNotContain("nodeFixtures", "governedRef");
+        assertThat(flowReview.getText()).contains("Nothing is migrated automatically", "1 Fixture references")
+                .doesNotContain("nodeFixtures", "governedRef", "must-not-be-copied", "legacy-input");
         assertThat(driver.findElement(By.cssSelector("[data-testid='flow-id']")).getAttribute("value"))
                 .isEqualTo(flowId);
         assertThat(driver.findElement(By.cssSelector("[data-testid='flow-node-list']")).getText())
@@ -1553,8 +1558,24 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-fixture-panel']")));
 
-        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(4)"), actions);
-        trackedClick(wait, By.cssSelector("[data-testid='publish-flow']"), actions);
+        trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        trackedClick(wait, By.cssSelector("[data-testid='open-legacy-inventory']"), actions);
+        WebElement legacyFixture = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='legacy-item:FIXTURE_SET:" + legacyFlow.draftId() + "']")));
+        assertThat(legacyFixture.getText()).contains("READY_TO_REAUTHOR", "EXPLICIT_CASE_AUTHORING_REQUIRED")
+                .doesNotContain("must-not-be-copied", "legacy-input");
+        trackedClick(wait, By.cssSelector(
+                "[data-testid='legacy-item:FIXTURE_SET:" + legacyFlow.draftId() + "'] a"), actions);
+        WebElement fixtureReview = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-fixture-reauthor-preview']")));
+        assertThat(fixtureReview.getText()).contains("Legacy Fixture material is not copied", "profile", "INLINE")
+                .doesNotContain("must-not-be-copied", "legacy-input", "fixtureAssetId", "governedRef");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-fixture-input']")).getAttribute("value"))
+                .isEqualTo("{}");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-fixture-output']")).getAttribute("value"))
+                .isEqualTo("{}");
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-fixture-panel']")));
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
@@ -1569,12 +1590,15 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='flow-simulation-output']"))).getText())
                 .contains("\"orderCount\": 2");
 
-        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(2)"), actions);
+        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(4)"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='publish-flow']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-fixture-panel']")));
         trackedClick(wait, By.cssSelector("[data-testid='open-flow-fixture']"), actions);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='fixture-object-page']")));
         assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-authority']")).getText())
-                .contains("Flow Version");
+                .contains("Flow Draft");
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='fixture-share-redaction-paths']"))), "/customerLabel");
         trackedClick(wait, By.cssSelector("[data-testid='share-fixture-object']"), actions);
@@ -1617,9 +1641,8 @@ class VisualAuthoringBrowserDomTest {
 
         var active = browserStandaloneFixtureSetStore.findHead(scope, fixtureSetId)
                 .orElseThrow(() -> new AssertionError("visible task did not persist its Fixture head"));
-        assertThat(active.generated().view().subject())
-                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.fixture
-                        .FixtureSubjectRef.FlowVersion.class);
+        assertThat(active.generated().view().subject()).isEqualTo(
+                browserReusableFlowDraftStore.findHead(scope, flowId).orElseThrow().subject());
         FixtureSetCommand.Behavior.Return returned = (FixtureSetCommand.Behavior.Return)
                 active.generated().view().cases().getFirst().controls().getFirst().behavior();
         FixtureSetCommand.Material.FixtureAsset material =
@@ -1630,7 +1653,7 @@ class VisualAuthoringBrowserDomTest {
                         .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
 
         Duration elapsed = Duration.between(started, Instant.now());
-        assertThat(actions.get()).isEqualTo(26);
+        assertThat(actions.get()).isEqualTo(28);
         assertThat(elapsed).isLessThan(Duration.ofSeconds(90));
         System.out.printf("[simple-authoring-task] primaryActions=%d elapsedMs=%d%n",
                 actions.get(), elapsed.toMillis());

@@ -6,13 +6,20 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFix
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSaveIntent;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializerTest.command;
@@ -64,6 +71,51 @@ class ReusableFlowFixtureShareModuleTest {
     }
 
     @Test
+    void protectsNewMaterialAgainstTheExactCommittedFlowDraftContract() {
+        ReusableFlowVersion version = version();
+        ReusableFlowDraft draft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        ReusableFlowDraftStore drafts = mock(ReusableFlowDraftStore.class);
+        when(drafts.findDraftRevisionStored(SCOPE, draft.draftId(), draft.revision()))
+                .thenReturn(Optional.of(new ReusableFlowStoredDraft(draft,
+                        new ReusableFlowSaveReceipt(ReusableFlowSaveReceipt.SCHEMA_VERSION,
+                                draft.flowId(), draft.subject(),
+                                ReusableFlowSaveReceipt.Validation.VALID), "\"draft-etag\"")));
+        InMemoryStandaloneFixtureSetStore store = new InMemoryStandaloneFixtureSetStore();
+        GeneratedDefaultFixture source = new WholeFlowFixtureMaterializer().generate(
+                "draft-cases", 1, draft,
+                command(draft.subject(), FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(
+                                FixtureSetCommand.Material.inline(output())), null));
+        var saved = store.save(new StandaloneFixtureSetSaveIntent(
+                SCOPE, "author", "draft-cases", ExpectedRevision.create(), "save-draft",
+                fingerprint('2'), source));
+        AtomicInteger writes = new AtomicInteger();
+        FixtureSetShareMaterialWriter writer = (request, identity) -> {
+            writes.incrementAndGet();
+            assertThat(request.outputSchema()).isEqualTo(draft.contract().output());
+            assertThat(request.payload()).isEqualTo(output());
+            return new FixtureSetShareMaterialWriter.Result(
+                    new FixtureSetCommand.Material.FixtureAsset(
+                            request.fixtureAssetId(), 2, fingerprint('b')), output());
+        };
+        ReusableFlowFixtureShareModule module = new ReusableFlowFixtureShareModule(
+                store, mock(ReusableFlowPublicationStore.class), drafts, writer);
+
+        var result = module.share(identity(), "draft-cases", saved.strongEtag(),
+                "share-draft", shareCommand(source));
+
+        assertThat(result.view().subject()).isEqualTo(draft.subject());
+        assertThat(result.view().status()).isEqualTo(
+                com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView.Status.SHARING_PENDING);
+        assertThat(writes).hasValue(1);
+    }
+
+    @Test
     void unavailableWriterAndNonSubjectReturnFailClosed() {
         ReusableFlowVersion version = version();
         InMemoryStandaloneFixtureSetStore store = new InMemoryStandaloneFixtureSetStore();
@@ -92,7 +144,7 @@ class ReusableFlowFixtureShareModuleTest {
 
     private static FixtureShareCommand shareCommand(GeneratedDefaultFixture source) {
         return new FixtureShareCommand(FixtureShareCommand.SCHEMA_VERSION,
-                new FixtureShareCommand.Source("cases", source.view().revision(),
+                new FixtureShareCommand.Source(source.view().fixtureSetId(), source.view().revision(),
                         source.view().fingerprint(), source.view().statusRevision()),
                 new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
                         new FixtureShareCommand.Redaction("default-v1", List.of("/email"))));

@@ -16,10 +16,13 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.Standal
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.util.List;
 import java.util.Map;
@@ -31,15 +34,26 @@ public final class ReusableFlowFixtureShareModule {
     private static final int MAX_RETENTION_DAYS = 365;
     private final StandaloneFixtureSetStore store;
     private final ReusableFlowPublicationStore publications;
+    private final ReusableFlowDraftStore drafts;
     private final FixtureSetShareMaterialWriter materials;
 
-    /** Creates one share module over the same store transaction as protected material writes. */
+    /** Creates a version-only share module; draft-owned Fixture sharing remains unavailable. */
     public ReusableFlowFixtureShareModule(
             StandaloneFixtureSetStore store,
             ReusableFlowPublicationStore publications,
             FixtureSetShareMaterialWriter materials) {
+        this(store, publications, null, materials);
+    }
+
+    /** Creates one share module that can protect exact draft- or version-owned Fixture material. */
+    public ReusableFlowFixtureShareModule(
+            StandaloneFixtureSetStore store,
+            ReusableFlowPublicationStore publications,
+            ReusableFlowDraftStore drafts,
+            FixtureSetShareMaterialWriter materials) {
         this.store = Objects.requireNonNull(store, "store");
         this.publications = Objects.requireNonNull(publications, "publications");
+        this.drafts = drafts;
         this.materials = Objects.requireNonNull(materials, "materials");
     }
 
@@ -86,18 +100,10 @@ public final class ReusableFlowFixtureShareModule {
             FixtureShareIdentity identity, StoredFixtureSet stored, int revision,
             int statusRevision, String reviewRequestId, FixtureShareCommand command) {
         FixtureSetView source = stored.generated().view();
-        if (!(source.subject() instanceof FixtureSubjectRef.FlowVersion subject)) {
-            throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
-        }
-        ReusableFlowVersion version = publications.findVersion(
-                        stored.scope(), subject.publicationId(), subject.revision())
-                .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
-        if (!version.subject().equals(subject)) {
-            throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
-        }
+        SchemaEnvelope outputSchema = outputSchema(stored.scope(), source.subject());
         List<FixtureSetCommand.Case> cases = source.cases().stream()
                 .map(fixtureCase -> protectCase(identity, source, revision, reviewRequestId,
-                        version, command.policy(), fixtureCase))
+                        outputSchema, command.policy(), fixtureCase))
                 .toList();
         String fingerprint = FixtureSetFingerprints.of(
                 source.displayName(), source.subject(), cases);
@@ -123,7 +129,7 @@ public final class ReusableFlowFixtureShareModule {
 
     private FixtureSetCommand.Case protectCase(
             FixtureShareIdentity identity, FixtureSetView source, int revision,
-            String reviewRequestId, ReusableFlowVersion version,
+            String reviewRequestId, SchemaEnvelope outputSchema,
             FixtureShareCommand.Policy policy, FixtureSetCommand.Case fixtureCase) {
         if (fixtureCase.controls().size() != 1) {
             throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
@@ -142,13 +148,40 @@ public final class ReusableFlowFixtureShareModule {
         FixtureSetShareMaterialWriter.Result protectedMaterial = materials.write(
                 new FixtureSetShareMaterialWriter.Request(
                         assetId, source, revision, reviewRequestId, fixtureCase.caseId(),
-                        fixtureCase.name(), version.contract().output(), policy, inline.value()), identity);
+                        fixtureCase.name(), outputSchema, policy, inline.value()), identity);
         FixtureSetCommand.Control protectedControl = new FixtureSetCommand.Control(
                 control.target(), FixtureSetCommand.Behavior.returned(protectedMaterial.material()),
                 control.fidelity());
         return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
                 fixtureCase.input(), List.of(protectedControl),
                 new FixtureSetCommand.Expect(protectedMaterial.safeOutput()));
+    }
+
+    /** Resolves the exact immutable contract named by the Fixture subject without reading material. */
+    private SchemaEnvelope outputSchema(AuthoringScope scope, FixtureSubjectRef subject) {
+        if (subject instanceof FixtureSubjectRef.FlowVersion versionSubject) {
+            ReusableFlowVersion version = publications.findVersion(
+                            scope, versionSubject.publicationId(), versionSubject.revision())
+                    .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
+            if (!version.subject().equals(versionSubject)) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+            }
+            return version.contract().output();
+        }
+        if (subject instanceof FixtureSubjectRef.FlowDraft draftSubject) {
+            if (drafts == null) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+            }
+            ReusableFlowDraft draft = drafts.findDraftRevisionStored(
+                            scope, draftSubject.draftId(), draftSubject.revision())
+                    .map(stored -> stored.draft())
+                    .orElseThrow(() -> failure(ApiFixtureSetAuthoringFailure.Code.NOT_FOUND));
+            if (!draft.subject().equals(draftSubject)) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+            }
+            return draft.contract().output();
+        }
+        throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
     }
 
     private static String governedAssetId(

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.migration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
@@ -28,6 +29,82 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LegacyAssetMigrationModuleTest {
+
+    @Test
+    void previewsLegacyFixtureReferencesAgainstOneExactReauthoredFlowWithoutReturningMaterial()
+            throws Exception {
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        Map<String, ComposableDefinition> definitions = Map.of(
+                "customer.get", definition("customer.get", 2, 'a', objectSchema("customerId"),
+                        objectSchema("customerId")),
+                "orders.list", definition("orders.list", 3, 'b', objectSchema("customerId"),
+                        objectSchema("orderId")));
+        LegacyComposableResourceSource authoredResources = (trustedScope, resourceId) ->
+                scope.equals(trustedScope) ? Optional.ofNullable(definitions.get(resourceId)) : Optional.empty();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = drafts.save(apiFlowDraft(Map.of(
+                "lookup", new GraphDraft.NodeFixture(
+                        Map.of("customerId", "legacy-secret-output"),
+                        Map.of("customerId", "legacy-secret-input"), null,
+                        GraphDraft.NodeFixture.ResourceFidelity.OUTPUT_LEVEL),
+                "orders", new GraphDraft.NodeFixture(null, null,
+                        new GraphDraft.GovernedFixtureRef(
+                                "protected-asset-id", 7, "sha256:" + "c".repeat(64)),
+                        GraphDraft.NodeFixture.ResourceFidelity.TRANSPORT_LEVEL))));
+        LegacyAssetMigrationModule flowProjector = new LegacyAssetMigrationModule(
+                source(), new InMemoryResourceDesignContractRegistry(), drafts,
+                new InMemoryVisualGraphPublicationRepository(), new JsonSchemaSampleGenerator(),
+                new ObjectMapper(), new ApiResourceDecisions(), authoredResources);
+        LegacyReusableFlowReauthorPreview flowPreview = flowProjector.previewFlow(scope,
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT,
+                stored.draftId(), stored.revision());
+        ReusableFlowCommand suggested = flowPreview.suggestedFlow();
+        LegacyAssetMigrationInventory.Item blockedFixture = item(flowProjector.inventory(scope),
+                LegacyAssetMigrationInventory.Kind.FIXTURE_SET, stored.draftId());
+        assertThat(blockedFixture.status()).isEqualTo(LegacyAssetMigrationInventory.Status.NEEDS_REPAIR);
+        assertThat(blockedFixture.reasonCodes()).containsExactly("FLOW_REAUTHOR_REQUIRED");
+        assertThat(blockedFixture.action().kind())
+                .isEqualTo(LegacyAssetMigrationInventory.ActionKind.REAUTHOR_FLOW);
+        ReusableFlowDraft target = new ReusableFlowDraft(null, flowPreview.suggestedFlowId(), "flow-draft-1", 4,
+                "sha256:" + "d".repeat(64), suggested.flow().displayName(), suggested.flow().kind(),
+                suggested.flow().description(), suggested.flow().contract(), suggested.flow().graph(),
+                suggested.flow().layout(), ReusableFlowDraft.Status.DRAFT);
+        LegacyAssetMigrationModule module = new LegacyAssetMigrationModule(
+                source(), new InMemoryResourceDesignContractRegistry(), drafts,
+                new InMemoryVisualGraphPublicationRepository(), new JsonSchemaSampleGenerator(),
+                new ObjectMapper(), new ApiResourceDecisions(), authoredResources,
+                (trustedScope, flowId) -> scope.equals(trustedScope) && flowId.equals(target.flowId())
+                        ? Optional.of(target) : Optional.empty());
+
+        LegacyFixtureReauthorPreview preview = module.previewFixture(scope, stored.draftId(), stored.revision());
+
+        assertThat(preview.source()).isEqualTo(
+                new LegacyFixtureReauthorPreview.Source(stored.draftId(), stored.revision()));
+        assertThat(preview.targetFlowId()).isEqualTo(target.flowId());
+        assertThat(preview.target()).isEqualTo(target.subject());
+        assertThat(preview.suggestedFixtureSetId()).isEqualTo(target.flowId() + ".default");
+        assertThat(preview.references()).containsExactly(
+                new LegacyFixtureReauthorPreview.Reference(
+                        "lookup", LegacyFixtureReauthorPreview.MaterialKind.INLINE,
+                        "OUTPUT_LEVEL", true),
+                new LegacyFixtureReauthorPreview.Reference(
+                        "orders", LegacyFixtureReauthorPreview.MaterialKind.GOVERNED,
+                        "TRANSPORT_LEVEL", false));
+        assertThat(preview.diagnostics()).extracting(LegacyFixtureReauthorPreview.Diagnostic::code)
+                .containsExactly("AUTHOR_NEW_FIXTURE_MATERIAL", "GOVERNED_MATERIAL_NOT_COPIED");
+
+        LegacyAssetMigrationInventory.Item item = item(module.inventory(scope),
+                LegacyAssetMigrationInventory.Kind.FIXTURE_SET, stored.draftId());
+        assertThat(item.status()).isEqualTo(LegacyAssetMigrationInventory.Status.READY_TO_REAUTHOR);
+        assertThat(item.action()).isEqualTo(new LegacyAssetMigrationInventory.Action(
+                LegacyAssetMigrationInventory.ActionKind.REAUTHOR_FIXTURE,
+                "/workbench/?flowId=" + target.flowId() + "&tab=fixture&legacyFixtureDraftId="
+                        + stored.draftId() + "&legacyFixtureRevision=" + stored.revision()));
+
+        String wire = new ObjectMapper().writeValueAsString(preview);
+        assertThat(wire).doesNotContain("legacy-secret-output", "legacy-secret-input", "protected-asset-id",
+                "nodeFixtures", "governedRef", "fixtureAssetId", "schemaFingerprint");
+    }
 
     @Test
     void previewsOneApiOnlyLegacyDagAsAnExactReusableFlowWithoutFixtureMaterial() throws Exception {
@@ -227,7 +304,7 @@ class LegacyAssetMigrationModuleTest {
                 contracts, drafts, publications)
                 .inventory(new AuthoringScope("tenant-a", "project-a", "test"));
 
-        assertThat(inventory.summary()).isEqualTo(new LegacyAssetMigrationInventory.Summary(7, 2, 3, 2));
+        assertThat(inventory.summary()).isEqualTo(new LegacyAssetMigrationInventory.Summary(7, 1, 4, 2));
         assertThat(inventory.items()).extracting(LegacyAssetMigrationInventory.Item::sourceId)
                 .contains("customer.get", "orders.list", "contract.only", data.draftId(), advanced.draftId(),
                         "publication-advanced")
@@ -243,7 +320,7 @@ class LegacyAssetMigrationModuleTest {
         assertThat(item(inventory, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, data.draftId()).status())
                 .isEqualTo(LegacyAssetMigrationInventory.Status.NEEDS_REPAIR);
         assertThat(item(inventory, LegacyAssetMigrationInventory.Kind.FIXTURE_SET, data.draftId()).reasonCodes())
-                .containsExactly("GOVERNED_REFERENCE_REVIEW_REQUIRED");
+                .containsExactly("FLOW_REAUTHOR_REQUIRED");
 
         String wire = new ObjectMapper().writeValueAsString(inventory);
         assertThat(wire).doesNotContain("customerName", "Ada", "fixture-a", "https://");

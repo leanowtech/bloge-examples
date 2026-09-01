@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "bloge.legacyFixtureReauthorPreview.v1",
+  "source": { "draftId": "legacy-draft", "revision": 3 },
+  "targetFlowId": "customer-tool",
+  "suggestedFixtureSetId": "customer-tool.default",
+  "target": { "kind": "FLOW_DRAFT", "draftId": "flow-draft", "revision": 4, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "references": [{ "nodeId": "orders", "materialKind": "GOVERNED", "fidelity": "TRANSPORT_LEVEL", "expectedInputPresent": false, "fixtureAssetId": "must-not-be-exposed" }],
+  "diagnostics": [{ "code": "AUTHOR_NEW_FIXTURE_MATERIAL", "message": "Enter new material." }]
+}

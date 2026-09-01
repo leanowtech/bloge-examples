@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/legacy-fixture-preview-v1.schema.json",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "draftId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }
+      },
+      "required": ["draftId", "revision"],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "FLOW_DRAFT" },
+        "draftId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+        "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" }
+      },
+      "required": ["kind", "draftId", "revision", "fingerprint"],
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "nodeId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "materialKind": { "enum": ["INLINE", "GOVERNED"] },
+        "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] },
+        "expectedInputPresent": { "type": "boolean" }
+      },
+      "required": ["nodeId", "materialKind", "fidelity", "expectedInputPresent"],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.legacyFixtureReauthorPreview.v1" },
+    "source": { "$ref": "#/$defs/source" },
+    "targetFlowId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "suggestedFixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "target": { "$ref": "#/$defs/target" },
+    "references": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reference" },
+      "minItems": 1,
+      "maxItems": 10000
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" },
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true
+    }
+  },
+  "required": ["schemaVersion", "source", "targetFlowId", "suggestedFixtureSetId", "target", "references", "diagnostics"],
+  "additionalProperties": false
+}

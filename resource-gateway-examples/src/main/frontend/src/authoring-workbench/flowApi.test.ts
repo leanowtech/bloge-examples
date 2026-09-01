@@ -7,6 +7,7 @@ import {
   reviewFixtureSet,
   readFlow,
   readLatestFlowVersion,
+  readLegacyFixtureReauthorPreview,
   readLegacyReusableFlowPreview,
   saveFixtureSet,
   shareFixtureSet,
@@ -17,6 +18,22 @@ import {
 import type { FixtureReviewCommand, FixtureSetCommand, FixtureShareCommand, ReusableFlowCommand } from './flowModel';
 
 describe('reusable Flow object transport', () => {
+  it('reads a payload-free legacy Fixture review without mutation headers', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.legacyFixtureReauthorPreview.v1',
+      source: { draftId: 'legacy/draft', revision: 3 }, targetFlowId: 'customer-tool',
+      suggestedFixtureSetId: 'customer-tool.default', target: {}, references: [], diagnostics: [],
+    }));
+
+    await readLegacyFixtureReauthorPreview('legacy/draft', 3, transport);
+
+    expect(transport.mock.calls[0][0]).toBe(
+      '/api/authoring/migrations/legacy-assets/fixtures/legacy%2Fdraft:preview?revision=3');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('API_RESOURCE_AUTHORING');
+    expect(headers.get('Idempotency-Key')).toBeNull();
+    expect(headers.get('If-Match')).toBeNull();
+  });
   it('reads one exact fixture-free legacy Flow preview without mutation headers', async () => {
     const transport = vi.fn().mockResolvedValue(response({
       schemaVersion: 'bloge.legacyReusableFlowReauthorPreview.v1',

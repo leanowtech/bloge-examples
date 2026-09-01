@@ -2440,3 +2440,71 @@ BUILD SUCCESS; Total time: 11:51 min
 reference 仍需独立的显式重创入口；旧 payload 与 governed material 必须继续留在受保护权威中，不能从 Graph Draft
 复制。真实 PostgreSQL migration/concurrency、Remote OpenAPI authenticated egress 与外部 Vault/provider 认证仍属于
 部署环境证据。按已批准范围粗估，本地可实现代码/验收差距约 3%–4%；下一轮优先关闭 Fixture reference 重创。
+
+## 53. Iteration 52 — Fixture reference 显式重创闭环
+
+日期：2026-09-01。
+
+### 已完成
+
+- 增加只读协议 `bloge.legacyFixtureReauthorPreview.v1` 与认证端点
+  `GET /api/authoring/migrations/legacy-assets/fixtures/{draftId}:preview?revision={revision}`。响应只包含 legacy
+  draft coordinate、exact target Flow Draft、建议 Fixture Set id，以及排序后的 node id、material kind、fidelity 和
+  `expectedInputPresent`。旧 inline input/output、governed asset id/fingerprint、receipt、credential 和 protected
+  material 不进入 wire。
+- Fixture inventory 在 exact committed Flow Draft 尚不存在时返回 `NEEDS_REPAIR` + `REAUTHOR_FLOW`。作者保存结构完全
+  一致的新 Flow 后，inventory 才返回 `READY_TO_REAUTHOR` + `REAUTHOR_FIXTURE`，并打开该 Flow 的 Fixture tab。预览和
+  inventory 都不执行写入。
+- Fixture 页面保留 `{}` 输入和输出，要求作者显式录入新 whole-Flow Case。保存继续使用 exact Flow Draft subject，
+  并经过既有 simulation authority；系统不从 legacy `GraphDraft.nodeFixtures` 复制任何材料。
+- Fixture share module 和 correctness material adapter 均支持 exact committed Flow Draft。分享只使用 draft 的 output
+  schema 和 payload-free coordinate 创建受保护材料，随后沿用独立审核、`TEAM_AVAILABLE` 与 governed-run 路径；不会
+  将 Fixture 静默切换为 later Flow Version。
+- 单浏览器链从两个 API Resource 开始，依次完成 legacy Flow 重创、legacy Fixture 重录、模拟、发布、分享、可见 reviewer
+  登录、审核和受治理运行。服务端只在用户动作完成后读取权威，最终 Fixture subject 与 exact committed Flow Draft
+  coordinate 相等。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=LegacyAssetMigrationModuleTest,LegacyAssetMigrationControllerTest,\
+LegacyAssetMigrationConfigurationTest,AuthoringProtocolSchemaTest,\
+ReusableFlowFixtureShareModuleTest,CorrectnessFixtureSetShareMaterialWriterTest,\
+StandaloneFixtureSetRuntimeConfigurationTest test
+
+Tests run: 39; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/FlowObjectPage.test.tsx \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 3 passed; Tests: 20 passed
+npx tsc --noEmit: PASS
+
+npm run build
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 194.65 KiB / 12 files
+AuthorCanvas startup closure: 349.96 KiB / 22 files
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions: 28; elapsedMs: 9,574
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,253; Failures: 0; Errors: 0; Skipped: 38
+BUILD SUCCESS; Total time: 11:44 min
+```
+
+### 当前差距评估
+
+旧 Resource、API-only Graph Draft / frozen Publication 和 Fixture reference 现在都有逐项、显式、payload-free 的本地
+重创路径。按已批准范围复核，剩余本地代码与验收差距约 2%–2.5%，已低于 3% 停止条件。剩余工作不影响该单项链路：
+批量 mutation/replay、迁移覆盖率 receipt，以及更高级 legacy control edge 仍未实现。真实 PostgreSQL
+migration/concurrency、Remote OpenAPI authenticated egress 与外部 Vault/provider 认证属于部署环境证据，不能由本地
+H2、单机 Chrome 或 mock provider 代替。

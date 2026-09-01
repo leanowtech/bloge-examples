@@ -15,7 +15,7 @@ vi.mock('./api', async () => ({
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
   readFlow: vi.fn(), readLatestFlowVersion: vi.fn(), readFlowFixture: vi.fn(), listFlowFixtures: vi.fn(),
-  readLegacyReusableFlowPreview: vi.fn(),
+  readLegacyReusableFlowPreview: vi.fn(), readLegacyFixtureReauthorPreview: vi.fn(),
   saveFlow: vi.fn(), saveFlowFixture: vi.fn(), simulateFlowFixture: vi.fn(), publishFlow: vi.fn(),
 }));
 
@@ -181,6 +181,85 @@ describe('Tool and Solution object page', () => {
       'customer-orders', suggestedFlow, null, expect.stringMatching(/^save-flow:customer-orders:/),
     );
     expect(element('flow-fixture-panel')).toBeTruthy();
+  });
+
+  it('opens one payload-free legacy Fixture review against the exact reauthored Flow draft', async () => {
+    window.history.replaceState(null, '', '/workbench/?flowId=customer-orders&tab=fixture'
+      + '&legacyFixtureDraftId=legacy-draft&legacyFixtureRevision=3');
+    const profile = resource('profile', { customerId: 'string' }, { name: 'string' });
+    const target = { kind: 'FLOW_DRAFT' as const, draftId: 'draft-new', revision: 1, fingerprint: hash('c') };
+    vi.mocked(flowApi.readFlow).mockResolvedValue({
+      strongEtag: '"flow-r1"', replayed: false,
+      value: {
+        schemaVersion: 'bloge.reusableFlowDraft.v1', flowId: 'customer-orders',
+        draftId: target.draftId, revision: target.revision, fingerprint: target.fingerprint,
+        displayName: 'Customer orders', kind: 'TOOL', description: '', status: 'DRAFT',
+        contract: profile.contract,
+        graph: { nodes: [{
+          nodeId: 'profile', label: 'Profile',
+          use: { kind: 'API_RESOURCE', resourceId: 'profile', revision: 3, fingerprint: profile.fingerprint },
+          inputs: [],
+        }], output: { nodeId: 'profile', path: '$' } },
+        layout: { nodes: { profile: { x: 120, y: 160 } } },
+      },
+    });
+    vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
+    vi.mocked(flowApi.readLegacyFixtureReauthorPreview).mockResolvedValue({
+      schemaVersion: 'bloge.legacyFixtureReauthorPreview.v1',
+      source: { draftId: 'legacy-draft', revision: 3 }, targetFlowId: 'customer-orders',
+      suggestedFixtureSetId: 'customer-orders.default', target,
+      references: [{
+        nodeId: 'profile', materialKind: 'GOVERNED', fidelity: 'TRANSPORT_LEVEL',
+        expectedInputPresent: true,
+      }],
+      diagnostics: [{
+        code: 'GOVERNED_MATERIAL_NOT_COPIED', message: 'Protected material was not copied.',
+      }],
+    });
+    vi.mocked(flowApi.saveFlowFixture).mockResolvedValue({
+      strongEtag: '"fixture-r1"', replayed: false,
+      value: {
+        schemaVersion: 'bloge.fixtureSetSaveReceipt.v1', fixtureSetId: 'customer-orders.default',
+        revision: 1, fingerprint: hash('d'), subject: target, caseIds: ['default'],
+        status: 'PRIVATE_DRAFT', statusRevision: 1,
+      },
+    });
+    vi.mocked(flowApi.simulateFlowFixture).mockResolvedValue({
+      schemaVersion: 'bloge.simulationRun.v1', runId: 'run-legacy-fixture', status: 'SUCCEEDED',
+      output: { name: 'new-value' },
+      nodes: [{ nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'INLINE',
+        egress: { decision: 'FIXTURE', attempted: false } }],
+      verdicts: { execution: 'SIMULATED_ONLY', contract: 'PASSED', assertions: 'PASSED', governance: 'NOT_CHECKED' },
+      diagnostics: [],
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(flowApi.readLegacyFixtureReauthorPreview).toHaveBeenCalledWith('legacy-draft', 3);
+    expect(element('legacy-fixture-reauthor-preview').textContent)
+      .toContain('Legacy Fixture material is not copied');
+    expect(element('legacy-fixture-reauthor-preview').textContent)
+      .toContain('profile · GOVERNED');
+    expect(element('legacy-fixture-reauthor-preview').textContent)
+      .toContain('TRANSPORT_LEVEL · expected input present');
+    expect(element<HTMLTextAreaElement>('flow-fixture-input').value).toBe('{}');
+    expect(element<HTMLTextAreaElement>('flow-fixture-output').value).toBe('{}');
+    expect(host.textContent).not.toContain('fixtureAssetId');
+
+    await act(async () => {
+      change('flow-fixture-input', '{"customerId":"new-input"}');
+      change('flow-fixture-output', '{"name":"new-value"}');
+      button('save-flow-fixture').click();
+    });
+
+    expect(flowApi.saveFlowFixture).toHaveBeenCalledWith(
+      'customer-orders.default', expect.objectContaining({ subject: target }), null,
+      expect.stringMatching(/^save-flow-fixture:customer-orders.default:/),
+    );
+    expect(element('flow-simulation-output').textContent).toContain('new-value');
   });
 
   it('reloads an exact Flow draft and publishes the same authority', async () => {

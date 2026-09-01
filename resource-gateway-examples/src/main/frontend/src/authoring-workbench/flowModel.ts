@@ -85,6 +85,21 @@ export interface LegacyReusableFlowReauthorPreview {
   diagnostics: Array<{ code: string; message: string }>;
 }
 
+export interface LegacyFixtureReauthorPreview {
+  schemaVersion: 'bloge.legacyFixtureReauthorPreview.v1';
+  source: { draftId: string; revision: number };
+  targetFlowId: string;
+  suggestedFixtureSetId: string;
+  target: FlowDraftRef;
+  references: Array<{
+    nodeId: string;
+    materialKind: 'INLINE' | 'GOVERNED';
+    fidelity: 'OUTPUT_LEVEL' | 'PROTOCOL_DERIVED' | 'TRANSPORT_LEVEL';
+    expectedInputPresent: boolean;
+  }>;
+  diagnostics: Array<{ code: string; message: string }>;
+}
+
 export type ReusableFlowDraft = ReusableFlowCommand['flow'] & {
   schemaVersion: 'bloge.reusableFlowDraft.v1';
   flowId: string;

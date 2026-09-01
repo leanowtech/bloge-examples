@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationInventory;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyFixtureReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
@@ -78,6 +79,21 @@ public final class LegacyAssetMigrationController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .body(module.previewFlow(trustedScope(context), sourceKind, sourceId, revision));
+    }
+
+    /** Returns reference classifications and the exact new Flow subject for explicit Fixture authoring. */
+    @GetMapping(path = "/fixtures/{draftId}:preview", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<LegacyFixtureReauthorPreview> previewFixture(
+            @PathVariable String draftId,
+            @RequestParam long revision,
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.AUTHORING_LEGACY_MIGRATION_READ);
+        request.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(module.previewFixture(trustedScope(context), draftId, revision));
     }
 
     private static AuthoringScope trustedScope(IntegrationRequestContext context) {

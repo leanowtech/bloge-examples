@@ -71,8 +71,9 @@ public class StandaloneFixtureSetRuntimeConfiguration {
     @ConditionalOnMissingBean
     ReusableFlowFixtureShareModule reusableFlowFixtureShareModule(
             StandaloneFixtureSetStore store, ReusableFlowPublicationStore publications,
+            ReusableFlowDraftStore drafts,
             ObjectProvider<FixtureSetShareMaterialWriter> materialWriter) {
-        return new ReusableFlowFixtureShareModule(store, publications,
+        return new ReusableFlowFixtureShareModule(store, publications, drafts,
                 materialWriter.getIfAvailable(FixtureSetShareMaterialWriter::unavailable));
     }
 

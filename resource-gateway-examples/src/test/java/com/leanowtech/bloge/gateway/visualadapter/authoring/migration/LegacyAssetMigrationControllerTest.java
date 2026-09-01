@@ -9,8 +9,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrat
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyFixtureReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -34,6 +36,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class LegacyAssetMigrationControllerTest {
+
+    @Test
+    void returnsOneAuthenticatedPayloadFreeFixtureReauthorPreview() throws Exception {
+        LegacyAssetMigrationModule module = mock(LegacyAssetMigrationModule.class);
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        when(module.previewFixture(scope, "draft-1", 3)).thenReturn(fixturePreview());
+
+        mvc(module).perform(get("/api/authoring/migrations/legacy-assets/fixtures/draft-1:preview?revision=3")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.source.draftId").value("draft-1"))
+                .andExpect(jsonPath("$.targetFlowId").value("customer-tool"))
+                .andExpect(jsonPath("$.target.kind").value("FLOW_DRAFT"))
+                .andExpect(jsonPath("$.references[0].nodeId").value("customer"))
+                .andExpect(jsonPath("$.references[0].materialKind").value("GOVERNED"))
+                .andExpect(jsonPath("$.references[0].fidelity").value("TRANSPORT_LEVEL"))
+                .andExpect(jsonPath("$.references[0].fixtureAssetId").doesNotExist())
+                .andExpect(jsonPath("$.references[0].value").doesNotExist())
+                .andExpect(jsonPath("$.references[0].expectedInput").doesNotExist());
+
+        verify(module).previewFixture(scope, "draft-1", 3);
+    }
 
     @Test
     void returnsOneAuthenticatedFixtureFreeReusableFlowPreview() throws Exception {
@@ -193,6 +219,18 @@ class LegacyAssetMigrationControllerTest {
                 "customer-tool", command, 1,
                 List.of(new LegacyReusableFlowReauthorPreview.Diagnostic("FIXTURE_REAUTHOR_REQUIRED",
                         "Rebuild Fixtures explicitly.")));
+    }
+
+    private static LegacyFixtureReauthorPreview fixturePreview() {
+        return new LegacyFixtureReauthorPreview(null,
+                new LegacyFixtureReauthorPreview.Source("draft-1", 3), "customer-tool",
+                "customer-tool.default", new FixtureSubjectRef.FlowDraft(
+                "flow-draft-1", 4, "sha256:" + "d".repeat(64)),
+                List.of(new LegacyFixtureReauthorPreview.Reference(
+                        "customer", LegacyFixtureReauthorPreview.MaterialKind.GOVERNED,
+                        "TRANSPORT_LEVEL", false)),
+                List.of(new LegacyFixtureReauthorPreview.Diagnostic(
+                        "AUTHOR_NEW_FIXTURE_MATERIAL", "Author new Fixture material before saving.")));
     }
 
     private static final class RecordingAudit implements IntegrationAccessAuditRepository {

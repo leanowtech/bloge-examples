@@ -6,6 +6,7 @@ import { readApiResource } from './api';
 import {
   listFlowFixtures,
   publishFlow,
+  readLegacyFixtureReauthorPreview,
   readLegacyReusableFlowPreview,
   readFlow,
   readLatestFlowVersion,
@@ -20,6 +21,7 @@ import {
   type FlowDraftRef,
   type FlowFormDraft,
   type FlowVersionRef,
+  type LegacyFixtureReauthorPreview,
   type LegacyReusableFlowReauthorPreview,
   type ReusableFlowCommand,
   type ResolvedApiNode,
@@ -29,7 +31,9 @@ import type { FixtureSetSummary, SimulationRun } from './model';
 type FlowTab = 'design' | 'fixture' | 'simulation' | 'versions';
 
 /** One shared object page for reusable Tool and Solution Flow drafts. */
-export default function FlowObjectPage({ initialFlowId, initialKind, initialLegacyFlow }: {
+export default function FlowObjectPage({
+  initialFlowId, initialKind, initialLegacyFlow, initialLegacyFixture, initialTab,
+}: {
   initialFlowId: string;
   initialKind: 'TOOL' | 'SOLUTION';
   initialLegacyFlow: {
@@ -37,6 +41,8 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
     sourceId: string;
     sourceRevision: number;
   } | null;
+  initialLegacyFixture: LegacyFixtureReauthorPreview['source'] | null;
+  initialTab: 'design' | 'fixture';
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<FlowFormDraft>({
@@ -54,15 +60,19 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
   const [run, setRun] = useState<SimulationRun | null>(null);
   const [published, setPublished] = useState('');
   const [legacyPreview, setLegacyPreview] = useState<LegacyReusableFlowReauthorPreview | null>(null);
+  const [legacyFixturePreview, setLegacyFixturePreview] = useState<LegacyFixtureReauthorPreview | null>(null);
   const [importedFlow, setImportedFlow] = useState<ReusableFlowCommand | null>(null);
-  const [tab, setTab] = useState<FlowTab>('design');
-  const [busy, setBusy] = useState(initialFlowId.length > 0 || initialLegacyFlow !== null);
+  const [tab, setTab] = useState<FlowTab>(initialTab);
+  const [busy, setBusy] = useState(
+    initialFlowId.length > 0 || initialLegacyFlow !== null || initialLegacyFixture !== null,
+  );
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     if (!initialFlowId) return;
     let cancelled = false;
-    void Promise.all([readFlow(initialFlowId), readLatestFlowVersion(initialFlowId)]).then(async ([stored, latest]) => {
+    const latest = initialLegacyFixture ? Promise.resolve(null) : readLatestFlowVersion(initialFlowId);
+    void Promise.all([readFlow(initialFlowId), latest]).then(async ([stored, currentVersion]) => {
       const restored = await Promise.all(stored.value.graph.nodes.map(async (node) => {
         if (node.use.kind !== 'API_RESOURCE') throw new Error('This simple page supports API Resource nodes.');
         const resource = await readApiResource(node.use.resourceId, node.use.revision);
@@ -81,15 +91,15 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
       setNodes(restored);
       setStrongEtag(stored.strongEtag);
       setSubject(exactSubject);
-      const currentPublished = latest && latest.source.draftId === exactSubject.draftId
-        && latest.source.revision === exactSubject.revision
-        && latest.source.fingerprint === exactSubject.fingerprint
+      const currentPublished = currentVersion && currentVersion.source.draftId === exactSubject.draftId
+        && currentVersion.source.revision === exactSubject.revision
+        && currentVersion.source.fingerprint === exactSubject.fingerprint
         ? {
-            kind: 'FLOW_VERSION' as const, publicationId: latest.publicationId,
-            revision: latest.revision, fingerprint: latest.fingerprint,
+            kind: 'FLOW_VERSION' as const, publicationId: currentVersion.publicationId,
+            revision: currentVersion.revision, fingerprint: currentVersion.fingerprint,
           } : null;
       setPublishedSubject(currentPublished);
-      setPublished(latest ? `${latest.publicationId}@${latest.revision}` : '');
+      setPublished(currentVersion ? `${currentVersion.publicationId}@${currentVersion.revision}` : '');
       const summaries = await listFlowFixtures(currentPublished ?? exactSubject);
       if (summaries[0]) {
         const savedFixture = await readFlowFixture(summaries[0].fixtureSetId, summaries[0].revision);
@@ -110,7 +120,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
       if (!cancelled) setBusy(false);
     });
     return () => { cancelled = true; };
-  }, [initialFlowId, t]);
+  }, [initialFlowId, initialLegacyFixture, t]);
 
   useEffect(() => {
     if (!initialLegacyFlow) return;
@@ -142,6 +152,19 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
     });
     return () => { cancelled = true; };
   }, [initialLegacyFlow, t]);
+
+  useEffect(() => {
+    if (!initialLegacyFixture) return;
+    let cancelled = false;
+    void readLegacyFixtureReauthorPreview(
+      initialLegacyFixture.draftId, initialLegacyFixture.revision,
+    ).then((preview) => {
+      if (!cancelled) setLegacyFixturePreview(preview);
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    });
+    return () => { cancelled = true; };
+  }, [initialLegacyFixture]);
 
   const addResource = async () => {
     setBusy(true);
@@ -196,6 +219,10 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
   const saveFixtureAndSimulate = async () => {
     const fixtureSubject = publishedSubject ?? subject;
     if (!fixtureSubject) return;
+    if (legacyFixturePreview && !sameDraftSubject(legacyFixturePreview.target, fixtureSubject)) {
+      setMessage('The target Flow changed after the legacy Fixture review. Reload the review.');
+      return;
+    }
     setBusy(true);
     setMessage('');
     try {
@@ -345,6 +372,20 @@ export default function FlowObjectPage({ initialFlowId, initialKind, initialLega
       {tab === 'fixture' && (
         <section className="object-task-panel" data-testid="flow-fixture-panel">
           <h2>{t('Reusable Flow Fixture')}</h2>
+          {legacyFixturePreview && <section className="legacy-reauthor-preview"
+            data-testid="legacy-fixture-reauthor-preview">
+            <h3>{t('Review')}</h3>
+            <p>Legacy Fixture material is not copied. Enter new whole-Flow input and output.</p>
+            <p>{legacyFixturePreview.source.draftId} · r{legacyFixturePreview.source.revision}
+              · {legacyFixturePreview.references.length} Fixture references</p>
+            <ul>{legacyFixturePreview.references.map((reference) => (
+              <li key={reference.nodeId}>{reference.nodeId} · {reference.materialKind}
+                · {reference.fidelity} · expected input {reference.expectedInputPresent ? 'present' : 'absent'}</li>
+            ))}</ul>
+            <ul>{legacyFixturePreview.diagnostics.map((diagnostic) => (
+              <li key={diagnostic.code}>{diagnostic.message}</li>
+            ))}</ul>
+          </section>}
           <p>{t('Define one whole-flow input and returned output. Internal API calls stay unexecuted.')}</p>
           <div className="object-example-grid">
             <Field label={t('Fixture input')}><textarea data-testid="flow-fixture-input" rows={9}
@@ -416,4 +457,9 @@ function operationKey(action: string, coordinate: string): string {
 
 function errorMessage(failure: unknown): string {
   return failure instanceof Error ? failure.message : 'The request did not complete.';
+}
+
+function sameDraftSubject(expected: FlowDraftRef, actual: FlowDraftRef | FlowVersionRef): boolean {
+  return actual.kind === 'FLOW_DRAFT' && actual.draftId === expected.draftId
+    && actual.revision === expected.revision && actual.fingerprint === expected.fingerprint;
 }

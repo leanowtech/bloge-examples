@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyResourceDescriptorSource;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
@@ -40,7 +41,8 @@ public class LegacyAssetMigrationConfiguration {
             VisualGraphPublicationRepository publications,
             JsonSchemaSampleGenerator samples,
             ObjectMapper mapper,
-            ObjectProvider<ApiResourceCommitStore> authoredResourceStores) {
+            ObjectProvider<ApiResourceCommitStore> authoredResourceStores,
+            ObjectProvider<ReusableFlowDraftStore> authoredFlowStores) {
         return new LegacyAssetMigrationModule(
                 descriptors(resources), contracts, drafts, publications, samples, mapper,
                 new ApiResourceDecisions(mapper), (scope, resourceId) -> {
@@ -50,9 +52,12 @@ public class LegacyAssetMigrationConfiguration {
                         var resource = stored.resource();
                         return new ComposableDefinition(
                                 new ReusableFlowCommand.ComposableRef.ApiResource(
-                                        resource.resourceId(), resource.revision(), resource.fingerprint()),
+                                resource.resourceId(), resource.revision(), resource.fingerprint()),
                                 resource.contract().input(), resource.contract().output());
                     });
+                }, (scope, flowId) -> {
+                    ReusableFlowDraftStore store = authoredFlowStores.getIfAvailable();
+                    return store == null ? Optional.empty() : store.findHead(scope, flowId);
                 });
     }
 

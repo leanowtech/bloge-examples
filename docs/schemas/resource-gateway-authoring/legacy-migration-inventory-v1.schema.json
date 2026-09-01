@@ -16,7 +16,7 @@
     "action": {
       "type": "object",
       "properties": {
-        "kind": { "enum": ["REAUTHOR_RESOURCE", "REPAIR_SOURCE", "OPEN_LEGACY_FLOW", "REAUTHOR_FIXTURE"] },
+        "kind": { "enum": ["REAUTHOR_RESOURCE", "REAUTHOR_FLOW", "REPAIR_SOURCE", "OPEN_LEGACY_FLOW", "REAUTHOR_FIXTURE"] },
         "path": { "type": "string", "pattern": "^/(workbench|author|capabilities)/" }
       },
       "required": ["kind", "path"],

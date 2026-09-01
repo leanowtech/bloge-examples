@@ -10,6 +10,7 @@ import type {
   FixtureSetView,
   FlowDraftRef,
   FlowVersionRef,
+  LegacyFixtureReauthorPreview,
   LegacyReusableFlowReauthorPreview,
   ReusableFlowVersion,
   ReusableFlowCommand,
@@ -36,6 +37,19 @@ export async function readLegacyReusableFlowPreview(
   const query = new URLSearchParams({ revision: String(sourceRevision) });
   return body(await transport(
     `/api/authoring/migrations/legacy-assets/flows/${sourceKind}/${encodeURIComponent(sourceId)}:preview?${query}`,
+    { headers: integrationRequestHeaders('API_RESOURCE_AUTHORING') },
+  ));
+}
+
+/** Reads only reference classifications and an exact new Flow target for explicit Fixture authoring. */
+export async function readLegacyFixtureReauthorPreview(
+  draftId: string,
+  draftRevision: number,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<LegacyFixtureReauthorPreview> {
+  const query = new URLSearchParams({ revision: String(draftRevision) });
+  return body(await transport(
+    `/api/authoring/migrations/legacy-assets/fixtures/${encodeURIComponent(draftId)}:preview?${query}`,
     { headers: integrationRequestHeaders('API_RESOURCE_AUTHORING') },
   ));
 }

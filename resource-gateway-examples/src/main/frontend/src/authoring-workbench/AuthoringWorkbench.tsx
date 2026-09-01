@@ -4,7 +4,7 @@ import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
 import FixtureObjectPage from './FixtureObjectPage';
-import type { LegacyReusableFlowReauthorPreview } from './flowModel';
+import type { LegacyFixtureReauthorPreview, LegacyReusableFlowReauthorPreview } from './flowModel';
 import {
   listApiResourceFixtures,
   listApiConnections,
@@ -58,6 +58,8 @@ export default function AuthoringWorkbench() {
   const legacyFlowKind = params.get('legacyFlowKind');
   const legacyFlowId = params.get('legacyFlowId')?.trim() || '';
   const legacyFlowRevision = Number(params.get('legacyFlowRevision'));
+  const legacyFixtureDraftId = params.get('legacyFixtureDraftId')?.trim() || '';
+  const legacyFixtureRevision = Number(params.get('legacyFixtureRevision'));
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
   if (requestedFixtureSetId) {
@@ -74,8 +76,13 @@ export default function AuthoringWorkbench() {
       && legacyFlowRevision > 0 && normalizedLegacyKind
       ? { sourceKind: normalizedLegacyKind, sourceId: legacyFlowId, sourceRevision: legacyFlowRevision }
       : null;
+    const initialLegacyFixture: LegacyFixtureReauthorPreview['source'] | null = legacyFixtureDraftId
+      && Number.isSafeInteger(legacyFixtureRevision) && legacyFixtureRevision > 0
+      ? { draftId: legacyFixtureDraftId, revision: legacyFixtureRevision } : null;
+    const initialTab = params.get('tab') === 'fixture' ? 'fixture' : 'design';
     return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind}
-      initialLegacyFlow={initialLegacyFlow} />;
+      initialLegacyFlow={initialLegacyFlow} initialLegacyFixture={initialLegacyFixture}
+      initialTab={initialTab} />;
   }
   if (!requestedResourceId && !createApi) {
     return <AuthoringHome />;

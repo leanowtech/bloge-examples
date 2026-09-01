@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureShareCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,6 +87,18 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
                         FixtureSetCommand.Behavior.returned(
                                 FixtureSetCommand.Material.inline(output())),
                         FixtureSetCommand.Fidelity.OUTPUT_LEVEL));
+        ReusableFlowDraft flowDraft = new ReusableFlowDraft(ReusableFlowDraft.SCHEMA_VERSION,
+                version.flowId(), version.source().draftId(), version.source().revision(),
+                version.source().fingerprint(), version.displayName(), version.kind(),
+                version.description(), version.contract(), version.graph(),
+                new ReusableFlowCommand.Layout(Map.of("decision",
+                        new ReusableFlowCommand.Position(0, 0))), ReusableFlowDraft.Status.DRAFT);
+        GeneratedDefaultFixture draftSource = new WholeFlowFixtureMaterializer().generate(
+                "draft-cases", 1, flowDraft,
+                command(flowDraft.subject(), FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(
+                                FixtureSetCommand.Material.inline(output())),
+                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL));
         FixtureShareCommand.Policy policy = new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
                 new FixtureShareCommand.Redaction("default-v1", List.of("/email")));
 
@@ -90,25 +106,34 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
                 new FixtureSetShareMaterialWriter.Request("share-asset", source.view(), 2,
                         "review-1", "approved", "Approved", version.contract().output(),
                         policy, output()), identity);
+        FixtureSetShareMaterialWriter.Result draftResult = writer.write(
+                new FixtureSetShareMaterialWriter.Request("share-draft-asset", draftSource.view(), 2,
+                        "review-2", "approved", "Approved", flowDraft.contract().output(),
+                        policy, output()), identity);
 
         assertThat(result.material().fixtureAssetId()).isEqualTo("share-asset");
         assertThat(result.material().revision()).isEqualTo(2);
         assertThat(result.material().schemaFingerprint()).startsWith("sha256:");
         assertThat(result.safeOutput()).isEqualTo(output());
+        assertThat(draftResult.material().fixtureAssetId()).isEqualTo("share-draft-asset");
         ArgumentCaptor<WriteRequest> material = ArgumentCaptor.forClass(WriteRequest.class);
-        verify(materials).write(material.capture(), eq(context));
+        verify(materials, times(2)).write(material.capture(), eq(context));
         assertThat(context.clearance()).isEqualTo("RESTRICTED");
         assertThat((com.fasterxml.jackson.databind.JsonNode)
-                mapper.valueToTree(material.getValue().payload())).isEqualTo(output());
-        assertThat(material.getValue().classification()).isEqualTo("CONFIDENTIAL");
+                mapper.valueToTree(material.getAllValues().getFirst().payload())).isEqualTo(output());
+        assertThat(material.getAllValues()).extracting(value -> value.target().id())
+                .containsExactly(version.publicationId(), flowDraft.draftId());
+        assertThat(material.getAllValues()).allSatisfy(value ->
+                assertThat(value.classification()).isEqualTo("CONFIDENTIAL"));
         ArgumentCaptor<FixtureAssetDescriptor> descriptor =
                 ArgumentCaptor.forClass(FixtureAssetDescriptor.class);
-        verify(catalog).saveDraft(eq(0L), descriptor.capture(), any());
-        assertThat(descriptor.getValue().lifecycle())
-                .isEqualTo(FixtureAssetDescriptor.FixtureLifecycle.DRAFT);
-        assertThat(descriptor.getValue().materialRef()).isEqualTo(
+        verify(catalog, times(2)).saveDraft(eq(0L), descriptor.capture(), any());
+        assertThat(descriptor.getAllValues()).allSatisfy(value ->
+                assertThat(value.lifecycle()).isEqualTo(FixtureAssetDescriptor.FixtureLifecycle.DRAFT));
+        assertThat(descriptor.getAllValues().getFirst().materialRef()).isEqualTo(
                 new ExactAssetRef("FIXTURE_MATERIAL", "share-asset", 1, fingerprint('d')));
         verify(catalog).submitForReview(any(), eq("share-asset"), eq(1L), any());
+        verify(catalog).submitForReview(any(), eq("share-draft-asset"), eq(1L), any());
     }
 
     private static FixtureShareIdentity identity() {
