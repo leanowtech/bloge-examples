@@ -12,6 +12,10 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
+For the user-facing path from OpenAPI import through Default Fixture simulation,
+multi-API Tool composition, whole-Flow Fixture authoring, and automatic simulation,
+see the [API, Fixture, and Tool authoring guide](../docs/resource-gateway-api-fixture-tool-authoring-guide.md).
+
 ## What You Get
 
 | Capability | Why it matters |
