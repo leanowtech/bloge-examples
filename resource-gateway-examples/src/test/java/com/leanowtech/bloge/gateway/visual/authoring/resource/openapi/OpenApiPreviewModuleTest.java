@@ -2,11 +2,15 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.openapi;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -82,10 +86,123 @@ class OpenApiPreviewModuleTest {
         assertThatThrownBy(() -> module.preview(new OpenApiPreviewCommand(
                 OpenApiPreviewCommand.SCHEMA_VERSION,
                 new OpenApiPreviewCommand.Remote("https://api.example.test/openapi.yaml", null),
-                List.of())))
+                List.of()), identity()))
                 .isInstanceOf(OpenApiPreviewFailure.class)
                 .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
                 .isEqualTo(OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE);
+    }
+
+    @Test
+    void previewsRemoteDocumentThroughOneTrustedGovernedEgressRequest() {
+        AtomicReference<RemoteOpenApiDocumentGateway.Request> observed = new AtomicReference<>();
+        RemoteOpenApiDocumentGateway gateway = request -> {
+            observed.set(request);
+            return new RemoteOpenApiDocumentGateway.Document(
+                    "application/yaml", simpleApi().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        };
+        OpenApiPreviewModule remoteModule = new OpenApiPreviewModule(
+                new OpenApiResourceDesignContractImporter(), new JsonSchemaSampleGenerator(),
+                new ObjectMapper(), decisions, gateway);
+        OpenApiPreviewIdentity identity = new OpenApiPreviewIdentity(
+                new AuthoringScope("tenant-a", "project-a", "test"), "author-a",
+                "API_RESOURCE_AUTHORING");
+
+        OpenApiPreview preview = remoteModule.preview(new OpenApiPreviewCommand(
+                OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote(
+                        "https://api.example.test/contracts/openapi.yaml", "customer-api"),
+                List.of("getCustomer")), identity);
+
+        assertThat(preview.operations()).extracting(OpenApiPreview.Operation::operationId)
+                .containsExactly("getCustomer");
+        assertThat(observed.get()).isEqualTo(new RemoteOpenApiDocumentGateway.Request(
+                identity, URI.create("https://api.example.test/contracts/openapi.yaml"), "customer-api",
+                10 * 1024 * 1024, Duration.ofSeconds(15)));
+    }
+
+    @Test
+    void remotePreviewRequiresTrustedIdentityAndSafeHttpsSourceBeforeEgress() {
+        AtomicReference<RemoteOpenApiDocumentGateway.Request> observed = new AtomicReference<>();
+        OpenApiPreviewModule remoteModule = new OpenApiPreviewModule(
+                new OpenApiResourceDesignContractImporter(), new JsonSchemaSampleGenerator(),
+                new ObjectMapper(), decisions, request -> {
+                    observed.set(request);
+                    throw new AssertionError("egress must not be called");
+                });
+        OpenApiPreviewCommand missingIdentity = new OpenApiPreviewCommand(
+                OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote("https://api.example.test/openapi.yaml", null), List.of());
+
+        assertThatThrownBy(() -> remoteModule.preview(missingIdentity))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.VALIDATION);
+        assertThatThrownBy(() -> remoteModule.preview(new OpenApiPreviewCommand(
+                OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote("https://token@api.example.test/openapi.yaml", null),
+                List.of()), identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.VALIDATION);
+        assertThatThrownBy(() -> remoteModule.preview(new OpenApiPreviewCommand(
+                OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote(
+                        "https://api.example.test/openapi.yaml?access_token=secret", null),
+                List.of()), identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.VALIDATION);
+        assertThat(observed).hasValue(null);
+    }
+
+    @Test
+    void remotePreviewRejectsUnsafeGatewayOutputWithoutParsingIt() {
+        byte[] oversized = new byte[10 * 1024 * 1024 + 1];
+        OpenApiPreviewCommand command = new OpenApiPreviewCommand(OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote("https://api.example.test/openapi.yaml", null), List.of());
+
+        assertThatThrownBy(() -> remoteModule(request ->
+                new RemoteOpenApiDocumentGateway.Document("text/html", simpleApi().getBytes())).preview(
+                command, identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+        assertThatThrownBy(() -> remoteModule(request ->
+                new RemoteOpenApiDocumentGateway.Document("application/json", oversized)).preview(
+                command, identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+        assertThatThrownBy(() -> remoteModule(request ->
+                new RemoteOpenApiDocumentGateway.Document("application/yaml",
+                        new byte[]{(byte) 0xc3, (byte) 0x28})).preview(command, identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+    }
+
+    @Test
+    void remoteGatewayPayloadIsDefensiveAndUnexpectedErrorsStayPayloadFree() {
+        byte[] original = simpleApi().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        RemoteOpenApiDocumentGateway.Document document =
+                new RemoteOpenApiDocumentGateway.Document("application/yaml", original);
+        original[0] = 'x';
+        byte[] exposed = document.bytes();
+        exposed[0] = 'y';
+
+        assertThat(new String(document.bytes(), java.nio.charset.StandardCharsets.UTF_8))
+                .startsWith("openapi:");
+        assertThat(document.toString()).doesNotContain("Customer API", "openapi:");
+
+        assertThatThrownBy(() -> remoteModule(request -> {
+            throw new IllegalStateException("https://secret.example.test/openapi.yaml?token=secret");
+        }).preview(new OpenApiPreviewCommand(OpenApiPreviewCommand.SCHEMA_VERSION,
+                new OpenApiPreviewCommand.Remote("https://api.example.test/openapi.yaml", null),
+                List.of()), identity()))
+                .isInstanceOf(OpenApiPreviewFailure.class)
+                .hasMessage("Remote OpenAPI document could not be read safely.")
+                .extracting(failure -> ((OpenApiPreviewFailure) failure).code())
+                .isEqualTo(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
     }
 
     @Test
@@ -141,5 +258,15 @@ class OpenApiPreviewModuleTest {
                                   name: { type: string }
                                   active: { type: boolean }
                 """;
+    }
+
+    private OpenApiPreviewModule remoteModule(RemoteOpenApiDocumentGateway gateway) {
+        return new OpenApiPreviewModule(new OpenApiResourceDesignContractImporter(),
+                new JsonSchemaSampleGenerator(), new ObjectMapper(), decisions, gateway);
+    }
+
+    private static OpenApiPreviewIdentity identity() {
+        return new OpenApiPreviewIdentity(new AuthoringScope("tenant-a", "project-a", "test"),
+                "author-a", "API_RESOURCE_AUTHORING");
     }
 }

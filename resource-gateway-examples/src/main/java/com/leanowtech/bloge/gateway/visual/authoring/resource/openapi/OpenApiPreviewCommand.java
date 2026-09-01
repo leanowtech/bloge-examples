@@ -14,7 +14,7 @@ public record OpenApiPreviewCommand(String schemaVersion, Source source, List<St
         operationIds = operationIds == null ? List.of() : List.copyOf(operationIds);
     }
 
-    /** Inline and future authenticated remote OpenAPI sources. */
+    /** Inline and governed authenticated remote OpenAPI sources. */
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "kind")
     @JsonSubTypes({
             @JsonSubTypes.Type(value = Inline.class, name = "INLINE"),
@@ -32,7 +32,7 @@ public record OpenApiPreviewCommand(String schemaVersion, Source source, List<St
         }
     }
 
-    /** Future remote source. Fetching remains disabled until an authenticated egress seam exists. */
+    /** Remote HTTPS source, optionally authenticated by an existing committed Connection. */
     public record Remote(String url, @JsonInclude(JsonInclude.Include.NON_NULL) String connectionId)
             implements Source {
     }

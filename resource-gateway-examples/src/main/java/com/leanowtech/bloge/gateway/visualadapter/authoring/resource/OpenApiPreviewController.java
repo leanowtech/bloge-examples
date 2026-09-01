@@ -10,7 +10,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewIdentity;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,7 +48,7 @@ public final class OpenApiPreviewController {
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     }
 
-    /** Previews inline OpenAPI operations without persistence or network egress. */
+    /** Previews inline or governed remote OpenAPI operations without persistence. */
     @PostMapping(path = "/resources:preview-openapi", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<OpenApiPreview> preview(@RequestHeader HttpHeaders headers,
@@ -65,7 +67,17 @@ public final class OpenApiPreviewController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
-                .body(module.preview(command));
+                .body(module.preview(command, trustedIdentity(context)));
+    }
+
+    private static OpenApiPreviewIdentity trustedIdentity(IntegrationRequestContext context) {
+        try {
+            return new OpenApiPreviewIdentity(new AuthoringScope(
+                    context.tenantId(), context.projectId(), context.environmentId()),
+                    context.actorId(), context.purpose());
+        } catch (IllegalArgumentException failure) {
+            throw invalid(context.correlationId());
+        }
     }
 
     private static IntegrationProblemException invalid(String correlationId) {

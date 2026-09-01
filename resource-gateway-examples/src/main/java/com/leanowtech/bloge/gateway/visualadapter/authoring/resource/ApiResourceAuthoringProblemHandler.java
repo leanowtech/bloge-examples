@@ -142,15 +142,19 @@ public final class ApiResourceAuthoringProblemHandler {
     public ResponseEntity<ApiResourceAuthoringProblemDetail> openApiPreview(
             OpenApiPreviewFailure failure, HttpServletRequest request) {
         boolean unavailable = failure.code() == OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE;
+        boolean fetchFailed = failure.code() == OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED;
         ApiResourceAuthoringProblemDetail problem = new ApiResourceAuthoringProblemDetail(
-                unavailable ? "urn:bloge:problem:authoring-capability-unavailable"
+                unavailable ? "urn:bloge:problem:authoring-capability-unavailable" : fetchFailed
+                        ? "urn:bloge:problem:authoring-egress-failed"
                         : "urn:bloge:problem:authoring-validation",
-                unavailable ? "Remote OpenAPI preview is unavailable" : "OpenAPI preview is invalid",
-                unavailable ? 424 : 422, failure.getMessage(),
-                unavailable ? "RG.AUTHORING.OPENAPI.CAPABILITY_UNAVAILABLE"
+                unavailable ? "Remote OpenAPI preview is unavailable" : fetchFailed
+                        ? "Remote OpenAPI read failed" : "OpenAPI preview is invalid",
+                unavailable ? 424 : fetchFailed ? 502 : 422, failure.getMessage(),
+                unavailable ? "RG.AUTHORING.OPENAPI.CAPABILITY_UNAVAILABLE" : fetchFailed
+                        ? "RG.AUTHORING.OPENAPI.REMOTE_FETCH_FAILED"
                         : "RG.AUTHORING.OPENAPI.VALIDATION_FAILED",
                 correlation("", request), List.of(),
-                unavailable ? List.of() : List.of(action("OPEN_FIELD", "/source")));
+                unavailable || fetchFailed ? List.of() : List.of(action("OPEN_FIELD", "/source")));
         return response(problem, null, false);
     }
 

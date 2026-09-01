@@ -384,14 +384,18 @@ with `Tests run: 8,198; failures: 0; errors: 0; skipped: 34` and `BUILD SUCCESS`
 separate lifecycle action; this new browser path also does not claim deployment-specific external Vault/provider or
 the exact workbench flow on a production PostgreSQL installation.
 
-The API Resource object page now accepts inline OpenAPI JSON or YAML through the side-effect-free
+The API Resource object page accepts inline OpenAPI JSON or YAML through the preview-only
 `POST /api/authoring/resources:preview-openapi` preview endpoint. The endpoint uses the trusted authoring identity,
-returns `no-store`, performs no persistence or network egress, and projects only safely importable GET/POST/PUT/DELETE
+returns `no-store`, performs no persistence, and projects only safely importable GET/POST/PUT/DELETE
 operations into the same typed Resource save command used by manual authoring. Path, query, header, and body bindings,
 flat request/response schemas, success matching, and deterministic examples survive the visible operation-selection
 step; unrelated blocked operations do not hide valid choices. Explicitly requested invalid operations still fail
-closed. `REMOTE` remains an honest `424` capability boundary until authenticated egress exists. The focused backend
-gate is **55/55 green**; frontend model/transport/component tests are **13/13**, i18n **39/39**, UX **52/52**, and
+closed. `REMOTE` commands now pass one exact trusted scope/actor request to an optional
+`RemoteOpenApiDocumentGateway`. The module requires credential-free HTTPS URLs, rejects userinfo/query/fragment,
+provides explicit 10 MiB/15 s budgets, and independently checks response media type, UTF-8, and size. The host gateway
+must own destination authorization, DNS pinning/rebinding defense, redirect denial, and committed Connection/Secret
+Store resolution. Without that governed adapter, `REMOTE` remains an honest `424` boundary. The focused backend
+gate is **63/63 green**; frontend model/transport/component tests are **13/13**, i18n **39/39**, UX **52/52**, and
 host contracts **21/21**; TypeScript, Vite, and the bundle budget pass with AuthoringWorkbench at **189.43 KiB / 11
 files** and AuthorCanvas at **349.93 KiB / 22 files**. A real Chrome method verifies visible import, selection, exact
 field projection, zero persistence, and 1280/390 px layout (**1/1 green**). The final serial `clean verify` completed
@@ -445,9 +449,9 @@ shared revision derives its expected output from the same exact redacted materia
 **27 primary actions** and **9.899 seconds** of measured page-task time (**1/1 green**, 21.39 seconds including
 startup). Focused frontend tests are **27/27 green**; the simulation/publication/share backend gate is **55/55 green**;
 i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass.
-The final serial `clean verify` completed with `Tests run: 8,229; failures: 0; errors: 0; skipped: 36` and
-`BUILD SUCCESS` in 11:55.
-Deployment-specific remote authenticated OpenAPI egress,
+The final serial `clean verify` completed with `Tests run: 8,235; failures: 0; errors: 0; skipped: 36` and
+`BUILD SUCCESS` in 11:46.
+Deployment-specific `RemoteOpenApiDocumentGateway` and external secret-provider implementations,
 external Vault certification, and real PostgreSQL migration certification remain separate external-environment
 evidence rather than hidden local fallbacks.
 

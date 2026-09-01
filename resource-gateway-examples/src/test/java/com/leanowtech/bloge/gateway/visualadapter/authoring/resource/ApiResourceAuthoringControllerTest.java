@@ -57,7 +57,7 @@ class ApiResourceAuthoringControllerTest {
     void previewsInlineOpenApiAfterTrustedAuthenticationWithoutPersistence() throws Exception {
         ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
         OpenApiPreviewModule previewModule = mock(OpenApiPreviewModule.class);
-        when(previewModule.preview(any())).thenReturn(new OpenApiPreview(
+        when(previewModule.preview(any(), any())).thenReturn(new OpenApiPreview(
                 OpenApiPreview.SCHEMA_VERSION, "preview-0123456789abcdef", List.of()));
 
         mvc(facade, previewModule, Set.of("API_RESOURCE_AUTHORING"))
@@ -77,7 +77,13 @@ class ApiResourceAuthoringControllerTest {
                 .andExpect(jsonPath("$.schemaVersion").value("bloge.openApiPreview.v1"))
                 .andExpect(jsonPath("$.discoveryId").value("preview-0123456789abcdef"));
 
-        verify(previewModule).preview(any());
+        org.mockito.ArgumentCaptor<com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewIdentity>
+                identity = org.mockito.ArgumentCaptor.forClass(
+                com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewIdentity.class);
+        verify(previewModule).preview(any(), identity.capture());
+        assertThat(identity.getValue().scope()).isEqualTo(
+                new AuthoringScope("tenant-a", "project-a", "test"));
+        assertThat(identity.getValue().actorId()).isEqualTo("author");
         verify(facade, never()).save(any());
     }
 
@@ -85,7 +91,7 @@ class ApiResourceAuthoringControllerTest {
     void remoteOpenApiFailureUsesTheAuthoringProblemShapeWithoutEchoingTheUrl() throws Exception {
         ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
         OpenApiPreviewModule previewModule = mock(OpenApiPreviewModule.class);
-        when(previewModule.preview(any())).thenThrow(
+        when(previewModule.preview(any(), any())).thenThrow(
                 new OpenApiPreviewFailure(OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE));
 
         mvc(facade, previewModule, Set.of("API_RESOURCE_AUTHORING"))
@@ -101,6 +107,31 @@ class ApiResourceAuthoringControllerTest {
                 .andExpect(status().isFailedDependency())
                 .andExpect(jsonPath("$.code").value("RG.AUTHORING.OPENAPI.CAPABILITY_UNAVAILABLE"))
                 .andExpect(jsonPath("$.detail").value("Remote OpenAPI preview is unavailable."))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.not(
+                                org.hamcrest.Matchers.containsString("secret.example.test"))));
+    }
+
+    @Test
+    void remoteOpenApiReadFailureIsASecretFreeBadGatewayProblem() throws Exception {
+        ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
+        OpenApiPreviewModule previewModule = mock(OpenApiPreviewModule.class);
+        when(previewModule.preview(any(), any())).thenThrow(
+                new OpenApiPreviewFailure(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED));
+
+        mvc(facade, previewModule, Set.of("API_RESOURCE_AUTHORING"))
+                .perform(post("/api/authoring/resources:preview-openapi")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("X-Correlation-Id", "corr-01")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"schemaVersion":"bloge.openApiPreviewCommand.v1",
+                                 "source":{"kind":"REMOTE","url":"https://secret.example.test/openapi.yaml"}}
+                                """))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.OPENAPI.REMOTE_FETCH_FAILED"))
+                .andExpect(jsonPath("$.detail").value("Remote OpenAPI document could not be read safely."))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
                         .string(org.hamcrest.Matchers.not(
                                 org.hamcrest.Matchers.containsString("secret.example.test"))));

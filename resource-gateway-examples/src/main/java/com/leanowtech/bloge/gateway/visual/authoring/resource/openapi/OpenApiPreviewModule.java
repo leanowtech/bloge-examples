@@ -17,9 +17,14 @@ import com.leanowtech.bloge.gateway.visual.resource.VisualResourceParameterMappi
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -33,14 +38,16 @@ import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
 /**
- * Deep, side-effect-free module that turns an inline OpenAPI document into standard Resource commands.
+ * Deep module that turns an inline or governed remote OpenAPI document into standard Resource commands.
  *
  * <p>The module deliberately narrows schemas to the flat contract accepted by the current Resource
  * authority. It reports that simplification per operation and rejects shapes whose runtime meaning
- * would change. It never stores a Connection, Resource, Fixture, or OpenAPI document.</p>
+ * would change. It never stores a Connection, Resource, Fixture, or OpenAPI document. Remote I/O is
+ * delegated once to {@link RemoteOpenApiDocumentGateway}; this module independently rechecks its
+ * media type, UTF-8 encoding, and byte bound before parsing.</p>
  */
 public final class OpenApiPreviewModule {
-    private static final int MAX_DOCUMENT_LENGTH = 10 * 1024 * 1024;
+    private static final int MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
     private static final int MAX_OPERATION_IDS = 256;
     private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._:-]*$");
     private static final Set<String> SUPPORTED_METHODS = Set.of("GET", "POST", "PUT", "DELETE");
@@ -52,20 +59,39 @@ public final class OpenApiPreviewModule {
     private final JsonSchemaSampleGenerator samples;
     private final ObjectMapper mapper;
     private final ApiResourceDecisions decisions;
+    private final RemoteOpenApiDocumentGateway remoteDocuments;
 
     public OpenApiPreviewModule(OpenApiResourceDesignContractImporter importer,
                                 JsonSchemaSampleGenerator samples,
                                 ObjectMapper mapper,
                                 ApiResourceDecisions decisions) {
+        this(importer, samples, mapper, decisions, RemoteOpenApiDocumentGateway.unavailable());
+    }
+
+    /** Creates the module with one explicitly governed remote-document gateway. */
+    public OpenApiPreviewModule(OpenApiResourceDesignContractImporter importer,
+                                JsonSchemaSampleGenerator samples,
+                                ObjectMapper mapper,
+                                ApiResourceDecisions decisions,
+                                RemoteOpenApiDocumentGateway remoteDocuments) {
         this.importer = Objects.requireNonNull(importer, "importer");
         this.samples = Objects.requireNonNull(samples, "samples");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        this.remoteDocuments = Objects.requireNonNull(remoteDocuments, "remoteDocuments");
     }
 
-    /** Projects the requested inline operations without persistence or network I/O. */
+    /** Projects an inline source; a remote source is rejected because no trusted identity was supplied. */
     public OpenApiPreview preview(OpenApiPreviewCommand command) {
-        String document = validate(command);
+        return preview(command, null);
+    }
+
+    /**
+     * Projects inline or remote operations without persistence.
+     * Remote commands require a trusted identity and perform exactly one governed gateway call.
+     */
+    public OpenApiPreview preview(OpenApiPreviewCommand command, OpenApiPreviewIdentity identity) {
+        String document = validate(command, identity);
         OpenApiResourceDesignContractImportRequest discoveryRequest = request(null, null, null, null, document);
         OpenApiOperationDiscoveryResult discovered = importer.discoverOperations(discoveryRequest);
         if (!discovered.validation().valid()) {
@@ -89,22 +115,67 @@ public final class OpenApiPreviewModule {
         return new OpenApiPreview(OpenApiPreview.SCHEMA_VERSION, discoveryId(document), operations);
     }
 
-    private String validate(OpenApiPreviewCommand command) {
+    private String validate(OpenApiPreviewCommand command, OpenApiPreviewIdentity identity) {
         if (command == null || !OpenApiPreviewCommand.SCHEMA_VERSION.equals(command.schemaVersion())
                 || command.source() == null || command.operationIds().size() > MAX_OPERATION_IDS
                 || command.operationIds().stream().anyMatch(id -> id == null || !IDENTIFIER.matcher(id).matches())
                 || new HashSet<>(command.operationIds()).size() != command.operationIds().size()) {
             throw failure(OpenApiPreviewFailure.Code.VALIDATION);
         }
-        if (command.source() instanceof OpenApiPreviewCommand.Remote) {
-            throw failure(OpenApiPreviewFailure.Code.CAPABILITY_UNAVAILABLE);
+        if (command.source() instanceof OpenApiPreviewCommand.Remote remote) {
+            if (identity == null) throw failure(OpenApiPreviewFailure.Code.VALIDATION);
+            RemoteOpenApiDocumentGateway.Request request = remoteRequest(identity, remote);
+            final RemoteOpenApiDocumentGateway.Document fetched;
+            try {
+                fetched = remoteDocuments.fetch(request);
+            } catch (OpenApiPreviewFailure known) {
+                throw known;
+            } catch (RuntimeException unexpected) {
+                throw failure(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+            }
+            return remoteDocument(fetched);
         }
         if (!(command.source() instanceof OpenApiPreviewCommand.Inline inline)
                 || inline.documentText() == null || inline.documentText().isBlank()
-                || inline.documentText().length() > MAX_DOCUMENT_LENGTH) {
+                || inline.documentText().getBytes(StandardCharsets.UTF_8).length > MAX_DOCUMENT_BYTES) {
             throw failure(OpenApiPreviewFailure.Code.VALIDATION);
         }
         return inline.documentText();
+    }
+
+    private static RemoteOpenApiDocumentGateway.Request remoteRequest(
+            OpenApiPreviewIdentity identity, OpenApiPreviewCommand.Remote remote) {
+        try {
+            return new RemoteOpenApiDocumentGateway.Request(identity, new URI(remote.url()), remote.connectionId(),
+                    MAX_DOCUMENT_BYTES, Duration.ofSeconds(15));
+        } catch (RuntimeException | URISyntaxException failure) {
+            throw failure(OpenApiPreviewFailure.Code.VALIDATION);
+        }
+    }
+
+    private static String remoteDocument(RemoteOpenApiDocumentGateway.Document fetched) {
+        byte[] bytes = fetched == null ? null : fetched.bytes();
+        if (bytes == null || bytes.length == 0 || bytes.length > MAX_DOCUMENT_BYTES
+                || !supportedMediaType(fetched.mediaType())) {
+            throw failure(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+        }
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+        } catch (CharacterCodingException failure) {
+            throw failure(OpenApiPreviewFailure.Code.REMOTE_FETCH_FAILED);
+        }
+    }
+
+    private static boolean supportedMediaType(String mediaType) {
+        String normalized = mediaType == null ? ""
+                : mediaType.substring(0, mediaType.indexOf(';') < 0 ? mediaType.length() : mediaType.indexOf(';'))
+                .trim().toLowerCase(Locale.ROOT);
+        return Set.of("application/json", "application/yaml", "application/x-yaml",
+                "application/vnd.oai.openapi+json", "application/vnd.oai.openapi+yaml",
+                "text/yaml", "text/x-yaml").contains(normalized);
     }
 
     private OpenApiPreview.Operation project(String document, OpenApiOperationSummary operation) {

@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMa
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.RemoteOpenApiDocumentGateway;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
@@ -31,8 +32,10 @@ public class ApiResourceAuthoringApplicationConfiguration {
     OpenApiPreviewModule openApiPreviewModule(OpenApiResourceDesignContractImporter importer,
                                               JsonSchemaSampleGenerator samples,
                                               ObjectMapper mapper,
-                                              ApiResourceDecisions decisions) {
-        return new OpenApiPreviewModule(importer, samples, mapper, decisions);
+                                              ApiResourceDecisions decisions,
+                                              ObjectProvider<RemoteOpenApiDocumentGateway> remoteDocuments) {
+        return new OpenApiPreviewModule(importer, samples, mapper, decisions,
+                remoteDocuments.getIfAvailable(RemoteOpenApiDocumentGateway::unavailable));
     }
 
     /** Resolves projection inputs from the same committed Connection authority used by the facade. */

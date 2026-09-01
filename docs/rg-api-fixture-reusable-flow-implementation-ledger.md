@@ -2157,3 +2157,57 @@ BUILD SUCCESS; Total time: 11:55 min
 
 前三项属于外部环境/部署认证；第四项属于兼容收尾。它们不再阻断“清晰接入两个 API、组成可复用
 Tool、为 immutable Flow Version 配置并评审 Whole-Flow Fixture、再模拟运行”的本地可操作主链。
+
+## 48. Iteration 47 — 受治理的 REMOTE OpenAPI 宿主端口
+
+日期：2026-09-01。
+
+### 已完成
+
+- `OpenApiPreviewModule` 同时接受 `INLINE` 与 `REMOTE`，但 REMOTE 不信任 command 中的身份字段；HTTP adapter
+  把已认证的 tenant/project/environment、actor 与 purpose 投影为 `OpenApiPreviewIdentity`，模块再向宿主网关
+  发起一次读取请求。预览仍不保存 OpenAPI 文档、Connection、Resource 或 Fixture。
+- 新增深端口 `RemoteOpenApiDocumentGateway`。端口契约要求宿主实现目的地授权、DNS 结果钉扎与 rebinding
+  防护、禁止 redirect、限制连接/读取时间，并且仅可从 exact committed Connection 与 Secret Store authority
+  解析认证材料；异常、日志和诊断不得包含 URL、credential、document 或 provider payload。
+- 请求在端口前再次校验：只允许无 userinfo/query/fragment 的 absolute HTTPS URI，`connectionId` 是可选的
+  bounded identifier；明确传递 10 MiB 和 15 秒上限。端口返回后模块独立验证 OpenAPI JSON/YAML media type、
+  UTF-8 和 byte bound，防止错误宿主适配器绕过应用层限制。
+- 没有受治理网关 Bean 时使用 fail-closed `unavailable()` 并稳定返回 424；意外网络/provider 失败归一化为
+  payload-free 502，原始 URL 和 provider message 不进入 Problem Detail。生产配置只通过可选深端口装配，
+  不在仓库里伪造无法证明 DNS pinning 的通用 `HttpClient` fallback。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=OpenApiPreviewModuleTest,AuthoringProtocolSchemaTest,\
+ApiResourceAuthoringControllerTest,ApiResourceAuthoringApplicationConfigurationTest test
+
+Tests run: 63; Failures: 0; Errors: 0; Skipped: 0
+```
+
+最终串行项目门：
+
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,235; Failures: 0; Errors: 0; Skipped: 36
+BUILD SUCCESS; Total time: 11:46 min
+```
+
+覆盖内容包括：可信 scope/actor/purpose 传递、带/不带 Connection 的 REMOTE request、默认 424、显式网关
+装配、unsafe URL 在 egress 前拒绝、unsupported media type、oversize、invalid UTF-8、unexpected provider error
+归一化、Document defensive copy，以及 502/424 响应均不回显 URL。
+
+### 当前差距评估
+
+本轮把 REMOTE 从“模块硬编码拒绝”推进到可部署且 fail-closed 的宿主端口，关闭了仓库内 wire、identity、
+预算与安全错误协议缺口；但它没有冒充外部网络/Vault 认证。当前剩余差距仍约 **2–3%**：
+
+1. 部署方仍需提供并认证真实 `RemoteOpenApiDocumentGateway` 与 `ExternalSecretProvider`，包括 DNS pinning、
+   destination policy、Secret Store scope 和实际 TLS/timeout 证据；
+2. V001–V018 仍需在真实 PostgreSQL 服务做 migration 与并发认证；
+3. legacy 默认入口和既有资产迁移仍需兼容验收。
+
+因此继续实施兼容收尾；外部两项只能由目标部署环境提供证据，不能由本地 mock/H2 伪造。
