@@ -1479,14 +1479,26 @@ class VisualAuthoringBrowserDomTest {
     @Test
     @Timeout(90)
     void simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions() {
+        runSimpleWorkbenchAcceptance(new Dimension(1280, 900));
+    }
+
+    /** Proves the same three authoring journeys remain operable at the approved mobile viewport. */
+    @Test
+    @Timeout(90)
+    void simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskAtMobileViewport() {
+        runSimpleWorkbenchAcceptance(new Dimension(390, 844));
+    }
+
+    private void runSimpleWorkbenchAcceptance(Dimension viewport) {
         assumeAuthoringWorkbenchBundlePresent();
         driver = newChromeDriverOrSkip();
-        driver.manage().window().setSize(new Dimension(1280, 900));
+        driver.manage().window().setSize(viewport);
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
         AtomicInteger actions = new AtomicInteger();
         String suffix = Long.toUnsignedString(System.nanoTime(), 36);
         String profileId = "profile" + suffix;
         String ordersId = "orders" + suffix;
+        String recommendationsId = "recommendations" + suffix;
         String flowId = "customer_tool_" + suffix;
         String fixtureSetId = flowId + ".default";
         AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
@@ -1550,31 +1562,74 @@ class VisualAuthoringBrowserDomTest {
                                 required: [customerId, orderCount, customerLabel]
                 """.formatted(ordersId), "orderCount");
 
+        trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        trackedClick(wait, By.cssSelector("[data-testid='create-api-resource']"), actions);
+        saveApiResourceFromOpenApi(wait, actions, recommendationsId, """
+                openapi: 3.0.3
+                info: { title: Customer Recommendations API, version: 1.0.0 }
+                servers: [{ url: https://api.example.test }]
+                paths:
+                  /recommendations/{customerId}:
+                    get:
+                      operationId: %s
+                      summary: Get customer recommendations
+                      parameters:
+                        - { in: path, name: customerId, required: true, schema: { type: string } }
+                      responses:
+                        '200':
+                          description: Recommendations
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  customerId: { type: string }
+                                  orderCount: { type: integer }
+                                  customerLabel: { type: string }
+                                  recommendedOffer: { type: string }
+                                required: [customerId, orderCount, customerLabel, recommendedOffer]
+                """.formatted(recommendationsId), "recommendedOffer");
+
         var profile = browserApiResourceCommitStore.findHead(scope, profileId).orElseThrow().resource();
         var orders = browserApiResourceCommitStore.findHead(scope, ordersId).orElseThrow().resource();
+        var recommendations = browserApiResourceCommitStore.findHead(scope, recommendationsId)
+                .orElseThrow().resource();
         assertThat(profile.connectionId()).startsWith("connection-").isNotEqualTo("crm");
         assertThat(orders.connectionId()).startsWith("connection-").isNotEqualTo("crm")
                 .isNotEqualTo(profile.connectionId());
+        assertThat(recommendations.connectionId()).startsWith("connection-").isNotEqualTo("crm")
+                .isNotEqualTo(profile.connectionId()).isNotEqualTo(orders.connectionId());
         assertThat(browserApiConnectionCommitStore.findHead(scope, profile.connectionId())).isPresent();
         assertThat(browserApiConnectionCommitStore.findHead(scope, orders.connectionId())).isPresent();
+        assertThat(browserApiConnectionCommitStore.findHead(scope, recommendations.connectionId())).isPresent();
         GraphDraft legacyFlow = graphDraftRepository.save(new GraphDraft(
                 null, null, 0, flowId, scope.tenantId(), scope.projectId(), scope.environmentId(),
-                null, profile.contract().input(), orders.contract().output(),
+                null, profile.contract().input(), recommendations.contract().output(),
                 List.of(
                         new GraphDraft.DraftNode("profile", "resource:" + profileId, "Customer profile",
                                 Map.of("customerId", GraphDraft.Binding.contextPath("params.customerId")),
                                 Map.of(), new GraphDraft.Position(120, 160)),
                         new GraphDraft.DraftNode("orders", "resource:" + ordersId, "Customer orders",
                                 Map.of("customerId", GraphDraft.Binding.nodePath("profile", "customerId")),
-                                Map.of(), new GraphDraft.Position(400, 160))),
-                List.of(new GraphDraft.DraftEdge("profile-orders", "data",
-                        new GraphDraft.Endpoint("profile", "out", "customerId"),
-                        new GraphDraft.Endpoint("orders", "in", "customerId"))),
+                                Map.of(), new GraphDraft.Position(400, 160)),
+                        new GraphDraft.DraftNode("recommendations", "resource:" + recommendationsId,
+                                "Customer recommendations",
+                                Map.of("customerId", GraphDraft.Binding.nodePath("orders", "customerId")),
+                                Map.of(), new GraphDraft.Position(680, 160))),
+                List.of(
+                        new GraphDraft.DraftEdge("profile-orders", "data",
+                                new GraphDraft.Endpoint("profile", "out", "customerId"),
+                                new GraphDraft.Endpoint("orders", "in", "customerId")),
+                        new GraphDraft.DraftEdge("orders-recommendations", "data",
+                                new GraphDraft.Endpoint("orders", "out", "customerId"),
+                                new GraphDraft.Endpoint("recommendations", "in", "customerId"))),
                 Map.of(), Map.of("profile", new GraphDraft.NodeFixture(
                         Map.of("legacyCustomerLabel", "must-not-be-copied"),
                         Map.of("customerId", "legacy-input"), null,
                         GraphDraft.NodeFixture.ResourceFidelity.OUTPUT_LEVEL)),
-                new GraphDraft.OutputSelection("orders", ""),
+                new GraphDraft.OutputSelection("recommendations", ""),
                 Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty()));
 
         trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
@@ -1593,7 +1648,7 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElement(By.cssSelector("[data-testid='flow-id']")).getAttribute("value"))
                 .isEqualTo(flowId);
         assertThat(driver.findElement(By.cssSelector("[data-testid='flow-node-list']")).getText())
-                .contains(profileId, ordersId);
+                .contains(profileId, ordersId, recommendationsId);
         trackedClick(wait, By.cssSelector("[data-testid='save-flow']"), actions);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-fixture-panel']")));
@@ -1624,7 +1679,8 @@ class VisualAuthoringBrowserDomTest {
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='flow-fixture-output']"))),
                 "{\n  \"customerId\": \"customer-1\",\n  \"orderCount\": 2,\n"
-                        + "  \"customerLabel\": \"customer-1 orders\"\n}");
+                        + "  \"customerLabel\": \"customer-1 orders\",\n"
+                        + "  \"recommendedOffer\": \"priority-support\"\n}");
         trackedClick(wait, By.cssSelector("[data-testid='save-flow-fixture']"), actions);
         assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-simulation-output']"))).getText())
@@ -1697,7 +1753,8 @@ class VisualAuthoringBrowserDomTest {
                 "{\n  \"customerId\": \"customer-1\"\n}");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='flow-fixture-output']")),
                 "{\n  \"customerId\": \"customer-1\",\n  \"orderCount\": 2,\n"
-                        + "  \"customerLabel\": \"customer-1 orders\"\n}");
+                        + "  \"customerLabel\": \"customer-1 orders\",\n"
+                        + "  \"recommendedOffer\": \"priority-support\"\n}");
         trackedClick(wait, By.cssSelector("[data-testid='save-flow-fixture']"), actions);
         assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-simulation-node:step1']"))).getText())
@@ -1775,7 +1832,7 @@ class VisualAuthoringBrowserDomTest {
                         .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
 
         Duration elapsed = Duration.between(started, Instant.now());
-        assertThat(actions.get()).isEqualTo(36);
+        assertThat(actions.get()).isEqualTo(41);
         assertThat(elapsed).isLessThan(Duration.ofSeconds(90));
         System.out.printf("[simple-authoring-task] primaryActions=%d elapsedMs=%d%n",
                 actions.get(), elapsed.toMillis());

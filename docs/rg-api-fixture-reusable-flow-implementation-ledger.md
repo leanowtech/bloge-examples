@@ -2654,3 +2654,44 @@ governed rerun。此前审计指出的主要本地 P1 已关闭；按已批准�
 3% 停止条件。未完成项均保持诚实边界：390 px 的整条 36 动作链尚未单独重跑，迁移 coverage receipt/bulk replay
 仍是 P2；真实 PostgreSQL migration/lock 认证、Remote OpenAPI authenticated egress 与外部 Vault/provider 则属于
 部署环境证据，不能由本地 H2、单机 Chrome 或 fake provider 代替。
+
+## 57. Iteration 56 — 三资源 DAG 与移动端完整任务链
+
+日期：2026-09-01。
+
+### 已完成
+
+- 同一个真实浏览器 helper 现在分别从 1280×900 和 390×844 启动并完成全部任务，不再在桌面动作结束后缩小
+  视口来替代移动端可操作性证明。
+- 主链创建三个 API Resource 和三个独立的服务端 Connection。Legacy Flow 重创为三个 Resource 节点、两条数据边，
+  然后保存、模拟并发布为 immutable Tool Version，满足 F1 的「至少三个 API Resource」验收条件。
+- 父 Solution 继续从统一 Catalog 选择 exact Tool Version，保存 `NODE + APPLY_CASE`，随后完成受保护分享、独立
+  reviewer 审核和 governed rerun。两种视口均在最终页面验证无页面级水平溢出。
+- 浏览器动作计数由 36 调整为 41；新增的五个主动作对应第三个 API 的首页返回、创建、OpenAPI Preview、Use 和
+  Save and simulate，不隐藏文本输入或服务端 mutation。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskAtMobileViewport test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions: 41; elapsedMs: 16,803
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions: 41; elapsedMs: 17,672
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+本轮关闭 F1 三资源 DAG 与批准方案的 390 px 完整任务门槛。迁移 inventory 已有失败对象清单和三类显式重创
+路径，但 M1 的迁移覆盖率与可复核 replay 证据仍未形成；冻结 Wire Schema 逐 family 的最小/完整/无效样例覆盖也
+需要最终审计。外部 PostgreSQL、Vault 和 REMOTE egress 继续属于部署环境证据，不用本地假实现替代。

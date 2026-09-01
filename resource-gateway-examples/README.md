@@ -381,10 +381,13 @@ does not expand or execute the child Flow, and reports `MOCKED`, `APPLY_CASE`, i
 for the exact node. The focused frontend gate is **20/20 green** and the affected backend Catalog/publication/
 Fixture/simulation gate is **28/28 green**. The production frontend build passes i18n **39/39**, UX **52/52**,
 host **21/21**, TypeScript, Vite, and bundle checks; `AuthorCanvas` starts at **349.73 KiB / 21 files** under the
-350 KiB ceiling. A real Chrome task completes API creation, child Tool publication and Fixture authoring, parent
-Solution composition, node Case application, protected share/review, and governed rerun in **36 primary actions**.
-The final serial `clean verify` reports `Tests run: 8,262; failures: 0; errors: 0; skipped: 38` and
-`BUILD SUCCESS`.
+350 KiB ceiling. A shared real-Chrome acceptance starts and completes at both 1280×900 and 390×844. Each run creates
+three API Resources with independent server-derived Connections, re-authors them as one three-node Tool, publishes
+the exact immutable version, composes a parent Solution, applies the child Case, and completes protected share/review
+plus the governed rerun in **41 primary actions**. Both focused browser runs are green, and each viewport finishes
+without page-level horizontal overflow. The most recent serial `clean verify` before this browser-only extension
+reported `Tests run: 8,262; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS`; the next final gate must refresh
+that project-wide count.
 
 The same `/workbench/` route now owns Tool and Solution object pages. Authors add committed API Resources in
 execution order; the page pins every exact Resource revision/fingerprint and derives the DAG only from explicit
