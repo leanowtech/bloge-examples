@@ -119,6 +119,82 @@ class JdbcApiResourceAuthoringFacadeTest {
     }
 
     @Test
+    void nestedAuthNoneConnectionAndResourceCommitAsOneReplayableAuthority() {
+        dataSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:resource-nested-connection-" + System.nanoTime()
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
+        applyMigrations(dataSource);
+        ApiConnectionDecisions connectionDecisions = new ApiConnectionDecisions(JSON);
+        JdbcApiConnectionAuthoringStore connections = new JdbcApiConnectionAuthoringStore(
+                dataSource, JSON, Duration.ofSeconds(30), connectionDecisions, Clock.systemUTC());
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        ApiResourceDecisions resourceDecisions = new ApiResourceDecisions(JSON);
+        JdbcApiResourceCommitStore resources = new JdbcApiResourceCommitStore(jdbc, transactions, JSON,
+                Duration.ofSeconds(30), resourceDecisions, new DefaultApiResourceProjectionCompiler(
+                new ApiConnectionStoreResourceProjectionResolver(connections)));
+        ApiResourceAuthoringFacade facade = new ApiResourceAuthoringFacade(resources, connections,
+                resourceDecisions, null, null, transactions, connectionDecisions);
+        ApiResourceAuthoringRequest request = new ApiResourceAuthoringRequest(
+                SCOPE, "actor", "profile", "nested-key", ApiResourceAuthoringPrecondition.create(),
+                new ApiResourceSaveCommand(ApiResourceSaveCommand.SCHEMA_VERSION,
+                        ApiResourceSaveCommand.Connection.create(new ApiConnectionCommand(
+                                "Profile API", "https://created.example.test",
+                                ApiConnectionCommand.Auth.none())),
+                        command(), ApiResourceSaveCommand.DefaultFixture.none()));
+
+        ApiResourceAuthoringResult first = facade.save(request);
+        ApiResourceAuthoringResult replay = facade.save(request);
+
+        String connectionId = first.stored().resource().connectionId();
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.stored()).isEqualTo(first.stored());
+        assertThat(connectionId).startsWith("connection-");
+        assertThat(connections.findHead(SCOPE, connectionId)).isPresent();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_heads", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_heads", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions WHERE state='STAGED'",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE state='STAGED'",
+                Integer.class)).isZero();
+    }
+
+    @Test
+    void nestedConnectionRollsBackWhenTheOuterResourceCommitFails() {
+        dataSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:resource-nested-rollback-" + System.nanoTime()
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
+        applyMigrations(dataSource);
+        ApiConnectionDecisions connectionDecisions = new ApiConnectionDecisions(JSON);
+        JdbcApiConnectionAuthoringStore connections = new JdbcApiConnectionAuthoringStore(
+                dataSource, JSON, Duration.ofSeconds(30), connectionDecisions, Clock.systemUTC());
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        ApiResourceDecisions resourceDecisions = new ApiResourceDecisions(JSON);
+        JdbcApiResourceCommitStore delegate = new JdbcApiResourceCommitStore(jdbc, transactions, JSON,
+                Duration.ofSeconds(30), resourceDecisions, new DefaultApiResourceProjectionCompiler(
+                new ApiConnectionStoreResourceProjectionResolver(connections)));
+        JdbcApiResourceCommitStore resources = spy(delegate);
+        doThrow(new ApiResourceCommitStoreException(ApiResourceCommitStoreException.Code.INTEGRITY,
+                "forced commit failure")).when(resources).commit(any(), any());
+        ApiResourceAuthoringFacade facade = new ApiResourceAuthoringFacade(resources, connections,
+                resourceDecisions, null, null, transactions, connectionDecisions);
+        ApiResourceSaveCommand save = new ApiResourceSaveCommand(ApiResourceSaveCommand.SCHEMA_VERSION,
+                ApiResourceSaveCommand.Connection.create(new ApiConnectionCommand(
+                        "Profile API", "https://created.example.test", ApiConnectionCommand.Auth.none())),
+                command(), ApiResourceSaveCommand.DefaultFixture.none());
+
+        assertThatThrownBy(() -> facade.save(new ApiResourceAuthoringRequest(
+                SCOPE, "actor", "profile", "nested-rollback-key",
+                ApiResourceAuthoringPrecondition.create(), save)))
+                .isInstanceOf(ApiResourceAuthoringFailure.class);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_heads", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_heads", Integer.class)).isZero();
+    }
+
+    @Test
     void fromExamplesCommitsFixtureAndResourceInOneDatabaseTransaction() throws Exception {
         dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:resource-fixture-facade-" + System.nanoTime()

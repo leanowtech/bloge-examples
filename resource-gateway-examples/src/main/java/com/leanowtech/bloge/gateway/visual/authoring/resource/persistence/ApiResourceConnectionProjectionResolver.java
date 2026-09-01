@@ -27,6 +27,15 @@ public interface ApiResourceConnectionProjectionResolver {
      */
     Optional<ResolvedConnection> resolve(AuthoringScope scope, String connectionId);
 
+    /**
+     * Resolves the exact Connection snapshot owned by the same compound save.
+     * Existing-only adapters may retain the committed lookup behavior.
+     */
+    default Optional<ResolvedConnection> resolveForStage(AuthoringScope scope, String connectionId,
+                                                          CommandLease lease) {
+        return resolve(scope, connectionId);
+    }
+
     /** Exact authority plus the non-secret metadata consumed by projection compilation. */
     record ResolvedConnection(ApiResourceConnectionSnapshot snapshot, ConnectionMetadata metadata) {
         /** Ensures both halves are present before compilation. */

@@ -424,7 +424,8 @@ class VisualAuthoringBrowserDomTest {
                 ObjectMapper mapper) {
             return new ApiResourceAuthoringFacade(resources, connections,
                     new ApiResourceDecisions(mapper), fixtures,
-                    new DefaultFixtureSetMaterializer(), TransactionOperations.withoutTransaction());
+                    new DefaultFixtureSetMaterializer(), TransactionOperations.withoutTransaction(),
+                    new ApiConnectionDecisions(mapper));
         }
 
         /** Exposes the production authenticated API Resource transport in the browser context. */
@@ -1230,6 +1231,9 @@ class VisualAuthoringBrowserDomTest {
     private InMemoryApiResourceCommitStore browserApiResourceCommitStore;
 
     @Autowired
+    private InMemoryApiConnectionCommitStore browserApiConnectionCommitStore;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @LocalServerPort
@@ -1324,9 +1328,11 @@ class VisualAuthoringBrowserDomTest {
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
         driver.get("http://localhost:" + port + "/workbench/?create=api");
 
-        WebElement connection = wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='api-connection-id']")));
-        connection.sendKeys("crm");
+        WebElement connectionName = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='api-connection-name']")));
+        connectionName.sendKeys("Customer API");
+        driver.findElement(By.cssSelector("[data-testid='api-connection-base-url']"))
+                .sendKeys("https://api.example.test");
         WebElement document = wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='openapi-document']")));
         document.sendKeys("""
@@ -1357,8 +1363,8 @@ class VisualAuthoringBrowserDomTest {
 
         assertThat(driver.findElement(By.cssSelector("[data-testid='api-resource-id']"))
                 .getAttribute("value")).isEqualTo("getCustomer");
-        assertThat(driver.findElement(By.cssSelector("[data-testid='api-connection-id']"))
-                .getAttribute("value")).isEqualTo("crm");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-connection-name']"))
+                .getAttribute("value")).isEqualTo("Customer API");
         assertThat(driver.findElement(By.cssSelector("[data-testid='api-path']"))
                 .getAttribute("value")).isEqualTo("/customers/{customerId}");
         assertThat(driver.findElement(By.cssSelector("[data-testid='openapi-binding-summary']"))
@@ -1416,11 +1422,10 @@ class VisualAuthoringBrowserDomTest {
                 .getAttribute("value")).isEqualTo("user-service.getProfile");
         assertThat(driver.findElement(By.cssSelector("[data-testid='api-path']"))
                 .getAttribute("value")).isEqualTo("/demo-upstream/api/users/{userId}/profile");
-        WebElement connection = driver.findElement(By.cssSelector("[data-testid='api-connection-id']"));
-        assertThat(connection.getAttribute("value")).isEmpty();
-
-        wait.until(ExpectedConditions.textToBePresentInElement(connection, "CRM"));
-        new Select(connection).selectByValue("crm");
+        WebElement connection = driver.findElement(By.cssSelector("[data-testid='api-connection-name']"));
+        assertThat(connection.getAttribute("value")).isEqualTo("User profile connection");
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='api-connection-base-url']")),
+                "https://api.example.test");
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='save-and-simulate']"))).click();
         wait.until(ExpectedConditions.textToBePresentInElementLocated(
@@ -1431,7 +1436,7 @@ class VisualAuthoringBrowserDomTest {
 
         assertThat(browserApiResourceCommitStore.findHead(
                 new AuthoringScope("tenant-a", "local", "test"), "user-service.getProfile")
-                .orElseThrow().resource().connectionId()).isEqualTo("crm");
+                .orElseThrow().resource().connectionId()).startsWith("connection-");
     }
 
     /**
@@ -1517,6 +1522,11 @@ class VisualAuthoringBrowserDomTest {
 
         var profile = browserApiResourceCommitStore.findHead(scope, profileId).orElseThrow().resource();
         var orders = browserApiResourceCommitStore.findHead(scope, ordersId).orElseThrow().resource();
+        assertThat(profile.connectionId()).startsWith("connection-").isNotEqualTo("crm");
+        assertThat(orders.connectionId()).startsWith("connection-").isNotEqualTo("crm")
+                .isNotEqualTo(profile.connectionId());
+        assertThat(browserApiConnectionCommitStore.findHead(scope, profile.connectionId())).isPresent();
+        assertThat(browserApiConnectionCommitStore.findHead(scope, orders.connectionId())).isPresent();
         GraphDraft legacyFlow = graphDraftRepository.save(new GraphDraft(
                 null, null, 0, flowId, scope.tenantId(), scope.projectId(), scope.environmentId(),
                 null, profile.contract().input(), orders.contract().output(),
@@ -6903,9 +6913,10 @@ class VisualAuthoringBrowserDomTest {
                                             String operationId,
                                             String openApi,
                                             String expectedOutputField) {
-        By connectionPicker = By.cssSelector("[data-testid='api-connection-id']");
-        wait.until(ExpectedConditions.textToBePresentInElementLocated(connectionPicker, "CRM"));
-        selectByValue(wait, connectionPicker, "crm");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='api-connection-name']"))), operationId + " API");
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='api-connection-base-url']")),
+                "https://api.example.test");
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='openapi-document']"))), openApi);
         trackedClick(wait, By.cssSelector("[data-testid='preview-openapi']"), actions);

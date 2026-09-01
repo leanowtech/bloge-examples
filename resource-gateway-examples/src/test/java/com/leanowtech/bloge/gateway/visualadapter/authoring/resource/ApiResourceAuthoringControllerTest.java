@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringPrecondition;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringResult;
+import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
@@ -184,6 +186,30 @@ class ApiResourceAuthoringControllerTest {
         assertThat(request.getValue().actorId()).isEqualTo("author");
         assertThat(request.getValue().resourceId()).isEqualTo("profile");
         assertThat(request.getValue().precondition()).isInstanceOf(ApiResourceAuthoringPrecondition.Create.class);
+    }
+
+    @Test
+    void createDecodesOneNestedCredentialFreeConnectionCommand() throws Exception {
+        ApiResourceAuthoringFacade facade = mock(ApiResourceAuthoringFacade.class);
+        ApiResourceAuthoringResult result = result(false);
+        when(facade.save(any())).thenReturn(result);
+
+        mvc(facade, Set.of("API_RESOURCE_AUTHORING"))
+                .perform(authoringPut()
+                        .header("If-None-Match", "*")
+                        .header("Idempotency-Key", "resource-with-connection")
+                        .content(validCreateCommand()))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ApiResourceAuthoringRequest> request =
+                ArgumentCaptor.forClass(ApiResourceAuthoringRequest.class);
+        verify(facade).save(request.capture());
+        assertThat(request.getValue().command().connection())
+                .isInstanceOfSatisfying(ApiResourceSaveCommand.Connection.Create.class, create -> {
+                    assertThat(create.command().displayName()).isEqualTo("Customer API");
+                    assertThat(create.command().baseUrl()).isEqualTo("https://api.example.test");
+                    assertThat(create.command().auth()).isInstanceOf(ApiConnectionCommand.Auth.None.class);
+                });
     }
 
     @Test
@@ -496,6 +522,16 @@ class ApiResourceAuthoringControllerTest {
                   "defaultFixture":{"kind":"NONE"}
                 }
                 """;
+    }
+
+    private static String validCreateCommand() {
+        return validCommand().replace(
+                "\"connection\":{\"mode\":\"EXISTING\",\"connectionId\":\"customer\"}",
+                "\"connection\":{\"mode\":\"CREATE\",\"command\":{"
+                        + "\"schemaVersion\":\"bloge.apiConnectionCommand.v1\","
+                        + "\"displayName\":\"Customer API\","
+                        + "\"baseUrl\":\"https://api.example.test\","
+                        + "\"auth\":{\"kind\":\"NONE\"}}}");
     }
 
     private static final class RecordingAudit implements IntegrationAccessAuditRepository {

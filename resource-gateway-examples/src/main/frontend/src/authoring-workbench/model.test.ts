@@ -11,11 +11,31 @@ import {
 } from './model';
 
 describe('simple API Resource authoring model', () => {
+  it('builds one credential-free nested Connection without asking for a Connection ID', () => {
+    const command = buildApiResourceSaveCommand({
+      resourceId: 'customer-profile', displayName: 'Customer profile', connectionMode: 'CREATE',
+      connectionId: '', connectionDisplayName: 'Customer API',
+      connectionBaseUrl: 'https://api.example.test', method: 'GET', path: '/profile',
+      requestExample: '{"id":"c-1"}', responseExample: '{"name":"Ada"}', importedResource: null,
+    });
+
+    expect(command.connection).toEqual({
+      mode: 'CREATE',
+      command: {
+        schemaVersion: 'bloge.apiConnectionCommand.v1', displayName: 'Customer API',
+        baseUrl: 'https://api.example.test', auth: { kind: 'NONE' },
+      },
+    });
+    expect(JSON.stringify(command)).not.toContain('credential');
+  });
+
   it('turns flat examples into one server-owned Resource and Default Fixture command', () => {
     const command = buildApiResourceSaveCommand({
       resourceId: 'customer-profile',
       displayName: 'Customer profile',
+      connectionMode: 'EXISTING',
       connectionId: 'crm',
+      connectionDisplayName: '', connectionBaseUrl: '',
       method: 'GET',
       path: '/customers/{id}',
       requestExample: '{"id":"c-1","active":true}',
@@ -67,6 +87,7 @@ describe('simple API Resource authoring model', () => {
   it('keeps non-GET operations fixture-only and rejects unsupported example shapes', () => {
     const base = {
       resourceId: 'update-profile', displayName: 'Update profile', connectionId: 'crm',
+      connectionMode: 'EXISTING' as const, connectionDisplayName: '', connectionBaseUrl: '',
       method: 'POST' as const, path: '/customers', requestExample: '{"name":"Ada"}',
       responseExample: '{"ok":true}',
       importedResource: null,
@@ -78,7 +99,8 @@ describe('simple API Resource authoring model', () => {
 
   it('restores the concise form from committed authority without exposing projections', () => {
     const command = buildApiResourceSaveCommand({
-      resourceId: 'profile', displayName: 'Profile', connectionId: 'crm', method: 'GET', path: '/profile',
+      resourceId: 'profile', displayName: 'Profile', connectionMode: 'EXISTING', connectionId: 'crm',
+      connectionDisplayName: '', connectionBaseUrl: '', method: 'GET', path: '/profile',
       requestExample: '{"id":"c-1"}', responseExample: '{"name":"Ada"}',
       importedResource: null,
     });
@@ -89,7 +111,8 @@ describe('simple API Resource authoring model', () => {
     } as ApiResourceSpec;
 
     expect(formDraftFromSpec(spec)).toEqual({
-      resourceId: 'profile', displayName: 'Profile', connectionId: 'crm', method: 'GET', path: '/profile',
+      resourceId: 'profile', displayName: 'Profile', connectionMode: 'EXISTING', connectionId: 'crm',
+      connectionDisplayName: '', connectionBaseUrl: '', method: 'GET', path: '/profile',
       requestExample: '{\n  "id": "c-1"\n}', responseExample: '{\n  "name": "Ada"\n}',
       importedResource: expect.objectContaining({ displayName: 'Profile' }),
     });
@@ -97,7 +120,8 @@ describe('simple API Resource authoring model', () => {
 
   it('applies a previewed operation without losing its exact transport bindings', () => {
     const base = buildApiResourceSaveCommand({
-      resourceId: 'manual', displayName: 'Manual', connectionId: 'crm', method: 'GET', path: '/customers',
+      resourceId: 'manual', displayName: 'Manual', connectionMode: 'EXISTING', connectionId: 'crm',
+      connectionDisplayName: '', connectionBaseUrl: '', method: 'GET', path: '/customers',
       requestExample: '{"customerId":"c-1"}', responseExample: '{"name":"Ada"}', importedResource: null,
     });
     const suggested = {
@@ -115,7 +139,8 @@ describe('simple API Resource authoring model', () => {
     } satisfies OpenApiPreview['operations'][number];
 
     const draft = formDraftFromOpenApiOperation({
-      resourceId: '', displayName: '', connectionId: 'crm', method: 'GET', path: '/',
+      resourceId: '', displayName: '', connectionMode: 'EXISTING', connectionId: 'crm',
+      connectionDisplayName: '', connectionBaseUrl: '', method: 'GET', path: '/',
       requestExample: '{}', responseExample: '{}', importedResource: null,
     }, operation);
 
@@ -131,7 +156,8 @@ describe('simple API Resource authoring model', () => {
 
   it('applies a legacy preview while requiring a fresh visible Connection choice', () => {
     const base = buildApiResourceSaveCommand({
-      resourceId: 'customer.get', displayName: 'Customer', connectionId: 'old-connection', method: 'GET',
+      resourceId: 'customer.get', displayName: 'Customer', connectionMode: 'EXISTING',
+      connectionId: 'old-connection', connectionDisplayName: '', connectionBaseUrl: '', method: 'GET',
       path: '/customers/{customerId}', requestExample: '{"customerId":"c-1"}',
       responseExample: '{"name":"Ada"}', importedResource: null,
     });
@@ -153,11 +179,12 @@ describe('simple API Resource authoring model', () => {
     const draft = formDraftFromLegacyPreview(preview);
 
     expect(draft).toMatchObject({
-      resourceId: 'customer.get', displayName: 'Customer', connectionId: '', method: 'GET',
+      resourceId: 'customer.get', displayName: 'Customer', connectionMode: 'CREATE', connectionId: '',
+      connectionDisplayName: 'Customer connection', connectionBaseUrl: '', method: 'GET',
       path: '/customers/{customerId}', importedResource: preview.suggestedResource,
     });
-    expect(() => buildApiResourceSaveCommand(draft)).toThrow('Connection ID must be a simple identifier.');
-    expect(buildApiResourceSaveCommand({ ...draft, connectionId: 'crm' })).toMatchObject({
+    expect(() => buildApiResourceSaveCommand(draft)).toThrow('Base URL must be an absolute HTTP or HTTPS URL.');
+    expect(buildApiResourceSaveCommand({ ...draft, connectionMode: 'EXISTING', connectionId: 'crm' })).toMatchObject({
       connection: { mode: 'EXISTING', connectionId: 'crm' },
       resource: {
         operation: { bindings: preview.suggestedResource.operation.bindings },

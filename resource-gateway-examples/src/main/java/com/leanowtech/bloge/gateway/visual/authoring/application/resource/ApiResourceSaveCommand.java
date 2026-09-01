@@ -31,7 +31,7 @@ public record ApiResourceSaveCommand(String schemaVersion, Connection connection
         default String mode() { return this instanceof Existing ? "EXISTING" : "CREATE"; }
         /** Selects one committed Connection. */
         record Existing(String connectionId) implements Connection { }
-        /** Creates a Connection in the future composite coordinator. */
+        /** Creates one credential-free Connection under the compound Resource command. */
         record Create(ApiConnectionCommand command) implements Connection {
             /** Never expands a credential-bearing nested command. */
             @Override public String toString() { return "Create[command=ApiConnectionCommand]"; }

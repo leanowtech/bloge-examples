@@ -118,7 +118,7 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
             }
             ReadyApiResourceProjections projections;
             try {
-                projections = compiler.compile(lease.key().scope(), next);
+                projections = compiler.compile(lease.key().scope(), next, lease);
             } catch (RuntimeException ex) {
                 throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection compilation failed");
             }

@@ -115,6 +115,26 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         }
     }
 
+    @Override
+    public Optional<StagedApiConnection> findStaged(CommandLease lease) {
+        requireLease(lease);
+        try {
+            return requireResult(transactions.execute(status -> {
+                requireLiveJournal(lease, false);
+                RevisionRow row = stagedRevision(lease);
+                if (row == null) return Optional.empty();
+                ApiConnectionSpec spec = restoreSpec(row);
+                ExpectedRevision expected = row.revision() == 1
+                        ? ExpectedRevision.create() : ExpectedRevision.match(row.revision() - 1);
+                return Optional.of(new StagedApiConnection(lease, spec, expected, row.strongEtag()));
+            }));
+        } catch (ApiConnectionCommitStoreException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw persistenceFailure(ex);
+        }
+    }
+
     private StagedApiConnection stageInTransaction(CommandLease lease, String connectionId,
                                                    ExpectedRevision connectionExpected,
                                                    ApiConnectionCommand command,

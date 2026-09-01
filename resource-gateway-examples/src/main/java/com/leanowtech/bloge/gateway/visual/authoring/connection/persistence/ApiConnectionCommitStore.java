@@ -70,6 +70,9 @@ public interface ApiConnectionCommitStore {
     /** Fenced failure removes only the exact live stage; stale failures are no-ops. */
     void fail(CommandLease lease);
 
+    /** Reads the exact invisible stage owned by one live outer command attempt. */
+    Optional<StagedApiConnection> findStaged(CommandLease lease);
+
     /** Reads the committed head in the exact authoring scope. */
     Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId);
 

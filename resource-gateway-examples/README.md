@@ -124,8 +124,9 @@ shapes. Request decoding is strict at root and nested fields.
 
 The combined C2+C3 focused gate completed at **141/141 green** with no failures, errors, or skips: the prior 100
 application/persistence tests plus 28 controller tests, 2 transport configuration tests, and 11 protocol-schema
-tests. This transport still deliberately rejects Connection `CREATE`; C7 later enables
-`defaultFixture.kind=FROM_EXAMPLES` without changing the HTTP envelope. Credential providers, reusable Flow/DAG
+tests. That C3 slice deliberately rejected Connection `CREATE`; the current compound facade and object page now
+accept a nested credential-free `Auth.NONE` Connection command without changing the HTTP envelope. C7 later enabled
+`defaultFixture.kind=FROM_EXAMPLES`. Credential providers, reusable Flow/DAG
 authoring, real PostgreSQL
 certification, and UI acceptance remain open. The post-C3 full gate completed with
 `Tests run: 8,021; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.
@@ -343,7 +344,8 @@ open.
 
 The first simplified object page is available at `/workbench/` and is now also the default `/` entry. Its landing page exposes only the approved
 **Connect an API**, **Create a tool**, and **Create a solution** intents. The API Resource path asks for one name,
-an existing Connection id, Method/Path, and one request/response example; it infers the supported flat JSON Schema
+a new credential-free Connection name/base URL or one existing Connection, Method/Path, and one request/response
+example; it infers the supported flat JSON Schema
 and bindings, sends one compound Resource command, creates the private Default Fixture from that example, and runs
 the exact returned Fixture Case with all external reads and writes denied. Design, Fixture, Simulation, and Version
 tasks stay on the same object page. `GET /api/authoring/resources/{resourceId}` provides a trusted-scope,
@@ -352,8 +354,22 @@ and can rerun the saved Case. The route is lazy and its startup closure is enfor
 budget. The focused backend gate is **39/39 green**; the focused frontend model/transport/component/route gate is
 **37/37 green**, i18n is **39/39 green**, TypeScript passes, and the full frontend production build and bundle
 budget pass. The serial `clean verify` completed with `Tests run: 8,188; failures: 0; errors: 0; skipped: 33` and
-`BUILD SUCCESS`. This tracer deliberately supports existing Connections and flat object examples; Connection creation,
-advanced binding editing, and Tool/Solution/Fixture object pages remain separate slices rather than hidden JSON.
+`BUILD SUCCESS`. The original tracer deliberately supported only existing Connections and flat object examples;
+the current nested-create slice closes the `Auth.NONE` Connection gap. Credential-bearing Connection creation,
+advanced binding editing, and external provider certification remain separate explicit boundaries.
+
+The API object page now defaults to **Create** and visibly collects only a Connection name and absolute HTTP(S)
+base URL. Its wire command uses the frozen `connection.mode=CREATE` plus nested `command` schema; the server validates
+`Auth.NONE`, derives a stable child Connection id from the acquired command authority, stages the Connection and
+Resource against one exact attempt, compiles against that staged payload-free snapshot, commits both children in one
+Resource transaction, and publishes the Connection only after the canonical Resource receipt is durable. **Existing**
+remains available for committed Connection reuse. Credential-bearing nested commands still fail before claim.
+Focused backend evidence is **141/141 green** across Controller, compound facade/JDBC rollback, application wiring,
+projection compiler, and in-memory/JDBC Connection stores. Focused frontend model/component evidence is **12/12**;
+i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass. Three real Chrome methods are
+**3/3 green**, including the measured two-API → DAG → Default Fixture task at **28 primary actions**; each API owns a
+different server-derived Connection and no preseeded Connection id is used. The final serial `clean verify` completed
+with `Tests run: 8,259; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS` in 11:43.
 
 The same `/workbench/` route now owns Tool and Solution object pages. Authors add committed API Resources in
 execution order; the page pins every exact Resource revision/fingerprint and derives the DAG only from explicit
@@ -470,8 +486,8 @@ headers, schemas, Fixture values, governed material identifiers, credentials, an
 returned. The inventory remains available when durable API Resource writes are disabled because it does not depend
 on V001–V018 or mutate any authority. The entry remains visible for an empty or temporarily unavailable inventory,
 so operators can inspect the explicit state instead of losing the recovery path. Resource re-authoring still requires
-visible Connection selection, advanced non-data Graph edges remain in Legacy Author, and no migration is performed
-automatically.
+a visible Connection decision (create credential-free or select existing), advanced non-data Graph edges remain in
+Legacy Author, and no migration is performed automatically.
 The focused migration/schema/boundary gate is **23/23 green**, frontend transport/component tests are **12/12**,
 and the production frontend build plus the real Chrome inventory method are green. The final serial
 `clean verify` completed with `Tests run: 8,240; failures: 0; errors: 0; skipped: 37` and `BUILD SUCCESS`.
@@ -480,8 +496,9 @@ Each `READY_TO_REAUTHOR` Resource row now opens an authenticated, read-only Desc
 `GET /api/authoring/migrations/legacy-assets/resources/{resourceId}:preview`. The preview contains only the relative
 path, supported request bindings, response success/output-path rules, simplified schemas, and one generated example;
 it never carries the legacy host, default headers, authentication, credentials, Fixture contents, or protected
-material references. The API form is visibly prefilled but its Connection remains blank, so an author must choose a
-committed Connection before the existing save-and-simulate action creates the new Resource and Default Fixture.
+material references. The API form is visibly prefilled and proposes a credential-free Connection name; the author
+must visibly supply its base URL or switch to an existing committed Connection before save-and-simulate creates the
+new Resource and Default Fixture.
 Nothing is mutated by opening the preview. Write resources, ambiguous mappings, unsafe paths, and unsupported
 contracts remain `NEEDS_REPAIR` instead of being guessed or silently migrated.
 The focused backend migration/schema gate is **28/28 green**, focused frontend model/transport/component tests are

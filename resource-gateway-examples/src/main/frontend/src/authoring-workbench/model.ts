@@ -14,7 +14,10 @@ export interface SchemaEnvelope {
 export interface ApiResourceFormDraft {
   resourceId: string;
   displayName: string;
+  connectionMode: 'EXISTING' | 'CREATE';
   connectionId: string;
+  connectionDisplayName: string;
+  connectionBaseUrl: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   requestExample: string;
@@ -66,7 +69,15 @@ export interface ApiResourceBinding {
 
 export interface ApiResourceSaveCommand {
   schemaVersion: 'bloge.apiResourceSaveCommand.v1';
-  connection: { mode: 'EXISTING'; connectionId: string };
+  connection: { mode: 'EXISTING'; connectionId: string } | {
+    mode: 'CREATE';
+    command: {
+      schemaVersion: 'bloge.apiConnectionCommand.v1';
+      displayName: string;
+      baseUrl: string;
+      auth: { kind: 'NONE' };
+    };
+  };
   resource: {
     displayName: string;
     operation: {
@@ -177,7 +188,9 @@ const PATH = /^\/[A-Za-z0-9._~:/{}-]*$/;
 /** Builds the one compound command used by the simple API object page. */
 export function buildApiResourceSaveCommand(draft: ApiResourceFormDraft): ApiResourceSaveCommand {
   requiredIdentifier(draft.resourceId, 'Resource ID');
-  const connectionId = requiredIdentifier(draft.connectionId, 'Connection ID');
+  const connection = draft.connectionMode === 'CREATE'
+    ? createdConnection(draft.connectionDisplayName, draft.connectionBaseUrl)
+    : { mode: 'EXISTING' as const, connectionId: requiredIdentifier(draft.connectionId, 'Connection ID') };
   const displayName = draft.displayName.trim();
   if (!displayName || displayName.length > 200) throw new Error('API name is required.');
   if (!PATH.test(draft.path) || draft.path.length > 2048) {
@@ -197,7 +210,7 @@ export function buildApiResourceSaveCommand(draft: ApiResourceFormDraft): ApiRes
 
   return {
     schemaVersion: 'bloge.apiResourceSaveCommand.v1',
-    connection: { mode: 'EXISTING', connectionId },
+    connection,
     resource: imported ? { ...imported, displayName } : {
       displayName,
       operation: {
@@ -227,7 +240,10 @@ export function formDraftFromSpec(spec: ApiResourceSpec): ApiResourceFormDraft {
   return {
     resourceId: spec.resourceId,
     displayName: spec.displayName,
+    connectionMode: 'EXISTING',
     connectionId: spec.connectionId,
+    connectionDisplayName: '',
+    connectionBaseUrl: '',
     method: spec.operation.method,
     path: spec.operation.path,
     requestExample: JSON.stringify(example?.input ?? {}, null, 2),
@@ -252,7 +268,10 @@ export function formDraftFromOpenApiOperation(
   return {
     resourceId: current.resourceId.trim() || operation.operationId,
     displayName: operation.suggestedResource.displayName,
+    connectionMode: current.connectionMode,
     connectionId: current.connectionId,
+    connectionDisplayName: current.connectionDisplayName,
+    connectionBaseUrl: current.connectionBaseUrl,
     method: operation.method,
     path: operation.path,
     requestExample: JSON.stringify(example?.input ?? {}, null, 2),
@@ -270,12 +289,40 @@ export function formDraftFromLegacyPreview(
   return {
     resourceId: preview.source.resourceId,
     displayName: suggested.displayName,
+    connectionMode: 'CREATE',
     connectionId: '',
+    connectionDisplayName: `${suggested.displayName} connection`,
+    connectionBaseUrl: '',
     method: suggested.operation.method,
     path: suggested.operation.path,
     requestExample: JSON.stringify(example?.input ?? {}, null, 2),
     responseExample: JSON.stringify(example?.output ?? {}, null, 2),
     importedResource: suggested,
+  };
+}
+
+function createdConnection(displayNameSource: string, baseUrlSource: string): ApiResourceSaveCommand['connection'] {
+  const displayName = displayNameSource.trim();
+  if (!displayName || displayName.length > 200) throw new Error('Connection name is required.');
+  const baseUrl = baseUrlSource.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error('Base URL must be an absolute HTTP or HTTPS URL.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname
+      || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('Base URL must be an absolute HTTP or HTTPS URL without credentials, query, or fragment.');
+  }
+  return {
+    mode: 'CREATE',
+    command: {
+      schemaVersion: 'bloge.apiConnectionCommand.v1',
+      displayName,
+      baseUrl,
+      auth: { kind: 'NONE' },
+    },
   };
 }
 

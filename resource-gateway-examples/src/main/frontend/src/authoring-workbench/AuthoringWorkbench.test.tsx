@@ -106,6 +106,7 @@ describe('simple authoring workbench', () => {
 
     await act(async () => root.render(<AuthoringWorkbench />));
     await act(async () => {
+      change('api-connection-mode', 'EXISTING');
       change('api-connection-id', 'crm');
       change('openapi-document', 'openapi: 3.0.3');
     });
@@ -153,7 +154,8 @@ describe('simple authoring workbench', () => {
     expect(authoringApi.readLegacyApiResourcePreview).toHaveBeenCalledWith('customer.get');
     expect(element<HTMLInputElement>('api-resource-id').value).toBe('customer.get');
     expect(element<HTMLInputElement>('api-name').value).toBe('Get customer');
-    expect(element<HTMLSelectElement>('api-connection-id').value).toBe('');
+    expect(element<HTMLSelectElement>('api-connection-mode').value).toBe('CREATE');
+    expect(element<HTMLInputElement>('api-connection-name').value).toBe('Get customer connection');
     expect(element('legacy-reauthor-preview').textContent).toContain('Choose a committed Connection.');
     expect(element('openapi-binding-summary').textContent).toContain('PATH:customerId');
   });
@@ -184,7 +186,8 @@ describe('simple authoring workbench', () => {
     await act(async () => {
       change('api-name', 'Customer profile');
       change('api-resource-id', 'profile');
-      change('api-connection-id', 'crm');
+      change('api-connection-name', 'Customer API');
+      change('api-connection-base-url', 'https://api.example.test');
       change('api-path', '/profile');
     });
 
@@ -193,6 +196,10 @@ describe('simple authoring workbench', () => {
     expect(authoringApi.saveApiResource).toHaveBeenCalledWith(
       'profile', expect.objectContaining({
         schemaVersion: 'bloge.apiResourceSaveCommand.v1',
+        connection: { mode: 'CREATE', command: {
+          schemaVersion: 'bloge.apiConnectionCommand.v1', displayName: 'Customer API',
+          baseUrl: 'https://api.example.test', auth: { kind: 'NONE' },
+        } },
         defaultFixture: { kind: 'FROM_EXAMPLES', displayName: 'Customer profile default', exampleNames: ['default'] },
       }), null, expect.stringMatching(/^save:profile:/),
     );

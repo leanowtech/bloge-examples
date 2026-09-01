@@ -14,4 +14,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 public interface ApiResourceProjectionCompiler {
     /** Compiles all required projections or throws without producing a stage. */
     ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource);
+
+    /** Compiles against the exact staged Connection owned by a compound save when present. */
+    default ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource,
+                                                CommandLease lease) {
+        return compile(scope, resource);
+    }
 }

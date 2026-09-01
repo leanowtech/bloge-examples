@@ -591,7 +591,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         }
         ReadyApiResourceProjections projections;
         try {
-            projections = compiler.compile(lease.key().scope(), next);
+            projections = compiler.compile(lease.key().scope(), next, lease);
             verifyProjections(next, projections);
         } catch (ApiResourceCommitStoreException ex) {
             throw ex;

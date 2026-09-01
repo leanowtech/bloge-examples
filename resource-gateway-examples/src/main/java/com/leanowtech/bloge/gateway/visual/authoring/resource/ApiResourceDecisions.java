@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -106,6 +108,36 @@ public final class ApiResourceDecisions {
         return requestFingerprint(resourceId, connectionId, command, displayName, List.copyOf(exampleNames));
     }
 
+    /**
+     * Fingerprints a compound save that creates one credential-free Connection.
+     * The generated Connection id is deliberately absent because it is derived
+     * from the acquired command authority; every user-controlled non-secret
+     * Connection field remains part of idempotency.
+     */
+    public String requestFingerprintWithConnectionCreate(String resourceId,
+                                                          ApiConnectionCommand connection,
+                                                          ApiResourceCommand command,
+                                                          String fixtureDisplayName,
+                                                          List<String> exampleNames) {
+        requireIdentifier(resourceId, "resourceId");
+        validate(command);
+        new ApiConnectionDecisions(mapper).validateForAuthoring(connection);
+        if (!(connection.auth() instanceof ApiConnectionCommand.Auth.None)) {
+            invalid("nested Connection must use Auth.NONE");
+        }
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("schemaVersion", "bloge.apiResourceSaveCommand.v1");
+        ObjectNode nested = payload.putObject("connection");
+        nested.put("mode", "CREATE");
+        nested.put("displayName", connection.displayName());
+        nested.put("baseUrl", connection.baseUrl());
+        nested.putObject("auth").put("kind", "NONE");
+        nested.set("defaults", mapper.valueToTree(connection.defaults()));
+        payload.set("resource", mapper.valueToTree(command));
+        fixture(payload, fixtureDisplayName, exampleNames);
+        return AuthoringFingerprints.of(payload);
+    }
+
     private String requestFingerprint(String resourceId, String connectionId,
                                       ApiResourceCommand command, String fixtureDisplayName,
                                       List<String> exampleNames) {
@@ -116,15 +148,20 @@ public final class ApiResourceDecisions {
         payload.put("schemaVersion", "bloge.apiResourceSaveCommand.v1");
         payload.putObject("connection").put("mode", "EXISTING").put("connectionId", connectionId);
         payload.set("resource", mapper.valueToTree(command));
+        fixture(payload, fixtureDisplayName, exampleNames);
+        return AuthoringFingerprints.of(payload);
+    }
+
+    private void fixture(ObjectNode payload, String fixtureDisplayName, List<String> exampleNames) {
         ObjectNode fixture = payload.putObject("defaultFixture");
         if (fixtureDisplayName == null) {
             fixture.put("kind", "NONE");
         } else {
+            if (exampleNames == null || exampleNames.isEmpty()) invalid("default Fixture selection is invalid");
             fixture.put("kind", "FROM_EXAMPLES");
             fixture.put("displayName", fixtureDisplayName);
             fixture.set("exampleNames", mapper.valueToTree(exampleNames));
         }
-        return AuthoringFingerprints.of(payload);
     }
 
     private void validate(ApiResourceCommand command) {

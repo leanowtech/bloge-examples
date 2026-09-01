@@ -65,6 +65,33 @@ class ApiResourceAuthoringFacadeTest {
     }
 
     @Test
+    void nestedAuthNoneConnectionIsCreatedAndPublishedWithTheResourceReceipt() {
+        Fixture fixture = fixture();
+        ApiConnectionCommand connection = new ApiConnectionCommand(
+                "Created for profile", "https://created.example.test", ApiConnectionCommand.Auth.none(),
+                new ApiConnectionCommand.Defaults(5000, Map.of("X-Mode", "created")));
+        ApiResourceSaveCommand command = new ApiResourceSaveCommand(
+                ApiResourceSaveCommand.SCHEMA_VERSION, ApiResourceSaveCommand.Connection.create(connection),
+                command("Profile with created connection"), ApiResourceSaveCommand.DefaultFixture.none());
+        ApiResourceAuthoringRequest request = request("create", "nested-connection-key",
+                ApiResourceAuthoringPrecondition.create(), command);
+
+        ApiResourceAuthoringResult first = fixture.facade().save(request);
+        ApiResourceAuthoringResult replay = fixture.facade().save(request);
+
+        String connectionId = first.stored().resource().connectionId();
+        assertThat(connectionId).startsWith("connection-");
+        assertThat(connectionId).isEqualTo(first.stored().receipt().body()
+                .path("connection").path("connectionId").asText());
+        assertThat(fixture.connections().findHead(SCOPE, connectionId)).get()
+                .extracting(stored -> stored.view().baseUrl())
+                .isEqualTo("https://created.example.test");
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.stored()).isEqualTo(first.stored());
+        assertThat(fixture.connections().listHeads(SCOPE)).hasSize(2);
+    }
+
+    @Test
     void selectedExamplesPublishOneDefaultFixtureOnlyWithTheResourceReceipt() {
         Fixture fixture = fixture();
         ApiResourceSaveCommand command = new ApiResourceSaveCommand(
@@ -140,7 +167,7 @@ class ApiResourceAuthoringFacadeTest {
     }
 
     @Test
-    void unsupportedNestedConnectionAndFixtureAreRejectedBeforeClaim() {
+    void credentialConnectionAndUnconfiguredFixtureAreRejectedBeforeClaim() {
         ApiResourceCommitStore resources = mock(ApiResourceCommitStore.class);
         ApiConnectionAuthoringStore connections = mock(ApiConnectionAuthoringStore.class);
         ApiResourceAuthoringFacade facade = new ApiResourceAuthoringFacade(
@@ -148,7 +175,8 @@ class ApiResourceAuthoringFacadeTest {
         ApiResourceSaveCommand createConnection = new ApiResourceSaveCommand(
                 ApiResourceSaveCommand.SCHEMA_VERSION,
                 ApiResourceSaveCommand.Connection.create(new ApiConnectionCommand(
-                        "Created", "https://created.example.test", ApiConnectionCommand.Auth.none())),
+                        "Created", "https://created.example.test", ApiConnectionCommand.Auth.bearer(
+                        ApiConnectionCommand.SecretWrite.value("must-not-be-fingerprinted")))),
                 command("Profile"), ApiResourceSaveCommand.DefaultFixture.none());
         ApiResourceSaveCommand generatedFixture = new ApiResourceSaveCommand(
                 ApiResourceSaveCommand.SCHEMA_VERSION,

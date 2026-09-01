@@ -2542,3 +2542,50 @@ BUILD SUCCESS
 安全门禁已关闭，但标准 API 页仍不能创建 `Auth.NONE` Connection，简单 Flow 页仍不能从统一 Catalog 选择
 `FLOW_VERSION` 或可见地创作节点 `APPLY_CASE`。加上 390 px 完整任务链与迁移 coverage receipt 等 P2，当前本地
 实现/验收差距保守估计仍约 5%–7%，明显高于 3% 停止条件。下一步按这两条用户主线继续 TDD 实现。
+
+## 55. Iteration 54 — API Resource 内联创建无凭证 Connection
+
+日期：2026-09-01。
+
+### 已完成
+
+- 标准 API 对象页默认显示 `Create`，作者只填写 Connection 名称和 absolute HTTP(S) base URL；也可切换
+  `Existing` 复用已提交 Connection。前端 wire 严格使用冻结 Schema 的
+  `connection={mode:"CREATE",command:{...auth:{kind:"NONE"}}}`，不再要求隐藏或预置 Connection ID。
+- `ApiResourceAuthoringFacade` 在 claim 前复用 `ApiConnectionDecisions` 校验 nested command，只接受
+  `Auth.NONE`。获得 command authority 后由 `commandId` 确定性派生 child Connection ID；Connection 与 Resource
+  共享 exact attempt，Resource compiler 只解析该 attempt 的 staged payload-free Connection snapshot。
+- 最终事务依次关闭 Connection child、可选 Default Fixture child 和 Resource receipt；事务失败时 child stage 与
+  Resource stage 均回滚/清理，Connection 只在 canonical Resource receipt 持久化后发布。重放返回同一 Resource
+  receipt 与 derived Connection，不产生第二条 head。
+- Controller 有独立 nested-create JSON 解码回归；JDBC integration 覆盖成功/replay 与强制 outer commit failure
+  后两类 authority 均不可见。JavaDoc 明确 credential-free child、stage-aware resolver 与发布边界。
+- 真实浏览器不再 seed/pick `crm`：OpenAPI preview、legacy re-author、两 API → Tool DAG → Default Fixture 三条方法
+  均通过；主链确认两个 API 使用两个不同的 `connection-*` authority，并在 28 个主动作内完成。
+
+### TDD 与验证
+
+```text
+后端聚焦：Controller + compound facade/JDBC + configuration + projection + Connection stores
+Tests run: 141; Failures: 0; Errors: 0; Skipped: 0
+
+前端聚焦：2 files / 12 tests passed
+i18n: 6 files / 39 tests passed
+UX: 4 files / 52 tests passed
+host: 3 files / 21 tests passed
+TypeScript: passed
+Vite + bundle: passed; AuthorCanvas startup closure 350.00 KiB budget内
+
+真实浏览器：3 tests; Failures: 0; Errors: 0; Skipped: 0
+主链：primaryActions=28
+
+全量门禁：Tests run: 8,259; Failures: 0; Errors: 0; Skipped: 38
+BUILD SUCCESS; 11:43
+```
+
+### 当前差距评估
+
+本轮关闭了标准 API 页的本地 P1。仍有一个主要本地 P1：简单 Flow 页尚未从统一 Catalog 选择 immutable
+`FLOW_VERSION` 作为父级节点，也没有可见的节点级 Fixture `APPLY_CASE` 创作/模拟闭环。390 px 完整链、迁移
+coverage receipt/bulk replay 与真实 PostgreSQL/Vault 属于 P2 或外部环境证据。当前本地实现/验收差距保守估计
+约 **3%–5%**，仍未满足低于 3% 的停止条件；下一步继续关闭 Flow Version 父级复用与节点 Fixture 主线。

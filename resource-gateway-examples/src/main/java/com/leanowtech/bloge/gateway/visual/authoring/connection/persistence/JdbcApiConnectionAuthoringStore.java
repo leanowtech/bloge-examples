@@ -25,9 +25,9 @@ import java.util.Optional;
  *
  * <p>The constructor creates both the generic command claim authority and the
  * Connection projection authority from one {@link DataSource}; callers cannot
- * accidentally pair unrelated claim and metadata stores. Nested Resource
- * composition continues to use the Resource store directly and is outside
- * this Connection-only facade.</p>
+ * accidentally pair unrelated claim and metadata stores. The same adapter
+ * exposes nested child staging so Resource composition cannot be paired with
+ * a different Connection authority.</p>
  */
 public final class JdbcApiConnectionAuthoringStore
         implements ApiConnectionAuthoringStore {
@@ -71,13 +71,40 @@ public final class JdbcApiConnectionAuthoringStore
         return connections.stage(lease, connectionId, connectionExpected, command);
     }
 
+    @Override public StagedApiConnection stage(CommandLease lease, String connectionId,
+                                                ExpectedRevision connectionExpected,
+                                                ApiConnectionCommand command,
+                                                com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding... prepared) {
+        return connections.stage(lease, connectionId, connectionExpected, command, prepared);
+    }
+
     @Override public StoredApiConnection commit(CommandLease lease) { return connections.commit(lease); }
+    @Override public StoredApiConnection commit(CommandLease lease,
+                                                  com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots finalized) {
+        return connections.commit(lease, finalized);
+    }
+    @Override public StoredApiConnection commitChild(CommandLease lease) { return connections.commitChild(lease); }
+    @Override public StoredApiConnection commitChild(CommandLease lease,
+                                                       com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots finalized) {
+        return connections.commitChild(lease, finalized);
+    }
+    @Override public StoredApiConnection publishChild(CommandLease lease, CommandReceipt receipt) {
+        return connections.publishChild(lease, receipt);
+    }
+    @Override public void failChild(CommandLease lease) { connections.failChild(lease); }
     @Override public void fail(CommandLease lease) { connections.fail(lease); }
+    @Override public Optional<StagedApiConnection> findStaged(CommandLease lease) {
+        return connections.findStaged(lease);
+    }
     @Override public Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return connections.findHead(scope, connectionId);
     }
     @Override public List<StoredApiConnection> listHeads(AuthoringScope scope) {
         return connections.listHeads(scope);
+    }
+    @Override public Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,
+                                                                 long revision) {
+        return connections.findRevision(scope, connectionId, revision);
     }
     @Override public Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                                                String strongEtag) {

@@ -63,9 +63,17 @@ public final class DefaultApiResourceProjectionCompiler implements ApiResourcePr
      */
     @Override
     public ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource) {
+        return compile(scope, resource, null);
+    }
+
+    @Override
+    public ReadyApiResourceProjections compile(AuthoringScope scope, ApiResourceSpec resource,
+                                               com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease lease) {
         Objects.requireNonNull(scope, "scope");
         validate(resource);
-        ResolvedConnection connection = connections.resolve(scope, resource.connectionId())
+        ResolvedConnection connection = (lease == null
+                ? connections.resolve(scope, resource.connectionId())
+                : connections.resolveForStage(scope, resource.connectionId(), lease))
                 .orElseThrow(() -> new IllegalArgumentException("connection projection is unavailable"));
         if (!resource.connectionId().equals(connection.snapshot().connectionId())) {
             throw new IllegalArgumentException("connection projection identity drift");

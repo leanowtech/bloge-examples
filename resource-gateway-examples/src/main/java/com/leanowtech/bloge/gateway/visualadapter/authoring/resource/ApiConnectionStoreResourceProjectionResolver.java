@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiC
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionProjectionResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshot;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.time.Duration;
 import java.util.Map;
@@ -40,5 +41,30 @@ public final class ApiConnectionStoreResourceProjectionResolver
                             stored.metadataFingerprint()), new ConnectionMetadata(
                             stored.view().baseUrl(), headers, timeout));
                 });
+    }
+
+    /** Resolves the exact invisible Connection child owned by this Resource attempt. */
+    @Override
+    public Optional<ResolvedConnection> resolveForStage(AuthoringScope scope, String connectionId,
+                                                         CommandLease lease) {
+        var stage = connections.findStaged(lease);
+        if (stage.isEmpty()) return resolve(scope, connectionId);
+        return stage
+                .filter(staged -> connectionId.equals(staged.view().connectionId()))
+                .filter(staged -> "NONE".equals(staged.view().auth().kind())
+                        && !staged.view().auth().configured())
+                .map(staged -> resolved(staged.view(), staged.metadataFingerprint()));
+    }
+
+    private static ResolvedConnection resolved(
+            com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView view,
+            String metadataFingerprint) {
+        ApiConnectionCommand.Defaults defaults = view.defaults();
+        Map<String, String> headers = defaults == null ? Map.of() : defaults.headers();
+        Duration timeout = defaults == null || defaults.timeoutMs() == null
+                ? Duration.ofSeconds(30) : Duration.ofMillis(defaults.timeoutMs());
+        return new ResolvedConnection(new ApiResourceConnectionSnapshot(
+                view.connectionId(), view.revision(), metadataFingerprint),
+                new ConnectionMetadata(view.baseUrl(), headers, timeout));
     }
 }

@@ -216,6 +216,13 @@ public final class InMemoryApiConnectionCommitStore
         return commitInternal(lease, null, false);
     }
 
+    @Override
+    public synchronized Optional<StagedApiConnection> findStaged(CommandLease lease) {
+        if (lease == null) return Optional.empty();
+        StagedApiConnection staged = stages.get(new StageKey(lease.commandId(), lease.attemptToken()));
+        return staged != null && staged.lease().equals(lease) ? Optional.of(staged) : Optional.empty();
+    }
+
     /** {@inheritDoc} */
     @Override public synchronized StoredApiConnection commit(CommandLease lease, FinalizedSecretSlots finalized) {
         return commitInternal(lease, finalized, false);

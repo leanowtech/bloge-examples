@@ -1,8 +1,12 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.resource;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionAuthoringStore;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StagedApiConnection;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
@@ -29,16 +33,20 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Stored
 import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Compound Resource-save tracer: EXISTING Connection with an optional generated private Fixture Set.
+ * Compound Resource-save application boundary with an optional generated private Fixture Set.
  *
  * <p>The facade validates the frozen compound command, resolves an opaque
  * Resource precondition, and claims one Resource lifecycle before staging all
- * three projections. Nested Connection creation remains explicitly unavailable.
+ * three projections. A nested credential-free Connection is staged under the
+ * same Resource command, committed in the same transaction, and published
+ * only after the canonical Resource receipt becomes durable.
  * FROM_EXAMPLES is enabled only when the Fixture child store and materializer
  * are supplied; its child stays invisible until the outer receipt commits.</p>
  *
@@ -52,17 +60,18 @@ public final class ApiResourceAuthoringFacade {
 
     private final ApiResourceCommitStore resources;
     private final ApiConnectionAuthoringStore connections;
+    private final ApiConnectionDecisions connectionDecisions;
     private final ApiResourceDecisions decisions;
     private final ApiFixtureSetCommitStore fixtures;
     private final DefaultFixtureSetMaterializer fixtureMaterializer;
     private final TransactionOperations transactions;
 
-    /** Creates the facade over one complete Resource lifecycle and read-only Connection authority. */
+    /** Creates the facade over complete Resource and Connection lifecycle authorities. */
     public ApiResourceAuthoringFacade(ApiResourceCommitStore resources,
                                       ApiConnectionAuthoringStore connections,
                                       ApiResourceDecisions decisions) {
         this(resources, connections, decisions, null, null,
-                TransactionOperations.withoutTransaction());
+                TransactionOperations.withoutTransaction(), new ApiConnectionDecisions());
     }
 
     /** Creates the durable compound facade over one shared coordinator transaction boundary. */
@@ -72,9 +81,22 @@ public final class ApiResourceAuthoringFacade {
                                       ApiFixtureSetCommitStore fixtures,
                                       DefaultFixtureSetMaterializer fixtureMaterializer,
                                       TransactionOperations transactions) {
+        this(resources, connections, decisions, fixtures, fixtureMaterializer, transactions,
+                new ApiConnectionDecisions());
+    }
+
+    /** Creates the durable facade with the explicit Connection validation authority. */
+    public ApiResourceAuthoringFacade(ApiResourceCommitStore resources,
+                                      ApiConnectionAuthoringStore connections,
+                                      ApiResourceDecisions decisions,
+                                      ApiFixtureSetCommitStore fixtures,
+                                      DefaultFixtureSetMaterializer fixtureMaterializer,
+                                      TransactionOperations transactions,
+                                      ApiConnectionDecisions connectionDecisions) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.connections = Objects.requireNonNull(connections, "connections");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        this.connectionDecisions = Objects.requireNonNull(connectionDecisions, "connectionDecisions");
         if ((fixtures == null) != (fixtureMaterializer == null)) {
             throw new IllegalArgumentException("Fixture store and materializer must be configured together");
         }
@@ -89,12 +111,13 @@ public final class ApiResourceAuthoringFacade {
         ExpectedRevision expected = expectedRevision(preflight);
         String fingerprint;
         try {
-            fingerprint = request.command().defaultFixture()
+            String fixtureDisplayName = preflight.defaultFixture()
                     instanceof ApiResourceSaveCommand.DefaultFixture.FromExamples fromExamples
-                    ? decisions.requestFingerprintFromExamples(request.resourceId(), preflight.connectionId(),
-                    request.command().resource(), fromExamples.displayName(), fromExamples.exampleNames())
-                    : decisions.requestFingerprint(request.resourceId(), preflight.connectionId(),
-                    request.command().resource());
+                    ? fromExamples.displayName() : null;
+            java.util.List<String> exampleNames = preflight.defaultFixture()
+                    instanceof ApiResourceSaveCommand.DefaultFixture.FromExamples fromExamples
+                    ? fromExamples.exampleNames() : null;
+            fingerprint = requestFingerprint(request, preflight, fixtureDisplayName, exampleNames);
         } catch (RuntimeException ex) {
             throw mapFailure(ex, null);
         }
@@ -116,10 +139,25 @@ public final class ApiResourceAuthoringFacade {
         CommandLease lease = acquired.lease();
         boolean committed = false;
         boolean fixtureTouched = false;
+        boolean connectionTouched = false;
         try {
-            StoredApiConnection connection = requiredConnection(request.scope(), preflight.connectionId());
-            StagedApiResource staged = resources.stage(lease, preflight.connectionId(), request.command().resource());
-            requireConnectionSnapshot(connection, staged.projections().connectionSnapshot());
+            String connectionId = preflight.connectionCommand() == null
+                    ? preflight.connectionId() : derivedConnectionId(lease.commandId());
+            StoredApiConnection existingConnection = null;
+            StagedApiConnection stagedConnection = null;
+            if (preflight.connectionCommand() == null) {
+                existingConnection = requiredConnection(request.scope(), connectionId);
+            } else {
+                stagedConnection = connections.stage(lease, connectionId, ExpectedRevision.create(),
+                        preflight.connectionCommand());
+                connectionTouched = true;
+            }
+            StagedApiResource staged = resources.stage(lease, connectionId, request.command().resource());
+            if (stagedConnection == null) {
+                requireConnectionSnapshot(existingConnection, staged.projections().connectionSnapshot());
+            } else {
+                requireConnectionSnapshot(stagedConnection, staged.projections().connectionSnapshot());
+            }
             GeneratedDefaultFixture generated = null;
             if (request.command().defaultFixture()
                     instanceof ApiResourceSaveCommand.DefaultFixture.FromExamples fromExamples) {
@@ -134,12 +172,22 @@ public final class ApiResourceAuthoringFacade {
                     staged.projections(), receipt);
             GeneratedDefaultFixture child = generated;
             CommandReceipt committedReceipt = transactions.execute(status -> {
+                if (preflight.connectionCommand() != null) connections.commitChild(lease);
                 if (child != null) fixtures.commitChild(lease);
                 return resources.commit(lease, receipt);
             });
             if (committedReceipt == null) throw failure(ApiResourceAuthoringFailure.Code.PERSISTENCE);
             committed = true;
             if (!receipt.equals(committedReceipt)) throw failure(ApiResourceAuthoringFailure.Code.INTEGRITY);
+            if (preflight.connectionCommand() != null) {
+                StoredApiConnection published = connections.publishChild(lease, receipt);
+                if (!published.view().connectionId().equals(connectionId)
+                        || published.view().revision() != staged.projections().connectionSnapshot().revision()
+                        || !published.metadataFingerprint().equals(
+                        staged.projections().connectionSnapshot().metadataFingerprint())) {
+                    throw failure(ApiResourceAuthoringFailure.Code.INTEGRITY);
+                }
+            }
             if (generated != null) {
                 StoredFixtureSet published = fixtures.publishChild(lease, receipt);
                 if (!published.generated().equals(generated)) {
@@ -150,8 +198,10 @@ public final class ApiResourceAuthoringFacade {
         } catch (RuntimeException ex) {
             if (!committed) {
                 ApiResourceAuthoringFailure fixtureCleanup = fixtureTouched ? safeFailFixture(lease) : null;
+                ApiResourceAuthoringFailure connectionCleanup = connectionTouched ? safeFailConnection(lease) : null;
                 ApiResourceAuthoringFailure cleanup = safeFail(lease, failureCode(ex));
                 if (fixtureCleanup != null) throw fixtureCleanup;
+                if (connectionCleanup != null) throw connectionCleanup;
                 if (cleanup != null) throw cleanup;
             }
             throw mapFailure(ex, lease);
@@ -200,10 +250,24 @@ public final class ApiResourceAuthoringFacade {
                 || command.defaultFixture() == null) {
             throw failure(ApiResourceAuthoringFailure.Code.VALIDATION);
         }
-        if (!(command.connection() instanceof ApiResourceSaveCommand.Connection.Existing existing)) {
-            throw failure(ApiResourceAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
-        }
-        if (!validIdentifier(existing.connectionId(), 128)) {
+        String connectionId = null;
+        ApiConnectionCommand connectionCommand = null;
+        if (command.connection() instanceof ApiResourceSaveCommand.Connection.Existing existing) {
+            if (!validIdentifier(existing.connectionId(), 128)) {
+                throw failure(ApiResourceAuthoringFailure.Code.VALIDATION);
+            }
+            connectionId = existing.connectionId();
+        } else if (command.connection() instanceof ApiResourceSaveCommand.Connection.Create create) {
+            connectionCommand = create.command();
+            try {
+                connectionDecisions.validateForAuthoring(connectionCommand);
+            } catch (RuntimeException ex) {
+                throw mapFailure(ex, null);
+            }
+            if (!(connectionCommand.auth() instanceof ApiConnectionCommand.Auth.None)) {
+                throw failure(ApiResourceAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+            }
+        } else {
             throw failure(ApiResourceAuthoringFailure.Code.VALIDATION);
         }
         try {
@@ -219,8 +283,8 @@ public final class ApiResourceAuthoringFacade {
         }
 
         if (request.precondition() instanceof ApiResourceAuthoringPrecondition.Create) {
-            return new Preflight(request.scope(), request.resourceId(), existing.connectionId(), null,
-                    command.defaultFixture());
+            return new Preflight(request.scope(), request.resourceId(), connectionId, connectionCommand,
+                    null, command.defaultFixture());
         }
         if (request.precondition() instanceof ApiResourceAuthoringPrecondition.MatchStrongEtag match) {
             if (!StrongEtag.isValid(match.strongEtag())) {
@@ -245,8 +309,8 @@ public final class ApiResourceAuthoringFacade {
                 }
                 throw failure(ApiResourceAuthoringFailure.Code.NOT_FOUND);
             }
-            return new Preflight(request.scope(), request.resourceId(), existing.connectionId(), historical.get(),
-                    command.defaultFixture());
+            return new Preflight(request.scope(), request.resourceId(), connectionId, connectionCommand,
+                    historical.get(), command.defaultFixture());
         }
         throw failure(ApiResourceAuthoringFailure.Code.VALIDATION);
     }
@@ -280,7 +344,8 @@ public final class ApiResourceAuthoringFacade {
         }
         long inputRevision = preflight.historical() == null ? 0 : preflight.historical().resource().revision();
         if (stored.resource().revision() != inputRevision + 1
-                || !preflight.connectionId().equals(stored.resource().connectionId())) {
+                || (preflight.connectionId() != null
+                && !preflight.connectionId().equals(stored.resource().connectionId()))) {
             throw failure(ApiResourceAuthoringFailure.Code.INTEGRITY);
         }
         return new ApiResourceAuthoringResult(stored, true);
@@ -309,9 +374,32 @@ public final class ApiResourceAuthoringFacade {
         }
     }
 
+    private static void requireConnectionSnapshot(StagedApiConnection connection,
+                                                  ApiResourceConnectionSnapshot snapshot) {
+        if (!connection.view().connectionId().equals(snapshot.connectionId())
+                || connection.view().revision() != snapshot.revision()
+                || !connection.metadataFingerprint().equals(snapshot.metadataFingerprint())) {
+            throw failure(ApiResourceAuthoringFailure.Code.CONNECTION_CHANGED);
+        }
+    }
+
     private static ExpectedRevision expectedRevision(Preflight preflight) {
         return preflight.historical() == null ? ExpectedRevision.create()
                 : ExpectedRevision.match(preflight.historical().resource().revision());
+    }
+
+    private String requestFingerprint(ApiResourceAuthoringRequest request, Preflight preflight,
+                                      String fixtureDisplayName, java.util.List<String> exampleNames) {
+        if (preflight.connectionCommand() != null) {
+            return decisions.requestFingerprintWithConnectionCreate(request.resourceId(),
+                    preflight.connectionCommand(), request.command().resource(), fixtureDisplayName, exampleNames);
+        }
+        if (fixtureDisplayName != null) {
+            return decisions.requestFingerprintFromExamples(request.resourceId(), preflight.connectionId(),
+                    request.command().resource(), fixtureDisplayName, exampleNames);
+        }
+        return decisions.requestFingerprint(request.resourceId(), preflight.connectionId(),
+                request.command().resource());
     }
 
     private ApiResourceAuthoringFailure safeFail(CommandLease lease, CommandFailureCode code) {
@@ -330,6 +418,20 @@ public final class ApiResourceAuthoringFacade {
         } catch (RuntimeException cleanup) {
             return mapFailure(cleanup, lease);
         }
+    }
+
+    private ApiResourceAuthoringFailure safeFailConnection(CommandLease lease) {
+        try {
+            connections.failChild(lease);
+            return null;
+        } catch (RuntimeException cleanup) {
+            return mapFailure(cleanup, lease);
+        }
+    }
+
+    private static String derivedConnectionId(String commandId) {
+        UUID stable = UUID.nameUUIDFromBytes(commandId.getBytes(StandardCharsets.UTF_8));
+        return "connection-" + stable;
     }
 
     private static CommandFailureCode failureCode(RuntimeException ex) {
@@ -380,9 +482,20 @@ public final class ApiResourceAuthoringFacade {
             };
         }
         if (ex instanceof ApiConnectionCommitStoreException failure) {
-            return failure(failure.code() == ApiConnectionCommitStoreException.Code.INTEGRITY
-                    ? ApiResourceAuthoringFailure.Code.INTEGRITY
-                    : ApiResourceAuthoringFailure.Code.PERSISTENCE);
+            return switch (failure.code()) {
+                case LEASE_FENCED -> failure(ApiResourceAuthoringFailure.Code.LEASE_LOST);
+                case LEASE_EXPIRED -> failure(ApiResourceAuthoringFailure.Code.BUSY,
+                        lease == null ? null : lease.leaseUntil());
+                case CAS_MISMATCH -> failure(ApiResourceAuthoringFailure.Code.CAS_MISMATCH);
+                case STAGE_MISSING, INTEGRITY -> failure(ApiResourceAuthoringFailure.Code.INTEGRITY);
+            };
+        }
+        if (ex instanceof ApiConnectionAuthoringException failure) {
+            return switch (failure.code()) {
+                case VALIDATION -> failure(ApiResourceAuthoringFailure.Code.VALIDATION);
+                case NOT_FOUND -> failure(ApiResourceAuthoringFailure.Code.CONNECTION_NOT_FOUND);
+                case ALREADY_EXISTS, CAS_MISMATCH -> failure(ApiResourceAuthoringFailure.Code.CAS_MISMATCH);
+            };
         }
         if (ex instanceof ApiFixtureSetCommitStoreException failure) {
             return switch (failure.code()) {
@@ -412,6 +525,6 @@ public final class ApiResourceAuthoringFacade {
     }
 
     private record Preflight(AuthoringScope scope, String resourceId, String connectionId,
-                             StoredApiResource historical,
+                             ApiConnectionCommand connectionCommand, StoredApiResource historical,
                              ApiResourceSaveCommand.DefaultFixture defaultFixture) { }
 }

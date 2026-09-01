@@ -34,7 +34,10 @@ import './authoringWorkbench.css';
 const EMPTY_DRAFT: ApiResourceFormDraft = {
   resourceId: '',
   displayName: '',
+  connectionMode: 'CREATE',
   connectionId: '',
+  connectionDisplayName: '',
+  connectionBaseUrl: '',
   method: 'GET',
   path: '/',
   requestExample: '{\n  "id": "customer-1"\n}',
@@ -416,19 +419,43 @@ function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }
                   onChange={(event) => setDraft({ ...draft, resourceId: event.target.value })}
                   disabled={strongEtag !== null} required />
               </Field>
-              <Field label={t('Connection ID')}>
-                <select data-testid="api-connection-id" value={draft.connectionId}
-                  onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })} required>
-                  <option value="">{t('Choose a Connection')}</option>
-                  {connections.map((connection) => (
-                    <option key={connection.connectionId} value={connection.connectionId}>
-                      {connection.displayName} · {connection.baseUrl}
-                    </option>
-                  ))}
-                  {draft.connectionId && !connections.some((value) => value.connectionId === draft.connectionId)
-                    && <option value={draft.connectionId}>{draft.connectionId}</option>}
+              <Field label={t('Connection')}>
+                <select data-testid="api-connection-mode" value={draft.connectionMode}
+                  onChange={(event) => setDraft({ ...draft,
+                    connectionMode: event.target.value as ApiResourceFormDraft['connectionMode'] })}>
+                  <option value="CREATE">{t('Create')}</option>
+                  <option value="EXISTING">{t('Existing')}</option>
                 </select>
               </Field>
+              {draft.connectionMode === 'EXISTING' ? (
+                <Field label={t('Connection ID')}>
+                  <select data-testid="api-connection-id" value={draft.connectionId}
+                    onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })} required>
+                    <option value="">{t('Choose a Connection')}</option>
+                    {connections.map((connection) => (
+                      <option key={connection.connectionId} value={connection.connectionId}>
+                        {connection.displayName} · {connection.baseUrl}
+                      </option>
+                    ))}
+                    {draft.connectionId && !connections.some((value) => value.connectionId === draft.connectionId)
+                      && <option value={draft.connectionId}>{draft.connectionId}</option>}
+                  </select>
+                </Field>
+              ) : (
+                <>
+                  <Field label={t('Name')}>
+                    <input data-testid="api-connection-name" value={draft.connectionDisplayName}
+                      onChange={(event) => setDraft({ ...draft, connectionDisplayName: event.target.value })}
+                      required />
+                  </Field>
+                  <Field label={t('URL')}>
+                    <input data-testid="api-connection-base-url" value={draft.connectionBaseUrl}
+                      placeholder="https://api.example.com"
+                      onChange={(event) => setDraft({ ...draft, connectionBaseUrl: event.target.value })}
+                      required />
+                  </Field>
+                </>
+              )}
             </div>
           </section>
           <section>
