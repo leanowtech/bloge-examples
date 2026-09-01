@@ -11,6 +11,7 @@ vi.mock('./api', async () => {
   return {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
     listApiConnections: vi.fn(), previewOpenApi: vi.fn(),
+    readLegacyAssetMigrationInventory: vi.fn(),
     saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
   };
 });
@@ -29,6 +30,10 @@ describe('simple authoring workbench', () => {
       schemaVersion: 'bloge.apiConnectionView.v1', connectionId: 'crm', revision: 1,
       displayName: 'CRM', baseUrl: 'https://crm.example.test', auth: { kind: 'NONE', configured: false },
     }]);
+    vi.mocked(authoringApi.readLegacyAssetMigrationInventory).mockResolvedValue({
+      schemaVersion: 'bloge.legacyAssetMigrationInventory.v1',
+      summary: { total: 0, readyToReauthor: 0, needsRepair: 0, legacyOnly: 0 }, items: [],
+    });
   });
 
   afterEach(async () => {
@@ -44,6 +49,29 @@ describe('simple authoring workbench', () => {
     expect(link('create-api-resource').getAttribute('href')).toBe('/workbench/?create=api');
     expect(link('create-tool').getAttribute('href')).toBe('/workbench/?create=flow&kind=TOOL');
     expect(link('create-solution').getAttribute('href')).toBe('/workbench/?create=flow&kind=SOLUTION');
+    expect(link('open-legacy-inventory').getAttribute('href')).toBe('/workbench/?legacy=inventory');
+  });
+
+  it('shows a payload-free legacy summary and an explicit migration list', async () => {
+    vi.mocked(authoringApi.readLegacyAssetMigrationInventory).mockResolvedValue(inventory());
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve();
+    });
+
+    expect(element('legacy-assets-summary').textContent).toContain('Needs repair: 1');
+    expect(link('open-legacy-inventory').getAttribute('href')).toBe('/workbench/?legacy=inventory');
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    window.history.replaceState(null, '', '/workbench/?legacy=inventory');
+    await act(async () => root.render(<AuthoringWorkbench />));
+    await act(async () => { await Promise.resolve(); });
+    expect(element('legacy-inventory-counts').textContent).toContain('Legacy1');
+    const resource = element('legacy-item:API_RESOURCE:orders.list');
+    expect(resource.textContent).toContain('DESIGN_CONTRACT_MISSING');
+    expect(resource.querySelector('a')?.getAttribute('href')).toBe('/capabilities/');
+    expect(host.textContent).not.toContain('https://orders.example.test');
   });
 
   it('previews and visibly applies one OpenAPI operation before save', async () => {
@@ -200,5 +228,21 @@ describe('simple authoring workbench', () => {
     const value = host.querySelector<T>(`[data-testid="${testId}"]`);
     if (!value) throw new Error(`Missing ${testId}`);
     return value;
+  }
+
+  function inventory(): import('./model').LegacyAssetMigrationInventory {
+    return {
+      schemaVersion: 'bloge.legacyAssetMigrationInventory.v1',
+      summary: { total: 2, readyToReauthor: 0, needsRepair: 1, legacyOnly: 1 },
+      items: [{
+        kind: 'API_RESOURCE', sourceId: 'orders.list', sourceRevision: 0, displayName: 'Orders',
+        status: 'NEEDS_REPAIR', fixtureReferences: 0, reasonCodes: ['DESIGN_CONTRACT_MISSING'],
+        action: { kind: 'REPAIR_SOURCE', path: '/capabilities/' },
+      }, {
+        kind: 'REUSABLE_FLOW_DRAFT', sourceId: 'approval', sourceRevision: 3, displayName: 'Approval',
+        status: 'LEGACY_ONLY', fixtureReferences: 1, reasonCodes: ['ADVANCED_EDGE_UNSUPPORTED'],
+        action: { kind: 'OPEN_LEGACY_FLOW', path: '/author/?authorWorkspace=legacy&draftId=approval' },
+      }],
+    };
   }
 });

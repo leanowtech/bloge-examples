@@ -219,11 +219,42 @@
 .object-task-panel pre { overflow: auto; padding: 16px; border-radius: 10px; background: #111827; color: #f8fafc; }
 .object-empty { color: var(--muted, #5d6470); }
 
+.legacy-assets-summary,
+.legacy-asset-inventory { max-width: 1120px; margin: 28px auto; }
+.legacy-assets-summary {
+  display: flex; justify-content: space-between; align-items: center; gap: 20px;
+  padding: 20px; border: 1px solid var(--border, #cbd0d8); border-radius: 14px;
+  background: var(--surface, #fff);
+}
+.legacy-assets-summary h2 { margin: 0 0 6px; }
+.legacy-assets-summary p { margin: 0; color: var(--muted, #5d6470); }
+.legacy-assets-summary a,
+.legacy-inventory-list a { font-weight: 700; white-space: nowrap; }
+.legacy-inventory-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.legacy-inventory-counts div { padding: 16px; border-radius: 10px; background: #f5f7fa; }
+.legacy-inventory-counts dt { color: var(--muted, #5d6470); }
+.legacy-inventory-counts dd { margin: 6px 0 0; font-size: 1.5rem; font-weight: 750; }
+.legacy-inventory-list { list-style: none; padding: 0; display: grid; gap: 12px; }
+.legacy-inventory-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 18px; border: 1px solid var(--border, #cbd0d8); border-radius: 12px;
+  background: var(--surface, #fff);
+}
+.legacy-inventory-list h2 { margin: 6px 0; font-size: 1.05rem; }
+.legacy-inventory-list p, .legacy-inventory-list small { color: var(--muted, #5d6470); }
+.legacy-status { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; }
+.legacy-status-needs_repair { color: #a14300; }
+.legacy-status-legacy_only { color: #6b3fa0; }
+.legacy-status-ready_to_reauthor { color: #13714a; }
+
 @media (max-width: 760px) {
   .simple-authoring-intents,
   .object-form-grid,
   .object-example-grid,
   .simulation-summary { grid-template-columns: 1fr; }
+  .legacy-assets-summary,
+  .legacy-inventory-list li { align-items: stretch; flex-direction: column; }
+  .legacy-inventory-counts { grid-template-columns: 1fr; }
   .api-resource-object-header { display: block; }
   .object-tabs { overflow-x: auto; }
   .openapi-operation-list li { align-items: stretch; flex-direction: column; }

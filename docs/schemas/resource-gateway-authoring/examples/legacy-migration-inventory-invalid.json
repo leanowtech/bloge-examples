@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "bloge.legacyAssetMigrationInventory.v1",
+  "summary": { "total": 1, "readyToReauthor": 1, "needsRepair": 0, "legacyOnly": 0 },
+  "items": [{
+    "kind": "API_RESOURCE",
+    "sourceId": "customer.get",
+    "sourceRevision": 0,
+    "displayName": "Get customer",
+    "status": "MIGRATED",
+    "fixtureReferences": 0,
+    "reasonCodes": [],
+    "action": { "kind": "REAUTHOR_RESOURCE", "path": "https://external.invalid" }
+  }]
+}

@@ -31,6 +31,26 @@ export interface ApiConnectionView {
   auth: { kind: string; configured: boolean };
 }
 
+export interface LegacyAssetMigrationInventory {
+  schemaVersion: 'bloge.legacyAssetMigrationInventory.v1';
+  summary: { total: number; readyToReauthor: number; needsRepair: number; legacyOnly: number };
+  items: LegacyAssetMigrationItem[];
+}
+
+export interface LegacyAssetMigrationItem {
+  kind: 'API_RESOURCE' | 'REUSABLE_FLOW_DRAFT' | 'REUSABLE_FLOW_VERSION' | 'FIXTURE_SET';
+  sourceId: string;
+  sourceRevision: number;
+  displayName: string;
+  status: 'READY_TO_REAUTHOR' | 'NEEDS_REPAIR' | 'LEGACY_ONLY';
+  fixtureReferences: number;
+  reasonCodes: string[];
+  action: {
+    kind: 'REAUTHOR_RESOURCE' | 'REPAIR_SOURCE' | 'OPEN_LEGACY_FLOW' | 'REAUTHOR_FIXTURE';
+    path: string;
+  };
+}
+
 export interface ApiResourceBinding {
   from: string;
   to: { location: 'PATH' | 'QUERY' | 'HEADER' | 'BODY'; name: string };

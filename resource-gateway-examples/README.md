@@ -455,6 +455,20 @@ Deployment-specific `RemoteOpenApiDocumentGateway` and external secret-provider 
 external Vault certification, and real PostgreSQL migration certification remain separate external-environment
 evidence rather than hidden local fallbacks.
 
+The default object workbench also exposes an authenticated, read-only **Existing assets** inventory. It projects
+legacy Resource Descriptor/Design Contract pairs, scoped Graph Drafts and Publications, and payload-free Fixture
+references into `READY_TO_REAUTHOR`, `NEEDS_REPAIR`, or `LEGACY_ONLY`. Each row carries only a source coordinate,
+display label, reason codes, reference count, and a server-selected relative application action; descriptor URLs,
+headers, schemas, Fixture values, governed material identifiers, credentials, and external destinations are never
+returned. The inventory remains available when durable API Resource writes are disabled because it does not depend
+on V001–V018 or mutate any authority. The entry remains visible for an empty or temporarily unavailable inventory,
+so operators can inspect the explicit state instead of losing the recovery path. Resource re-authoring still requires
+visible Connection selection, advanced non-data Graph edges remain in Legacy Author, and no migration is performed
+automatically.
+The focused migration/schema/boundary gate is **23/23 green**, frontend transport/component tests are **12/12**,
+and the production frontend build plus the real Chrome inventory method are green. The final serial
+`clean verify` completed with `Tests run: 8,240; failures: 0; errors: 0; skipped: 37` and `BUILD SUCCESS`.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -2253,3 +2253,65 @@ BUILD SUCCESS; Total time: 11:50 min
 这一步只切换入口投影，不迁移或删除任何现有 Capability、Graph、Fixture 或 Resource 数据。
 下一步仍需完成既有 Descriptor + Contract、GraphDraft/Publication 与 Fixture 引用的显式迁移/修复清单；
 不可证明的资产必须标记 `NEEDS_REPAIR` 或保留 Legacy，不得静默补全。
+
+## 50. Iteration 49 — 存量资产迁移与修复清单
+
+日期：2026-09-01。
+
+### 已完成
+
+- 默认对象工作台增加次级 **Existing assets** 入口。入口在清单为空或暂时不可用时仍保持可见，避免恢复路径
+  因异步计数或服务错误而消失；首页的三个创建概念保持不变。
+- 新的 `bloge.legacyAssetMigrationInventory.v1` 只读协议统一列出：legacy Resource Descriptor 与 Design
+  Contract 配对、可信 scope 内的 Graph Draft/Publication、以及 Draft 中 Fixture 引用的独立迁移项。
+- 每项只返回 kind、source id/revision、display name、status、Fixture reference count、reason codes 和服务端选择的
+  相对应用路径。协议、模块、Controller 和真实浏览器均验证不返回 URL template、default headers、schema、
+  Fixture value、governed material id、credential 或外部 URL。
+- `READY_TO_REAUTHOR` 只表示可从可见对象页重新创作，不表示已经迁移；缺 Descriptor/Contract 或 inactive
+  Contract 标为 `NEEDS_REPAIR`；含非 data edge 或不可证明 Publication 的资产标为 `LEGACY_ONLY`。
+- 清单读取复用可信 workload identity 与 `API_RESOURCE_AUTHORING` purpose，并按 verified
+  tenant/project/environment 过滤 Draft 与 Publication。它不依赖 durable Resource 写入开关，也不执行数据库
+  migration、自动 Connection 选择或 Fixture material 复制。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualRuntimeBoundaryTest,LegacyAssetMigrationModuleTest,\
+LegacyAssetMigrationControllerTest,LegacyAssetMigrationConfigurationTest,\
+AuthoringProtocolSchemaTest test
+
+Tests run: 23; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 2 passed; Tests: 12 passed
+npm run check:i18n: 39/39
+npx tsc --noEmit: PASS
+
+npm run build
+
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 193.33 KiB / 12 files
+AuthorCanvas startup closure: 349.96 KiB / 22 files
+
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchShowsPayloadFreeLegacyMigrationInventory test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,240; Failures: 0; Errors: 0; Skipped: 37
+BUILD SUCCESS; Total time: 11:43 min
+```
+
+### 当前差距评估
+
+本轮关闭的是“发现、分类、解释与进入正确修复入口”，不是自动转换。Resource 仍需作者可见地选择 Connection
+并保存新权威；高级 Graph edge 继续由 Legacy Author 承载；Fixture value 与 governed material 不会从旧资产复制。
+尚未实现逐项 re-author command、迁移覆盖率 receipt 或批量 mutation/replay，因此不能把清单计数当迁移完成率。
+外部 Vault/provider 与真实 PostgreSQL migration/concurrency 仍是部署环境证据，不能由本地 H2 或浏览器清单代替。

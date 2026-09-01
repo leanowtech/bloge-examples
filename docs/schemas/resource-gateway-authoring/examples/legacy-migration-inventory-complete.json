@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "bloge.legacyAssetMigrationInventory.v1",
+  "summary": { "total": 2, "readyToReauthor": 1, "needsRepair": 0, "legacyOnly": 1 },
+  "items": [
+    {
+      "kind": "API_RESOURCE",
+      "sourceId": "customer.get",
+      "sourceRevision": 0,
+      "displayName": "Get customer",
+      "status": "READY_TO_REAUTHOR",
+      "fixtureReferences": 0,
+      "reasonCodes": ["CONNECTION_SELECTION_REQUIRED"],
+      "action": { "kind": "REAUTHOR_RESOURCE", "path": "/workbench/?create=api" }
+    },
+    {
+      "kind": "REUSABLE_FLOW_DRAFT",
+      "sourceId": "approval-flow",
+      "sourceRevision": 3,
+      "displayName": "Approval flow",
+      "status": "LEGACY_ONLY",
+      "fixtureReferences": 1,
+      "reasonCodes": ["ADVANCED_EDGE_UNSUPPORTED"],
+      "action": { "kind": "OPEN_LEGACY_FLOW", "path": "/author/?authorWorkspace=legacy&draftId=approval-flow" }
+    }
+  ]
+}

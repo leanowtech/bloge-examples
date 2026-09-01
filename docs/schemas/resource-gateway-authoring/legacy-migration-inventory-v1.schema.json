@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/legacy-migration-inventory-v1.schema.json",
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "readyToReauthor": { "type": "integer", "minimum": 0 },
+        "needsRepair": { "type": "integer", "minimum": 0 },
+        "legacyOnly": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["total", "readyToReauthor", "needsRepair", "legacyOnly"],
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["REAUTHOR_RESOURCE", "REPAIR_SOURCE", "OPEN_LEGACY_FLOW", "REAUTHOR_FIXTURE"] },
+        "path": { "type": "string", "pattern": "^/(workbench|author|capabilities)/" }
+      },
+      "required": ["kind", "path"],
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["API_RESOURCE", "REUSABLE_FLOW_DRAFT", "REUSABLE_FLOW_VERSION", "FIXTURE_SET"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sourceRevision": { "type": "integer", "minimum": 0 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "status": { "enum": ["READY_TO_REAUTHOR", "NEEDS_REPAIR", "LEGACY_ONLY"] },
+        "fixtureReferences": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "reasonCodes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+          "maxItems": 16,
+          "uniqueItems": true
+        },
+        "action": { "$ref": "#/$defs/action" }
+      },
+      "required": ["kind", "sourceId", "sourceRevision", "displayName", "status", "fixtureReferences", "reasonCodes", "action"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.legacyAssetMigrationInventory.v1" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/item" }, "maxItems": 10000 }
+  },
+  "required": ["schemaVersion", "summary", "items"],
+  "additionalProperties": false
+}

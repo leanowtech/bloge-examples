@@ -7,6 +7,7 @@ import type {
   OpenApiPreview,
   SimulationRun,
   ApiConnectionView,
+  LegacyAssetMigrationInventory,
 } from './model';
 
 export type AuthoringWorkbenchTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -22,6 +23,15 @@ export async function listApiConnections(
   transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<ApiConnectionView[]> {
   return body(await transport('/api/authoring/connections', {
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+  }));
+}
+
+/** Reads the payload-free compatibility inventory; this call never migrates an asset. */
+export async function readLegacyAssetMigrationInventory(
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<LegacyAssetMigrationInventory> {
+  return body(await transport('/api/authoring/migrations/legacy-assets', {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   }));
 }

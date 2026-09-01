@@ -5,6 +5,7 @@ import {
   listApiConnections,
   previewOpenApi,
   readApiResource,
+  readLegacyAssetMigrationInventory,
   saveApiResource,
   simulateFixtureCase,
 } from './api';
@@ -17,6 +18,18 @@ describe('simple authoring transport', () => {
     await listApiConnections(transport);
 
     expect(transport.mock.calls[0][0]).toBe('/api/authoring/connections');
+    expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Purpose'))
+      .toBe('API_RESOURCE_AUTHORING');
+  });
+  it('reads the payload-free legacy migration inventory', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.legacyAssetMigrationInventory.v1',
+      summary: { total: 0, readyToReauthor: 0, needsRepair: 0, legacyOnly: 0 }, items: [],
+    }));
+
+    await readLegacyAssetMigrationInventory(transport);
+
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/migrations/legacy-assets');
     expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Purpose'))
       .toBe('API_RESOURCE_AUTHORING');
   });

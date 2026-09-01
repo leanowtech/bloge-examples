@@ -8,6 +8,7 @@ import {
   listApiResourceFixtures,
   listApiConnections,
   previewOpenApi,
+  readLegacyAssetMigrationInventory,
   readApiResource,
   saveApiResource,
   simulateFixtureCase,
@@ -19,6 +20,8 @@ import {
   type ApiResourceFormDraft,
   type ApiConnectionView,
   type FixtureSetSummary,
+  type LegacyAssetMigrationInventory,
+  type LegacyAssetMigrationItem,
   type OpenApiPreview,
   type SimulationRun,
 } from './model';
@@ -46,10 +49,14 @@ export default function AuthoringWorkbench() {
   const requestedFixtureSetId = params.get('fixtureSetId')?.trim() || '';
   const createApi = params.get('create') === 'api';
   const createFlow = params.get('create') === 'flow';
+  const legacyInventory = params.get('legacy') === 'inventory';
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
   if (requestedFixtureSetId) {
     return <FixtureObjectPage initialFixtureSetId={requestedFixtureSetId} />;
+  }
+  if (legacyInventory) {
+    return <LegacyAssetInventoryPage />;
   }
   if (requestedFlowId || createFlow) {
     return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind} />;
@@ -62,6 +69,17 @@ export default function AuthoringWorkbench() {
 
 function AuthoringHome() {
   const { t } = useI18n();
+  const [inventory, setInventory] = useState<LegacyAssetMigrationInventory | null>(null);
+  const [inventoryError, setInventoryError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void readLegacyAssetMigrationInventory().then((value) => {
+      if (!cancelled) setInventory(value);
+    }).catch(() => {
+      if (!cancelled) setInventoryError(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
   return (
     <main className="simple-authoring-home" data-testid="simple-authoring-home">
       <header>
@@ -86,8 +104,84 @@ function AuthoringHome() {
           <span>{t('Build a reusable solution with the same Flow contract and runtime.')}</span>
         </a>
       </section>
+      <section className="legacy-assets-summary" data-testid="legacy-assets-summary">
+        <div>
+          <h2>Existing assets</h2>
+          {inventory && <p>{t('Review')}: {inventory.summary.total} · {t('Needs repair')}: {inventory.summary.needsRepair} · {t('Legacy')}: {inventory.summary.legacyOnly}</p>}
+          {!inventory && !inventoryError && <p>{t('Loading...')}</p>}
+          {inventoryError && <p>Migration inventory unavailable.</p>}
+        </div>
+        <a href="/workbench/?legacy=inventory" data-testid="open-legacy-inventory">
+          Review migration list
+        </a>
+      </section>
     </main>
   );
+}
+
+function LegacyAssetInventoryPage() {
+  const { t } = useI18n();
+  const [inventory, setInventory] = useState<LegacyAssetMigrationInventory | null>(null);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    void readLegacyAssetMigrationInventory().then((value) => {
+      if (!cancelled) setInventory(value);
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return (
+    <main className="legacy-asset-inventory" data-testid="legacy-asset-inventory">
+      <header className="api-resource-object-header">
+        <div>
+          <a href="/workbench/">← {t('All objects')}</a>
+          <p className="eyebrow">Compatibility</p>
+          <h1>Existing assets</h1>
+          <p>Nothing is migrated automatically. Review each exact legacy coordinate.</p>
+        </div>
+      </header>
+      {message && <p role="alert">{message}</p>}
+      {!inventory && !message && <p>{t('Loading...')}</p>}
+      {inventory && (
+        <>
+          <dl className="legacy-inventory-counts" data-testid="legacy-inventory-counts">
+            <div><dt>{t('Ready')}</dt><dd>{inventory.summary.readyToReauthor}</dd></div>
+            <div><dt>{t('Needs repair')}</dt><dd>{inventory.summary.needsRepair}</dd></div>
+            <div><dt>{t('Legacy')}</dt><dd>{inventory.summary.legacyOnly}</dd></div>
+          </dl>
+          <ul className="legacy-inventory-list">
+            {inventory.items.map((item) => <LegacyInventoryItem key={`${item.kind}:${item.sourceId}:${item.sourceRevision}`} item={item} t={t} />)}
+          </ul>
+        </>
+      )}
+    </main>
+  );
+}
+
+function LegacyInventoryItem({ item, t }: {
+  item: LegacyAssetMigrationItem;
+  t: (source: string) => string;
+}) {
+  return (
+    <li data-testid={`legacy-item:${item.kind}:${item.sourceId}`}>
+      <div>
+        <span className={`legacy-status legacy-status-${item.status.toLowerCase()}`}>{item.status}</span>
+        <h2>{item.displayName}</h2>
+        <p>{item.kind} · {item.sourceId}{item.sourceRevision > 0 ? ` · r${item.sourceRevision}` : ''}</p>
+        <small>{item.reasonCodes.join(' · ')}</small>
+      </div>
+      <a href={item.action.path}>{t(actionLabel(item.action.kind))}</a>
+    </li>
+  );
+}
+
+function actionLabel(kind: LegacyAssetMigrationItem['action']['kind']): string {
+  if (kind === 'REAUTHOR_RESOURCE') return 'Connect an API';
+  if (kind === 'REPAIR_SOURCE') return 'Review';
+  if (kind === 'REAUTHOR_FIXTURE') return 'Fixture';
+  return 'Open';
 }
 
 function ApiResourceObjectPage({ initialResourceId, t }: {

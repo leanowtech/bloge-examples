@@ -1368,6 +1368,27 @@ class VisualAuthoringBrowserDomTest {
         assertThat(scrollWidth).isLessThanOrEqualTo(clientWidth + 1);
     }
 
+    /** Shows the read-only migration decision list without exposing legacy transport or fixture payloads. */
+    @Test
+    @Timeout(60)
+    void simpleWorkbenchShowsPayloadFreeLegacyMigrationInventory() {
+        assumeAuthoringWorkbenchBundlePresent();
+        driver = newChromeDriverOrSkip();
+        driver.manage().window().setSize(new Dimension(1280, 900));
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+
+        driver.get("http://localhost:" + port + "/");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='open-legacy-inventory']"))).click();
+        WebElement inventory = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-asset-inventory']")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-inventory-counts']")));
+        assertThat(inventory.findElements(By.cssSelector(".legacy-inventory-list li"))).isNotEmpty();
+        assertThat(inventory.getText()).containsAnyOf("READY_TO_REAUTHOR", "NEEDS_REPAIR", "LEGACY_ONLY")
+                .doesNotContain("urlTemplate", "defaultHeaders", "fixturePayload", "https://");
+    }
+
     /**
      * Completes the simple object model as one bounded task instead of visiting feature demos.
      *
