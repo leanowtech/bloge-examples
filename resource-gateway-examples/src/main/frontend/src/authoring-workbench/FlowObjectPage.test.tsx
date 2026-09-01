@@ -15,6 +15,7 @@ vi.mock('./api', async () => ({
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
   readFlow: vi.fn(), readLatestFlowVersion: vi.fn(), readFlowFixture: vi.fn(), listFlowFixtures: vi.fn(),
+  readLegacyReusableFlowPreview: vi.fn(),
   saveFlow: vi.fn(), saveFlowFixture: vi.fn(), simulateFlowFixture: vi.fn(), publishFlow: vi.fn(),
 }));
 
@@ -115,6 +116,71 @@ describe('Tool and Solution object page', () => {
     expect(element<HTMLAnchorElement>('open-flow-fixture').getAttribute('href')).toBe(
       '/workbench/?fixtureSetId=overview.default',
     );
+  });
+
+  it('visibly reviews and saves an exact fixture-free legacy Flow projection', async () => {
+    window.history.replaceState(null, '', '/workbench/?create=flow&kind=TOOL'
+      + '&legacyFlowKind=REUSABLE_FLOW_DRAFT&legacyFlowId=legacy-draft&legacyFlowRevision=3');
+    const profile = resource('profile', { customerId: 'string' }, { customerId: 'string', name: 'string' });
+    const orders = resource('orders', { customerId: 'string' }, { orders: 'object' });
+    const suggestedFlow = {
+      schemaVersion: 'bloge.reusableFlowSaveCommand.v1' as const,
+      flow: {
+        displayName: 'Customer orders', kind: 'TOOL' as const, description: '',
+        contract: { input: profile.contract.input, output: orders.contract.output },
+        graph: {
+          nodes: [{
+            nodeId: 'lookup', label: 'Profile',
+            use: { kind: 'API_RESOURCE' as const, resourceId: 'profile', revision: 3, fingerprint: profile.fingerprint },
+            inputs: [{ to: '$.customerId', from: { kind: 'FLOW_INPUT' as const, path: '$.customerId' } }],
+          }, {
+            nodeId: 'orders', label: 'Orders',
+            use: { kind: 'API_RESOURCE' as const, resourceId: 'orders', revision: 3, fingerprint: orders.fingerprint },
+            inputs: [{ to: '$.customerId', from: {
+              kind: 'NODE_OUTPUT' as const, nodeId: 'lookup', path: '$.customerId',
+            } }],
+          }],
+          output: { nodeId: 'orders', path: '$' },
+        },
+        layout: { nodes: { lookup: { x: 120, y: 160 }, orders: { x: 400, y: 160 } } },
+      },
+    };
+    vi.mocked(flowApi.readLegacyReusableFlowPreview).mockResolvedValue({
+      schemaVersion: 'bloge.legacyReusableFlowReauthorPreview.v1',
+      source: { kind: 'REUSABLE_FLOW_DRAFT', sourceId: 'legacy-draft', sourceRevision: 3 },
+      suggestedFlowId: 'customer-orders', suggestedFlow, fixtureReferences: 2,
+      diagnostics: [{ code: 'FIXTURE_REAUTHOR_REQUIRED', message: 'Rebuild Fixtures after saving.' }],
+    });
+    vi.mocked(api.readApiResource)
+      .mockResolvedValueOnce(stored(profile)).mockResolvedValueOnce(stored(orders));
+    vi.mocked(flowApi.saveFlow).mockResolvedValue({
+      strongEtag: '"flow-r1"', replayed: false,
+      value: { schemaVersion: 'bloge.reusableFlowSaveReceipt.v1', flowId: 'customer-orders',
+        draft: { kind: 'FLOW_DRAFT', draftId: 'draft-new', revision: 1, fingerprint: hash('c') },
+        validation: 'VALID' },
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(flowApi.readLegacyReusableFlowPreview).toHaveBeenCalledWith(
+      'REUSABLE_FLOW_DRAFT', 'legacy-draft', 3,
+    );
+    expect(element('legacy-flow-reauthor-preview').textContent)
+      .toContain('Nothing is migrated automatically');
+    expect(element('legacy-flow-reauthor-preview').textContent).toContain('2 Fixture references');
+    expect(element<HTMLInputElement>('flow-id').value).toBe('customer-orders');
+    expect(element('flow-node-list').textContent).toContain('Profile');
+    expect(element('flow-node-list').textContent).toContain('Orders');
+
+    await act(async () => button('save-flow').click());
+
+    expect(flowApi.saveFlow).toHaveBeenCalledWith(
+      'customer-orders', suggestedFlow, null, expect.stringMatching(/^save-flow:customer-orders:/),
+    );
+    expect(element('flow-fixture-panel')).toBeTruthy();
   });
 
   it('reloads an exact Flow draft and publishes the same authority', async () => {

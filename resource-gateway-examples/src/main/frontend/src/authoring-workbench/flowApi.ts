@@ -10,6 +10,7 @@ import type {
   FixtureSetView,
   FlowDraftRef,
   FlowVersionRef,
+  LegacyReusableFlowReauthorPreview,
   ReusableFlowVersion,
   ReusableFlowCommand,
   ReusableFlowDraft,
@@ -23,6 +24,20 @@ export interface FixtureReadResponse {
   value: FixtureSetView;
   strongEtag: string | null;
   replayed: false;
+}
+
+/** Reads one fixture-free reusable Flow command projected from one exact legacy graph coordinate. */
+export async function readLegacyReusableFlowPreview(
+  sourceKind: LegacyReusableFlowReauthorPreview['source']['kind'],
+  sourceId: string,
+  sourceRevision: number,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<LegacyReusableFlowReauthorPreview> {
+  const query = new URLSearchParams({ revision: String(sourceRevision) });
+  return body(await transport(
+    `/api/authoring/migrations/legacy-assets/flows/${sourceKind}/${encodeURIComponent(sourceId)}:preview?${query}`,
+    { headers: integrationRequestHeaders('API_RESOURCE_AUTHORING') },
+  ));
 }
 
 /** Reads one committed Tool/Solution draft for the unified object page. */

@@ -1451,7 +1451,7 @@ class VisualAuthoringBrowserDomTest {
         String suffix = Long.toUnsignedString(System.nanoTime(), 36);
         String profileId = "profile" + suffix;
         String ordersId = "orders" + suffix;
-        String flowId = "customer-tool-" + suffix;
+        String flowId = "customer_tool_" + suffix;
         String fixtureSetId = flowId + ".default";
         AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
 
@@ -1514,25 +1514,41 @@ class VisualAuthoringBrowserDomTest {
                                 required: [customerId, orderCount, customerLabel]
                 """.formatted(ordersId), "orderCount");
 
+        var profile = browserApiResourceCommitStore.findHead(scope, profileId).orElseThrow().resource();
+        var orders = browserApiResourceCommitStore.findHead(scope, ordersId).orElseThrow().resource();
+        GraphDraft legacyFlow = graphDraftRepository.save(new GraphDraft(
+                null, null, 0, flowId, scope.tenantId(), scope.projectId(), scope.environmentId(),
+                null, profile.contract().input(), orders.contract().output(),
+                List.of(
+                        new GraphDraft.DraftNode("profile", "resource:" + profileId, "Customer profile",
+                                Map.of("customerId", GraphDraft.Binding.contextPath("params.customerId")),
+                                Map.of(), new GraphDraft.Position(120, 160)),
+                        new GraphDraft.DraftNode("orders", "resource:" + ordersId, "Customer orders",
+                                Map.of("customerId", GraphDraft.Binding.nodePath("profile", "customerId")),
+                                Map.of(), new GraphDraft.Position(400, 160))),
+                List.of(new GraphDraft.DraftEdge("profile-orders", "data",
+                        new GraphDraft.Endpoint("profile", "out", "customerId"),
+                        new GraphDraft.Endpoint("orders", "in", "customerId"))),
+                Map.of(), Map.of(), new GraphDraft.OutputSelection("orders", ""),
+                Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty()));
+
         trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='simple-authoring-home']")));
-        trackedClick(wait, By.cssSelector("[data-testid='create-tool']"), actions);
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='flow-name']"))), "Customer Order Tool");
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='flow-id']"))), flowId);
-
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='flow-resource-id']"))), profileId);
-        trackedClick(wait, By.cssSelector("[data-testid='add-flow-resource']"), actions);
-        wait.until(ExpectedConditions.textToBePresentInElementLocated(
-                By.cssSelector("[data-testid='flow-node-list']"), profileId));
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='flow-resource-id']"))), ordersId);
-        trackedClick(wait, By.cssSelector("[data-testid='add-flow-resource']"), actions);
-        wait.until(ExpectedConditions.textToBePresentInElementLocated(
-                By.cssSelector("[data-testid='flow-node-list']"), ordersId));
+        trackedClick(wait, By.cssSelector("[data-testid='open-legacy-inventory']"), actions);
+        WebElement legacyItem = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='legacy-item:REUSABLE_FLOW_DRAFT:" + legacyFlow.draftId() + "']")));
+        assertThat(legacyItem.getText()).contains("READY_TO_REAUTHOR", "EXPLICIT_REAUTHORING_REQUIRED");
+        trackedClick(wait, By.cssSelector(
+                "[data-testid='legacy-item:REUSABLE_FLOW_DRAFT:" + legacyFlow.draftId() + "'] a"), actions);
+        WebElement flowReview = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-flow-reauthor-preview']")));
+        assertThat(flowReview.getText()).contains("Nothing is migrated automatically", "0 Fixture references")
+                .doesNotContain("nodeFixtures", "governedRef");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-id']")).getAttribute("value"))
+                .isEqualTo(flowId);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-node-list']")).getText())
+                .contains(profileId, ordersId);
         trackedClick(wait, By.cssSelector("[data-testid='save-flow']"), actions);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-fixture-panel']")));
@@ -1614,7 +1630,7 @@ class VisualAuthoringBrowserDomTest {
                         .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
 
         Duration elapsed = Duration.between(started, Instant.now());
-        assertThat(actions.get()).isEqualTo(27);
+        assertThat(actions.get()).isEqualTo(26);
         assertThat(elapsed).isLessThan(Duration.ofSeconds(90));
         System.out.printf("[simple-authoring-task] primaryActions=%d elapsedMs=%d%n",
                 actions.get(), elapsed.toMillis());

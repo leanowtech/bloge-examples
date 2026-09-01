@@ -4,6 +4,7 @@ import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
 import FixtureObjectPage from './FixtureObjectPage';
+import type { LegacyReusableFlowReauthorPreview } from './flowModel';
 import {
   listApiResourceFixtures,
   listApiConnections,
@@ -54,6 +55,9 @@ export default function AuthoringWorkbench() {
   const createFlow = params.get('create') === 'flow';
   const legacyInventory = params.get('legacy') === 'inventory';
   const legacyResourceId = params.get('legacyResourceId')?.trim() || '';
+  const legacyFlowKind = params.get('legacyFlowKind');
+  const legacyFlowId = params.get('legacyFlowId')?.trim() || '';
+  const legacyFlowRevision = Number(params.get('legacyFlowRevision'));
   const flowKind = params.get('kind') === 'SOLUTION' ? 'SOLUTION' : 'TOOL';
 
   if (requestedFixtureSetId) {
@@ -63,7 +67,15 @@ export default function AuthoringWorkbench() {
     return <LegacyAssetInventoryPage />;
   }
   if (requestedFlowId || createFlow) {
-    return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind} />;
+    const normalizedLegacyKind: LegacyReusableFlowReauthorPreview['source']['kind'] | null
+      = legacyFlowKind === 'REUSABLE_FLOW_DRAFT'
+      || legacyFlowKind === 'REUSABLE_FLOW_VERSION' ? legacyFlowKind : null;
+    const initialLegacyFlow = legacyFlowId && Number.isSafeInteger(legacyFlowRevision)
+      && legacyFlowRevision > 0 && normalizedLegacyKind
+      ? { sourceKind: normalizedLegacyKind, sourceId: legacyFlowId, sourceRevision: legacyFlowRevision }
+      : null;
+    return <FlowObjectPage initialFlowId={requestedFlowId} initialKind={flowKind}
+      initialLegacyFlow={initialLegacyFlow} />;
   }
   if (!requestedResourceId && !createApi) {
     return <AuthoringHome />;
@@ -184,6 +196,7 @@ function LegacyInventoryItem({ item, t }: {
 
 function actionLabel(kind: LegacyAssetMigrationItem['action']['kind']): string {
   if (kind === 'REAUTHOR_RESOURCE') return 'Connect an API';
+  if (kind === 'REAUTHOR_FLOW') return 'Create a tool';
   if (kind === 'REPAIR_SOURCE') return 'Review';
   if (kind === 'REAUTHOR_FIXTURE') return 'Fixture';
   return 'Open';

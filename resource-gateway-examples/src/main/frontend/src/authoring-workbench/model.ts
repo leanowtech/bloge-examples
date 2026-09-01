@@ -46,7 +46,7 @@ export interface LegacyAssetMigrationItem {
   fixtureReferences: number;
   reasonCodes: string[];
   action: {
-    kind: 'REAUTHOR_RESOURCE' | 'REPAIR_SOURCE' | 'OPEN_LEGACY_FLOW' | 'REAUTHOR_FIXTURE';
+    kind: 'REAUTHOR_RESOURCE' | 'REAUTHOR_FLOW' | 'REPAIR_SOURCE' | 'OPEN_LEGACY_FLOW' | 'REAUTHOR_FIXTURE';
     path: string;
   };
 }

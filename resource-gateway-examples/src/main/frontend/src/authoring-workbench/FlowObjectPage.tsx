@@ -6,6 +6,7 @@ import { readApiResource } from './api';
 import {
   listFlowFixtures,
   publishFlow,
+  readLegacyReusableFlowPreview,
   readFlow,
   readLatestFlowVersion,
   readFlowFixture,
@@ -19,6 +20,8 @@ import {
   type FlowDraftRef,
   type FlowFormDraft,
   type FlowVersionRef,
+  type LegacyReusableFlowReauthorPreview,
+  type ReusableFlowCommand,
   type ResolvedApiNode,
 } from './flowModel';
 import type { FixtureSetSummary, SimulationRun } from './model';
@@ -26,9 +29,14 @@ import type { FixtureSetSummary, SimulationRun } from './model';
 type FlowTab = 'design' | 'fixture' | 'simulation' | 'versions';
 
 /** One shared object page for reusable Tool and Solution Flow drafts. */
-export default function FlowObjectPage({ initialFlowId, initialKind }: {
+export default function FlowObjectPage({ initialFlowId, initialKind, initialLegacyFlow }: {
   initialFlowId: string;
   initialKind: 'TOOL' | 'SOLUTION';
+  initialLegacyFlow: {
+    sourceKind: LegacyReusableFlowReauthorPreview['source']['kind'];
+    sourceId: string;
+    sourceRevision: number;
+  } | null;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<FlowFormDraft>({
@@ -45,8 +53,10 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
   const [fixtureOutput, setFixtureOutput] = useState('{}');
   const [run, setRun] = useState<SimulationRun | null>(null);
   const [published, setPublished] = useState('');
+  const [legacyPreview, setLegacyPreview] = useState<LegacyReusableFlowReauthorPreview | null>(null);
+  const [importedFlow, setImportedFlow] = useState<ReusableFlowCommand | null>(null);
   const [tab, setTab] = useState<FlowTab>('design');
-  const [busy, setBusy] = useState(initialFlowId.length > 0);
+  const [busy, setBusy] = useState(initialFlowId.length > 0 || initialLegacyFlow !== null);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -102,6 +112,37 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
     return () => { cancelled = true; };
   }, [initialFlowId, t]);
 
+  useEffect(() => {
+    if (!initialLegacyFlow) return;
+    let cancelled = false;
+    void readLegacyReusableFlowPreview(
+      initialLegacyFlow.sourceKind, initialLegacyFlow.sourceId, initialLegacyFlow.sourceRevision,
+    ).then(async (preview) => {
+      const restored = await Promise.all(preview.suggestedFlow.flow.graph.nodes.map(async (node) => {
+        if (node.use.kind !== 'API_RESOURCE') throw new Error('This simple page supports API Resource nodes.');
+        const resource = await readApiResource(node.use.resourceId, node.use.revision);
+        if (resource.value.fingerprint !== node.use.fingerprint) throw new Error('A Flow dependency has drifted.');
+        return { nodeId: node.nodeId, label: node.label, resource: resource.value };
+      }));
+      if (cancelled) return;
+      setDraft({
+        flowId: preview.suggestedFlowId,
+        displayName: preview.suggestedFlow.flow.displayName,
+        kind: preview.suggestedFlow.flow.kind,
+        description: preview.suggestedFlow.flow.description,
+      });
+      setNodes(restored);
+      setLegacyPreview(preview);
+      setImportedFlow(preview.suggestedFlow);
+      setMessage(t('Review'));
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    }).finally(() => {
+      if (!cancelled) setBusy(false);
+    });
+    return () => { cancelled = true; };
+  }, [initialLegacyFlow, t]);
+
   const addResource = async () => {
     setBusy(true);
     setMessage('');
@@ -109,6 +150,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
       const stored = await readApiResource(resourceId.trim());
       const nodeId = nextNodeId(nodes);
       setNodes([...nodes, { nodeId, label: stored.value.displayName, resource: stored.value }]);
+      setImportedFlow(null);
       setResourceId('');
       setMessage(t('Added exact committed API Resource.'));
     } catch (failure) {
@@ -123,7 +165,15 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
     setBusy(true);
     setMessage('');
     try {
-      const command = buildReusableFlowCommand(draft, nodes);
+      const command = importedFlow ? {
+        ...importedFlow,
+        flow: {
+          ...importedFlow.flow,
+          displayName: draft.displayName.trim(),
+          kind: draft.kind,
+          description: draft.description,
+        },
+      } : buildReusableFlowCommand(draft, nodes);
       const result = await saveFlow(
         draft.flowId.trim(), command, strongEtag, operationKey('save-flow', draft.flowId),
       );
@@ -233,6 +283,17 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
 
       {tab === 'design' && (
         <form className="api-resource-design" onSubmit={save}>
+          {legacyPreview && (
+            <section className="legacy-reauthor-preview" data-testid="legacy-flow-reauthor-preview">
+              <h2>{t('Review')}</h2>
+              <p>Nothing is migrated automatically. This preview copies no legacy Fixture material.</p>
+              <p>{legacyPreview.source.kind} · {legacyPreview.source.sourceId}
+                · r{legacyPreview.source.sourceRevision} · {legacyPreview.fixtureReferences} Fixture references</p>
+              <ul>{legacyPreview.diagnostics.map((diagnostic) => (
+                <li key={diagnostic.code}>{diagnostic.message}</li>
+              ))}</ul>
+            </section>
+          )}
           <section>
             <h2>{t('Flow identity')}</h2>
             <div className="object-form-grid">
@@ -265,7 +326,10 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
                   <span>{index + 1}</span>
                   <div><strong>{node.label}</strong><small>{node.resource.resourceId}@{node.resource.revision}</small></div>
                   <button type="button" aria-label={`${t('Remove')} ${node.label}`}
-                    onClick={() => setNodes(nodes.filter((value) => value.nodeId !== node.nodeId))}>
+                    onClick={() => {
+                      setNodes(nodes.filter((value) => value.nodeId !== node.nodeId));
+                      setImportedFlow(null);
+                    }}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 </li>

@@ -55,5 +55,5 @@ public record LegacyAssetMigrationInventory(
         }
     }
 
-    public enum ActionKind { REAUTHOR_RESOURCE, REPAIR_SOURCE, OPEN_LEGACY_FLOW, REAUTHOR_FIXTURE }
+    public enum ActionKind { REAUTHOR_RESOURCE, REAUTHOR_FLOW, REPAIR_SOURCE, OPEN_LEGACY_FLOW, REAUTHOR_FIXTURE }
 }

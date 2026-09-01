@@ -62,13 +62,27 @@ export interface ReusableFlowCommand {
         inputs: Array<{
           to: string;
           from: { kind: 'FLOW_INPUT'; path: string }
-            | { kind: 'NODE_OUTPUT'; nodeId: string; path: string };
+            | { kind: 'NODE_OUTPUT'; nodeId: string; path: string }
+            | { kind: 'CONSTANT'; value: unknown };
         }>;
       }>;
-      output: { nodeId: string; path: '$' };
+      output: { nodeId: string; path: string };
     };
     layout: { nodes: Record<string, { x: number; y: number }> };
   };
+}
+
+export interface LegacyReusableFlowReauthorPreview {
+  schemaVersion: 'bloge.legacyReusableFlowReauthorPreview.v1';
+  source: {
+    kind: 'REUSABLE_FLOW_DRAFT' | 'REUSABLE_FLOW_VERSION';
+    sourceId: string;
+    sourceRevision: number;
+  };
+  suggestedFlowId: string;
+  suggestedFlow: ReusableFlowCommand;
+  fixtureReferences: number;
+  diagnostics: Array<{ code: string; message: string }>;
 }
 
 export type ReusableFlowDraft = ReusableFlowCommand['flow'] & {

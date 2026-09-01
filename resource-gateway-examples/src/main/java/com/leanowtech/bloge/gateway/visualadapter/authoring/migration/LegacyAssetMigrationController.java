@@ -6,8 +6,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationInventory;
-import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -60,6 +62,22 @@ public final class LegacyAssetMigrationController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .body(module.previewResource(resourceId));
+    }
+
+    /** Returns one fixture-free Flow command projected from an exact legacy Draft or Publication. */
+    @GetMapping(path = "/flows/{sourceKind}/{sourceId}:preview", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<LegacyReusableFlowReauthorPreview> previewFlow(
+            @PathVariable LegacyAssetMigrationInventory.Kind sourceKind,
+            @PathVariable String sourceId,
+            @RequestParam long revision,
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.AUTHORING_LEGACY_MIGRATION_READ);
+        request.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(module.previewFlow(trustedScope(context), sourceKind, sourceId, revision));
     }
 
     private static AuthoringScope trustedScope(IntegrationRequestContext context) {

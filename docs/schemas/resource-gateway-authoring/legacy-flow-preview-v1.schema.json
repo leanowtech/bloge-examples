@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/legacy-flow-preview-v1.schema.json",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["REUSABLE_FLOW_DRAFT", "REUSABLE_FLOW_VERSION"] },
+        "sourceId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "sourceRevision": { "$ref": "common-v1.schema.json#/$defs/revision" }
+      },
+      "required": ["kind", "sourceId", "sourceRevision"],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.legacyReusableFlowReauthorPreview.v1" },
+    "source": { "$ref": "#/$defs/source" },
+    "suggestedFlowId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "suggestedFlow": { "$ref": "reusable-flow-command-v1.schema.json" },
+    "fixtureReferences": { "type": "integer", "minimum": 0 },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" },
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true
+    }
+  },
+  "required": ["schemaVersion", "source", "suggestedFlowId", "suggestedFlow", "fixtureReferences", "diagnostics"],
+  "additionalProperties": false
+}

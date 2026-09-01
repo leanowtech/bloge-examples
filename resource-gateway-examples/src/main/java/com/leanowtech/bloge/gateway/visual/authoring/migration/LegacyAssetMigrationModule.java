@@ -2,6 +2,10 @@ package com.leanowtech.bloge.gateway.visual.authoring.migration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCompiler;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
@@ -55,13 +59,14 @@ public final class LegacyAssetMigrationModule {
     private final JsonSchemaSampleGenerator samples;
     private final ObjectMapper mapper;
     private final ApiResourceDecisions decisions;
+    private final LegacyComposableResourceSource authoredResources;
 
     public LegacyAssetMigrationModule(LegacyResourceDescriptorSource resources,
                                       ResourceDesignContractRegistry contracts,
                                       GraphDraftRepository drafts,
                                       VisualGraphPublicationRepository publications) {
         this(resources, contracts, drafts, publications, new JsonSchemaSampleGenerator(),
-                new ObjectMapper(), new ApiResourceDecisions());
+                new ObjectMapper(), new ApiResourceDecisions(), (scope, resourceId) -> Optional.empty());
     }
 
     /** Creates the module with the same schema, JSON, and Resource validation authorities used by authoring. */
@@ -72,6 +77,19 @@ public final class LegacyAssetMigrationModule {
                                       JsonSchemaSampleGenerator samples,
                                       ObjectMapper mapper,
                                       ApiResourceDecisions decisions) {
+        this(resources, contracts, drafts, publications, samples, mapper, decisions,
+                (scope, resourceId) -> Optional.empty());
+    }
+
+    /** Creates the module with the exact committed Resource heads needed to rebuild simple legacy DAGs. */
+    public LegacyAssetMigrationModule(LegacyResourceDescriptorSource resources,
+                                      ResourceDesignContractRegistry contracts,
+                                      GraphDraftRepository drafts,
+                                      VisualGraphPublicationRepository publications,
+                                      JsonSchemaSampleGenerator samples,
+                                      ObjectMapper mapper,
+                                      ApiResourceDecisions decisions,
+                                      LegacyComposableResourceSource authoredResources) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.contracts = Objects.requireNonNull(contracts, "contracts");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
@@ -79,6 +97,31 @@ public final class LegacyAssetMigrationModule {
         this.samples = Objects.requireNonNull(samples, "samples");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        this.authoredResources = Objects.requireNonNull(authoredResources, "authoredResources");
+    }
+
+    /**
+     * Rebuilds one exact API-only legacy DAG as a reviewed reusable Flow command.
+     * Node Fixtures and governed references are counted for follow-up but never copied into the command or wire.
+     */
+    public LegacyReusableFlowReauthorPreview previewFlow(
+            AuthoringScope scope, Kind sourceKind, String sourceId, long sourceRevision) {
+        Objects.requireNonNull(scope, "scope");
+        if ((sourceKind != Kind.REUSABLE_FLOW_DRAFT && sourceKind != Kind.REUSABLE_FLOW_VERSION)
+                || sourceId == null || !IDENTIFIER.matcher(sourceId).matches() || sourceRevision < 1) {
+            throw new LegacyAssetMigrationFailure(LegacyAssetMigrationFailure.Code.NOT_FOUND);
+        }
+        GraphDraft source = sourceKind == Kind.REUSABLE_FLOW_DRAFT
+                ? drafts.findRevision(sourceId, sourceRevision)
+                .filter(value -> inScope(scope, value.tenantId(), value.namespace(), value.environment()))
+                .orElseThrow(() -> new LegacyAssetMigrationFailure(LegacyAssetMigrationFailure.Code.NOT_FOUND))
+                : publications.find(sourceId)
+                .filter(value -> value.draftRevision() == sourceRevision
+                        && inScope(scope, value.tenantId(), value.namespace(), value.environment()))
+                .map(VisualGraphPublication::draft)
+                .orElseThrow(() -> new LegacyAssetMigrationFailure(LegacyAssetMigrationFailure.Code.NOT_FOUND));
+        if (source == null || hasAdvancedEdges(source)) throw needsRepair();
+        return projectFlow(scope, sourceKind, sourceId, sourceRevision, source);
     }
 
     /**
@@ -107,10 +150,10 @@ public final class LegacyAssetMigrationModule {
         List<Item> items = new ArrayList<>();
         resourceItems(items);
         drafts.all().stream().filter(draft -> inScope(scope, draft.tenantId(), draft.namespace(), draft.environment()))
-                .forEach(draft -> draftItems(items, draft));
+                .forEach(draft -> draftItems(items, scope, draft));
         publications.all().stream()
                 .filter(value -> inScope(scope, value.tenantId(), value.namespace(), value.environment()))
-                .forEach(value -> publicationItem(items, value));
+                .forEach(value -> publicationItem(items, scope, value));
         items.sort(Comparator.comparing(Item::kind).thenComparing(Item::sourceId)
                 .thenComparingLong(Item::sourceRevision));
         long ready = count(items, Status.READY_TO_REAUTHOR);
@@ -186,6 +229,99 @@ public final class LegacyAssetMigrationModule {
         } catch (ApiResourceAuthoringException | IllegalArgumentException failure) {
             throw needsRepair();
         }
+    }
+
+    private LegacyReusableFlowReauthorPreview projectFlow(
+            AuthoringScope scope, Kind sourceKind, String sourceId, long sourceRevision, GraphDraft source) {
+        try {
+            if (source.nodes().isEmpty()) throw needsRepair();
+            Map<ReusableFlowCommand.ComposableRef, ComposableDefinition> definitions = new LinkedHashMap<>();
+            List<ReusableFlowCommand.Node> nodes = new ArrayList<>();
+            Map<String, ReusableFlowCommand.Position> positions = new LinkedHashMap<>();
+            for (GraphDraft.DraftNode node : source.nodes()) {
+                String resourceId = resourceId(node.operatorRef());
+                ComposableDefinition definition = authoredResources.findHead(scope, resourceId)
+                        .filter(value -> value.reference()
+                                instanceof ReusableFlowCommand.ComposableRef.ApiResource resource
+                                && resource.resourceId().equals(resourceId))
+                        .orElseThrow(LegacyAssetMigrationModule::needsRepair);
+                definitions.put(definition.reference(), definition);
+                List<ReusableFlowCommand.Input> inputs = node.inputs().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .map(entry -> flowInput(entry.getKey(), entry.getValue()))
+                        .toList();
+                nodes.add(new ReusableFlowCommand.Node(
+                        node.id(), node.label(), definition.reference(), inputs));
+                positions.put(node.id(), new ReusableFlowCommand.Position(
+                        node.position().x(), node.position().y()));
+            }
+            ReusableFlowCommand command = new ReusableFlowCommand(null, new ReusableFlowCommand.Flow(
+                    source.graphName(), ReusableFlowCommand.Kind.TOOL, "",
+                    new ReusableFlowCommand.Contract(source.inputSchema(), source.outputSchema()),
+                    new ReusableFlowCommand.Graph(nodes, new ReusableFlowCommand.Output(
+                            source.output().nodeId(), directPath(source.output().path(), "$"))),
+                    new ReusableFlowCommand.Layout(positions)));
+            new ReusableFlowCompiler((trustedScope, reference) -> scope.equals(trustedScope)
+                    ? Optional.ofNullable(definitions.get(reference)) : Optional.empty()).compile(scope, command);
+            List<LegacyReusableFlowReauthorPreview.Diagnostic> diagnostics = new ArrayList<>();
+            diagnostics.add(new LegacyReusableFlowReauthorPreview.Diagnostic("FLOW_KIND_REVIEW_REQUIRED",
+                    "Review whether this legacy graph is a Tool or Solution before saving."));
+            if (!source.nodeFixtures().isEmpty()) {
+                diagnostics.add(new LegacyReusableFlowReauthorPreview.Diagnostic("FIXTURE_REAUTHOR_REQUIRED",
+                        "Rebuild legacy node Fixtures as explicit Fixture Cases after saving this Flow."));
+            }
+            return new LegacyReusableFlowReauthorPreview(null,
+                    new LegacyReusableFlowReauthorPreview.Source(sourceKind, sourceId, sourceRevision),
+                    source.graphName(), command, source.nodeFixtures().size(), diagnostics);
+        } catch (LegacyAssetMigrationFailure failure) {
+            throw failure;
+        } catch (ReusableFlowFailure | IllegalArgumentException failure) {
+            throw needsRepair();
+        }
+    }
+
+    private ReusableFlowCommand.Input flowInput(String key, GraphDraft.Binding binding) {
+        if (binding == null || !binding.fields().isEmpty() || !binding.expr().isBlank()
+                || binding.targetUnionBranch().selected() || !binding.targetUnionBranches().isEmpty()
+                || (!binding.targetPort().isBlank() && !binding.targetPort().equals(key)
+                && !"inputs".equals(binding.targetPort()))) {
+            throw needsRepair();
+        }
+        String target = directPath(binding.targetPath(), key);
+        ReusableFlowCommand.MappingSource source = switch (binding.kind()) {
+            case "contextPath" -> new ReusableFlowCommand.MappingSource.FlowInput(
+                    directPath(binding.path(), ""));
+            case "nodePath" -> new ReusableFlowCommand.MappingSource.NodeOutput(
+                    requireIdentifier(binding.nodeId()), directPath(binding.path(), ""));
+            case "constant" -> new ReusableFlowCommand.MappingSource.Constant(
+                    mapper.valueToTree(binding.value()));
+            default -> throw needsRepair();
+        };
+        return new ReusableFlowCommand.Input(target, source);
+    }
+
+    private static String resourceId(String operatorRef) {
+        String value = operatorRef == null ? "" : operatorRef.trim();
+        if (!value.startsWith("resource:")) throw needsRepair();
+        return requireIdentifier(value.substring("resource:".length()));
+    }
+
+    private static String requireIdentifier(String value) {
+        if (value == null || !IDENTIFIER.matcher(value).matches()) throw needsRepair();
+        return value;
+    }
+
+    private static String directPath(String raw, String fallback) {
+        String value = raw == null || raw.isBlank() ? fallback : raw.trim();
+        for (String prefix : List.of("ctx.params.", "ctx.inputs.", "params.", "inputs.", "$.")) {
+            if (value.startsWith(prefix)) {
+                value = value.substring(prefix.length());
+                break;
+            }
+        }
+        if ("$".equals(value)) return "$";
+        if (!value.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,127}")) throw needsRepair();
+        return "$." + value;
     }
 
     private SimplifiedSchema simplify(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope source) {
@@ -295,13 +431,19 @@ public final class LegacyAssetMigrationModule {
             com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope envelope, boolean simplified) {
     }
 
-    private static void draftItems(List<Item> items, GraphDraft draft) {
+    private void draftItems(List<Item> items, AuthoringScope scope, GraphDraft draft) {
         boolean advanced = hasAdvancedEdges(draft);
-        Status status = advanced ? Status.LEGACY_ONLY : Status.READY_TO_REAUTHOR;
-        List<String> reasons = List.of(advanced ? "ADVANCED_EDGE_UNSUPPORTED" : "EXPLICIT_REAUTHORING_REQUIRED");
+        boolean ready = !advanced && canPreview(scope, Kind.REUSABLE_FLOW_DRAFT, draft.draftId(), draft.revision());
+        Status status = advanced ? Status.LEGACY_ONLY : ready ? Status.READY_TO_REAUTHOR : Status.NEEDS_REPAIR;
+        List<String> reasons = List.of(advanced ? "ADVANCED_EDGE_UNSUPPORTED"
+                : ready ? "EXPLICIT_REAUTHORING_REQUIRED" : "FLOW_DEPENDENCY_REAUTHOR_REQUIRED");
         String path = legacyDraftPath(draft.draftId());
         items.add(new Item(Kind.REUSABLE_FLOW_DRAFT, draft.draftId(), draft.revision(), draft.graphName(), status,
-                draft.nodeFixtures().size(), reasons, new Action(ActionKind.OPEN_LEGACY_FLOW, path)));
+                draft.nodeFixtures().size(), reasons, ready
+                ? new Action(ActionKind.REAUTHOR_FLOW, flowReauthorPath(
+                        Kind.REUSABLE_FLOW_DRAFT, draft.draftId(), draft.revision()))
+                : new Action(advanced ? ActionKind.OPEN_LEGACY_FLOW : ActionKind.REPAIR_SOURCE,
+                        advanced ? path : "/capabilities/")));
         if (!draft.nodeFixtures().isEmpty()) {
             boolean governed = draft.nodeFixtures().values().stream()
                     .anyMatch(value -> value.governedRef() != null);
@@ -312,14 +454,29 @@ public final class LegacyAssetMigrationModule {
         }
     }
 
-    private static void publicationItem(List<Item> items, VisualGraphPublication publication) {
+    private void publicationItem(List<Item> items, AuthoringScope scope, VisualGraphPublication publication) {
         boolean advanced = publication.draft() == null || hasAdvancedEdges(publication.draft());
-        Status status = advanced ? Status.LEGACY_ONLY : Status.READY_TO_REAUTHOR;
+        boolean ready = !advanced && canPreview(scope, Kind.REUSABLE_FLOW_VERSION,
+                publication.publicationId(), publication.draftRevision());
+        Status status = advanced ? Status.LEGACY_ONLY : ready ? Status.READY_TO_REAUTHOR : Status.NEEDS_REPAIR;
         String draftId = publication.draftId();
         items.add(new Item(Kind.REUSABLE_FLOW_VERSION, publication.publicationId(), publication.draftRevision(),
                 publication.graphName(), status, publication.draft() == null ? 0 : publication.draft().nodeFixtures().size(),
-                List.of(advanced ? "ADVANCED_EDGE_UNSUPPORTED" : "EXPLICIT_REAUTHORING_REQUIRED"),
-                new Action(ActionKind.OPEN_LEGACY_FLOW, legacyDraftPath(draftId))));
+                List.of(advanced ? "ADVANCED_EDGE_UNSUPPORTED"
+                        : ready ? "EXPLICIT_REAUTHORING_REQUIRED" : "FLOW_DEPENDENCY_REAUTHOR_REQUIRED"),
+                ready ? new Action(ActionKind.REAUTHOR_FLOW, flowReauthorPath(
+                        Kind.REUSABLE_FLOW_VERSION, publication.publicationId(), publication.draftRevision()))
+                        : new Action(advanced ? ActionKind.OPEN_LEGACY_FLOW : ActionKind.REPAIR_SOURCE,
+                        advanced ? legacyDraftPath(draftId) : "/capabilities/")));
+    }
+
+    private boolean canPreview(AuthoringScope scope, Kind kind, String sourceId, long revision) {
+        try {
+            previewFlow(scope, kind, sourceId, revision);
+            return true;
+        } catch (LegacyAssetMigrationFailure failure) {
+            return false;
+        }
     }
 
     private static boolean hasAdvancedEdges(GraphDraft draft) {
@@ -334,6 +491,12 @@ public final class LegacyAssetMigrationModule {
     private static String legacyDraftPath(String draftId) {
         return "/author/?authorWorkspace=legacy&draftId="
                 + URLEncoder.encode(draftId, StandardCharsets.UTF_8);
+    }
+
+    private static String flowReauthorPath(Kind kind, String sourceId, long revision) {
+        return "/workbench/?create=flow&kind=TOOL&legacyFlowKind=" + kind
+                + "&legacyFlowId=" + URLEncoder.encode(sourceId, StandardCharsets.UTF_8)
+                + "&legacyFlowRevision=" + revision;
     }
 
     private static long count(List<Item> items, Status status) {

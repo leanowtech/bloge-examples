@@ -8,8 +8,8 @@ public final class LegacyAssetMigrationFailure extends RuntimeException {
 
     public LegacyAssetMigrationFailure(Code code) {
         super(code == Code.NOT_FOUND
-                ? "The legacy Resource source was not found."
-                : "The legacy Resource cannot be re-authored without repair.");
+                ? "The legacy asset source was not found."
+                : "The legacy asset cannot be re-authored without repair.");
         this.code = code;
     }
 

@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrat
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -32,6 +34,34 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class LegacyAssetMigrationControllerTest {
+
+    @Test
+    void returnsOneAuthenticatedFixtureFreeReusableFlowPreview() throws Exception {
+        LegacyAssetMigrationModule module = mock(LegacyAssetMigrationModule.class);
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        when(module.previewFlow(scope, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT,
+                "draft-1", 3)).thenReturn(flowPreview());
+
+        mvc(module).perform(get("/api/authoring/migrations/legacy-assets/flows/"
+                        + "REUSABLE_FLOW_DRAFT/draft-1:preview?revision=3")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.source.kind").value("REUSABLE_FLOW_DRAFT"))
+                .andExpect(jsonPath("$.source.sourceRevision").value(3))
+                .andExpect(jsonPath("$.suggestedFlowId").value("customer-tool"))
+                .andExpect(jsonPath("$.suggestedFlow.flow.graph.nodes[0].use.kind")
+                        .value("API_RESOURCE"))
+                .andExpect(jsonPath("$.suggestedFlow.flow.graph.nodes[0].use.resourceId")
+                        .value("customer.get"))
+                .andExpect(jsonPath("$.nodeFixtures").doesNotExist())
+                .andExpect(jsonPath("$.governedRef").doesNotExist())
+                .andExpect(jsonPath("$.operatorRef").doesNotExist());
+
+        verify(module).previewFlow(scope, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT,
+                "draft-1", 3);
+    }
 
     @Test
     void returnsOneAuthenticatedTransportRedactedResourcePreview() throws Exception {
@@ -142,6 +172,27 @@ class LegacyAssetMigrationControllerTest {
                 new LegacyApiResourceReauthorPreview.Source("API_RESOURCE", "customer.get", 0), command,
                 List.of(new LegacyApiResourceReauthorPreview.Diagnostic("CONNECTION_SELECTION_REQUIRED",
                         "Choose a committed Connection before saving this Resource.")));
+    }
+
+    private static LegacyReusableFlowReauthorPreview flowPreview() {
+        SchemaEnvelope schema = SchemaEnvelope.object(Map.of("customerId", Map.of("type", "string")),
+                List.of("customerId"));
+        ReusableFlowCommand.ComposableRef.ApiResource resource =
+                new ReusableFlowCommand.ComposableRef.ApiResource(
+                        "customer.get", 2, "sha256:" + "a".repeat(64));
+        ReusableFlowCommand command = new ReusableFlowCommand(null, new ReusableFlowCommand.Flow(
+                "Customer tool", ReusableFlowCommand.Kind.TOOL, "", new ReusableFlowCommand.Contract(schema, schema),
+                new ReusableFlowCommand.Graph(List.of(new ReusableFlowCommand.Node(
+                        "customer", "Customer", resource, List.of(new ReusableFlowCommand.Input(
+                        "$.customerId", new ReusableFlowCommand.MappingSource.FlowInput("$.customerId"))))),
+                        new ReusableFlowCommand.Output("customer", "$")),
+                new ReusableFlowCommand.Layout(Map.of("customer", new ReusableFlowCommand.Position(120, 160)))));
+        return new LegacyReusableFlowReauthorPreview(null,
+                new LegacyReusableFlowReauthorPreview.Source(
+                        LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, "draft-1", 3),
+                "customer-tool", command, 1,
+                List.of(new LegacyReusableFlowReauthorPreview.Diagnostic("FIXTURE_REAUTHOR_REQUIRED",
+                        "Rebuild Fixtures explicitly.")));
     }
 
     private static final class RecordingAudit implements IntegrationAccessAuditRepository {

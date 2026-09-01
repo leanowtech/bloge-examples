@@ -76,6 +76,7 @@ class AuthoringProtocolSchemaTest {
             Map.entry("fixture-summary", "fixture-set-summary-v1.schema.json"),
             Map.entry("fixture-view", "fixture-set-view-v1.schema.json"),
             Map.entry("legacy-migration-inventory", "legacy-migration-inventory-v1.schema.json"),
+            Map.entry("legacy-flow-preview", "legacy-flow-preview-v1.schema.json"),
             Map.entry("legacy-resource-preview", "legacy-resource-preview-v1.schema.json"),
             Map.entry("simulation-request", "simulation-request-v1.schema.json"),
             Map.entry("simulation-run", "simulation-run-v1.schema.json"),

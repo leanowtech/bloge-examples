@@ -483,6 +483,22 @@ The focused backend migration/schema gate is **28/28 green**, focused frontend m
 the visible inventory → preview → Connection selection → save-and-simulate path and is **1/1 green**. The final serial
 `clean verify` completed with `Tests run: 8,247; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS` in 11:48.
 
+Each API-only legacy Graph Draft or frozen Publication that can be proved from exact committed Resource heads now
+offers an authenticated, read-only reusable-Flow preview at
+`GET /api/authoring/migrations/legacy-assets/flows/{sourceKind}/{sourceId}:preview?revision={revision}`. The
+`bloge.legacyReusableFlowReauthorPreview.v1` response preserves direct input/node-output/constant mappings, graph
+input and output contracts, and layout. It carries only exact Resource coordinates and fingerprints; legacy
+`nodeFixtures`, governed Fixture references, material, and payloads are counted and diagnosed but never copied.
+Advanced/control edges and unprovable Resource dependencies remain `LEGACY_ONLY` or `NEEDS_REPAIR`.
+The visible Existing assets action opens a prefilled Flow object page, requires review, and then uses the existing
+save -> publish -> Fixture -> simulation -> review path; nothing is mutated by opening the preview.
+The focused backend migration/schema gate is **31/31 green**, focused frontend transport/component tests are
+**26/26**, i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass
+(AuthoringWorkbench **194.11 KiB / 12 files**, AuthorCanvas **349.95 KiB / 22 files**). A real Chrome method completes
+the visible two-Resource -> legacy inventory -> Flow save/publish -> Fixture/simulation/review chain in 26 primary
+actions and is **1/1 green**. The final serial `clean verify` completed with `Tests run: 8,250; failures: 0; errors: 0;
+skipped: 38` and `BUILD SUCCESS` in 11:51.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

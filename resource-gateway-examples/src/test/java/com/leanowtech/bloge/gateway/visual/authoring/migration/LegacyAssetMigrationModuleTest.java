@@ -1,6 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.authoring.migration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -12,17 +15,116 @@ import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContra
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceParameterMapping;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceResponseProtocol;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LegacyAssetMigrationModuleTest {
+
+    @Test
+    void previewsOneApiOnlyLegacyDagAsAnExactReusableFlowWithoutFixtureMaterial() throws Exception {
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        SchemaEnvelope customerInput = objectSchema("customerId");
+        SchemaEnvelope customerOutput = objectSchema("customerId");
+        SchemaEnvelope orderOutput = objectSchema("orderId");
+        Map<String, ComposableDefinition> definitions = Map.of(
+                "customer.get", definition("customer.get", 2, 'a', customerInput, customerOutput),
+                "orders.list", definition("orders.list", 3, 'b', customerInput, orderOutput));
+        LegacyComposableResourceSource authoredResources = (trustedScope, resourceId) ->
+                scope.equals(trustedScope) ? Optional.ofNullable(definitions.get(resourceId)) : Optional.empty();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = drafts.save(apiFlowDraft(Map.of("lookup", new GraphDraft.NodeFixture(
+                Map.of("customerId", "secret-output"), null,
+                new GraphDraft.GovernedFixtureRef("governed-a", 7, "sha256:" + "c".repeat(64)),
+                GraphDraft.NodeFixture.ResourceFidelity.TRANSPORT_LEVEL))));
+        LegacyAssetMigrationModule module = new LegacyAssetMigrationModule(
+                source(), new InMemoryResourceDesignContractRegistry(), drafts,
+                new InMemoryVisualGraphPublicationRepository(), new JsonSchemaSampleGenerator(),
+                new ObjectMapper(), new ApiResourceDecisions(), authoredResources);
+
+        LegacyReusableFlowReauthorPreview preview = module.previewFlow(
+                scope, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT,
+                stored.draftId(), stored.revision());
+
+        assertThat(preview.source()).isEqualTo(new LegacyReusableFlowReauthorPreview.Source(
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, stored.draftId(), stored.revision()));
+        assertThat(preview.suggestedFlowId()).isEqualTo("customer_order_tool");
+        assertThat(preview.suggestedFlow().flow().kind()).isEqualTo(ReusableFlowCommand.Kind.TOOL);
+        assertThat(preview.suggestedFlow().flow().graph().nodes()).containsExactly(
+                new ReusableFlowCommand.Node("lookup", "Customer", definitions.get("customer.get").reference(),
+                        List.of(new ReusableFlowCommand.Input("$.customerId",
+                                new ReusableFlowCommand.MappingSource.FlowInput("$.customerId")))),
+                new ReusableFlowCommand.Node("orders", "Orders", definitions.get("orders.list").reference(),
+                        List.of(new ReusableFlowCommand.Input("$.customerId",
+                                new ReusableFlowCommand.MappingSource.NodeOutput("lookup", "$.customerId")))));
+        assertThat(preview.suggestedFlow().flow().graph().output())
+                .isEqualTo(new ReusableFlowCommand.Output("orders", "$"));
+        assertThat(preview.fixtureReferences()).isEqualTo(1);
+        assertThat(preview.diagnostics()).extracting(LegacyReusableFlowReauthorPreview.Diagnostic::code)
+                .containsExactly("FLOW_KIND_REVIEW_REQUIRED", "FIXTURE_REAUTHOR_REQUIRED");
+
+        LegacyAssetMigrationInventory.Item inventoryItem = item(module.inventory(scope),
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, stored.draftId());
+        assertThat(inventoryItem.status()).isEqualTo(LegacyAssetMigrationInventory.Status.READY_TO_REAUTHOR);
+        assertThat(inventoryItem.action()).isEqualTo(new LegacyAssetMigrationInventory.Action(
+                LegacyAssetMigrationInventory.ActionKind.REAUTHOR_FLOW,
+                "/workbench/?create=flow&kind=TOOL&legacyFlowKind=REUSABLE_FLOW_DRAFT"
+                        + "&legacyFlowId=" + stored.draftId() + "&legacyFlowRevision=" + stored.revision()));
+
+        String wire = new ObjectMapper().writeValueAsString(preview);
+        assertThat(wire).doesNotContain("secret-output", "governed-a", "resource:", "nodeFixtures");
+    }
+
+    @Test
+    void previewsTheExactFrozenPublicationAndRejectsMissingCommittedDependencies() {
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = drafts.save(apiFlowDraft(Map.of()));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(VisualGraphPublication.design(
+                stored, List.of(), null, null).withIdentity(
+                "published-customer-order", Instant.parse("2026-09-01T00:00:00Z")));
+        Map<String, ComposableDefinition> definitions = Map.of(
+                "customer.get", definition("customer.get", 2, 'a', objectSchema("customerId"),
+                        objectSchema("customerId")),
+                "orders.list", definition("orders.list", 3, 'b', objectSchema("customerId"),
+                        objectSchema("orderId")));
+        LegacyAssetMigrationModule ready = new LegacyAssetMigrationModule(
+                source(), new InMemoryResourceDesignContractRegistry(), drafts, publications,
+                new JsonSchemaSampleGenerator(), new ObjectMapper(), new ApiResourceDecisions(),
+                (trustedScope, resourceId) -> scope.equals(trustedScope)
+                        ? Optional.ofNullable(definitions.get(resourceId)) : Optional.empty());
+
+        LegacyReusableFlowReauthorPreview preview = ready.previewFlow(scope,
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_VERSION,
+                publication.publicationId(), publication.draftRevision());
+
+        assertThat(preview.source()).isEqualTo(new LegacyReusableFlowReauthorPreview.Source(
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_VERSION,
+                publication.publicationId(), publication.draftRevision()));
+        assertThat(item(ready.inventory(scope), LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_VERSION,
+                publication.publicationId()).action().kind())
+                .isEqualTo(LegacyAssetMigrationInventory.ActionKind.REAUTHOR_FLOW);
+
+        LegacyAssetMigrationModule missingDependency = new LegacyAssetMigrationModule(
+                source(), new InMemoryResourceDesignContractRegistry(), drafts, publications);
+        assertThatThrownBy(() -> missingDependency.previewFlow(scope,
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, stored.draftId(), stored.revision()))
+                .isInstanceOf(LegacyAssetMigrationFailure.class)
+                .extracting("code").isEqualTo(LegacyAssetMigrationFailure.Code.NEEDS_REPAIR);
+        LegacyAssetMigrationInventory.Item repair = item(missingDependency.inventory(scope),
+                LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, stored.draftId());
+        assertThat(repair.status()).isEqualTo(LegacyAssetMigrationInventory.Status.NEEDS_REPAIR);
+        assertThat(repair.reasonCodes()).containsExactly("FLOW_DEPENDENCY_REAUTHOR_REQUIRED");
+    }
 
     @Test
     void previewsOneSafeLegacyResourceWithoutTransportOrCredentialFields() throws Exception {
@@ -125,7 +227,7 @@ class LegacyAssetMigrationModuleTest {
                 contracts, drafts, publications)
                 .inventory(new AuthoringScope("tenant-a", "project-a", "test"));
 
-        assertThat(inventory.summary()).isEqualTo(new LegacyAssetMigrationInventory.Summary(7, 3, 2, 2));
+        assertThat(inventory.summary()).isEqualTo(new LegacyAssetMigrationInventory.Summary(7, 2, 3, 2));
         assertThat(inventory.items()).extracting(LegacyAssetMigrationInventory.Item::sourceId)
                 .contains("customer.get", "orders.list", "contract.only", data.draftId(), advanced.draftId(),
                         "publication-advanced")
@@ -138,6 +240,8 @@ class LegacyAssetMigrationModuleTest {
                 .containsExactly("DESIGN_CONTRACT_MISSING");
         assertThat(item(inventory, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, advanced.draftId()).status())
                 .isEqualTo(LegacyAssetMigrationInventory.Status.LEGACY_ONLY);
+        assertThat(item(inventory, LegacyAssetMigrationInventory.Kind.REUSABLE_FLOW_DRAFT, data.draftId()).status())
+                .isEqualTo(LegacyAssetMigrationInventory.Status.NEEDS_REPAIR);
         assertThat(item(inventory, LegacyAssetMigrationInventory.Kind.FIXTURE_SET, data.draftId()).reasonCodes())
                 .containsExactly("GOVERNED_REFERENCE_REVIEW_REQUIRED");
 
@@ -169,6 +273,35 @@ class LegacyAssetMigrationModuleTest {
         return new GraphDraft(null, name, 0, name, tenant, project, environment, null,
                 SchemaEnvelope.opaque(), SchemaEnvelope.opaque(), List.of(), List.of(edge), Map.of(), fixtures,
                 new GraphDraft.OutputSelection("b", ""), Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty());
+    }
+
+    private static GraphDraft apiFlowDraft(Map<String, GraphDraft.NodeFixture> fixtures) {
+        GraphDraft.DraftNode lookup = new GraphDraft.DraftNode(
+                "lookup", "resource:customer.get", "Customer",
+                Map.of("customerId", GraphDraft.Binding.contextPath("params.customerId")),
+                Map.of(), new GraphDraft.Position(120, 160));
+        GraphDraft.DraftNode orders = new GraphDraft.DraftNode(
+                "orders", "resource:orders.list", "Orders",
+                Map.of("customerId", GraphDraft.Binding.nodePath("lookup", "customerId")),
+                Map.of(), new GraphDraft.Position(400, 160));
+        return new GraphDraft(null, "legacy-flow", 0, "customer-order-tool",
+                "tenant-a", "project-a", "test", null,
+                objectSchema("customerId"), objectSchema("orderId"), List.of(lookup, orders),
+                List.of(new GraphDraft.DraftEdge("lookup-orders", "data",
+                        new GraphDraft.Endpoint("lookup", "out", "customerId"),
+                        new GraphDraft.Endpoint("orders", "in", "customerId"))),
+                Map.of(), fixtures, new GraphDraft.OutputSelection("orders", ""),
+                Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty());
+    }
+
+    private static ComposableDefinition definition(String resourceId, int revision, char fingerprint,
+                                                   SchemaEnvelope input, SchemaEnvelope output) {
+        return new ComposableDefinition(new ReusableFlowCommand.ComposableRef.ApiResource(
+                resourceId, revision, "sha256:" + String.valueOf(fingerprint).repeat(64)), input, output);
+    }
+
+    private static SchemaEnvelope objectSchema(String property) {
+        return SchemaEnvelope.object(Map.of(property, Map.of("type", "string")), List.of(property));
     }
 
     private static ResourceDesignContract contract(String id, String name, String status) {
