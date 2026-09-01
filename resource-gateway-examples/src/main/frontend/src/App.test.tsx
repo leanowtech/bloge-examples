@@ -86,13 +86,13 @@ describe('App route shell', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders Capability Studio as the default product workspace', async () => {
+  it('renders the simple object workbench as the default product workspace', async () => {
     await renderAt('/');
 
-    expect(document.title).toBe('BLOGE Visual Canvas - Capability Studio');
-    expect(query('[data-testid="capability-studio-mock"]').textContent).toContain('Capability Studio');
+    expect(document.title).toBe('BLOGE Visual Canvas - Build');
+    expect(query('[data-testid="authoring-workbench-mock"]').textContent).toContain('Authoring workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
-      .toBe('/capabilities/');
+      .toBe('/workbench/');
   });
 
   it('mounts the tool spine Launcher only for the exact v1 flag at root', async () => {
@@ -104,10 +104,10 @@ describe('App route shell', () => {
   });
 
   it.each(['/?spine=V1', '/?spine=v1&spine=v1', '/?spine=v1&SPINE=v1'])
-    ('keeps the existing Capability Studio for fail-closed spine input %s', async (path) => {
+      ('keeps the object workbench for fail-closed spine input %s', async (path) => {
       await renderAt(path);
 
-      expect(query('[data-testid="capability-studio-mock"]')).toBeTruthy();
+      expect(query('[data-testid="authoring-workbench-mock"]')).toBeTruthy();
       expect(document.querySelector('[data-testid="tool-spine-launcher"]')).toBeNull();
     });
 
@@ -229,14 +229,14 @@ describe('App route shell', () => {
       .toBe('?workspaceRoute=author&draftId=library-1');
   });
 
-  it('defaults the packaged VS Code WebView to Capability Studio', async () => {
+  it('defaults the packaged VS Code WebView to the simple object workbench', async () => {
     (globalThis as typeof globalThis & { acquireVsCodeApi?: () => { postMessage(): void } })
       .acquireVsCodeApi = () => ({ postMessage() {} });
     await renderAt('/index.html');
 
-    expect(query('[data-testid="capability-studio-mock"]').textContent).toContain('Capability Studio');
+    expect(query('[data-testid="authoring-workbench-mock"]').textContent).toContain('Authoring workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
-      .toBe('?workspaceRoute=capabilities');
+      .toBe('?workspaceRoute=workbench');
   });
 
   it('switches the shell to Chinese and persists the preference without reloading', async () => {

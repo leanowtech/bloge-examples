@@ -22,18 +22,18 @@ public class GatewayExamplePageController {
 
     /**
      * Selects the packaged React Launcher for the opted-in 1.3.0 spine coordinate while
-     * retaining Capability Studio as the default root workspace for legacy callers.
+     * making the simplified object workbench the default root workspace.
      *
      * @param spine optional launcher generation selector; only {@code v1} opts in
-     * @return the Launcher static entry point or the legacy Capability Studio redirect
+     * @return the Launcher static entry point or the unified object-workbench redirect
      */
     @GetMapping("/")
     public String rootWorkspace(@RequestParam(name = "spine", required = false) String spine) {
-        return "v1".equals(spine) ? "forward:/index.html" : "redirect:/capabilities/";
+        return "v1".equals(spine) ? "forward:/index.html" : "redirect:/workbench/";
     }
 
     /**
-     * Serves Capability Studio as the default product workspace.
+     * Serves Capability Studio at its explicit compatibility URL.
      *
      * @return static resource forward target
      */

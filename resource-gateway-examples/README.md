@@ -334,7 +334,7 @@ failures, errors, or skips. The serial `clean verify` completed with `Tests run:
 skipped: 33` and `BUILD SUCCESS`. Tool/Solution/Fixture object pages and real browser/PostgreSQL acceptance remain
 open.
 
-The first simplified object page is now available at `/workbench/`. Its landing page exposes only the approved
+The first simplified object page is available at `/workbench/` and is now also the default `/` entry. Its landing page exposes only the approved
 **Connect an API**, **Create a tool**, and **Create a solution** intents. The API Resource path asks for one name,
 an existing Connection id, Method/Path, and one request/response example; it infers the supported flat JSON Schema
 and bindings, sends one compound Resource command, creates the private Default Fixture from that example, and runs
@@ -450,7 +450,7 @@ shared revision derives its expected output from the same exact redacted materia
 startup). Focused frontend tests are **27/27 green**; the simulation/publication/share backend gate is **55/55 green**;
 i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass.
 The final serial `clean verify` completed with `Tests run: 8,235; failures: 0; errors: 0; skipped: 36` and
-`BUILD SUCCESS` in 11:46.
+`BUILD SUCCESS` in 11:50 after the default-entry change.
 Deployment-specific `RemoteOpenApiDocumentGateway` and external secret-provider implementations,
 external Vault certification, and real PostgreSQL migration certification remain separate external-environment
 evidence rather than hidden local fallbacks.
@@ -837,7 +837,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 
 | Open | Best first move |
 | --- | --- |
-| `http://localhost:8080/` | Open the default Capability Studio and inspect the cancellation-fee capability pack |
+| `http://localhost:8080/` | Start the default object workbench: connect an API, create a reusable Tool, or create a Solution |
 | `http://localhost:8080/capabilities/` | Inspect 4 API capabilities, 1 Feature, 1 Tool, 9 scenarios, exact refs, contracts, and the truthful acceptance state |
 | `http://localhost:8080/capabilities/?lang=zh-CN&task=quality` | Inspect GP-09 quality coverage, admission blockers, the payload boundary, and each Case's exact impact closure |
 | `http://localhost:8080/business-mirror/` | Open the legacy Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |

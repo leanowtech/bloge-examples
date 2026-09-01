@@ -1390,7 +1390,7 @@ class VisualAuthoringBrowserDomTest {
         String fixtureSetId = flowId + ".default";
         AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
 
-        driver.get("http://localhost:" + port + "/workbench/");
+        driver.get("http://localhost:" + port + "/");
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='simple-authoring-home']")));
         Instant started = Instant.now();

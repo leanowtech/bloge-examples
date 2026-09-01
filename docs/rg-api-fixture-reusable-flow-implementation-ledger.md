@@ -2211,3 +2211,45 @@ BUILD SUCCESS; Total time: 11:46 min
 3. legacy 默认入口和既有资产迁移仍需兼容验收。
 
 因此继续实施兼容收尾；外部两项只能由目标部署环境提供证据，不能由本地 mock/H2 伪造。
+
+## 49. Iteration 48 — 默认对象入口与显式 Legacy rollback
+
+日期：2026-09-01。
+
+### 已完成
+
+- Web 根路径 `/` 在没有精确 `spine=v1` 时重定向到 `/workbench/`，不再把普通作者先送进
+  Capability Studio。对象工作台首页仍只给出“接入 API、创建工具、创建方案”三个任务入口。
+- 打包 WebView 没有 `workspaceRoute` 时同样进入对象工作台；显式 `workspaceRoute=capabilities` 继续有效。
+- `/capabilities/` 保留原 Capability Studio；`/?spine=v1` 保留只读深链 Launcher；
+  `/author/?authorWorkspace=legacy` 保留旧 Author rollback，且原有 draft/node/run deep-link 参数不丢失。
+- 真实浏览器的完整 API → DAG → whole-flow Fixture → review/share → simulation 验收现在从 `/` 开始，
+  因此默认入口不是只由路由单元测试推断。
+
+### 聚焦验证
+
+```text
+npm test -- --run src/App.test.tsx
+Tests: 22 passed; Failures: 0
+
+mvn -f resource-gateway-examples/pom.xml -Dtest=GatewayExampleControllerTest test
+Tests run: 14; Failures: 0; Errors: 0; Skipped: 0
+
+npm run build
+i18n: 39/39; UX: 52/52; host: 21/21; TypeScript/Vite/bundle: PASS
+AuthoringWorkbench startup closure: 192.44 KiB / 12 files
+
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions test
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions=27; elapsedMs=10055; BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 8,235; Failures: 0; Errors: 0; Skipped: 36
+BUILD SUCCESS; Total time: 11:50 min
+```
+
+这一步只切换入口投影，不迁移或删除任何现有 Capability、Graph、Fixture 或 Resource 数据。
+下一步仍需完成既有 Descriptor + Contract、GraphDraft/Publication 与 Fixture 引用的显式迁移/修复清单；
+不可证明的资产必须标记 `NEEDS_REPAIR` 或保留 Legacy，不得静默补全。

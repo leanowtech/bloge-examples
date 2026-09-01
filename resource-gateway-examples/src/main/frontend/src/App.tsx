@@ -236,7 +236,7 @@ function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boo
         || requested === 'rehearsals' || requested === 'showcase') {
       return requested;
     }
-    return 'capabilities';
+    return 'workbench';
   }
   return pathname.startsWith('/workbench')
     ? 'workbench'
@@ -254,7 +254,9 @@ function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boo
     ? 'showcase'
     : pathname.startsWith('/rehearsals')
       ? 'rehearsals'
-      : 'capabilities';
+      : pathname === '/'
+        ? 'workbench'
+        : 'capabilities';
 }
 
 function workspaceEntryHref(
