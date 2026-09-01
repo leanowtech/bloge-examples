@@ -560,6 +560,18 @@ This closes the approved local single-item Fixture re-authoring path. Batch muta
 real PostgreSQL migration/concurrency, remote authenticated OpenAPI egress, and external Vault/provider certification
 remain separate work or deployment evidence.
 
+Legacy inventory assessment now has a separate read-only receipt at
+`GET /api/authoring/migrations/legacy-assets/assessment`. The
+`bloge.legacyMigrationAssessment.v1` wire records exact classified/total counts, zero-or-greater unclassified
+coordinates, fixture-reference count, non-ready public coordinates, and a canonical inventory fingerprint. Its
+strong `ETag` can be supplied as `If-Match` to replay the same source snapshot; a changed inventory returns `412`,
+while weak, wildcard, or list validators return `400`. The Existing assets page shows coverage, required-action
+count, and a shortened snapshot fingerprint. This is assessment evidence only: it performs no migration and does
+not label any row as migrated. The focused backend gate is **34/34 green**, frontend transport/component tests are
+**15/15 green**, and i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, bundle, and the real Chrome
+inventory method all pass. The serial `clean verify` completed with `Tests run: 8,266; failures: 0; errors: 0;
+skipped: 39` and `BUILD SUCCESS`. Batch mutation remains intentionally outside this read-only protocol.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

@@ -326,6 +326,44 @@ class LegacyAssetMigrationModuleTest {
         assertThat(wire).doesNotContain("customerName", "Ada", "fixture-a", "https://");
     }
 
+    @Test
+    void assessesEveryInventoryCoordinateWithOneDeterministicPayloadFreeReceipt() throws Exception {
+        InMemoryResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
+        contracts.upsert(contract("customer.get", "Get customer", ResourceDesignContract.STATUS_ACTIVE));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft data = drafts.save(draft("data-flow", "tenant-a", "project-a", "test", "data",
+                Map.of("customer", new GraphDraft.NodeFixture(Map.of("customerName", "Ada"),
+                        null, new GraphDraft.GovernedFixtureRef("fixture-a", 2, "sha256:" + "a".repeat(64)),
+                        GraphDraft.NodeFixture.ResourceFidelity.OUTPUT_LEVEL))));
+
+        LegacyAssetMigrationModule first = new LegacyAssetMigrationModule(source(
+                new LegacyResourceDescriptorSource.Descriptor("orders.list", "GET", "/orders",
+                        VisualResourceParameterMapping.empty(), new VisualResourceResponseProtocol.HttpStatus(), null),
+                new LegacyResourceDescriptorSource.Descriptor("customer.get", "GET", "/customers",
+                        VisualResourceParameterMapping.empty(), new VisualResourceResponseProtocol.HttpStatus(), null)),
+                contracts, drafts, new InMemoryVisualGraphPublicationRepository());
+        LegacyAssetMigrationModule reordered = new LegacyAssetMigrationModule(source(
+                new LegacyResourceDescriptorSource.Descriptor("customer.get", "GET", "/customers",
+                        VisualResourceParameterMapping.empty(), new VisualResourceResponseProtocol.HttpStatus(), null),
+                new LegacyResourceDescriptorSource.Descriptor("orders.list", "GET", "/orders",
+                        VisualResourceParameterMapping.empty(), new VisualResourceResponseProtocol.HttpStatus(), null)),
+                contracts, drafts, new InMemoryVisualGraphPublicationRepository());
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+
+        LegacyMigrationAssessment assessment = first.assessment(scope);
+
+        assertThat(assessment).isEqualTo(reordered.assessment(scope));
+        assertThat(assessment.inventoryFingerprint()).matches("sha256:[0-9a-f]{64}");
+        assertThat(assessment.coverage()).isEqualTo(new LegacyMigrationAssessment.Coverage(
+                4, 4, 0, 1, 3, 0, 2));
+        assertThat(assessment.failures()).hasSize(3)
+                .allMatch(item -> item.status() != LegacyAssetMigrationInventory.Status.READY_TO_REAUTHOR);
+        assertThat(assessment.failures()).extracting(LegacyAssetMigrationInventory.Item::sourceId)
+                .contains("orders.list", data.draftId());
+        String wire = new ObjectMapper().writeValueAsString(assessment);
+        assertThat(wire).doesNotContain("customerName", "Ada", "fixture-a", "https://");
+    }
+
     private static LegacyResourceDescriptorSource source(LegacyResourceDescriptorSource.Descriptor... values) {
         Map<String, LegacyResourceDescriptorSource.Descriptor> descriptors = new java.util.LinkedHashMap<>();
         for (LegacyResourceDescriptorSource.Descriptor value : values) descriptors.put(value.resourceId(), value);

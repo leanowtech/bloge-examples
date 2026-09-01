@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "bloge.legacyMigrationAssessment.v1",
+  "inventoryFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "coverage": {
+    "total": 0,
+    "classified": 0,
+    "unclassified": 0,
+    "readyToReauthor": 0,
+    "needsRepair": 0,
+    "legacyOnly": 0,
+    "fixtureReferences": 0
+  },
+  "failures": []
+}

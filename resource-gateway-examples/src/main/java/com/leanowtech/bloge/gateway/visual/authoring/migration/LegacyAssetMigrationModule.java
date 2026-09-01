@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
@@ -225,6 +226,27 @@ public final class LegacyAssetMigrationModule {
         return new LegacyAssetMigrationInventory(null,
                 new Summary(items.size(), Math.toIntExact(ready), Math.toIntExact(repair), Math.toIntExact(legacy)),
                 items);
+    }
+
+    /**
+     * Returns deterministic coverage and failure evidence for the current inventory snapshot.
+     * Repeated reads of the same sorted inventory produce the same fingerprint; no migration is performed.
+     */
+    public LegacyMigrationAssessment assessment(AuthoringScope scope) {
+        LegacyAssetMigrationInventory inventory = inventory(scope);
+        LegacyAssetMigrationInventory.Summary summary = inventory.summary();
+        int fixtureReferences = inventory.items().stream()
+                .mapToInt(LegacyAssetMigrationInventory.Item::fixtureReferences)
+                .sum();
+        List<Item> failures = inventory.items().stream()
+                .filter(item -> item.status() != Status.READY_TO_REAUTHOR)
+                .toList();
+        return new LegacyMigrationAssessment(null,
+                AuthoringFingerprints.of(mapper.valueToTree(inventory)),
+                new LegacyMigrationAssessment.Coverage(
+                        summary.total(), summary.total(), 0, summary.readyToReauthor(),
+                        summary.needsRepair(), summary.legacyOnly(), fixtureReferences),
+                failures);
     }
 
     private void resourceItems(List<Item> items) {

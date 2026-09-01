@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/legacy-migration-assessment-v1.schema.json",
+  "$defs": {
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "classified": { "type": "integer", "minimum": 0 },
+        "unclassified": { "type": "integer", "minimum": 0 },
+        "readyToReauthor": { "type": "integer", "minimum": 0 },
+        "needsRepair": { "type": "integer", "minimum": 0 },
+        "legacyOnly": { "type": "integer", "minimum": 0 },
+        "fixtureReferences": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      },
+      "required": ["total", "classified", "unclassified", "readyToReauthor", "needsRepair", "legacyOnly", "fixtureReferences"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.legacyMigrationAssessment.v1" },
+    "inventoryFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+    "coverage": { "$ref": "#/$defs/coverage" },
+    "failures": {
+      "type": "array",
+      "items": { "$ref": "legacy-migration-inventory-v1.schema.json#/$defs/item" },
+      "maxItems": 10000
+    }
+  },
+  "required": ["schemaVersion", "inventoryFingerprint", "coverage", "failures"],
+  "additionalProperties": false
+}

@@ -54,6 +54,22 @@ export interface LegacyAssetMigrationItem {
   };
 }
 
+/** Read-only proof that every item in one exact inventory snapshot was classified. */
+export interface LegacyMigrationAssessment {
+  schemaVersion: 'bloge.legacyMigrationAssessment.v1';
+  inventoryFingerprint: string;
+  coverage: {
+    total: number;
+    classified: number;
+    unclassified: number;
+    readyToReauthor: number;
+    needsRepair: number;
+    legacyOnly: number;
+    fixtureReferences: number;
+  };
+  failures: LegacyAssetMigrationItem[];
+}
+
 /** Connection-independent, transport-redacted command projected from one exact legacy Resource. */
 export interface LegacyApiResourceReauthorPreview {
   schemaVersion: 'bloge.legacyApiResourceReauthorPreview.v1';

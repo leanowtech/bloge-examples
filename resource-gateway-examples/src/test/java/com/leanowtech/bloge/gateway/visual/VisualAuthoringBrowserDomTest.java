@@ -1424,6 +1424,9 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='legacy-asset-inventory']")));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='legacy-inventory-counts']")));
+        WebElement coverage = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='legacy-migration-coverage']")));
+        assertThat(coverage.getText()).contains("classified", "require action", "sha256:");
         assertThat(inventory.findElements(By.cssSelector(".legacy-inventory-list li"))).isNotEmpty();
         assertThat(inventory.getText()).containsAnyOf("READY_TO_REAUTHOR", "NEEDS_REPAIR", "LEGACY_ONLY")
                 .doesNotContain("urlTemplate", "defaultHeaders", "fixturePayload", "https://");

@@ -8,6 +8,7 @@ import type {
   SimulationRun,
   ApiConnectionView,
   LegacyAssetMigrationInventory,
+  LegacyMigrationAssessment,
   LegacyApiResourceReauthorPreview,
 } from './model';
 
@@ -35,6 +36,17 @@ export async function readLegacyAssetMigrationInventory(
   return body(await transport('/api/authoring/migrations/legacy-assets', {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   }));
+}
+
+/** Reads deterministic assessment evidence; an optional ETag replays one exact inventory snapshot. */
+export async function readLegacyMigrationAssessment(
+  strongEtag: string | null = null,
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<StoredResponse<LegacyMigrationAssessment>> {
+  const headers = integrationRequestHeaders('API_RESOURCE_AUTHORING',
+    strongEtag ? { 'If-Match': strongEtag } : {});
+  const response = await transport('/api/authoring/migrations/legacy-assets/assessment', { headers });
+  return storedResponse(response, false);
 }
 
 /** Reads one safe command preview; the author must still choose a Connection and save it explicitly. */

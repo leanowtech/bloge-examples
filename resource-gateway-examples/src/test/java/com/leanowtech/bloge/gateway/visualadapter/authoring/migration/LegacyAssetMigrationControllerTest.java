@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrat
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyMigrationAssessment;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyFixtureReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
@@ -159,6 +160,50 @@ class LegacyAssetMigrationControllerTest {
         verify(module, never()).inventory(org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void replaysOneExactAssessmentReceiptBehindItsStrongEtag() throws Exception {
+        LegacyAssetMigrationModule module = mock(LegacyAssetMigrationModule.class);
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        LegacyMigrationAssessment assessment = assessment();
+        when(module.assessment(scope)).thenReturn(assessment);
+        String etag = "\"" + assessment.inventoryFingerprint() + "\"";
+
+        mvc(module).perform(get("/api/authoring/migrations/legacy-assets/assessment")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-Match", etag))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", etag))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.coverage.classified").value(1))
+                .andExpect(jsonPath("$.coverage.unclassified").value(0))
+                .andExpect(jsonPath("$.failures[0].sourceId").value("orders.list"))
+                .andExpect(jsonPath("$.failures[0].fixturePayload").doesNotExist());
+
+        verify(module).assessment(scope);
+    }
+
+    @Test
+    void rejectsAChangedOrMalformedAssessmentReplayFence() throws Exception {
+        LegacyAssetMigrationModule module = mock(LegacyAssetMigrationModule.class);
+        AuthoringScope scope = new AuthoringScope("tenant-a", "project-a", "test");
+        when(module.assessment(scope)).thenReturn(assessment());
+
+        mvc(module).perform(get("/api/authoring/migrations/legacy-assets/assessment")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-Match", "\"sha256:" + "b".repeat(64) + "\""))
+                .andExpect(status().isPreconditionFailed())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.LEGACY_MIGRATION.ASSESSMENT_CHANGED"));
+
+        mvc(module).perform(get("/api/authoring/migrations/legacy-assets/assessment")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-Match", "W/\"sha256:" + "a".repeat(64) + "\""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RG.AUTHORING.LEGACY_MIGRATION.ETAG_INVALID"));
+    }
+
     private static MockMvc mvc(LegacyAssetMigrationModule module) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "authoring-client", "tenant-a", "org-a", "project-a", "test", "local",
@@ -178,6 +223,12 @@ class LegacyAssetMigrationControllerTest {
                         LegacyAssetMigrationInventory.ActionKind.REPAIR_SOURCE, "/capabilities/"));
         return new LegacyAssetMigrationInventory(null,
                 new LegacyAssetMigrationInventory.Summary(1, 0, 1, 0), List.of(item));
+    }
+
+    private static LegacyMigrationAssessment assessment() {
+        return new LegacyMigrationAssessment(null, "sha256:" + "a".repeat(64),
+                new LegacyMigrationAssessment.Coverage(1, 1, 0, 0, 1, 0, 0),
+                inventory().items());
     }
 
     private static LegacyApiResourceReauthorPreview preview() {

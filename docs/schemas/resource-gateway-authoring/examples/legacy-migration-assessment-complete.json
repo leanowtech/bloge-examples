@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "bloge.legacyMigrationAssessment.v1",
+  "inventoryFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "coverage": {
+    "total": 3,
+    "classified": 3,
+    "unclassified": 0,
+    "readyToReauthor": 1,
+    "needsRepair": 1,
+    "legacyOnly": 1,
+    "fixtureReferences": 2
+  },
+  "failures": [
+    {
+      "kind": "API_RESOURCE",
+      "sourceId": "orders.list",
+      "sourceRevision": 0,
+      "displayName": "Orders",
+      "status": "NEEDS_REPAIR",
+      "fixtureReferences": 0,
+      "reasonCodes": ["DESIGN_CONTRACT_MISSING"],
+      "action": { "kind": "REPAIR_SOURCE", "path": "/capabilities/" }
+    },
+    {
+      "kind": "REUSABLE_FLOW_DRAFT",
+      "sourceId": "approval-flow",
+      "sourceRevision": 3,
+      "displayName": "Approval flow",
+      "status": "LEGACY_ONLY",
+      "fixtureReferences": 2,
+      "reasonCodes": ["ADVANCED_EDGE_UNSUPPORTED"],
+      "action": { "kind": "OPEN_LEGACY_FLOW", "path": "/author/?authorWorkspace=legacy" }
+    }
+  ]
+}

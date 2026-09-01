@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationInventory;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyAssetMigrationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyMigrationAssessment;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyApiResourceReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyFixtureReauthorPreview;
 import com.leanowtech.bloge.gateway.visual.authoring.migration.LegacyReusableFlowReauthorPreview;
@@ -26,11 +27,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /** Authenticated, read-only adapter for the payload-free legacy compatibility inventory. */
 @RestController
 @RequestMapping("/api/authoring/migrations/legacy-assets")
 public final class LegacyAssetMigrationController {
+    private static final Pattern ASSESSMENT_ETAG = Pattern.compile("^\"sha256:[0-9a-f]{64}\"$");
     private final LegacyAssetMigrationModule module;
     private final IntegrationRequestAuthenticator authenticator;
 
@@ -50,6 +53,34 @@ public final class LegacyAssetMigrationController {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .body(module.inventory(trustedScope(context)));
+    }
+
+    /**
+     * Returns replayable classification evidence for the current inventory without changing legacy state.
+     * An optional strong {@code If-Match} fences a replay to the exact assessed source snapshot.
+     */
+    @GetMapping(path = "/assessment", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<LegacyMigrationAssessment> assessment(
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.AUTHORING_LEGACY_MIGRATION_READ);
+        request.setAttribute(AuthoringRequestAttributes.CORRELATION_ID, context.correlationId());
+        LegacyMigrationAssessment assessment = module.assessment(trustedScope(context));
+        String etag = "\"" + assessment.inventoryFingerprint() + "\"";
+        if (ifMatch != null && !ASSESSMENT_ETAG.matcher(ifMatch).matches()) {
+            throw problem(context, 400, "RG.AUTHORING.LEGACY_MIGRATION.ETAG_INVALID",
+                    "The migration assessment replay fence must be one strong ETag.");
+        }
+        if (ifMatch != null && !etag.equals(ifMatch)) {
+            throw problem(context, 412, "RG.AUTHORING.LEGACY_MIGRATION.ASSESSMENT_CHANGED",
+                    "The legacy inventory changed after the supplied assessment.");
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .eTag(etag)
+                .body(assessment);
     }
 
     /** Returns one connection-independent command that the author must visibly review and save. */
@@ -106,5 +137,12 @@ public final class LegacyAssetMigrationController {
                     "RG.AUTHORING.LEGACY_MIGRATION.AUTHORITY_INVALID", false,
                     context.correlationId(), Map.of()));
         }
+    }
+
+    private static IntegrationProblemException problem(
+            IntegrationRequestContext context, int status, String code, String detail) {
+        return new IntegrationProblemException(new IntegrationProblem(
+                IntegrationProblem.SCHEMA_VERSION, "urn:bloge:problem:legacy-migration-assessment",
+                detail, status, code, false, context.correlationId(), Map.of()));
     }
 }

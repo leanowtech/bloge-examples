@@ -10,6 +10,7 @@ import {
   listApiConnections,
   previewOpenApi,
   readLegacyAssetMigrationInventory,
+  readLegacyMigrationAssessment,
   readLegacyApiResourcePreview,
   readApiResource,
   saveApiResource,
@@ -25,6 +26,7 @@ import {
   type FixtureSetSummary,
   type LegacyAssetMigrationInventory,
   type LegacyAssetMigrationItem,
+  type LegacyMigrationAssessment,
   type LegacyApiResourceReauthorPreview,
   type OpenApiPreview,
   type SimulationRun,
@@ -149,11 +151,15 @@ function AuthoringHome() {
 function LegacyAssetInventoryPage() {
   const { t } = useI18n();
   const [inventory, setInventory] = useState<LegacyAssetMigrationInventory | null>(null);
+  const [assessment, setAssessment] = useState<LegacyMigrationAssessment | null>(null);
   const [message, setMessage] = useState('');
   useEffect(() => {
     let cancelled = false;
-    void readLegacyAssetMigrationInventory().then((value) => {
-      if (!cancelled) setInventory(value);
+    void Promise.all([readLegacyAssetMigrationInventory(), readLegacyMigrationAssessment()]).then((values) => {
+      if (!cancelled) {
+        setInventory(values[0]);
+        setAssessment(values[1].value);
+      }
     }).catch((failure: unknown) => {
       if (!cancelled) setMessage(errorMessage(failure));
     });
@@ -173,6 +179,11 @@ function LegacyAssetInventoryPage() {
       {!inventory && !message && <p>{t('Loading...')}</p>}
       {inventory && (
         <>
+          {assessment && <p className="legacy-migration-coverage" data-testid="legacy-migration-coverage">
+            {assessment.coverage.classified} / {assessment.coverage.total} classified · {' '}
+            {assessment.failures.length} require action · snapshot {' '}
+            <code>{assessment.inventoryFingerprint.slice(0, 19)}…</code>
+          </p>}
           <dl className="legacy-inventory-counts" data-testid="legacy-inventory-counts">
             <div><dt>{t('Ready')}</dt><dd>{inventory.summary.readyToReauthor}</dd></div>
             <div><dt>{t('Needs repair')}</dt><dd>{inventory.summary.needsRepair}</dd></div>

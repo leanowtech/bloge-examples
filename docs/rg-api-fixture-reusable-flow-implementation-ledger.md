@@ -2695,3 +2695,55 @@ BUILD SUCCESS
 本轮关闭 F1 三资源 DAG 与批准方案的 390 px 完整任务门槛。迁移 inventory 已有失败对象清单和三类显式重创
 路径，但 M1 的迁移覆盖率与可复核 replay 证据仍未形成；冻结 Wire Schema 逐 family 的最小/完整/无效样例覆盖也
 需要最终审计。外部 PostgreSQL、Vault 和 REMOTE egress 继续属于部署环境证据，不用本地假实现替代。
+
+## 58. Iteration 57 — 迁移覆盖率与评估回放证据
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增严格 Wire Schema `bloge.legacyMigrationAssessment.v1`。它对当前 payload-free inventory 记录
+  `total/classified/unclassified`、三类状态计数、Fixture reference 总数、非 ready 的公开坐标，以及 canonical
+  inventory fingerprint；Java value object 强制覆盖率算式和 failure count 精确闭合。
+- `LegacyAssetMigrationModule.assessment` 复用既有稳定排序清单。相同资产集合即使 source 枚举顺序不同，也产生
+  相同 receipt 和 fingerprint；传输中仍不包含 URL、header、schema、Fixture value、governed id 或 credential。
+- 新增认证只读端点 `GET /api/authoring/migrations/legacy-assets/assessment`。首次读取返回强 ETag；带相同
+  `If-Match` 可复核同一快照，清单变化返回 412，弱/通配/列表 validator 返回 400。该端点不写 journal，也不执行
+  migration。
+- Existing assets 页面直接显示 `classified / total`、需处理数量和缩短后的 snapshot fingerprint。真实 Chrome
+  验证该证据可见，同时继续检查清单不泄漏 legacy transport 或 Fixture payload。
+- 新 schema 已加入 minimal/complete/invalid golden family；无效 fingerprint、负数 coverage 与额外字段均被拒绝。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=LegacyAssetMigrationModuleTest,LegacyAssetMigrationControllerTest,AuthoringProtocolSchemaTest test
+
+Tests run: 34; Failures: 0; Errors: 0; Skipped: 0
+
+npm test -- --run src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx
+
+Test Files: 2 passed; Tests: 15 passed
+npx tsc --noEmit: passed
+
+mvn -f resource-gateway-examples/pom.xml -Pfrontend \
+  -Dtest=VisualAuthoringBrowserDomTest#simpleWorkbenchShowsPayloadFreeLegacyMigrationInventory test
+
+i18n: 39/39; UX: 52/52; host: 21/21; TypeScript/Vite/bundle: passed
+AuthorCanvas startup closure: 349.73 KiB / 21 files
+AuthoringWorkbench startup closure: 196.62 KiB / 12 files
+Browser: Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 8,266; Failures: 0; Errors: 0; Skipped: 39
+BUILD SUCCESS; Total time: 11:49 min
+```
+
+### 当前差距评估
+
+M1 的本地“覆盖率、失败对象列表、回放、真实用户任务记录”已经形成可复核证据；这里的 replay 是对同一只读
+评估快照的确定性复核，不冒充批量 mutation。下一步只审计冻结 Wire Schema 的逐 family golden 覆盖与剩余本地
+负例。真实 PostgreSQL/Vault/REMOTE egress 和 8 位外部目标用户计时仍是部署或外部研究证据，不能由本地 fake
+实现代替。

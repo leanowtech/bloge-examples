@@ -12,6 +12,7 @@ vi.mock('./api', async () => {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
     listApiConnections: vi.fn(), previewOpenApi: vi.fn(),
     readLegacyAssetMigrationInventory: vi.fn(),
+    readLegacyMigrationAssessment: vi.fn(),
     readLegacyApiResourcePreview: vi.fn(),
     saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
   };
@@ -34,6 +35,9 @@ describe('simple authoring workbench', () => {
     vi.mocked(authoringApi.readLegacyAssetMigrationInventory).mockResolvedValue({
       schemaVersion: 'bloge.legacyAssetMigrationInventory.v1',
       summary: { total: 0, readyToReauthor: 0, needsRepair: 0, legacyOnly: 0 }, items: [],
+    });
+    vi.mocked(authoringApi.readLegacyMigrationAssessment).mockResolvedValue({
+      value: assessment(), strongEtag: `"sha256:${'a'.repeat(64)}"`, replayed: false,
     });
   });
 
@@ -69,6 +73,8 @@ describe('simple authoring workbench', () => {
     await act(async () => root.render(<AuthoringWorkbench />));
     await act(async () => { await Promise.resolve(); });
     expect(element('legacy-inventory-counts').textContent).toContain('Legacy1');
+    expect(element('legacy-migration-coverage').textContent).toContain('2 / 2 classified');
+    expect(element('legacy-migration-coverage').textContent).toContain('2 require action');
     const resource = element('legacy-item:API_RESOURCE:orders.list');
     expect(resource.textContent).toContain('DESIGN_CONTRACT_MISSING');
     expect(resource.querySelector('a')?.getAttribute('href')).toBe('/capabilities/');
@@ -289,6 +295,18 @@ describe('simple authoring workbench', () => {
         status: 'LEGACY_ONLY', fixtureReferences: 1, reasonCodes: ['ADVANCED_EDGE_UNSUPPORTED'],
         action: { kind: 'OPEN_LEGACY_FLOW', path: '/author/?authorWorkspace=legacy&draftId=approval' },
       }],
+    };
+  }
+
+  function assessment(): import('./model').LegacyMigrationAssessment {
+    return {
+      schemaVersion: 'bloge.legacyMigrationAssessment.v1',
+      inventoryFingerprint: `sha256:${'a'.repeat(64)}`,
+      coverage: {
+        total: 2, classified: 2, unclassified: 0,
+        readyToReauthor: 0, needsRepair: 1, legacyOnly: 1, fixtureReferences: 1,
+      },
+      failures: inventory().items,
     };
   }
 });

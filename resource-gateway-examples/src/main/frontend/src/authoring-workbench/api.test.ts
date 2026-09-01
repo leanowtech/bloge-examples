@@ -6,6 +6,7 @@ import {
   previewOpenApi,
   readApiResource,
   readLegacyAssetMigrationInventory,
+  readLegacyMigrationAssessment,
   readLegacyApiResourcePreview,
   saveApiResource,
   simulateFixtureCase,
@@ -33,6 +34,25 @@ describe('simple authoring transport', () => {
     expect(transport.mock.calls[0][0]).toBe('/api/authoring/migrations/legacy-assets');
     expect(new Headers(transport.mock.calls[0][1]?.headers).get('X-Purpose'))
       .toBe('API_RESOURCE_AUTHORING');
+  });
+  it('reads replayable migration coverage and preserves its strong ETag', async () => {
+    const transport = vi.fn().mockResolvedValue(response({
+      schemaVersion: 'bloge.legacyMigrationAssessment.v1',
+      inventoryFingerprint: `sha256:${'a'.repeat(64)}`,
+      coverage: {
+        total: 1, classified: 1, unclassified: 0,
+        readyToReauthor: 0, needsRepair: 1, legacyOnly: 0, fixtureReferences: 0,
+      },
+      failures: [],
+    }, { ETag: `"sha256:${'a'.repeat(64)}"` }));
+
+    const stored = await readLegacyMigrationAssessment(null, transport);
+
+    expect(stored.strongEtag).toBe(`"sha256:${'a'.repeat(64)}"`);
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/migrations/legacy-assets/assessment');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('API_RESOURCE_AUTHORING');
+    expect(headers.get('If-Match')).toBeNull();
   });
   it('reads one transport-redacted legacy Resource preview without save authority headers', async () => {
     const transport = vi.fn().mockResolvedValue(response({
