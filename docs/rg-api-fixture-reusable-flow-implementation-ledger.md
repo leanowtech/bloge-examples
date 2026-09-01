@@ -2508,3 +2508,37 @@ BUILD SUCCESS; Total time: 11:44 min
 批量 mutation/replay、迁移覆盖率 receipt，以及更高级 legacy control edge 仍未实现。真实 PostgreSQL
 migration/concurrency、Remote OpenAPI authenticated egress 与外部 Vault/provider 认证属于部署环境证据，不能由本地
 H2、单机 Chrome 或 mock provider 代替。
+
+## 54. Iteration 53 — Fixture 可运行状态闭包与完成审计纠偏
+
+日期：2026-09-01。
+
+### 已完成
+
+- 对已批准 v1/v1.1、冻结 Schema、当前代码和运行证据重新建立完成矩阵。审计撤销上一轮“2%–2.5%”结论：该数字没有
+  可复核分母，并遗漏新建 Connection、Flow Version 父级复用/节点 Fixture，以及 Fixture 生命周期运行门禁三个本地
+  P1。目标保持进行中。
+- `SimulationModule` 在占用 run idempotency coordinate 前检查 exact committed Fixture revision。私有 inline Case 只允许
+  `PRIVATE_DRAFT`；受保护 material 只允许 `TEAM_AVAILABLE` 并继续要求 trusted identity 与 governed resolver。
+- `ParentFlowApplyCaseCompiler` 当前只支持 inline leaf Case，因此明确只接受 `PRIVATE_DRAFT`。`SHARING_PENDING`、`STALE`
+  和 `REVOKED` 在直接 Simulation 与父 Flow `APPLY_CASE` 两条路径均 fail closed。
+- JavaDoc 说明状态门禁属于创建新不可变 Run 的授权边界，不把枚举存在误当成运行控制。
+
+### TDD 与验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=SimulationModuleTest,ParentFlowApplyCaseCompilerTest,WholeFlowSimulationModuleTest test
+
+Tests run: 13; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+新增负例在修复前分别证明：直接 Simulation 会运行阻断状态，父 Flow 没有独立生命周期门禁；修复后两个公开 seam
+均拒绝三种状态。完整门禁将在本轮剩余 P1 闭合后统一运行。
+
+### 当前差距评估
+
+安全门禁已关闭，但标准 API 页仍不能创建 `Auth.NONE` Connection，简单 Flow 页仍不能从统一 Catalog 选择
+`FLOW_VERSION` 或可见地创作节点 `APPLY_CASE`。加上 390 px 完整任务链与迁移 coverage receipt 等 P2，当前本地
+实现/验收差距保守估计仍约 5%–7%，明显高于 3% 停止条件。下一步按这两条用户主线继续 TDD 实现。

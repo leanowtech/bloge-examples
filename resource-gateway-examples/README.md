@@ -232,6 +232,13 @@ skips. The final serial `clean verify` completed with `Tests run: 8,122; failure
 Flow/DAG execution and the corresponding object pages remain fail-closed or unimplemented rather than silently
 falling back to a different execution path.
 
+Fixture Case execution now also closes the content-lifecycle gate before a run is claimed. A private inline Case is
+runnable only while its committed revision is `PRIVATE_DRAFT`; protected material is runnable only from an exact
+`TEAM_AVAILABLE` revision through the governed resolver. `SHARING_PENDING`, `STALE`, and `REVOKED` revisions are
+rejected for both direct Simulation and parent-Flow `APPLY_CASE`, so a lifecycle transition cannot be bypassed by
+holding an older Case coordinate. The focused Simulation/parent-Flow gate is **13/13 green** with no failures,
+errors, or skips.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

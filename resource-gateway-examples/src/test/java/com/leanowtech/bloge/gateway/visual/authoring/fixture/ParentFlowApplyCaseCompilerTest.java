@@ -112,6 +112,36 @@ class ParentFlowApplyCaseCompilerTest {
                 .isEqualTo(ParentFlowApplyCaseFailure.Code.INTEGRITY);
     }
 
+    @Test
+    void rejectsPendingStaleAndRevokedReferencedCases() {
+        FixtureSubjectRef profileSubject = FixtureSubjectRef.apiResource(
+                new com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec.ResourceRef(
+                        "API_RESOURCE", "profile-api", 2, PROFILE_FP));
+        FixtureSubjectRef decisionSubject = new FixtureSubjectRef.FlowVersion(
+                "decision-flow", 3, DECISION_FP);
+        for (FixtureSetView.Status status : List.of(
+                FixtureSetView.Status.SHARING_PENDING,
+                FixtureSetView.Status.STALE,
+                FixtureSetView.Status.REVOKED)) {
+            StoredFixtureSet profile = fixture("profile-cases", profileSubject,
+                    returned("high-score", JSON.createObjectNode(),
+                            JSON.createObjectNode().put("score", 700), null), status);
+            StoredFixtureSet decision = fixture("decision-cases", decisionSubject,
+                    returned("approved", JSON.createObjectNode(),
+                            JSON.createObjectNode().put("eligible", true), null), status);
+
+            assertThatThrownBy(() -> new ParentFlowApplyCaseCompiler(
+                    catalog(), reader(Map.of(
+                            "profile-cases", profile, "decision-cases", decision)))
+                    .compile(SCOPE, parent(), withControls(parentCase(), List.of(
+                            apply("profile", "profile-cases", "high-score"),
+                            apply("decision", "decision-cases", "approved")))))
+                    .isInstanceOf(ParentFlowApplyCaseFailure.class)
+                    .extracting(value -> ((ParentFlowApplyCaseFailure) value).code())
+                    .isEqualTo(ParentFlowApplyCaseFailure.Code.UNSUPPORTED);
+        }
+    }
+
     private static ReusableFlowVersion parent() {
         ReusableFlowCommand.Contract contract = new ReusableFlowCommand.Contract(
                 object("customerId", "string"), object("eligible", "boolean"));
@@ -156,17 +186,23 @@ class ParentFlowApplyCaseCompilerTest {
 
     private static StoredFixtureSet fixture(String id, FixtureSubjectRef subject,
                                             FixtureSetCommand.Case fixtureCase) {
+        return fixture(id, subject, fixtureCase, FixtureSetView.Status.PRIVATE_DRAFT);
+    }
+
+    private static StoredFixtureSet fixture(String id, FixtureSubjectRef subject,
+                                            FixtureSetCommand.Case fixtureCase,
+                                            FixtureSetView.Status status) {
         String displayName = id;
         String fingerprint = FixtureSetFingerprints.of(displayName, subject, List.of(fixtureCase));
         FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, id, 1, fingerprint, 1,
-                displayName, subject, List.of(fixtureCase), FixtureSetView.Status.PRIVATE_DRAFT);
+                displayName, subject, List.of(fixtureCase), status);
         FixtureSetSaveReceipt receipt = new FixtureSetSaveReceipt(FixtureSetSaveReceipt.SCHEMA_VERSION,
                 id, 1, fingerprint, subject, List.of(fixtureCase.caseId()),
-                FixtureSetView.Status.PRIVATE_DRAFT, 1);
+                status, 1);
         FixtureSetSummary summary = new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION, id, 1,
                 fingerprint, displayName, subject,
                 List.of(new FixtureSetSummary.CaseSummary(fixtureCase.caseId(), fixtureCase.name())),
-                FixtureSetView.Status.PRIVATE_DRAFT, 1);
+                status, 1);
         GeneratedDefaultFixture generated = new GeneratedDefaultFixture(view, receipt, summary,
                 List.of(new GeneratedDefaultFixture.CaseMapping(fixtureCase.caseId(), fixtureCase.caseId())));
         return new StoredFixtureSet(SCOPE, generated);

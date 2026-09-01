@@ -137,6 +137,9 @@ public final class ParentFlowApplyCaseCompiler {
                     || !referenced.subject().equals(subject(node.use()))) {
                 throw failure(ParentFlowApplyCaseFailure.Code.INTEGRITY);
             }
+            if (referenced.status() != FixtureSetView.Status.PRIVATE_DRAFT) {
+                throw failure(ParentFlowApplyCaseFailure.Code.UNSUPPORTED);
+            }
             FixtureSetCommand.Case selected = referenced.cases().stream()
                     .filter(value -> apply.caseId().equals(value.caseId()))
                     .reduce((left, right) -> { throw failure(ParentFlowApplyCaseFailure.Code.INTEGRITY); })

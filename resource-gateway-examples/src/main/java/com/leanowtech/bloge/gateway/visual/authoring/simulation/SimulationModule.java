@@ -154,6 +154,7 @@ public final class SimulationModule {
         try {
             StoredFixtureSet fixture = fixtures.findRevision(scope, source.fixtureSetId(), source.revision())
                     .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
+            requireRunnableStatus(fixture.generated().view().status());
             FixtureSetCommand.Case selected = fixture.generated().view().cases().stream()
                     .filter(value -> source.caseId().equals(value.caseId()))
                     .reduce((left, right) -> { throw failure(SimulationFailure.Code.INTEGRITY); })
@@ -312,6 +313,9 @@ public final class SimulationModule {
                                              SimulationIdentity identity,
                                              FixtureSetView.Status status) {
         if (material instanceof FixtureSetCommand.Material.Inline inline) {
+            if (status != FixtureSetView.Status.PRIVATE_DRAFT) {
+                throw failure(SimulationFailure.Code.UNSUPPORTED);
+            }
             return new ResolvedMaterial(inline.value(), SimulationRun.FixtureSource.INLINE);
         }
         if (!(material instanceof FixtureSetCommand.Material.FixtureAsset asset)
@@ -322,6 +326,14 @@ public final class SimulationModule {
         JsonNode output = fixtureAssets.resolve(identity, asset);
         if (output == null) throw failure(SimulationFailure.Code.INTEGRITY);
         return new ResolvedMaterial(output, SimulationRun.FixtureSource.FIXTURE_ASSET);
+    }
+
+    /** Rejects lifecycle states that cannot authorize a new immutable Simulation Run. */
+    private static void requireRunnableStatus(FixtureSetView.Status status) {
+        if (status != FixtureSetView.Status.PRIVATE_DRAFT
+                && status != FixtureSetView.Status.TEAM_AVAILABLE) {
+            throw failure(SimulationFailure.Code.UNSUPPORTED);
+        }
     }
 
     private ResolvedReturn resolvedReturn(FixtureSetCommand.Case selected,

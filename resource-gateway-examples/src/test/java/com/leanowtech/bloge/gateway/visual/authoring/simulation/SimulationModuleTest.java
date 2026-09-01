@@ -3,8 +3,13 @@ package com.leanowtech.bloge.gateway.visual.authoring.simulation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceSaveCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryApiFixtureSetCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetAuthorityReader;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StoredFixtureSet;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
@@ -121,6 +126,27 @@ class SimulationModuleTest {
     }
 
     @Test
+    void pendingStaleAndRevokedFixturesCannotStartNewRuns() {
+        Fixture fixture = fixture();
+
+        for (FixtureSetView.Status status : List.of(
+                FixtureSetView.Status.SHARING_PENDING,
+                FixtureSetView.Status.STALE,
+                FixtureSetView.Status.REVOKED)) {
+            StoredFixtureSet stored = storedWithStatus(fixture.generated(), status);
+            SimulationModule module = new SimulationModule(fixture.resources(), reader(stored),
+                    new InMemorySimulationRunStore(), Clock.fixed(NOW, ZoneOffset.UTC), () -> "sim-1");
+
+            assertThatThrownBy(() -> module.run(SCOPE, "run-" + status.name().toLowerCase(),
+                    SimulationRequest.fixtureCase(stored.generated().view().fixtureSetId(),
+                            stored.generated().view().revision(), "happy")))
+                    .isInstanceOf(SimulationFailure.class)
+                    .extracting(value -> ((SimulationFailure) value).code())
+                    .isEqualTo(SimulationFailure.Code.UNSUPPORTED);
+        }
+    }
+
+    @Test
     void completedRunReplaysAfterTheJdbcRunAuthorityReopens() {
         Fixture fixture = fixture();
         JdbcDataSource dataSource = new JdbcDataSource();
@@ -205,6 +231,43 @@ class SimulationModuleTest {
         return new JdbcSimulationRunStore(jdbc,
                 new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
                 Duration.ofSeconds(30));
+    }
+
+    private static StoredFixtureSet storedWithStatus(
+            GeneratedDefaultFixture source, FixtureSetView.Status status) {
+        FixtureSetView current = source.view();
+        int statusRevision = current.statusRevision() + 1;
+        FixtureSetView view = new FixtureSetView(current.schemaVersion(), current.fixtureSetId(),
+                current.revision(), current.fingerprint(), statusRevision, current.displayName(),
+                current.subject(), current.cases(), status);
+        FixtureSetSaveReceipt receipt = new FixtureSetSaveReceipt(
+                FixtureSetSaveReceipt.SCHEMA_VERSION, view.fixtureSetId(), view.revision(),
+                view.fingerprint(), view.subject(), source.receipt().caseIds(), status, statusRevision);
+        FixtureSetSummary summary = new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION,
+                view.fixtureSetId(), view.revision(), view.fingerprint(), view.displayName(),
+                view.subject(), source.summary().cases(), status, statusRevision);
+        return new StoredFixtureSet(SCOPE, new GeneratedDefaultFixture(
+                view, receipt, summary, source.caseMappings()));
+    }
+
+    private static FixtureSetAuthorityReader reader(StoredFixtureSet stored) {
+        return new FixtureSetAuthorityReader() {
+            @Override public Optional<StoredFixtureSet> findHead(AuthoringScope scope, String id) {
+                return SCOPE.equals(scope) && stored.generated().view().fixtureSetId().equals(id)
+                        ? Optional.of(stored) : Optional.empty();
+            }
+            @Override public Optional<StoredFixtureSet> findRevision(
+                    AuthoringScope scope, String id, int revision) {
+                return SCOPE.equals(scope) && stored.generated().view().fixtureSetId().equals(id)
+                        && stored.generated().view().revision() == revision
+                        ? Optional.of(stored) : Optional.empty();
+            }
+            @Override public List<FixtureSetSummary> listSummariesBySubject(
+                    AuthoringScope scope,
+                    com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef subject) {
+                return List.of();
+            }
+        };
     }
 
     private record Fixture(InMemoryApiResourceCommitStore resources,
