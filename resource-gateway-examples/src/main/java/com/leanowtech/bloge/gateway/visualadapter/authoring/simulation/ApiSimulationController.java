@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationExecutionResult;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationIdentity;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
@@ -58,8 +59,9 @@ public final class ApiSimulationController {
                                                   HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers,
                 IntegrationOperation.AUTHORING_SIMULATION_EXECUTE, request);
-        SimulationExecutionResult result = module.execute(trustedScope(context), idempotencyKey(headers,
-                context.correlationId()), command(wire, context.correlationId()));
+        AuthoringScope scope = trustedScope(context);
+        SimulationExecutionResult result = module.execute(scope, idempotencyKey(headers,
+                context.correlationId()), command(wire, context.correlationId()), identity(scope, context));
         return response(result.run()).header("Idempotency-Replayed", Boolean.toString(result.replayed()))
                 .body(result.run());
     }
@@ -116,6 +118,15 @@ public final class ApiSimulationController {
     private static AuthoringScope trustedScope(IntegrationRequestContext context) {
         try {
             return new AuthoringScope(context.tenantId(), context.projectId(), context.environmentId());
+        } catch (IllegalArgumentException failure) {
+            throw invalidRequest(context.correlationId());
+        }
+    }
+
+    private static SimulationIdentity identity(AuthoringScope scope, IntegrationRequestContext context) {
+        try {
+            return new SimulationIdentity(scope, context.organizationId(), context.region(),
+                    context.actorType(), context.actorId(), context.clearance(), context.correlationId());
         } catch (IllegalArgumentException failure) {
             throw invalidRequest(context.correlationId());
         }

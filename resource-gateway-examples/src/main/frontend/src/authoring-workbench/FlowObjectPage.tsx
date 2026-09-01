@@ -4,9 +4,10 @@ import { Boxes, Plus, Rocket, TestTube2, Trash2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import { readApiResource } from './api';
 import {
-  listFlowDraftFixtures,
+  listFlowFixtures,
   publishFlow,
   readFlow,
+  readLatestFlowVersion,
   readFlowFixture,
   saveFlow,
   saveFlowFixture,
@@ -17,6 +18,7 @@ import {
   buildReusableFlowCommand,
   type FlowDraftRef,
   type FlowFormDraft,
+  type FlowVersionRef,
   type ResolvedApiNode,
 } from './flowModel';
 import type { FixtureSetSummary, SimulationRun } from './model';
@@ -36,6 +38,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
   const [resourceId, setResourceId] = useState('');
   const [strongEtag, setStrongEtag] = useState<string | null>(null);
   const [subject, setSubject] = useState<FlowDraftRef | null>(null);
+  const [publishedSubject, setPublishedSubject] = useState<FlowVersionRef | null>(null);
   const [fixture, setFixture] = useState<FixtureSetSummary | null>(null);
   const [fixtureEtag, setFixtureEtag] = useState<string | null>(null);
   const [fixtureInput, setFixtureInput] = useState('{}');
@@ -49,7 +52,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
   useEffect(() => {
     if (!initialFlowId) return;
     let cancelled = false;
-    void readFlow(initialFlowId).then(async (stored) => {
+    void Promise.all([readFlow(initialFlowId), readLatestFlowVersion(initialFlowId)]).then(async ([stored, latest]) => {
       const restored = await Promise.all(stored.value.graph.nodes.map(async (node) => {
         if (node.use.kind !== 'API_RESOURCE') throw new Error('This simple page supports API Resource nodes.');
         const resource = await readApiResource(node.use.resourceId, node.use.revision);
@@ -68,7 +71,16 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
       setNodes(restored);
       setStrongEtag(stored.strongEtag);
       setSubject(exactSubject);
-      const summaries = await listFlowDraftFixtures(exactSubject);
+      const currentPublished = latest && latest.source.draftId === exactSubject.draftId
+        && latest.source.revision === exactSubject.revision
+        && latest.source.fingerprint === exactSubject.fingerprint
+        ? {
+            kind: 'FLOW_VERSION' as const, publicationId: latest.publicationId,
+            revision: latest.revision, fingerprint: latest.fingerprint,
+          } : null;
+      setPublishedSubject(currentPublished);
+      setPublished(latest ? `${latest.publicationId}@${latest.revision}` : '');
+      const summaries = await listFlowFixtures(currentPublished ?? exactSubject);
       if (summaries[0]) {
         const savedFixture = await readFlowFixture(summaries[0].fixtureSetId, summaries[0].revision);
         if (!cancelled) {
@@ -117,6 +129,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
       );
       setStrongEtag(result.strongEtag);
       setSubject(result.value.draft);
+      setPublishedSubject(null);
       setFixture(null);
       setFixtureEtag(null);
       setRun(null);
@@ -131,13 +144,14 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
   };
 
   const saveFixtureAndSimulate = async () => {
-    if (!subject) return;
+    const fixtureSubject = publishedSubject ?? subject;
+    if (!fixtureSubject) return;
     setBusy(true);
     setMessage('');
     try {
       const fixtureSetId = `${draft.flowId.trim()}.default`;
       const command = buildFlowFixtureCommand(
-        subject, `${draft.displayName.trim()} default`, fixtureInput, fixtureOutput,
+        fixtureSubject, `${draft.displayName.trim()} default`, fixtureInput, fixtureOutput,
       );
       const saved = await saveFlowFixture(
         fixtureSetId, command, fixtureEtag, operationKey('save-flow-fixture', fixtureSetId),
@@ -187,7 +201,9 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
     setBusy(true);
     try {
       const receipt = await publishFlow(draft.flowId.trim(), subject, operationKey('publish-flow', draft.flowId));
+      setPublishedSubject(receipt.version);
       setPublished(`${receipt.version.publicationId}@${receipt.version.revision}`);
+      setTab('fixture');
       setMessage(t('Flow published as an immutable reusable version.'));
     } catch (failure) {
       setMessage(errorMessage(failure));
@@ -273,7 +289,7 @@ export default function FlowObjectPage({ initialFlowId, initialKind }: {
               value={fixtureOutput} onChange={(event) => setFixtureOutput(event.target.value)} /></Field>
           </div>
           <button type="button" className="primary-object-action" data-testid="save-flow-fixture"
-            disabled={busy || !subject} onClick={saveFixtureAndSimulate}>
+            disabled={busy || !(publishedSubject ?? subject)} onClick={saveFixtureAndSimulate}>
             <TestTube2 aria-hidden="true" /> {busy ? t('Saving and simulating...') : t('Save Fixture and simulate')}
           </button>
           {fixture && <button type="button" data-testid="rerun-flow-fixture" disabled={busy}

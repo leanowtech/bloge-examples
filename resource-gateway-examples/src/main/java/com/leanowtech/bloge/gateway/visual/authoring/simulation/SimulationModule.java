@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.simulation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseFailure;
@@ -39,10 +40,12 @@ import java.util.regex.Pattern;
  *
  * <p>The module executes exact Subject Returns and parent Flow Cases whose every node is explicitly
  * controlled by a non-recursive APPLY_CASE. Both paths perform no network I/O and emit per-node
- * Fixture evidence. Ad-hoc inputs, real external reads, partial controls and governed material
- * remain fail-closed until their independent runtime authorities are wired.</p>
+ * Fixture evidence. TEAM_AVAILABLE protected material is resolved only through an optional exact
+ * Fixture Asset authority and a trusted simulation identity. Ad-hoc inputs, real external reads,
+ * partial controls, or protected material without that authority remain fail-closed.</p>
  */
 public final class SimulationModule {
+    private static final String WHOLE_SUBJECT_EVIDENCE_NODE = "subject";
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules();
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private final ApiResourceCommitStore resources;
@@ -50,70 +53,51 @@ public final class SimulationModule {
     private final ReusableFlowPublicationStore flows;
     private final ReusableFlowDraftStore drafts;
     private final ParentFlowApplyCaseCompiler parentCompiler;
+    private final FixtureAssetSimulationResolver fixtureAssets;
     private final SimulationRunStore runs;
     private final Clock clock;
     private final Supplier<String> runIds;
 
+    /** Optional Flow and protected-material authorities enabled for this module instance. */
+    public record Authorities(ReusableFlowPublicationStore versions, ReusableFlowDraftStore drafts,
+                              ParentFlowApplyCaseCompiler parentCases,
+                              FixtureAssetSimulationResolver protectedFixtures) {
+        /** Creates the Resource-only capability set. */
+        public static Authorities none() {
+            return new Authorities(null, null, null, null);
+        }
+    }
+
     /** Creates a production-neutral module with server-generated run ids. */
     public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                             SimulationRunStore runs) {
-        this(resources, fixtures, null, null, runs,
-                Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
+        this(resources, fixtures, Authorities.none(), runs);
     }
 
-    /** Creates a module that can also execute exact whole-flow Fixture returns. */
+    /** Creates a module with one explicit optional-authority capability set. */
     public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                            ReusableFlowPublicationStore flows, SimulationRunStore runs) {
-        this(resources, fixtures, flows, null, runs,
-                Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
-    }
-
-    /** Creates a module that can compile parent Flow APPLY_CASE controls. */
-    public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                            ReusableFlowPublicationStore flows,
-                            ParentFlowApplyCaseCompiler parentCompiler, SimulationRunStore runs) {
-        this(resources, fixtures, flows, parentCompiler, runs,
-                Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
-    }
-
-    /** Creates a module that resolves immutable versions and exact committed Flow drafts. */
-    public SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                            ReusableFlowPublicationStore flows, ReusableFlowDraftStore drafts,
-                            ParentFlowApplyCaseCompiler parentCompiler, SimulationRunStore runs) {
-        this(resources, fixtures, flows, drafts, parentCompiler, runs,
+                            Authorities authorities, SimulationRunStore runs) {
+        this(resources, fixtures, authorities, runs,
                 Clock.systemUTC(), () -> "sim-" + UUID.randomUUID());
     }
 
     /** Test seam for deterministic time and ids. */
     SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
                      SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
-        this(resources, fixtures, null, null, runs, clock, runIds);
+        this(resources, fixtures, Authorities.none(), runs, clock, runIds);
     }
 
-    /** Test seam for deterministic whole-flow execution time and ids. */
+    /** Test seam for deterministic optional-authority execution. */
     SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                     ReusableFlowPublicationStore flows, SimulationRunStore runs,
-                     Clock clock, Supplier<String> runIds) {
-        this(resources, fixtures, flows, null, runs, clock, runIds);
-    }
-
-    /** Test seam for deterministic parent Flow execution time and ids. */
-    SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                     ReusableFlowPublicationStore flows, ParentFlowApplyCaseCompiler parentCompiler,
-                     SimulationRunStore runs, Clock clock, Supplier<String> runIds) {
-        this(resources, fixtures, flows, null, parentCompiler, runs, clock, runIds);
-    }
-
-    /** Test seam for deterministic draft-backed whole-flow execution. */
-    SimulationModule(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                     ReusableFlowPublicationStore flows, ReusableFlowDraftStore drafts,
-                     ParentFlowApplyCaseCompiler parentCompiler, SimulationRunStore runs,
+                     Authorities authorities, SimulationRunStore runs,
                      Clock clock, Supplier<String> runIds) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
-        this.flows = flows;
-        this.drafts = drafts;
-        this.parentCompiler = parentCompiler;
+        Authorities enabled = Objects.requireNonNull(authorities, "authorities");
+        this.flows = enabled.versions();
+        this.drafts = enabled.drafts();
+        this.parentCompiler = enabled.parentCases();
+        this.fixtureAssets = enabled.protectedFixtures();
         this.runs = Objects.requireNonNull(runs, "runs");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.runIds = Objects.requireNonNull(runIds, "runIds");
@@ -127,8 +111,18 @@ public final class SimulationModule {
     /** Executes one command and exposes whether the exact immutable result was replayed. */
     public SimulationExecutionResult execute(AuthoringScope scope, String idempotencyKey,
                                              SimulationRequest request) {
+        return execute(scope, idempotencyKey, request, null);
+    }
+
+    /** Executes with one trusted identity capable of governed material reads. */
+    public SimulationExecutionResult execute(AuthoringScope scope, String idempotencyKey,
+                                             SimulationRequest request, SimulationIdentity identity) {
         validate(scope, idempotencyKey, request);
-        CompiledFixture compiled = compile(scope, (SimulationRequest.Source.FixtureCase) request.source());
+        if (identity != null && !scope.equals(identity.scope())) {
+            throw failure(SimulationFailure.Code.VALIDATION);
+        }
+        CompiledFixture compiled = compile(scope,
+                (SimulationRequest.Source.FixtureCase) request.source(), identity);
         String fingerprint = fingerprint(request);
         Instant startedAt = clock.instant();
         SimulationRunStore.Claim claim = runs.claim(scope, idempotencyKey, fingerprint, runIds, startedAt);
@@ -155,7 +149,8 @@ public final class SimulationModule {
         return read(scope, runId).orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
     }
 
-    private CompiledFixture compile(AuthoringScope scope, SimulationRequest.Source.FixtureCase source) {
+    private CompiledFixture compile(AuthoringScope scope, SimulationRequest.Source.FixtureCase source,
+                                    SimulationIdentity identity) {
         try {
             StoredFixtureSet fixture = fixtures.findRevision(scope, source.fixtureSetId(), source.revision())
                     .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
@@ -165,12 +160,7 @@ public final class SimulationModule {
                     .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
             FixtureSubjectRef subject = fixture.generated().view().subject();
             if (subject instanceof FixtureSubjectRef.ApiResource resourceSubject) {
-                FixtureSetCommand.Control control = soleReturnControl(selected);
-                FixtureSetCommand.Behavior.Return returned =
-                        (FixtureSetCommand.Behavior.Return) control.behavior();
-                if (!(returned.material() instanceof FixtureSetCommand.Material.Inline inline)) {
-                    throw failure(SimulationFailure.Code.UNSUPPORTED);
-                }
+                ResolvedReturn resolved = resolvedReturn(selected, identity, fixture.generated().view().status());
                 StoredApiResource resource = resources.findRevision(
                                 scope, resourceSubject.resourceId(), resourceSubject.revision())
                         .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
@@ -178,8 +168,8 @@ public final class SimulationModule {
                     throw failure(SimulationFailure.Code.INTEGRITY);
                 }
                 return new CompiledReturn(source, resourceSubject, resource.resource().contract().input(),
-                        resource.resource().contract().output(), selected, control, inline.value(),
-                        resource.resource().resourceId());
+                        resource.resource().contract().output(), selected, resolved.control(), resolved.output(),
+                        resource.resource().resourceId(), resolved.source());
             }
             if (subject instanceof FixtureSubjectRef.FlowVersion flowSubject) {
                 if (flows == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
@@ -191,18 +181,14 @@ public final class SimulationModule {
                     if (parentCompiler == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
                     return new CompiledParent(source, parentCompiler.compile(scope, version, selected));
                 }
-                FixtureSetCommand.Control control = soleReturnControl(selected);
-                FixtureSetCommand.Behavior.Return returned =
-                        (FixtureSetCommand.Behavior.Return) control.behavior();
-                if (!(returned.material() instanceof FixtureSetCommand.Material.Inline inline)) {
-                    throw failure(SimulationFailure.Code.UNSUPPORTED);
-                }
-                if (control.fidelity() != null
-                        && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
+                ResolvedReturn resolved = resolvedReturn(selected, identity, fixture.generated().view().status());
+                if (resolved.control().fidelity() != null
+                        && resolved.control().fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
                     throw failure(SimulationFailure.Code.UNSUPPORTED);
                 }
                 return new CompiledReturn(source, flowSubject, version.contract().input(),
-                        version.contract().output(), selected, control, inline.value(), null);
+                        version.contract().output(), selected, resolved.control(), resolved.output(),
+                        WHOLE_SUBJECT_EVIDENCE_NODE, resolved.source());
             }
             if (subject instanceof FixtureSubjectRef.FlowDraft flowSubject) {
                 if (drafts == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
@@ -212,18 +198,14 @@ public final class SimulationModule {
                 if (!stored.draft().subject().equals(flowSubject)) {
                     throw failure(SimulationFailure.Code.INTEGRITY);
                 }
-                FixtureSetCommand.Control control = soleReturnControl(selected);
-                FixtureSetCommand.Behavior.Return returned =
-                        (FixtureSetCommand.Behavior.Return) control.behavior();
-                if (!(returned.material() instanceof FixtureSetCommand.Material.Inline inline)) {
-                    throw failure(SimulationFailure.Code.UNSUPPORTED);
-                }
-                if (control.fidelity() != null
-                        && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
+                ResolvedReturn resolved = resolvedReturn(selected, identity, fixture.generated().view().status());
+                if (resolved.control().fidelity() != null
+                        && resolved.control().fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
                     throw failure(SimulationFailure.Code.UNSUPPORTED);
                 }
                 return new CompiledReturn(source, flowSubject, stored.draft().contract().input(),
-                        stored.draft().contract().output(), selected, control, inline.value(), null);
+                        stored.draft().contract().output(), selected, resolved.control(), resolved.output(),
+                        WHOLE_SUBJECT_EVIDENCE_NODE, resolved.source());
             }
             throw failure(SimulationFailure.Code.UNSUPPORTED);
         } catch (SimulationFailure failure) {
@@ -269,7 +251,7 @@ public final class SimulationModule {
         List<SimulationRun.Node> nodes = compiled.evidenceNodeId() == null ? List.of() : List.of(
                 new SimulationRun.Node(compiled.evidenceNodeId(),
                         success ? SimulationRun.NodeStatus.COMPLETED : SimulationRun.NodeStatus.FAILED,
-                        SimulationRun.Execution.MOCKED, SimulationRun.FixtureSource.INLINE, fidelity,
+                        SimulationRun.Execution.MOCKED, compiled.fixtureSource(), fidelity,
                         SimulationRun.Egress.fixture()));
         return new SimulationRun(SimulationRun.SCHEMA_VERSION, runId,
                 success ? SimulationRun.Status.SUCCEEDED : SimulationRun.Status.FAILED,
@@ -280,7 +262,9 @@ public final class SimulationModule {
                 new SimulationRun.Verdicts(success ? SimulationRun.ExecutionVerdict.SIMULATED_ONLY
                         : SimulationRun.ExecutionVerdict.FAILED,
                         contractPassed ? SimulationRun.Verdict.PASSED : SimulationRun.Verdict.FAILED,
-                        assertion, SimulationRun.Verdict.NOT_CHECKED), diagnostics, startedAt, clock.instant());
+                        assertion, compiled.fixtureSource() == SimulationRun.FixtureSource.FIXTURE_ASSET
+                        ? SimulationRun.Verdict.PASSED : SimulationRun.Verdict.NOT_CHECKED),
+                diagnostics, startedAt, clock.instant());
     }
 
     private SimulationRun executeParent(String runId, Instant startedAt, CompiledParent compiled) {
@@ -324,6 +308,32 @@ public final class SimulationModule {
                 && fixture.controls().getFirst().behavior() instanceof FixtureSetCommand.Behavior.Return;
     }
 
+    private ResolvedMaterial resolveMaterial(FixtureSetCommand.Material material,
+                                             SimulationIdentity identity,
+                                             FixtureSetView.Status status) {
+        if (material instanceof FixtureSetCommand.Material.Inline inline) {
+            return new ResolvedMaterial(inline.value(), SimulationRun.FixtureSource.INLINE);
+        }
+        if (!(material instanceof FixtureSetCommand.Material.FixtureAsset asset)
+                || status != FixtureSetView.Status.TEAM_AVAILABLE
+                || fixtureAssets == null || identity == null) {
+            throw failure(SimulationFailure.Code.UNSUPPORTED);
+        }
+        JsonNode output = fixtureAssets.resolve(identity, asset);
+        if (output == null) throw failure(SimulationFailure.Code.INTEGRITY);
+        return new ResolvedMaterial(output, SimulationRun.FixtureSource.FIXTURE_ASSET);
+    }
+
+    private ResolvedReturn resolvedReturn(FixtureSetCommand.Case selected,
+                                          SimulationIdentity identity,
+                                          FixtureSetView.Status status) {
+        FixtureSetCommand.Control control = soleReturnControl(selected);
+        FixtureSetCommand.Behavior.Return returned =
+                (FixtureSetCommand.Behavior.Return) control.behavior();
+        ResolvedMaterial material = resolveMaterial(returned.material(), identity, status);
+        return new ResolvedReturn(control, material.output(), material.source());
+    }
+
     private static void validate(AuthoringScope scope, String key, SimulationRequest request) {
         if (scope == null || key == null || key.isBlank() || key.length() > 160 || request == null
                 || !SimulationRequest.SCHEMA_VERSION.equals(request.schemaVersion()) || request.source() == null
@@ -363,8 +373,20 @@ public final class SimulationModule {
     private record CompiledReturn(SimulationRequest.Source.FixtureCase source, FixtureSubjectRef subject,
                                   SchemaEnvelope input, SchemaEnvelope outputSchema,
                                   FixtureSetCommand.Case fixture, FixtureSetCommand.Control control,
-                                  JsonNode output, String evidenceNodeId) implements CompiledFixture {
+                                  JsonNode output, String evidenceNodeId,
+                                  SimulationRun.FixtureSource fixtureSource) implements CompiledFixture {
         private CompiledReturn { output = output.deepCopy(); }
+        @Override public JsonNode output() { return output.deepCopy(); }
+    }
+
+    private record ResolvedMaterial(JsonNode output, SimulationRun.FixtureSource source) {
+        private ResolvedMaterial { output = output.deepCopy(); }
+        @Override public JsonNode output() { return output.deepCopy(); }
+    }
+
+    private record ResolvedReturn(FixtureSetCommand.Control control, JsonNode output,
+                                  SimulationRun.FixtureSource source) {
+        private ResolvedReturn { output = output.deepCopy(); }
         @Override public JsonNode output() { return output.deepCopy(); }
     }
 

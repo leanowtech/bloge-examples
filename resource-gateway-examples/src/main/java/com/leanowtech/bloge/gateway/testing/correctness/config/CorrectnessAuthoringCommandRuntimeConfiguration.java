@@ -363,7 +363,8 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
      */
     @Bean
     @ConditionalOnBean({FixtureAssetRepository.class, FixtureMaterialResolver.class})
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean(
+            com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver.class)
             com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver
             governedFixtureSimulationResolver(
                     FixtureAssetRepository fixtures, FixtureMaterialResolver materials,
@@ -374,7 +375,8 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
 
     /** Composes authenticated correctness services behind the visual simulation port. */
     @Bean
-    @ConditionalOnBean({VisualGraphSimulationService.class, IntegrationRequestAuthenticator.class})
+    @ConditionalOnBean({VisualGraphSimulationService.class, IntegrationRequestAuthenticator.class,
+            com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver.class})
     @ConditionalOnMissingBean(com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureSimulationPort.class)
     com.leanowtech.bloge.gateway.visualadapter.GovernedFixtureSimulationAdapter
             governedFixtureSimulationAdapter(

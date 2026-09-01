@@ -132,19 +132,23 @@ public final class ReusableFlowFixtureShareModule {
         if (!(control.target() instanceof FixtureSetCommand.Target.Subject)
                 || !(control.behavior() instanceof FixtureSetCommand.Behavior.Return returned)
                 || !(returned.material() instanceof FixtureSetCommand.Material.Inline inline)
-                || control.fidelity() != null
-                && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL) {
+                || (control.fidelity() != null
+                && control.fidelity() != FixtureSetCommand.Fidelity.OUTPUT_LEVEL)
+                || fixtureCase.expect() == null
+                || !fixtureCase.expect().output().equals(inline.value())) {
             throw failure(ApiFixtureSetAuthoringFailure.Code.VALIDATION);
         }
         String assetId = governedAssetId(source, revision, fixtureCase.caseId());
-        FixtureSetCommand.Material.FixtureAsset asset = materials.write(
+        FixtureSetShareMaterialWriter.Result protectedMaterial = materials.write(
                 new FixtureSetShareMaterialWriter.Request(
                         assetId, source, revision, reviewRequestId, fixtureCase.caseId(),
                         fixtureCase.name(), version.contract().output(), policy, inline.value()), identity);
         FixtureSetCommand.Control protectedControl = new FixtureSetCommand.Control(
-                control.target(), FixtureSetCommand.Behavior.returned(asset), control.fidelity());
+                control.target(), FixtureSetCommand.Behavior.returned(protectedMaterial.material()),
+                control.fidelity());
         return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
-                fixtureCase.input(), List.of(protectedControl), fixtureCase.expect());
+                fixtureCase.input(), List.of(protectedControl),
+                new FixtureSetCommand.Expect(protectedMaterial.safeOutput()));
     }
 
     private static String governedAssetId(

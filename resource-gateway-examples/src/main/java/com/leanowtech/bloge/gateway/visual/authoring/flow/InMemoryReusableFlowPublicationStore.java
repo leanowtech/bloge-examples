@@ -72,6 +72,18 @@ public final class InMemoryReusableFlowPublicationStore implements ReusableFlowP
         return Optional.ofNullable(versions.get(new VersionKey(scope, publicationId, revision)));
     }
 
+    @Override public synchronized Optional<ReusableFlowVersion> findLatestVersion(
+            AuthoringScope scope, String flowId) {
+        if (scope == null || flowId == null) return Optional.empty();
+        String publicationId = identities.get(new FlowKey(scope, flowId));
+        if (publicationId == null) return Optional.empty();
+        return versions.entrySet().stream()
+                .filter(entry -> entry.getKey().scope().equals(scope)
+                        && entry.getKey().publicationId().equals(publicationId))
+                .max(java.util.Comparator.comparingInt(entry -> entry.getKey().revision()))
+                .map(Map.Entry::getValue);
+    }
+
     private static void requireIntent(ReusableFlowPublishIntent intent) {
         if (intent == null || !intent.flowId().equals(intent.draft().flowId())
                 || intent.actorId().isBlank() || intent.idempotencyKey().isBlank()

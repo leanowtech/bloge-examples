@@ -38,7 +38,8 @@ class ApiSimulationControllerTest {
     @Test
     void executesWithTrustedScopeAndReturnsReplayEvidence() throws Exception {
         SimulationModule module = mock(SimulationModule.class);
-        when(module.execute(any(), any(), any())).thenReturn(new SimulationExecutionResult(run(), false));
+        when(module.execute(any(), any(), any(), any()))
+                .thenReturn(new SimulationExecutionResult(run(), false));
 
         mvc(module).perform(post("/api/authoring/simulations")
                         .contentType("application/json")
@@ -58,7 +59,7 @@ class ApiSimulationControllerTest {
                 .andExpect(jsonPath("$.subject.resourceId").value("orders"));
 
         verify(module).execute(eq(new AuthoringScope("tenant-a", "project-a", "test")),
-                eq("simulation-key"), any());
+                eq("simulation-key"), any(), any());
     }
 
     @Test
@@ -89,13 +90,13 @@ class ApiSimulationControllerTest {
                 .andExpect(jsonPath("$.code")
                         .value("RG.AUTHORING.SIMULATION.IDEMPOTENCY_KEY_REQUIRED"));
 
-        verify(module, never()).execute(any(), any(), any());
+        verify(module, never()).execute(any(), any(), any(), any());
     }
 
     @Test
     void unsupportedSourceUsesPayloadFreeUnifiedProblem() throws Exception {
         SimulationModule module = mock(SimulationModule.class);
-        when(module.execute(any(), any(), any()))
+        when(module.execute(any(), any(), any(), any()))
                 .thenThrow(new SimulationFailure(SimulationFailure.Code.UNSUPPORTED));
 
         mvc(module).perform(post("/api/authoring/simulations")

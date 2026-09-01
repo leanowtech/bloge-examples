@@ -429,6 +429,28 @@ creator-to-reviewer handoff, reaches `TEAM_AVAILABLE`, restores enabled executio
 skipped: 35` and `BUILD SUCCESS`. This local evidence does not claim external Vault certification, remote authenticated
 OpenAPI egress, or deployment migration evidence on a production PostgreSQL service.
 
+The simplified workbench now has one measured end-to-end authoring task. In a single real Chrome session, an author
+imports two inline OpenAPI GET operations, saves their exact API Resources and private Default Fixtures, composes a
+two-node Tool DAG, publishes one immutable Flow Version, authors a whole-Flow Fixture against that version, shares
+its protected material with `/customerLabel` redaction, hands the pending revision to a visibly signed-in independent
+reviewer, reaches `TEAM_AVAILABLE`, and runs the reviewed Fixture. The simulation module resolves protected material
+only through the exact ACTIVE Fixture Asset authority and trusted identity; it emits `FIXTURE_ASSET` source plus a
+passed governance verdict and one synthetic whole-subject evidence node, validates the safe redacted output against
+the immutable Flow contract, and performs no API-node egress. The page reloads the exact server-authoritative latest
+Flow Version for Fixture authoring instead of falling back to the mutable draft after publication, and the API page
+discovers committed payload-free Connections for visible selection instead of relying on a hidden identifier. The
+shared revision derives its expected output from the same exact redacted material, so the final visible evidence is
+`SUCCEEDED`, `SIMULATED_ONLY`, contract/assertions/governance `PASSED`, and
+`subject · MOCKED · FIXTURE_ASSET · OUTPUT_LEVEL · FIXTURE · NO_EGRESS`. The browser gate completes in
+**27 primary actions** and **9.899 seconds** of measured page-task time (**1/1 green**, 21.39 seconds including
+startup). Focused frontend tests are **27/27 green**; the simulation/publication/share backend gate is **55/55 green**;
+i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates pass.
+The final serial `clean verify` completed with `Tests run: 8,229; failures: 0; errors: 0; skipped: 36` and
+`BUILD SUCCESS` in 11:55.
+Deployment-specific remote authenticated OpenAPI egress,
+external Vault certification, and real PostgreSQL migration certification remain separate external-environment
+evidence rather than hidden local fallbacks.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

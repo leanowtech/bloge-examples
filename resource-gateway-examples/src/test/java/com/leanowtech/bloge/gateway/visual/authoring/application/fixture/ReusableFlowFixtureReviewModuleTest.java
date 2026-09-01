@@ -43,8 +43,9 @@ class ReusableFlowFixtureReviewModuleTest {
         when(publications.findVersion(SCOPE, version.publicationId(), version.revision()))
                 .thenReturn(java.util.Optional.of(version));
         var shared = new ReusableFlowFixtureShareModule(store, publications,
-                (request, identity) -> new FixtureSetCommand.Material.FixtureAsset(
-                        request.fixtureAssetId(), 2, fingerprint('a'))).share(
+                (request, identity) -> new FixtureSetShareMaterialWriter.Result(
+                        new FixtureSetCommand.Material.FixtureAsset(
+                                request.fixtureAssetId(), 2, fingerprint('a')), output())).share(
                 identity("author"), "cases", saved.strongEtag(), "share", share(source));
         AtomicInteger reviews = new AtomicInteger();
         var module = new ReusableFlowFixtureReviewModule(store, (request, reviewer) -> {
@@ -88,8 +89,9 @@ class ReusableFlowFixtureReviewModuleTest {
         when(publications.findVersion(SCOPE, version.publicationId(), version.revision()))
                 .thenReturn(java.util.Optional.of(version));
         var shared = new ReusableFlowFixtureShareModule(store, publications,
-                (request, identity) -> new FixtureSetCommand.Material.FixtureAsset(
-                        request.fixtureAssetId(), 2, fingerprint('a'))).share(
+                (request, identity) -> new FixtureSetShareMaterialWriter.Result(
+                        new FixtureSetCommand.Material.FixtureAsset(
+                                request.fixtureAssetId(), 2, fingerprint('a')), output())).share(
                 identity("author"), "cases", saved.strongEtag(), "share", share(source));
         var module = new ReusableFlowFixtureReviewModule(store, (request, reviewer) -> List.of());
 

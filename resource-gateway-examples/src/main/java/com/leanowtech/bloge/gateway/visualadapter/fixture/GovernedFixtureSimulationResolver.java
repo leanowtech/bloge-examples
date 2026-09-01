@@ -12,6 +12,10 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtur
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFailure;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationIdentity;
 import com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureRef;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureResolutionException;
@@ -23,9 +27,10 @@ import java.util.Objects;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /** Resolves exact ACTIVE governed Fixture metadata and protected output for simulation only. */
-public final class GovernedFixtureSimulationResolver {
+public final class GovernedFixtureSimulationResolver implements FixtureAssetSimulationResolver {
     private final FixtureAssetRepository fixtures;
     private final FixtureMaterialResolver materials;
     private final VisualOperatorCatalog catalog;
@@ -80,6 +85,34 @@ public final class GovernedFixtureSimulationResolver {
         if (!resolved.receipt().schemaRef().equals(descriptor.schemaRef())) throw blocked(
                 "Governed Fixture material and descriptor schema closure is not exact");
         return new NodeFixture(resolved.payload());
+    }
+
+    /** Resolves one authoring Fixture Asset through the same ACTIVE material boundary. */
+    @Override
+    public com.fasterxml.jackson.databind.JsonNode resolve(
+            SimulationIdentity identity, FixtureSetCommand.Material.FixtureAsset material) {
+        if (identity == null || material == null) {
+            throw new SimulationFailure(SimulationFailure.Code.VALIDATION);
+        }
+        EnterpriseScope scope = new EnterpriseScope(
+                identity.scope().tenantId(), identity.organizationId(), identity.scope().projectId(),
+                identity.scope().environmentId(), identity.region());
+        IntegrationRequestContext context = new IntegrationRequestContext(
+                identity.scope().tenantId(), identity.organizationId(), identity.scope().projectId(),
+                identity.scope().environmentId(), identity.region(), identity.actorType(),
+                identity.actorId(), "", FixtureMaterialService.READ_PURPOSE,
+                identity.correlationId(), Set.of(), identity.clearance(), "");
+        try {
+            return mapper.valueToTree(resolve(scope, new GovernedFixtureRef(
+                    material.fixtureAssetId(), material.revision(), material.schemaFingerprint()),
+                    context).output());
+        } catch (VisualGovernedFixtureResolutionException failure) {
+            throw new SimulationFailure(switch (failure.status()) {
+                case 400 -> SimulationFailure.Code.VALIDATION;
+                case 404 -> SimulationFailure.Code.NOT_FOUND;
+                default -> SimulationFailure.Code.INTEGRITY;
+            });
+        }
     }
 
     /**

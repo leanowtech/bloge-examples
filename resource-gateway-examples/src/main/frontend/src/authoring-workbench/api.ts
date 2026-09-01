@@ -6,6 +6,7 @@ import type {
   FixtureSetSummary,
   OpenApiPreview,
   SimulationRun,
+  ApiConnectionView,
 } from './model';
 
 export type AuthoringWorkbenchTransport = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -14,6 +15,15 @@ export interface StoredResponse<T> {
   value: T;
   strongEtag: string;
   replayed: boolean;
+}
+
+/** Lists safe committed Connections for visible selection on the API object page. */
+export async function listApiConnections(
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<ApiConnectionView[]> {
+  return body(await transport('/api/authoring/connections', {
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+  }));
 }
 
 /** Previews inline OpenAPI operations without persistence or remote egress. */

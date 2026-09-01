@@ -195,6 +195,12 @@ public class ReusableFlowFixtureModuleTest {
                 return SCOPE.equals(scope) && version.publicationId().equals(publicationId)
                         && version.revision() == revision ? Optional.of(version) : Optional.empty();
             }
+
+            @Override public Optional<ReusableFlowVersion> findLatestVersion(
+                    AuthoringScope scope, String flowId) {
+                return SCOPE.equals(scope) && version.flowId().equals(flowId)
+                        ? Optional.of(version) : Optional.empty();
+            }
         };
     }
 

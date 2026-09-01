@@ -42,8 +42,9 @@ class ReusableFlowFixtureShareModuleTest {
             writes.incrementAndGet();
             assertThat(request.payload()).isEqualTo(output());
             assertThat(request.policy().classification()).isEqualTo("CONFIDENTIAL");
-            return new FixtureSetCommand.Material.FixtureAsset(
-                    request.fixtureAssetId(), 2, fingerprint('a'));
+            return new FixtureSetShareMaterialWriter.Result(
+                    new FixtureSetCommand.Material.FixtureAsset(
+                            request.fixtureAssetId(), 2, fingerprint('a')), output());
         };
         ReusableFlowFixtureShareModule module = new ReusableFlowFixtureShareModule(
                 store, publications, writer);
@@ -57,6 +58,7 @@ class ReusableFlowFixtureShareModuleTest {
                 .isInstanceOfSatisfying(FixtureSetCommand.Behavior.Return.class,
                         returned -> assertThat(returned.material())
                                 .isInstanceOf(FixtureSetCommand.Material.FixtureAsset.class));
+        assertThat(result.view().cases().getFirst().expect().output()).isEqualTo(output());
         assertThat(replay.replayed()).isTrue();
         assertThat(writes).hasValue(1);
     }

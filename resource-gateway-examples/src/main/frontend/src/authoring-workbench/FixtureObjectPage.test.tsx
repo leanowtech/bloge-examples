@@ -57,8 +57,11 @@ describe('Fixture object page', () => {
     });
     vi.mocked(flowApi.simulateFixtureSetCase).mockResolvedValue({
       schemaVersion: 'bloge.simulationRun.v1', runId: 'run-fixture-2', status: 'SUCCEEDED',
-      output: { result: 'new' }, nodes: [],
-      verdicts: { execution: 'SIMULATED_ONLY', contract: 'PASSED', assertions: 'PASSED', governance: 'NOT_CHECKED' },
+      output: { result: 'new' }, nodes: [{
+        nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'FIXTURE_ASSET',
+        fidelity: 'OUTPUT_LEVEL', egress: { decision: 'FIXTURE', attempted: false },
+      }],
+      verdicts: { execution: 'SIMULATED_ONLY', contract: 'PASSED', assertions: 'PASSED', governance: 'PASSED' },
       diagnostics: [],
     });
 
@@ -84,6 +87,15 @@ describe('Fixture object page', () => {
       'overview.default', 2, 'default', expect.stringMatching(/^simulate-fixture:overview.default-2-default:/),
     );
     expect(element('fixture-simulation-output').textContent).toContain('new');
+    expect(element('fixture-simulation-status').textContent).toBe('SUCCEEDED');
+    expect(element('fixture-simulation-execution').textContent).toBe('SIMULATED_ONLY');
+    expect(element('fixture-simulation-contract').textContent).toBe('PASSED');
+    expect(element('fixture-simulation-assertions').textContent).toBe('PASSED');
+    expect(element('fixture-simulation-governance').textContent).toBe('PASSED');
+    const evidence = element('fixture-simulation-node:subject').textContent;
+    for (const value of ['MOCKED', 'FIXTURE_ASSET', 'OUTPUT_LEVEL', 'FIXTURE', 'NO_EGRESS']) {
+      expect(evidence).toContain(value);
+    }
   });
 
   it('keeps an API Resource Default Fixture read-only while allowing exact simulation', async () => {

@@ -85,6 +85,35 @@ public final class JdbcReusableFlowPublicationStore implements ReusableFlowPubli
         }
     }
 
+    @Override public Optional<ReusableFlowVersion> findLatestVersion(
+            AuthoringScope scope, String flowId) {
+        if (scope == null || flowId == null) return Optional.empty();
+        try {
+            List<VersionRow> rows = jdbc.query("""
+                    SELECT v.publication_id, v.revision, v.flow_id, v.version_fingerprint,
+                           v.source_draft_id, v.source_revision, v.source_fingerprint,
+                           v.version_json, v.receipt_json
+                      FROM rg_authoring_flow_publication_identities i
+                      JOIN rg_authoring_flow_versions v
+                        ON v.tenant_id=i.tenant_id AND v.project_id=i.project_id
+                       AND v.environment_id=i.environment_id AND v.publication_id=i.publication_id
+                     WHERE i.tenant_id=? AND i.project_id=? AND i.environment_id=? AND i.flow_id=?
+                       AND v.status='PUBLISHED'
+                     ORDER BY v.revision DESC
+                     LIMIT 1
+                    """, (rs, row) -> new VersionRow(scope, rs.getString(1),
+                            Math.toIntExact(rs.getLong(2)), rs.getString(3), rs.getString(4),
+                            rs.getString(5), Math.toIntExact(rs.getLong(6)), rs.getString(7),
+                            rs.getString(8), rs.getString(9)), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), flowId);
+            return rows.isEmpty() ? Optional.empty() : Optional.of(decode(rows.getFirst()).version());
+        } catch (ReusableFlowFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
+        }
+    }
+
     private ReusableFlowPublishResult publishInTransaction(ReusableFlowPublishIntent intent) {
         Optional<CommandRow> prior = command(intent, true);
         if (prior.isPresent()) return replay(intent, prior.get());

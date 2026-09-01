@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCase
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
 import org.junit.jupiter.api.Test;
@@ -56,5 +57,20 @@ class ApiSimulationApplicationConfigurationTest {
                 .withBean(SimulationRunStore.class, () -> mock(SimulationRunStore.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
                 .run(context -> assertThat(context).hasSingleBean(SimulationModule.class));
+    }
+
+    @Test
+    void enabledModuleAcceptsOneCustomProtectedFixtureResolver() {
+        runner.withPropertyValues("gateway.authoring.api-resource.enabled=true")
+                .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class))
+                .withBean(ApiFixtureSetCommitStore.class, () -> mock(ApiFixtureSetCommitStore.class))
+                .withBean(SimulationRunStore.class, () -> mock(SimulationRunStore.class))
+                .withBean(FixtureAssetSimulationResolver.class,
+                        () -> mock(FixtureAssetSimulationResolver.class))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(SimulationModule.class);
+                    assertThat(context).hasSingleBean(FixtureAssetSimulationResolver.class);
+                });
     }
 }

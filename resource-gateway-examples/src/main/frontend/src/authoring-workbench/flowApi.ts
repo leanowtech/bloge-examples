@@ -9,6 +9,8 @@ import type {
   FixtureReviewReceipt,
   FixtureSetView,
   FlowDraftRef,
+  FlowVersionRef,
+  ReusableFlowVersion,
   ReusableFlowCommand,
   ReusableFlowDraft,
   ReusableFlowPublishReceipt,
@@ -73,17 +75,31 @@ export async function readFlowFixture(
   ));
 }
 
-/** Discovers payload-free Fixtures for one exact Flow draft revision. */
-export async function listFlowDraftFixtures(
-  subject: FlowDraftRef, transport: AuthoringWorkbenchTransport = fetch,
+/** Discovers payload-free Fixtures for one exact draft or immutable version Subject. */
+export async function listFlowFixtures(
+  subject: FlowDraftRef | FlowVersionRef,
+  transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<FixtureSetSummary[]> {
   const query = new URLSearchParams({
-    subjectKind: 'FLOW_DRAFT', subjectId: subject.draftId,
+    subjectKind: subject.kind,
+    subjectId: subject.kind === 'FLOW_DRAFT' ? subject.draftId : subject.publicationId,
     subjectRevision: String(subject.revision), subjectFingerprint: subject.fingerprint,
   });
   return body(await transport(`/api/authoring/fixture-sets?${query}`, {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   }));
+}
+
+/** Reads the latest immutable server-owned version for a Flow, when one exists. */
+export async function readLatestFlowVersion(
+  flowId: string, transport: AuthoringWorkbenchTransport = fetch,
+): Promise<ReusableFlowVersion | null> {
+  const response = await transport(
+    `/api/authoring/flows/${encodeURIComponent(flowId)}/versions/latest`,
+    { headers: integrationRequestHeaders('API_RESOURCE_AUTHORING') },
+  );
+  if (response.status === 404) return null;
+  return body(response);
 }
 
 /** Publishes one exact validated Flow draft into the reusable composition catalog. */

@@ -22,6 +22,15 @@ export interface ApiResourceFormDraft {
   importedResource: ApiResourceSaveCommand['resource'] | null;
 }
 
+export interface ApiConnectionView {
+  schemaVersion: 'bloge.apiConnectionView.v1';
+  connectionId: string;
+  revision: number;
+  displayName: string;
+  baseUrl: string;
+  auth: { kind: string; configured: boolean };
+}
+
 export interface ApiResourceBinding {
   from: string;
   to: { location: 'PATH' | 'QUERY' | 'HEADER' | 'BODY'; name: string };
@@ -119,6 +128,7 @@ export interface SimulationRun {
     execution: 'REAL' | 'MOCKED';
     fixtureSource: string;
     fidelity?: string;
+    egress: { decision: string; attempted: boolean };
   }>;
   verdicts: {
     execution: string;

@@ -63,14 +63,26 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.Fixture
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureReviewModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.application.connection.ApiConnectionAuthoringRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.application.resource.ApiResourceAuthoringFacade;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.CompositeFixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishIntent;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveIntent;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
@@ -81,6 +93,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.InMemoryApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.InMemorySimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
@@ -90,7 +103,14 @@ import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.ApiFixtureSetAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetShareMaterialWriter;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetReviewMaterialGate;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringProblemHandler;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiConnectionStoreResourceProjectionResolver;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiResourceAuthoringProblemHandler;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.DefaultApiResourceProjectionCompiler;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.OpenApiPreviewController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 
@@ -135,6 +155,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.core.Ordered;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -164,6 +185,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import jakarta.servlet.FilterChain;
@@ -343,6 +365,104 @@ class VisualAuthoringBrowserDomTest {
             return new InMemoryReusableFlowPublicationStore();
         }
 
+        /** Seeds one payload-free Connection used by the task-oriented API object page. */
+        @Bean
+        InMemoryApiConnectionCommitStore browserApiConnectionAuthoringStore(ObjectMapper mapper) {
+            ApiConnectionDecisions decisions = new ApiConnectionDecisions(mapper);
+            InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore(
+                    Clock.systemUTC(), decisions, Duration.ofSeconds(30), mapper);
+            new ApiConnectionAuthoringFacade(store, decisions).save(
+                    new ApiConnectionAuthoringRequest(
+                            new AuthoringScope(BROWSER_FIXTURE_SCOPE.tenantId(),
+                                    BROWSER_FIXTURE_SCOPE.projectId(), BROWSER_FIXTURE_SCOPE.environment()),
+                            "browser-author", "crm", "browser-crm-seed",
+                            ApiConnectionAuthoringPrecondition.create(),
+                            new ApiConnectionCommand("Browser CRM", "https://api.example.test",
+                                    ApiConnectionCommand.Auth.none())));
+            return store;
+        }
+
+        /** Reads the visibly selected Connection through the production application boundary. */
+        @Bean
+        ApiConnectionAuthoringFacade browserApiConnectionAuthoringFacade(
+                InMemoryApiConnectionCommitStore connections, ObjectMapper mapper) {
+            return new ApiConnectionAuthoringFacade(connections, new ApiConnectionDecisions(mapper));
+        }
+
+        /** Exposes the production authenticated Connection listing in the browser context. */
+        @Bean
+        ApiConnectionAuthoringController browserApiConnectionAuthoringController(
+                ApiConnectionAuthoringFacade facade,
+                IntegrationRequestAuthenticator authenticator,
+                ObjectMapper mapper) {
+            return new ApiConnectionAuthoringController(facade, authenticator, mapper);
+        }
+
+        /** Holds API Resource authority shared by the object-page, DAG compiler, and simulator. */
+        @Bean
+        InMemoryApiResourceCommitStore browserApiResourceCommitStore(
+                InMemoryApiConnectionCommitStore connections, ObjectMapper mapper) {
+            ApiResourceDecisions decisions = new ApiResourceDecisions(mapper);
+            return new InMemoryApiResourceCommitStore(
+                    Clock.systemUTC(), Duration.ofSeconds(30), decisions,
+                    new DefaultApiResourceProjectionCompiler(
+                            new ApiConnectionStoreResourceProjectionResolver(connections)));
+        }
+
+        /** Holds generated API example Fixtures until their outer Resource receipt commits. */
+        @Bean
+        InMemoryApiFixtureSetCommitStore browserDefaultFixtureSetCommitStore() {
+            return new InMemoryApiFixtureSetCommitStore();
+        }
+
+        /** Exposes compound Resource + Default Fixture persistence through the production facade. */
+        @Bean
+        ApiResourceAuthoringFacade browserApiResourceAuthoringFacade(
+                InMemoryApiResourceCommitStore resources,
+                InMemoryApiConnectionCommitStore connections,
+                InMemoryApiFixtureSetCommitStore fixtures,
+                ObjectMapper mapper) {
+            return new ApiResourceAuthoringFacade(resources, connections,
+                    new ApiResourceDecisions(mapper), fixtures,
+                    new DefaultFixtureSetMaterializer(), TransactionOperations.withoutTransaction());
+        }
+
+        /** Exposes the production authenticated API Resource transport in the browser context. */
+        @Bean
+        ApiResourceAuthoringController browserApiResourceAuthoringController(
+                ApiResourceAuthoringFacade facade,
+                IntegrationRequestAuthenticator authenticator,
+                ObjectMapper mapper) {
+            return new ApiResourceAuthoringController(facade, authenticator, mapper);
+        }
+
+        /** Compiles visible API-only DAGs against the same committed Resource authority. */
+        @Bean
+        ReusableFlowModule browserReusableFlowModule(
+                InMemoryApiResourceCommitStore resources,
+                InMemoryReusableFlowDraftStore drafts,
+                InMemoryReusableFlowPublicationStore publications) {
+            return new ReusableFlowModule(
+                    new ReusableFlowCompiler(
+                            new ApiResourceComposableCatalog(resources, publications)),
+                    drafts, publications);
+        }
+
+        /** Exposes the production authenticated reusable Flow transport in the browser context. */
+        @Bean
+        ReusableFlowAuthoringController browserReusableFlowAuthoringController(
+                ReusableFlowModule module,
+                IntegrationRequestAuthenticator authenticator,
+                ObjectMapper mapper) {
+            return new ReusableFlowAuthoringController(module, authenticator, mapper);
+        }
+
+        /** Maps visible reusable Flow failures to the production payload-free Problem surface. */
+        @Bean
+        ReusableFlowAuthoringProblemHandler browserReusableFlowAuthoringProblemHandler() {
+            return new ReusableFlowAuthoringProblemHandler();
+        }
+
         /** Holds independently authored Fixture revisions exercised through production HTTP. */
         @Bean
         InMemoryStandaloneFixtureSetStore browserStandaloneFixtureSetStore() {
@@ -416,15 +536,15 @@ class VisualAuthoringBrowserDomTest {
         /** Executes exact Draft Fixture returns through the production Simulation module. */
         @Bean
         SimulationModule browserApiSimulationModule(
+                InMemoryApiResourceCommitStore resources,
+                InMemoryApiFixtureSetCommitStore generatedFixtures,
                 InMemoryStandaloneFixtureSetStore fixtures,
                 InMemoryReusableFlowPublicationStore publications,
-                InMemoryReusableFlowDraftStore drafts) {
-            InMemoryApiResourceCommitStore resources = new InMemoryApiResourceCommitStore(
-                    Clock.systemUTC(), Duration.ofSeconds(30),
-                    (scope, resource) -> {
-                        throw new AssertionError("Flow Draft Fixture simulation must not resolve an API Resource");
-                    });
-            return new SimulationModule(resources, fixtures, publications, drafts, null,
+                InMemoryReusableFlowDraftStore drafts,
+                FixtureAssetSimulationResolver fixtureAssets) {
+            return new SimulationModule(resources,
+                    new CompositeFixtureSetAuthorityReader(List.of(generatedFixtures, fixtures)),
+                    new SimulationModule.Authorities(publications, drafts, null, fixtureAssets),
                     new InMemorySimulationRunStore());
         }
 
@@ -543,7 +663,7 @@ class VisualAuthoringBrowserDomTest {
          * same resolver; this fallback keeps the browser path authenticated and payload-free.
          */
         @Bean
-        @ConditionalOnMissingBean(GovernedFixtureSimulationResolver.class)
+        @ConditionalOnMissingBean(FixtureAssetSimulationResolver.class)
         GovernedFixtureSimulationResolver browserGovernedFixtureSimulationResolver(
                 FixtureAssetRepository fixtures,
                 FixtureMaterialResolver materials,
@@ -1241,6 +1361,198 @@ class VisualAuthoringBrowserDomTest {
                 .getText()).contains("$.customerId", "PATH:customerId");
 
         driver.manage().window().setSize(new Dimension(390, 844));
+        long scrollWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.scrollWidth")).longValue();
+        long clientWidth = ((Number) ((JavascriptExecutor) driver)
+                .executeScript("return document.documentElement.clientWidth")).longValue();
+        assertThat(scrollWidth).isLessThanOrEqualTo(clientWidth + 1);
+    }
+
+    /**
+     * Completes the simple object model as one bounded task instead of visiting feature demos.
+     *
+     * <p>The counter includes only visible primary buttons and links. Text entry and the browser's
+     * new-tab gesture are deliberately excluded. Every product mutation still travels through the
+     * production HTTP controllers and the reviewer handoff uses the visible same-origin sign-in.</p>
+     */
+    @Test
+    @Timeout(90)
+    void simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions() {
+        assumeAuthoringWorkbenchBundlePresent();
+        driver = newChromeDriverOrSkip();
+        driver.manage().window().setSize(new Dimension(1280, 900));
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        AtomicInteger actions = new AtomicInteger();
+        String suffix = Long.toUnsignedString(System.nanoTime(), 36);
+        String profileId = "profile" + suffix;
+        String ordersId = "orders" + suffix;
+        String flowId = "customer-tool-" + suffix;
+        String fixtureSetId = flowId + ".default";
+        AuthoringScope scope = new AuthoringScope("tenant-a", "local", "test");
+
+        driver.get("http://localhost:" + port + "/workbench/");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        Instant started = Instant.now();
+
+        trackedClick(wait, By.cssSelector("[data-testid='create-api-resource']"), actions);
+        saveApiResourceFromOpenApi(wait, actions, profileId, """
+                openapi: 3.0.3
+                info: { title: Customer Profile API, version: 1.0.0 }
+                servers: [{ url: https://api.example.test }]
+                paths:
+                  /profiles/{customerId}:
+                    get:
+                      operationId: %s
+                      summary: Get customer profile
+                      parameters:
+                        - { in: path, name: customerId, required: true, schema: { type: string } }
+                      responses:
+                        '200':
+                          description: Profile
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  customerId: { type: string }
+                                  segment: { type: string }
+                                required: [customerId, segment]
+                """.formatted(profileId), "customerId");
+
+        trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        trackedClick(wait, By.cssSelector("[data-testid='create-api-resource']"), actions);
+        saveApiResourceFromOpenApi(wait, actions, ordersId, """
+                openapi: 3.0.3
+                info: { title: Customer Orders API, version: 1.0.0 }
+                servers: [{ url: https://api.example.test }]
+                paths:
+                  /orders/{customerId}:
+                    get:
+                      operationId: %s
+                      summary: Get customer orders
+                      parameters:
+                        - { in: path, name: customerId, required: true, schema: { type: string } }
+                      responses:
+                        '200':
+                          description: Orders
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  customerId: { type: string }
+                                  orderCount: { type: integer }
+                                  customerLabel: { type: string }
+                                required: [customerId, orderCount, customerLabel]
+                """.formatted(ordersId), "orderCount");
+
+        trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        trackedClick(wait, By.cssSelector("[data-testid='create-tool']"), actions);
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-name']"))), "Customer Order Tool");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-id']"))), flowId);
+
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-resource-id']"))), profileId);
+        trackedClick(wait, By.cssSelector("[data-testid='add-flow-resource']"), actions);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='flow-node-list']"), profileId));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-resource-id']"))), ordersId);
+        trackedClick(wait, By.cssSelector("[data-testid='add-flow-resource']"), actions);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='flow-node-list']"), ordersId));
+        trackedClick(wait, By.cssSelector("[data-testid='save-flow']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-fixture-panel']")));
+
+        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(4)"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='publish-flow']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-fixture-panel']")));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-fixture-input']"))),
+                "{\n  \"customerId\": \"customer-1\"\n}");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-fixture-output']"))),
+                "{\n  \"customerId\": \"customer-1\",\n  \"orderCount\": 2,\n"
+                        + "  \"customerLabel\": \"customer-1 orders\"\n}");
+        trackedClick(wait, By.cssSelector("[data-testid='save-flow-fixture']"), actions);
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-simulation-output']"))).getText())
+                .contains("\"orderCount\": 2");
+
+        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(2)"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='open-flow-fixture']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-object-page']")));
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-authority']")).getText())
+                .contains("Flow Version");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-share-redaction-paths']"))), "/customerLabel");
+        trackedClick(wait, By.cssSelector("[data-testid='share-fixture-object']"), actions);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='fixture-status']"), "SHARING_PENDING"));
+
+        trackedClick(wait, By.cssSelector("[data-testid='fixture-review-link']"), actions);
+        String reviewUrl = driver.getCurrentUrl();
+        driver.switchTo().newWindow(WindowType.TAB);
+        driver.get("http://localhost:" + port + "/test-auth/reviewer");
+        trackedClick(wait, By.cssSelector("[data-testid='test-sign-in-reviewer']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='test-reviewer-session']")));
+        driver.get(reviewUrl);
+        trackedClick(wait, By.cssSelector("[data-testid='fixture-review-redaction-reviewed']"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='fixture-review-schema-valid']"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='fixture-review-redaction-verified']"), actions);
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='fixture-review-comment']"))),
+                "Reviewer verified the reusable whole-flow Fixture");
+        trackedClick(wait, By.cssSelector("[data-testid='approve-fixture-object']"), actions);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='fixture-status']"), "TEAM_AVAILABLE"));
+        trackedClick(wait, By.cssSelector("[data-testid='run-fixture-case']"), actions);
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='fixture-simulation-output']"))).getText())
+                .contains("\"orderCount\": 2", "\"customerLabel\": \"[REDACTED]\"");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-status']")).getText())
+                .isEqualTo("SUCCEEDED");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-execution']")).getText())
+                .isEqualTo("SIMULATED_ONLY");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-contract']")).getText())
+                .isEqualTo("PASSED");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-assertions']")).getText())
+                .isEqualTo("PASSED");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-governance']")).getText())
+                .isEqualTo("PASSED");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-simulation-node:subject']")).getText())
+                .contains("COMPLETED", "MOCKED", "FIXTURE_ASSET", "OUTPUT_LEVEL", "FIXTURE", "NO_EGRESS");
+
+        var active = browserStandaloneFixtureSetStore.findHead(scope, fixtureSetId)
+                .orElseThrow(() -> new AssertionError("visible task did not persist its Fixture head"));
+        assertThat(active.generated().view().subject())
+                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.fixture
+                        .FixtureSubjectRef.FlowVersion.class);
+        FixtureSetCommand.Behavior.Return returned = (FixtureSetCommand.Behavior.Return)
+                active.generated().view().cases().getFirst().controls().getFirst().behavior();
+        FixtureSetCommand.Material.FixtureAsset material =
+                (FixtureSetCommand.Material.FixtureAsset) returned.material();
+        assertThat(fixtureAssetRepository.findHead(BROWSER_FIXTURE_SCOPE, material.fixtureAssetId())
+                .orElseThrow().descriptor().lifecycle())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
+
+        Duration elapsed = Duration.between(started, Instant.now());
+        assertThat(actions.get()).isEqualTo(27);
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(90));
+        System.out.printf("[simple-authoring-task] primaryActions=%d elapsedMs=%d%n",
+                actions.get(), elapsed.toMillis());
         long scrollWidth = ((Number) ((JavascriptExecutor) driver)
                 .executeScript("return document.documentElement.scrollWidth")).longValue();
         long clientWidth = ((Number) ((JavascriptExecutor) driver)
@@ -6473,6 +6785,37 @@ class VisualAuthoringBrowserDomTest {
                 return false;
             }
         });
+    }
+
+    /** Counts one visible primary action after Selenium completes its native click. */
+    private void trackedClick(WebDriverWait wait, By locator, AtomicInteger actions) {
+        click(wait, locator);
+        actions.incrementAndGet();
+    }
+
+    /** Imports, commits, and simulates one API Resource entirely through its object page. */
+    private void saveApiResourceFromOpenApi(WebDriverWait wait,
+                                            AtomicInteger actions,
+                                            String operationId,
+                                            String openApi,
+                                            String expectedOutputField) {
+        By connectionPicker = By.cssSelector("[data-testid='api-connection-id']");
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(connectionPicker, "CRM"));
+        selectByValue(wait, connectionPicker, "crm");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='openapi-document']"))), openApi);
+        trackedClick(wait, By.cssSelector("[data-testid='preview-openapi']"), actions);
+        trackedClick(wait, By.cssSelector(
+                "[data-testid='use-openapi-operation-" + operationId + "']"), actions);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='api-resource-id']"))
+                .getAttribute("value")).isEqualTo(operationId);
+        trackedClick(wait, By.cssSelector("[data-testid='save-and-simulate']"), actions);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='object-message']"),
+                "Resource and Default Fixture saved; simulation completed"));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simulation-output']"))).getText())
+                .contains(expectedOutputField);
     }
 
     private void importSampleOperatorLibrary(WebDriverWait wait) {

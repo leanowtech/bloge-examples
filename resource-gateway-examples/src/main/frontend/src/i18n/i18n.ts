@@ -47,6 +47,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Preview': '预览',
   'Use': '使用',
   'Choose an operation.': '选择一个操作。',
+  'Choose a Connection': '选择 Connection',
   'Transport bindings': '传输绑定',
   'API name': 'API 名称',
   'Connection ID': 'Connection ID',

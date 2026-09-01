@@ -126,6 +126,12 @@ public final class ReusableFlowModule {
         return publications.findVersion(scope, publicationId, revision);
     }
 
+    /** Reads the server-authoritative latest immutable version for one Flow identity. */
+    public Optional<ReusableFlowVersion> findLatestVersion(AuthoringScope scope, String flowId) {
+        if (publications == null) return Optional.empty();
+        return publications.findLatestVersion(scope, flowId);
+    }
+
     private static ReusableFlowCommand command(ReusableFlowDraft draft) {
         ReusableFlowCommand.Flow flow = new ReusableFlowCommand.Flow(draft.displayName(), draft.kind(),
                 draft.description(), draft.contract(), draft.graph(), draft.layout());

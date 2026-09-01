@@ -14,7 +14,7 @@ vi.mock('./api', async () => ({
 }));
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
-  readFlow: vi.fn(), readFlowFixture: vi.fn(), listFlowDraftFixtures: vi.fn(),
+  readFlow: vi.fn(), readLatestFlowVersion: vi.fn(), readFlowFixture: vi.fn(), listFlowFixtures: vi.fn(),
   saveFlow: vi.fn(), saveFlowFixture: vi.fn(), simulateFlowFixture: vi.fn(), publishFlow: vi.fn(),
 }));
 
@@ -28,6 +28,8 @@ describe('Tool and Solution object page', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    vi.mocked(flowApi.readLatestFlowVersion).mockResolvedValue(null);
+    vi.mocked(flowApi.listFlowFixtures).mockResolvedValue([]);
   });
 
   afterEach(async () => {
@@ -45,6 +47,13 @@ describe('Tool and Solution object page', () => {
       strongEtag: '"flow-r1"', replayed: false,
       value: { schemaVersion: 'bloge.reusableFlowSaveReceipt.v1', flowId: 'overview', draft: draftRef, validation: 'VALID' },
     });
+    const versionRef = {
+      kind: 'FLOW_VERSION' as const, publicationId: 'published-overview', revision: 1, fingerprint: hash('e'),
+    };
+    vi.mocked(flowApi.publishFlow).mockResolvedValue({
+      schemaVersion: 'bloge.reusableFlowPublishReceipt.v1', source: draftRef,
+      version: versionRef, catalog: 'AVAILABLE',
+    });
     vi.mocked(flowApi.saveFlowFixture).mockResolvedValue({
       strongEtag: '"fixture-r1"', replayed: false,
       value: {
@@ -54,7 +63,8 @@ describe('Tool and Solution object page', () => {
     });
     vi.mocked(flowApi.simulateFlowFixture).mockResolvedValue({
       schemaVersion: 'bloge.simulationRun.v1', runId: 'run-flow-1', status: 'SUCCEEDED', output: { orders: [] },
-      nodes: [{ nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'INLINE' }],
+      nodes: [{ nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'INLINE',
+        egress: { decision: 'FIXTURE', attempted: false } }],
       verdicts: { execution: 'SIMULATED_ONLY', contract: 'PASSED', assertions: 'PASSED', governance: 'NOT_CHECKED' },
       diagnostics: [],
     });
@@ -81,6 +91,10 @@ describe('Tool and Solution object page', () => {
     }), null, expect.stringMatching(/^save-flow:overview:/));
     expect(element('flow-fixture-panel')).toBeTruthy();
 
+    await act(async () => tab('Versions').click());
+    await act(async () => button('publish-flow').click());
+    expect(element('flow-fixture-panel')).toBeTruthy();
+
     await act(async () => {
       change('flow-fixture-input', '{"customerId":"c-1"}');
       change('flow-fixture-output', '{"orders":[]}');
@@ -89,7 +103,7 @@ describe('Tool and Solution object page', () => {
 
     expect(flowApi.saveFlowFixture).toHaveBeenCalledWith(
       'overview.default', expect.objectContaining({
-        subject: draftRef,
+        subject: versionRef,
         cases: [expect.objectContaining({ controls: [expect.objectContaining({ target: { kind: 'SUBJECT' } })] })],
       }), null, expect.stringMatching(/^save-flow-fixture:overview.default:/),
     );
@@ -124,7 +138,6 @@ describe('Tool and Solution object page', () => {
       },
     });
     vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
-    vi.mocked(flowApi.listFlowDraftFixtures).mockResolvedValue([]);
     vi.mocked(flowApi.publishFlow).mockResolvedValue({
       schemaVersion: 'bloge.reusableFlowPublishReceipt.v1',
       source: { kind: 'FLOW_DRAFT', draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
@@ -144,7 +157,45 @@ describe('Tool and Solution object page', () => {
       'overview', { kind: 'FLOW_DRAFT', draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
       expect.stringMatching(/^publish-flow:overview:/),
     );
+    expect(element('flow-fixture-panel')).toBeTruthy();
+    await act(async () => tab('Versions').click());
     expect(element('published-flow-version').textContent).toBe('published-overview@1');
+  });
+
+  it('reloads the exact published version before authoring a Fixture', async () => {
+    window.history.replaceState(null, '', '/workbench/?flowId=overview');
+    const profile = resource('profile', { customerId: 'string' }, { name: 'string' });
+    vi.mocked(flowApi.readFlow).mockResolvedValue({
+      strongEtag: '"flow-r2"', replayed: false,
+      value: {
+        schemaVersion: 'bloge.reusableFlowDraft.v1', flowId: 'overview', draftId: 'draft-1', revision: 2,
+        fingerprint: hash('c'), displayName: 'Overview', kind: 'TOOL', description: '', status: 'DRAFT',
+        contract: profile.contract,
+        graph: { nodes: [{
+          nodeId: 'step1', label: 'Profile',
+          use: { kind: 'API_RESOURCE', resourceId: 'profile', revision: 3, fingerprint: profile.fingerprint },
+          inputs: [],
+        }], output: { nodeId: 'step1', path: '$' } },
+        layout: { nodes: { step1: { x: 120, y: 160 } } },
+      },
+    });
+    vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
+    vi.mocked(flowApi.readLatestFlowVersion).mockResolvedValue({
+      schemaVersion: 'bloge.reusableFlowVersion.v1', publicationId: 'published-overview', revision: 3,
+      fingerprint: hash('e'), source: { draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
+      flowId: 'overview',
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />);
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(flowApi.listFlowFixtures).toHaveBeenCalledWith({
+      kind: 'FLOW_VERSION', publicationId: 'published-overview', revision: 3, fingerprint: hash('e'),
+    });
+    await act(async () => tab('Versions').click());
+    expect(element('published-flow-version').textContent).toBe('published-overview@3');
   });
 
   async function add(id: string) {

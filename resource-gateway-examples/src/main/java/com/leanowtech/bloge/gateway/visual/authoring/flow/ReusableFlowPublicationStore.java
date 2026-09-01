@@ -12,4 +12,7 @@ public interface ReusableFlowPublicationStore {
     /** Reads one exact immutable catalog version. */
     Optional<ReusableFlowVersion> findVersion(
             AuthoringScope scope, String publicationId, int revision);
+
+    /** Reads the latest immutable version for one stable Flow identity. */
+    Optional<ReusableFlowVersion> findLatestVersion(AuthoringScope scope, String flowId);
 }

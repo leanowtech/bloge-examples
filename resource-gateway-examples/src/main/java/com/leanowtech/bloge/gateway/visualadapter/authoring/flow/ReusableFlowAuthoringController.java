@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPreconditi
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublishResult;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
@@ -127,6 +128,19 @@ public final class ReusableFlowAuthoringController {
                 .body(result.receipt());
     }
 
+    /** Returns the server-authoritative latest immutable version for one Flow. */
+    @GetMapping(path = "/{flowId}/versions/latest", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ReusableFlowVersion> latestVersion(
+            @PathVariable String flowId, @RequestHeader HttpHeaders headers,
+            HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_REUSABLE_FLOW_READ, request);
+        ReusableFlowVersion version = module.findLatestVersion(trustedScope(context), flowId)
+                .orElseThrow(() -> notFound(context.correlationId()));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache").body(version);
+    }
+
     private IntegrationRequestContext authenticate(HttpHeaders headers, IntegrationOperation operation,
                                                      HttpServletRequest request) {
         IntegrationRequestContext context = authenticator.authenticate(headers, operation);
@@ -214,6 +228,12 @@ public final class ReusableFlowAuthoringController {
         return invalid("RG.AUTHORING.REUSABLE_FLOW.REQUEST_INVALID",
                 "The reusable Flow request headers or body are malformed.", correlationId, 400,
                 "urn:bloge:problem:bad-authoring-request");
+    }
+
+    private static IntegrationProblemException notFound(String correlationId) {
+        return invalid("RG.AUTHORING.REUSABLE_FLOW.VERSION_NOT_FOUND",
+                "No published Flow Version exists for this Flow.", correlationId, 404,
+                "urn:bloge:problem:authoring-resource-not-found");
     }
 
     private static IntegrationProblemException invalid(String code, String title, String correlationId,

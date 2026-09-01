@@ -8,8 +8,8 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 /** Protected material and governed catalog boundary used by Fixture sharing. */
 @FunctionalInterface
 public interface FixtureSetShareMaterialWriter {
-    /** Persists one Inline Return and returns only its exact payload-free asset reference. */
-    FixtureSetCommand.Material.FixtureAsset write(
+    /** Persists one Inline Return and returns its asset reference plus exact safe material output. */
+    Result write(
             Request request, FixtureShareIdentity identity);
 
     /** Returns a fail-closed port for deployments without protected material governance. */
@@ -18,6 +18,21 @@ public interface FixtureSetShareMaterialWriter {
             throw new ApiFixtureSetAuthoringFailure(
                     ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
         };
+    }
+
+    /** Exact payload-free asset coordinate and the redacted output safe for derived assertions. */
+    record Result(FixtureSetCommand.Material.FixtureAsset material,
+                  com.fasterxml.jackson.databind.JsonNode safeOutput) {
+        public Result {
+            if (material == null || safeOutput == null) {
+                throw new IllegalArgumentException("Fixture share material result is incomplete");
+            }
+            safeOutput = safeOutput.deepCopy();
+        }
+
+        @Override public com.fasterxml.jackson.databind.JsonNode safeOutput() {
+            return safeOutput.deepCopy();
+        }
     }
 
     /** Exact non-secret coordinates and the only payload allowed across the write boundary. */

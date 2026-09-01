@@ -305,9 +305,22 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
         <h2>{t('Simulation')}</h2>
         <div className="simulation-summary">
           <div><span>{t('Run')}</span><strong>{run.runId}</strong></div>
-          <div><span>{t('Status')}</span><strong>{run.status}</strong></div>
-          <div><span>{t('Execution')}</span><strong>{run.verdicts.execution}</strong></div>
+          <div><span>{t('Status')}</span><strong data-testid="fixture-simulation-status">{run.status}</strong></div>
+          <div><span>{t('Execution')}</span><strong data-testid="fixture-simulation-execution">
+            {run.verdicts.execution}</strong></div>
+          <div><span>{t('Contract')}</span><strong data-testid="fixture-simulation-contract">
+            {run.verdicts.contract}</strong></div>
+          <div><span>{t('Assertions')}</span><strong data-testid="fixture-simulation-assertions">
+            {run.verdicts.assertions}</strong></div>
+          <div><span>{t('Governance')}</span><strong data-testid="fixture-simulation-governance">
+            {run.verdicts.governance}</strong></div>
         </div>
+        {run.nodes.map((node) => <p key={node.nodeId}
+          data-testid={`fixture-simulation-node:${node.nodeId}`}>
+          {node.nodeId} · {node.status} · {node.execution} · {node.fixtureSource} ·
+          {' '}{node.fidelity ?? 'NOT_APPLICABLE'} · {node.egress.decision} ·
+          {' '}{node.egress.attempted ? 'EGRESS_ATTEMPTED' : 'NO_EGRESS'}
+        </p>)}
         <pre data-testid="fixture-simulation-output">{JSON.stringify(run.output ?? null, null, 2)}</pre>
       </section>}
       {message && <p className="object-message" role="status" data-testid="fixture-message">{message}</p>}

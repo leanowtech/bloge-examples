@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  listFlowDraftFixtures,
+  listFlowFixtures,
   publishFlow,
   readFixtureSet,
   reviewFixtureSet,
   readFlow,
+  readLatestFlowVersion,
   saveFixtureSet,
   shareFixtureSet,
   saveFlow,
@@ -39,7 +40,7 @@ describe('reusable Flow object transport', () => {
     const subject = { kind: 'FLOW_DRAFT' as const, draftId: 'draft-1', revision: 2, fingerprint: hash('a') };
 
     await saveFlowFixture('fixture-1', {} as FixtureSetCommand, null, 'fixture-key', transport);
-    await listFlowDraftFixtures(subject, transport);
+    await listFlowFixtures(subject, transport);
     await publishFlow('flow-1', subject, 'publish-key', transport);
 
     expect(new Headers(transport.mock.calls[0][1]?.headers).get('If-None-Match')).toBe('*');
@@ -47,6 +48,24 @@ describe('reusable Flow object transport', () => {
     expect(JSON.parse(String(transport.mock.calls[2][1]?.body))).toEqual({
       schemaVersion: 'bloge.reusableFlowPublishCommand.v1', source: subject,
     });
+  });
+
+  it('reads the latest immutable version and lists its exact Fixture Subject', async () => {
+    const transport = vi.fn()
+      .mockResolvedValueOnce(response({
+        schemaVersion: 'bloge.reusableFlowVersion.v1', publicationId: 'flow-v', revision: 2,
+      }))
+      .mockResolvedValueOnce(response([]));
+    const subject = {
+      kind: 'FLOW_VERSION' as const, publicationId: 'flow-v', revision: 2, fingerprint: hash('b'),
+    };
+
+    await readLatestFlowVersion('flow 1', transport);
+    await listFlowFixtures(subject, transport);
+
+    expect(transport.mock.calls[0][0]).toBe('/api/authoring/flows/flow%201/versions/latest');
+    expect(transport.mock.calls[1][0]).toContain('subjectKind=FLOW_VERSION');
+    expect(transport.mock.calls[1][0]).toContain('subjectId=flow-v');
   });
 
   it('reads, updates, and simulates an independently addressed Fixture', async () => {

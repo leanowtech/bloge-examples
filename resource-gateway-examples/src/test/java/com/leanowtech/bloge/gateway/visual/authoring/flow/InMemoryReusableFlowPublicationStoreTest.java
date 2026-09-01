@@ -37,6 +37,7 @@ class InMemoryReusableFlowPublicationStoreTest {
 
         ReusableFlowPublishResult otherActor = store.publish(intent(SCOPE, "bob", "key-1", FINGERPRINT));
         assertThat(otherActor.version().revision()).isEqualTo(2);
+        assertThat(store.findLatestVersion(SCOPE, "customer-tool")).contains(otherActor.version());
         AuthoringScope other = new AuthoringScope("tenant-b", "project-a", "test");
         ReusableFlowPublishResult otherScope = store.publish(intent(other, "alice", "key-1", FINGERPRINT));
         assertThat(otherScope.version().revision()).isEqualTo(1);

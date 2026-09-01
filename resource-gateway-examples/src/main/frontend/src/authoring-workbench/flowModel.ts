@@ -23,6 +23,15 @@ export interface FlowVersionRef {
   fingerprint: string;
 }
 
+export interface ReusableFlowVersion {
+  schemaVersion: 'bloge.reusableFlowVersion.v1';
+  publicationId: string;
+  revision: number;
+  fingerprint: string;
+  source: { draftId: string; revision: number; fingerprint: string };
+  flowId: string;
+}
+
 export interface ApiResourceRef {
   kind: 'API_RESOURCE';
   resourceId: string;
@@ -250,7 +259,7 @@ export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedAp
 
 /** Builds one explicit whole-flow RETURN case for the Fixture task on the object page. */
 export function buildFlowFixtureCommand(
-  subject: FlowDraftRef, displayName: string, inputSource: string, outputSource: string,
+  subject: FlowDraftRef | FlowVersionRef, displayName: string, inputSource: string, outputSource: string,
 ): FixtureSetCommand {
   const input = objectJson(inputSource, 'Fixture input');
   const output = objectJson(outputSource, 'Fixture output');

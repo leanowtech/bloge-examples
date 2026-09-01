@@ -61,6 +61,9 @@ class JdbcReusableFlowPublicationStoreTest {
 
         assertThat(second.version().publicationId()).isEqualTo(first.version().publicationId());
         assertThat(second.version().revision()).isEqualTo(2);
+        assertThat(fixture.publications().findLatestVersion(SCOPE, "tool")).contains(second.version());
+        assertThat(fixture.publications().findLatestVersion(
+                new AuthoringScope("tenant-b", "project-a", "test"), "tool")).isEmpty();
         assertThatThrownBy(() -> fixture.publications().publish(
                 intent(firstDraft.draft(), "publish-1", "sha256:" + "c".repeat(64))))
                 .isInstanceOf(ReusableFlowFailure.class)

@@ -24,6 +24,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialPr
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogCommandException;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialCommandException;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.MaterialAccessContext;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.ResolvedFixtureMaterial;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureShareIdentity;
@@ -57,7 +59,7 @@ public final class CorrectnessFixtureSetShareMaterialWriter
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    @Override public FixtureSetCommand.Material.FixtureAsset write(
+    @Override public Result write(
             Request request, FixtureShareIdentity identity) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(identity, "identity");
@@ -70,7 +72,7 @@ public final class CorrectnessFixtureSetShareMaterialWriter
         }
     }
 
-    private FixtureSetCommand.Material.FixtureAsset writeProtected(
+    private Result writeProtected(
             Request request, FixtureShareIdentity identity, IntegrationRequestContext context) {
         if (!(request.source().subject() instanceof FixtureSubjectRef.FlowVersion subject)) {
             throw new IllegalArgumentException("Shared Fixture requires an exact Flow Version subject");
@@ -101,6 +103,13 @@ public final class CorrectnessFixtureSetShareMaterialWriter
                 WriteRequest.SCHEMA_VERSION, request.fixtureAssetId(), 0, source,
                 FixtureSubject.SCENARIO, target, schemaRef, request.policy().classification(),
                 retention, redaction, mapper.convertValue(request.payload(), Object.class)), context);
+        ResolvedFixtureMaterial resolved = materials.resolve(
+                scope, receipt.materialRef(), new MaterialAccessContext(
+                        identity.actorId(), FixtureMaterialService.RESOLVE_PURPOSE,
+                        identity.correlationId(), identity.clearance()));
+        if (!receipt.equals(resolved.receipt())) {
+            throw new ApiFixtureSetAuthoringFailure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
+        }
         FixtureAssetDescriptor candidate = new FixtureAssetDescriptor(
                 FixtureAssetDescriptor.SCHEMA_VERSION, request.fixtureAssetId(), 0, scope,
                 request.caseName() + " shared Fixture", source, receipt.materialRef(), schemaRef,
@@ -111,9 +120,10 @@ public final class CorrectnessFixtureSetShareMaterialWriter
         var draft = catalog.saveDraft(0, candidate, owner);
         var proposed = catalog.submitForReview(
                 scope, request.fixtureAssetId(), draft.descriptor().revision(), owner);
-        return new FixtureSetCommand.Material.FixtureAsset(
+        return new Result(new FixtureSetCommand.Material.FixtureAsset(
                 proposed.descriptor().fixtureAssetId(),
-                Math.toIntExact(proposed.descriptor().revision()), schemaFingerprint);
+                Math.toIntExact(proposed.descriptor().revision()), schemaFingerprint),
+                mapper.valueToTree(resolved.payload()));
     }
 
     private static IntegrationRequestContext context(FixtureShareIdentity identity) {

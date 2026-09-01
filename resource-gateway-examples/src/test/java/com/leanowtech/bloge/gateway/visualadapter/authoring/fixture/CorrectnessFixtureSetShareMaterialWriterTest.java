@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialPr
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.WriteRequest;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.ResolvedFixtureMaterial;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureShareIdentity;
@@ -46,15 +47,21 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
         FixtureCatalogService catalog = mock(FixtureCatalogService.class);
         FixtureShareIdentity identity = identity();
         IntegrationRequestContext context = context(identity);
+        AtomicReference<Receipt> written = new AtomicReference<>();
         when(materials.write(any(), eq(context))).thenAnswer(invocation -> {
             WriteRequest request = invocation.getArgument(0);
             String payloadFingerprint = fingerprint('d');
-            return new Receipt(Receipt.SCHEMA_VERSION, request.fixtureAssetId(),
+            Receipt receipt = new Receipt(Receipt.SCHEMA_VERSION, request.fixtureAssetId(),
                     new ExactAssetRef("FIXTURE_MATERIAL", request.fixtureAssetId(), 1,
                             payloadFingerprint), payloadFingerprint, request.source(), request.subject(),
                     request.target(), request.schemaRef(), request.classification(), request.retention(),
                     request.redaction(), List.of(request.source().sourceRef()), true, false);
+            written.set(receipt);
+            return receipt;
         });
+        when(materials.resolve(any(), any(), any())).thenAnswer(invocation ->
+                new ResolvedFixtureMaterial(
+                        written.get().materialRef(), written.get(), output()));
         AtomicReference<StoredFixtureAsset> draft = new AtomicReference<>();
         when(catalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
             FixtureAssetDescriptor candidate = invocation.getArgument(1);
@@ -79,14 +86,15 @@ class CorrectnessFixtureSetShareMaterialWriterTest {
         FixtureShareCommand.Policy policy = new FixtureShareCommand.Policy("CONFIDENTIAL", 30,
                 new FixtureShareCommand.Redaction("default-v1", List.of("/email")));
 
-        FixtureSetCommand.Material.FixtureAsset asset = writer.write(
+        FixtureSetShareMaterialWriter.Result result = writer.write(
                 new FixtureSetShareMaterialWriter.Request("share-asset", source.view(), 2,
                         "review-1", "approved", "Approved", version.contract().output(),
                         policy, output()), identity);
 
-        assertThat(asset.fixtureAssetId()).isEqualTo("share-asset");
-        assertThat(asset.revision()).isEqualTo(2);
-        assertThat(asset.schemaFingerprint()).startsWith("sha256:");
+        assertThat(result.material().fixtureAssetId()).isEqualTo("share-asset");
+        assertThat(result.material().revision()).isEqualTo(2);
+        assertThat(result.material().schemaFingerprint()).startsWith("sha256:");
+        assertThat(result.safeOutput()).isEqualTo(output());
         ArgumentCaptor<WriteRequest> material = ArgumentCaptor.forClass(WriteRequest.class);
         verify(materials).write(material.capture(), eq(context));
         assertThat(context.clearance()).isEqualTo("RESTRICTED");

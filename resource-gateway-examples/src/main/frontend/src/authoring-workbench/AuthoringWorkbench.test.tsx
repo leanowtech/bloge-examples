@@ -10,7 +10,8 @@ vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return {
     ...actual, readApiResource: vi.fn(), listApiResourceFixtures: vi.fn(),
-    previewOpenApi: vi.fn(), saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
+    listApiConnections: vi.fn(), previewOpenApi: vi.fn(),
+    saveApiResource: vi.fn(), simulateFixtureCase: vi.fn(),
   };
 });
 
@@ -24,6 +25,10 @@ describe('simple authoring workbench', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    vi.mocked(authoringApi.listApiConnections).mockResolvedValue([{
+      schemaVersion: 'bloge.apiConnectionView.v1', connectionId: 'crm', revision: 1,
+      displayName: 'CRM', baseUrl: 'https://crm.example.test', auth: { kind: 'NONE', configured: false },
+    }]);
   });
 
   afterEach(async () => {
@@ -81,7 +86,7 @@ describe('simple authoring workbench', () => {
     expect(authoringApi.previewOpenApi).toHaveBeenCalledWith('openapi: 3.0.3');
     expect(element<HTMLInputElement>('api-name').value).toBe('Get customer');
     expect(element<HTMLInputElement>('api-resource-id').value).toBe('getCustomer');
-    expect(element<HTMLInputElement>('api-connection-id').value).toBe('crm');
+    expect(element<HTMLSelectElement>('api-connection-id').value).toBe('crm');
     expect(element<HTMLInputElement>('api-path').value).toBe('/customers/{customerId}');
     expect(element('openapi-binding-summary').textContent).toContain('PATH:customerId');
   });
@@ -103,7 +108,8 @@ describe('simple authoring workbench', () => {
     });
     vi.mocked(authoringApi.simulateFixtureCase).mockResolvedValue({
       schemaVersion: 'bloge.simulationRun.v1', runId: 'run-1', status: 'SUCCEEDED', output: { name: 'Ada' },
-      nodes: [{ nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'INLINE' }],
+      nodes: [{ nodeId: 'subject', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'INLINE',
+        egress: { decision: 'FIXTURE', attempted: false } }],
       verdicts: { execution: 'SIMULATED_ONLY', contract: 'PASSED', assertions: 'PASSED', governance: 'NOT_CHECKED' },
       diagnostics: [],
     });
@@ -181,10 +187,11 @@ describe('simple authoring workbench', () => {
   });
 
   function change(testId: string, value: string) {
-    const input = element<HTMLInputElement | HTMLTextAreaElement>(testId);
-    const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const input = element<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(testId);
+    const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype
+      : input instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
   }
 
   function link(testId: string): HTMLAnchorElement { return element(testId); }

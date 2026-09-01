@@ -6,6 +6,7 @@ import FlowObjectPage from './FlowObjectPage';
 import FixtureObjectPage from './FixtureObjectPage';
 import {
   listApiResourceFixtures,
+  listApiConnections,
   previewOpenApi,
   readApiResource,
   saveApiResource,
@@ -16,6 +17,7 @@ import {
   formDraftFromOpenApiOperation,
   formDraftFromSpec,
   type ApiResourceFormDraft,
+  type ApiConnectionView,
   type FixtureSetSummary,
   type OpenApiPreview,
   type SimulationRun,
@@ -106,6 +108,17 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
   const [openApiDocument, setOpenApiDocument] = useState('');
   const [openApiPreview, setOpenApiPreview] = useState<OpenApiPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [connections, setConnections] = useState<ApiConnectionView[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listApiConnections().then((values) => {
+      if (!cancelled) setConnections(values);
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!initialResourceId) return;
@@ -258,8 +271,17 @@ function ApiResourceObjectPage({ initialResourceId, t }: {
                   disabled={strongEtag !== null} required />
               </Field>
               <Field label={t('Connection ID')}>
-                <input data-testid="api-connection-id" value={draft.connectionId}
-                  onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })} required />
+                <select data-testid="api-connection-id" value={draft.connectionId}
+                  onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })} required>
+                  <option value="">{t('Choose a Connection')}</option>
+                  {connections.map((connection) => (
+                    <option key={connection.connectionId} value={connection.connectionId}>
+                      {connection.displayName} · {connection.baseUrl}
+                    </option>
+                  ))}
+                  {draft.connectionId && !connections.some((value) => value.connectionId === draft.connectionId)
+                    && <option value={draft.connectionId}>{draft.connectionId}</option>}
+                </select>
               </Field>
             </div>
           </section>

@@ -2070,3 +2070,90 @@ Fixture 生命周期。按已批准目标重新评估，当前剩余证据差距
 
 因此尚不宣称低于 3%；下一刀应优先形成单条 API → 多节点 Flow → Fixture 分享/评审/复用任务证据，
 同时记录完成时间和关键交互次数，再决定 legacy migration 与 remote egress 的收尾顺序。
+
+## 47. Iteration 46 — 单链 API、Tool、受保护 Whole-Flow Fixture 验收
+
+日期：2026-09-01。
+
+### 已完成
+
+- Flow 对象页在发布后保存 exact `FLOW_VERSION` coordinate，并通过服务端 latest-version read 在页面重载后
+  恢复它；随后 Fixture authoring 不再回退到可变 `FLOW_DRAFT`。只有 version source 与当前 Draft exact
+  匹配才允许绑定，重新保存 Flow 会显式清除旧发布 coordinate，避免静默绑定过期版本。
+- API 对象页从 authenticated Connection list 加载 payload-free committed views，作者通过可见下拉选择
+  `CRM`；浏览器不再输入预知的隐藏 Connection ID。
+- `SimulationModule` 新增 transport-neutral `SimulationIdentity` 与 `FixtureAssetSimulationResolver` port。
+  只有 `TEAM_AVAILABLE` Fixture、exact ACTIVE protected asset、trusted same-scope identity 和已装配 resolver
+  同时成立时才解析 material；缺任一条件均 fail closed。
+- correctness adapter 复用既有 governed material resolver，保留 exact asset revision/schema fingerprint、
+  enterprise scope、material-read purpose、clearance 和审计边界。Simulation evidence 标记
+  `FIXTURE_ASSET` 且 governance verdict 为 `PASSED`。Whole-subject RETURN 运行记录一个 synthetic
+  `subject` evidence node（MOCKED、OUTPUT_LEVEL、zero egress），而不会伪造或执行 Flow 内部 API 节点；
+  安全输出仍按 immutable Subject contract 验证。
+- 分享派生只接受 Inline Return 与相同 whole-output expectation；protected writer 在持久化后从 exact
+  material authority 解析安全输出，并把派生 revision 的 expectation 同步为同一脱敏值。因此最终运行的
+  contract 与 assertion 均可独立得到 `PASSED`，不会拿私有明文期望与脱敏输出做伪失败比较。
+- production Simulation 配置现在可在 API Resource-only 或 Reusable Flow 部署中选择性装配 protected
+  resolver，不因 Flow authority 缺失而退回不支持 protected material 的构造路径。
+- 新 real-browser 方法在同一 Chrome session 完成：两个 inline OpenAPI GET → 两个 API Resource/Default
+  Fixture → 两节点 Tool DAG → publish immutable Flow Version → whole-Flow Fixture → Share `/customerLabel` →
+  visible reviewer sign-in → Approve/`TEAM_AVAILABLE` → Run。最终输出必须显示服务端 redaction，而不是明文。
+- 浏览器以统一 `trackedClick` 计数真实主操作，精确为 **27 次**；页面任务计时 **9,899 ms**，低于
+  90 秒门槛，并保留 1280 px 无水平溢出断言。
+
+### 验证
+
+```text
+npm test -- --run src/authoring-workbench/api.test.ts \
+  src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/AuthoringWorkbench.test.tsx \
+  src/authoring-workbench/flowModel.test.ts \
+  src/authoring-workbench/FlowObjectPage.test.tsx \
+  src/authoring-workbench/FixtureObjectPage.test.tsx
+
+Test Files: 6 passed; Tests: 27 passed
+npx tsc --noEmit: PASS
+
+npm run build
+
+i18n 39/39; UX 52/52; host 21/21; TypeScript, Vite and bundle gates: PASS
+AuthoringWorkbench startup closure: 192.44 KiB / 12 files
+AuthorCanvas startup closure: 349.96 KiB / 22 files
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='SimulationModuleTest,WholeFlowSimulationModuleTest,ApiSimulationControllerTest,\
+ApiSimulationApplicationConfigurationTest,GovernedFixtureSimulationResolverTest,\
+InMemoryReusableFlowPublicationStoreTest,JdbcReusableFlowPublicationStoreTest,\
+ReusableFlowAuthoringControllerTest,ReusableFlowModuleTest,ReusableFlowFixtureModuleTest,\
+ReusableFlowFixtureShareModuleTest,ReusableFlowFixtureReviewModuleTest,\
+CorrectnessFixtureSetShareMaterialWriterTest,CorrectnessAuthoringCommandRuntimeConfigurationTest' test
+
+Tests run: 55; Failures: 0; Errors: 0; Skipped: 0
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions=27; elapsedMs=9899; test elapsed=21.39 s
+Visible result: SUCCEEDED; SIMULATED_ONLY; contract/assertions/governance PASSED;
+subject MOCKED/FIXTURE_ASSET/OUTPUT_LEVEL/FIXTURE/NO_EGRESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,229; Failures: 0; Errors: 0; Skipped: 36
+BUILD SUCCESS; Total time: 11:55 min
+```
+
+### 当前差距评估
+
+已批准的本地用户任务主链现有同一份真实浏览器证据，代码/本地验收差距重估为约 **2–3%**。仍未
+闭合的项目不应由本地 mock 或 H2 结果替代：
+
+1. `REMOTE` OpenAPI authenticated egress 的 production provider 与目的地策略；
+2. 外部 Vault provider 的部署认证；
+3. V001–V018 在真实 PostgreSQL 服务上的迁移与并发认证；
+4. legacy 默认入口及既有资产迁移的兼容验收。
+
+前三项属于外部环境/部署认证；第四项属于兼容收尾。它们不再阻断“清晰接入两个 API、组成可复用
+Tool、为 immutable Flow Version 配置并评审 Whole-Flow Fixture、再模拟运行”的本地可操作主链。

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCase
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
 import org.springframework.beans.factory.ObjectProvider;
@@ -24,14 +25,12 @@ public class ApiSimulationApplicationConfiguration {
                                       SimulationRunStore runs,
                                       ObjectProvider<ReusableFlowPublicationStore> flows,
                                       ObjectProvider<ReusableFlowDraftStore> drafts,
-                                      ObjectProvider<ParentFlowApplyCaseCompiler> parentCompilers) {
+                                      ObjectProvider<ParentFlowApplyCaseCompiler> parentCompilers,
+                                      ObjectProvider<FixtureAssetSimulationResolver> fixtureAssets) {
         ReusableFlowPublicationStore flowAuthority = flows.getIfAvailable();
         ReusableFlowDraftStore draftAuthority = drafts.getIfAvailable();
         ParentFlowApplyCaseCompiler parentCompiler = parentCompilers.getIfAvailable();
-        if (flowAuthority == null && draftAuthority == null) {
-            return new SimulationModule(resources, fixtures, runs);
-        }
-        return new SimulationModule(resources, fixtures, flowAuthority, draftAuthority,
-                parentCompiler, runs);
+        return new SimulationModule(resources, fixtures, new SimulationModule.Authorities(
+                flowAuthority, draftAuthority, parentCompiler, fixtureAssets.getIfAvailable()), runs);
     }
 }

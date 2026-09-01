@@ -173,6 +173,32 @@ class ReusableFlowAuthoringControllerTest {
                 org.mockito.ArgumentMatchers.eq(command));
     }
 
+    @Test
+    void latestVersionReadUsesTrustedScopeAndReturnsImmutableAuthority() throws Exception {
+        ReusableFlowModule module = mock(ReusableFlowModule.class);
+        ReusableFlowSaveResult saved = saved();
+        ReusableFlowVersion version = new ReusableFlowVersion(ReusableFlowVersion.SCHEMA_VERSION,
+                "publication-tool", 2, "sha256:" + "d".repeat(64),
+                new ReusableFlowVersion.Source(saved.draft().draftId(), 1, saved.draft().fingerprint()),
+                saved.draft().flowId(), saved.draft().displayName(), saved.draft().kind(),
+                saved.draft().description(), saved.draft().contract(), saved.draft().graph(),
+                Instant.parse("2026-09-01T00:00:00Z"), "author", ReusableFlowVersion.Status.PUBLISHED);
+        when(module.findLatestVersion(any(), org.mockito.ArgumentMatchers.eq("customer-tool")))
+                .thenReturn(Optional.of(version));
+
+        mvc(module).perform(get("/api/authoring/flows/customer-tool/versions/latest")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.publicationId").value("publication-tool"))
+                .andExpect(jsonPath("$.revision").value(2));
+
+        verify(module).findLatestVersion(
+                org.mockito.ArgumentMatchers.eq(new AuthoringScope("tenant-a", "project-a", "test")),
+                org.mockito.ArgumentMatchers.eq("customer-tool"));
+    }
+
     private static MockMvc mvc(ReusableFlowModule module) {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(
                 "authoring-client", "tenant-a", "org-a", "project-a", "test", "local",
