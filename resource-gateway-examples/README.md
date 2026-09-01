@@ -572,6 +572,13 @@ not label any row as migrated. The focused backend gate is **34/34 green**, fron
 inventory method all pass. The serial `clean verify` completed with `Tests run: 8,266; failures: 0; errors: 0;
 skipped: 39` and `BUILD SUCCESS`. Batch mutation remains intentionally outside this read-only protocol.
 
+The frozen authoring wire catalog now has an executable completeness gate. All **33 top-level schemas** under
+`docs/schemas/resource-gateway-authoring` (excluding the definitions-only `common-v1`) are mapped to explicit
+minimal, complete, and invalid golden examples. The protocol test compares that map with the schema directory, so
+adding a new top-level wire schema without its golden family fails immediately; family routing also uses exact
+minimal/complete/invalid qualifiers instead of ambiguous filename prefixes. The focused
+`AuthoringProtocolSchemaTest` gate is **18/18 green** with no failures, errors, or skips.
+
 J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
 lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
 the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer

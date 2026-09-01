@@ -2747,3 +2747,33 @@ M1 的本地“覆盖率、失败对象列表、回放、真实用户任务记�
 评估快照的确定性复核，不冒充批量 mutation。下一步只审计冻结 Wire Schema 的逐 family golden 覆盖与剩余本地
 负例。真实 PostgreSQL/Vault/REMOTE egress 和 8 位外部目标用户计时仍是部署或外部研究证据，不能由本地 fake
 实现代替。
+
+## 59. Iteration 58 — 冻结 Wire Schema golden 完整性
+
+日期：2026-09-01。
+
+### 已完成
+
+- `docs/schemas/resource-gateway-authoring` 中除 definitions-only `common-v1` 外的 **33 个顶层 Wire Schema**，现在
+  全部映射到显式 minimal、complete、invalid golden family。
+- 本轮补齐此前只由 Java round-trip 间接覆盖的 9 组协议：API Resource Spec、Connection View、OpenAPI Preview
+  Command/View、Reusable Flow Draft/Save Receipt/Version、Fixture Set Save Receipt 与 Summary Collection。
+- `AuthoringProtocolSchemaTest` 现在把 family map 与实际 schema 目录做双向精确比较。以后新增顶层 schema 却未
+  添加 goldens 会直接失败，不再依赖人工审计。
+- golden 路由从模糊前缀匹配改为 family 后紧跟 minimal/complete/invalid 资格名，避免 `reusable-flow` 吞入
+  `reusable-flow-draft` 或 `api-resource` 吞入 Receipt/Spec。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml -Dtest=AuthoringProtocolSchemaTest test
+
+Tests run: 18; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+冻结 Wire Schema 的逐 family golden 覆盖已闭合。该证据只证明协议结构、引用解析、安全边界与样例正负例，
+不替代 HTTP、持久化、浏览器任务或部署环境验证。后续只继续处理可由本仓库关闭的协议负例；真实
+PostgreSQL/Vault/REMOTE egress 和 8 位外部目标用户计时仍保持为外部证据边界。

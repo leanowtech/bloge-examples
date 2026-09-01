@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
-/** Contract tests for the Slice 0 authoring wire schemas and golden examples. */
+/** Contract tests for every frozen authoring wire schema and its golden examples. */
 class AuthoringProtocolSchemaTest {
 
     private static final Path SCHEMA_ROOT = Path.of("..", "docs", "schemas", "resource-gateway-authoring");
@@ -64,11 +64,20 @@ class AuthoringProtocolSchemaTest {
             Map.entry("check-result", "connection-check-result-v1.schema.json"),
             Map.entry("api-resource", "api-resource-command-v1.schema.json"),
             Map.entry("api-resource-receipt", "api-resource-receipt-v1.schema.json"),
+            Map.entry("api-resource-spec", "api-resource-spec-v1.schema.json"),
+            Map.entry("connection-view", "connection-view-v1.schema.json"),
             Map.entry("openapi", "openapi-preview-v1.schema.json"),
+            Map.entry("openapi-preview-command", "openapi-preview-command-v1.schema.json"),
+            Map.entry("openapi-preview-view", "openapi-preview-view-v1.schema.json"),
             Map.entry("reusable-flow", "reusable-flow-command-v1.schema.json"),
+            Map.entry("reusable-flow-draft", "reusable-flow-draft-v1.schema.json"),
+            Map.entry("reusable-flow-receipt", "reusable-flow-receipt-v1.schema.json"),
+            Map.entry("reusable-flow-version", "reusable-flow-version-v1.schema.json"),
             Map.entry("reusable-flow-publish-command", "reusable-flow-publish-command-v1.schema.json"),
             Map.entry("reusable-flow-publish-receipt", "reusable-flow-publish-receipt-v1.schema.json"),
             Map.entry("fixture-set", "fixture-set-command-v1.schema.json"),
+            Map.entry("fixture-set-receipt", "fixture-set-receipt-v1.schema.json"),
+            Map.entry("fixture-set-summary-collection", "fixture-set-summary-collection-v1.schema.json"),
             Map.entry("fixture-share-command", "fixture-share-command-v1.schema.json"),
             Map.entry("fixture-share-receipt", "fixture-share-receipt-v1.schema.json"),
             Map.entry("fixture-review-command", "fixture-review-command-v1.schema.json"),
@@ -128,6 +137,12 @@ class AuthoringProtocolSchemaTest {
                 .sorted()
                 .toList();
         assertThat(schemas).isNotEmpty();
+        assertThat(FAMILIES.values())
+                .as("every top-level wire schema has an explicit golden family")
+                .containsExactlyInAnyOrderElementsOf(schemas.stream()
+                        .map(path -> path.getFileName().toString())
+                        .filter(name -> !name.equals("common-v1.schema.json"))
+                        .toList());
         for (Path schemaPath : schemas) {
             JsonNode schema = read(schemaPath);
             assertThat(schema.path("$schema").asText()).isEqualTo("https://json-schema.org/draft/2020-12/schema");
@@ -144,11 +159,7 @@ class AuthoringProtocolSchemaTest {
             JsonNode schema = read(schemaPath);
             Path examples = SCHEMA_ROOT.resolve("examples");
             List<Path> familyExamples = Files.list(examples)
-                    .filter(path -> path.getFileName().toString().startsWith(family.getKey() + "-"))
-                    .filter(path -> !family.getKey().equals("reusable-flow")
-                            || !path.getFileName().toString().contains("publish"))
-                    .filter(path -> !family.getKey().equals("api-resource")
-                            || !path.getFileName().toString().contains("receipt"))
+                    .filter(path -> isGoldenForFamily(path, family.getKey()))
                     .sorted()
                     .toList();
             assertThat(familyExamples).as("goldens for %s", family.getKey()).hasSizeGreaterThanOrEqualTo(3);
@@ -166,6 +177,18 @@ class AuthoringProtocolSchemaTest {
                 }
             }
         }
+    }
+
+    private static boolean isGoldenForFamily(Path path, String family) {
+        String name = path.getFileName().toString();
+        String prefix = family + "-";
+        if (!name.startsWith(prefix)) {
+            return false;
+        }
+        String qualifier = name.substring(prefix.length());
+        return qualifier.startsWith("minimal")
+                || qualifier.startsWith("complete")
+                || qualifier.startsWith("invalid");
     }
 
     @Test

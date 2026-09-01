@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.apiConnectionView.v1","connectionId":"profile-api","revision":1,"displayName":"Profile API","baseUrl":"https://profile.example.com","auth":{"kind":"NONE","configured":false}}

@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.apiConnectionView.v1","connectionId":"orders-api","revision":4,"displayName":"Orders API","baseUrl":"https://orders.example.com","auth":{"kind":"API_KEY","configured":true},"defaults":{"timeoutMs":3000,"headers":{"Accept":"application/json"}}}
