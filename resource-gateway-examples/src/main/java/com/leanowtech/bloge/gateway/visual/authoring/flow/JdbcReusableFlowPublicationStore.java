@@ -114,6 +114,29 @@ public final class JdbcReusableFlowPublicationStore implements ReusableFlowPubli
         }
     }
 
+    @Override public List<ReusableFlowVersion> listLatestVersions(AuthoringScope scope, int limit) {
+        if (scope == null || limit < 1 || limit > 100) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.VALIDATION);
+        }
+        try {
+            List<String> flowIds = jdbc.query("""
+                    SELECT flow_id
+                      FROM rg_authoring_flow_publication_identities
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                     ORDER BY flow_id
+                     LIMIT ?
+                    """, (rs, row) -> rs.getString(1), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), limit);
+            return flowIds.stream().map(flowId -> findLatestVersion(scope, flowId)
+                            .orElseThrow(() -> new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY)))
+                    .toList();
+        } catch (ReusableFlowFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY);
+        }
+    }
+
     private ReusableFlowPublishResult publishInTransaction(ReusableFlowPublishIntent intent) {
         Optional<CommandRow> prior = command(intent, true);
         if (prior.isPresent()) return replay(intent, prior.get());

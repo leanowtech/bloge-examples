@@ -4,17 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthoringWorkbench from './AuthoringWorkbench';
-import * as api from './api';
 import * as flowApi from './flowApi';
 import type { ApiResourceSpec } from './model';
 
-vi.mock('./api', async () => ({
-  ...(await vi.importActual<typeof import('./api')>('./api')),
-  readApiResource: vi.fn(),
-}));
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
   readFlow: vi.fn(), readLatestFlowVersion: vi.fn(), readFlowFixture: vi.fn(), listFlowFixtures: vi.fn(),
+  listComposableCatalog: vi.fn(),
   readLegacyReusableFlowPreview: vi.fn(), readLegacyFixtureReauthorPreview: vi.fn(),
   saveFlow: vi.fn(), saveFlowFixture: vi.fn(), simulateFlowFixture: vi.fn(), publishFlow: vi.fn(),
 }));
@@ -31,6 +27,7 @@ describe('Tool and Solution object page', () => {
     root = createRoot(host);
     vi.mocked(flowApi.readLatestFlowVersion).mockResolvedValue(null);
     vi.mocked(flowApi.listFlowFixtures).mockResolvedValue([]);
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([]);
   });
 
   afterEach(async () => {
@@ -40,9 +37,9 @@ describe('Tool and Solution object page', () => {
   });
 
   it('composes exact API Resources, saves the Flow, then saves and simulates its whole-flow Fixture', async () => {
-    vi.mocked(api.readApiResource)
-      .mockResolvedValueOnce(stored(resource('profile', { customerId: 'string' }, { customerId: 'string', name: 'string' })))
-      .mockResolvedValueOnce(stored(resource('orders', { customerId: 'string' }, { orders: 'object' })));
+    const profile = resource('profile', { customerId: 'string' }, { customerId: 'string', name: 'string' });
+    const orders = resource('orders', { customerId: 'string' }, { orders: 'object' });
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([catalogItem(profile), catalogItem(orders)]);
     const draftRef = { kind: 'FLOW_DRAFT' as const, draftId: 'draft-1', revision: 1, fingerprint: hash('c') };
     vi.mocked(flowApi.saveFlow).mockResolvedValue({
       strongEtag: '"flow-r1"', replayed: false,
@@ -151,8 +148,7 @@ describe('Tool and Solution object page', () => {
       suggestedFlowId: 'customer-orders', suggestedFlow, fixtureReferences: 2,
       diagnostics: [{ code: 'FIXTURE_REAUTHOR_REQUIRED', message: 'Rebuild Fixtures after saving.' }],
     });
-    vi.mocked(api.readApiResource)
-      .mockResolvedValueOnce(stored(profile)).mockResolvedValueOnce(stored(orders));
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([catalogItem(profile), catalogItem(orders)]);
     vi.mocked(flowApi.saveFlow).mockResolvedValue({
       strongEtag: '"flow-r1"', replayed: false,
       value: { schemaVersion: 'bloge.reusableFlowSaveReceipt.v1', flowId: 'customer-orders',
@@ -183,6 +179,69 @@ describe('Tool and Solution object page', () => {
     expect(element('flow-fixture-panel')).toBeTruthy();
   });
 
+  it('selects an immutable Flow Version and visibly applies its exact Fixture Case', async () => {
+    const child = {
+      schemaVersion: 'bloge.composableCatalogItem.v1' as const, displayName: 'Customer child tool',
+      reference: { kind: 'FLOW_VERSION' as const, publicationId: 'published-child',
+        revision: 4, fingerprint: hash('v') },
+      contract: { input: envelope({ customerId: 'string' }), output: envelope({ orderCount: 'integer' }) },
+    };
+    const childFixture = {
+      schemaVersion: 'bloge.fixtureSetSummary.v1' as const, fixtureSetId: 'child.default', revision: 2,
+      fingerprint: hash('f'), displayName: 'Child default', subject: child.reference,
+      cases: [{ caseId: 'default', name: 'Default' }], status: 'PRIVATE_DRAFT' as const, statusRevision: 1,
+    };
+    const parentDraft = { kind: 'FLOW_DRAFT' as const, draftId: 'parent-draft',
+      revision: 1, fingerprint: hash('d') };
+    const parentVersion = { kind: 'FLOW_VERSION' as const, publicationId: 'published-parent',
+      revision: 1, fingerprint: hash('p') };
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([child]);
+    vi.mocked(flowApi.listFlowFixtures).mockImplementation(async (subject) =>
+      subject.kind === 'FLOW_VERSION' && subject.publicationId === 'published-child' ? [childFixture] : []);
+    vi.mocked(flowApi.saveFlow).mockResolvedValue({ strongEtag: '"parent-r1"', replayed: false, value: {
+      schemaVersion: 'bloge.reusableFlowSaveReceipt.v1', flowId: 'parent', draft: parentDraft, validation: 'VALID',
+    } });
+    vi.mocked(flowApi.publishFlow).mockResolvedValue({
+      schemaVersion: 'bloge.reusableFlowPublishReceipt.v1', source: parentDraft,
+      version: parentVersion, catalog: 'AVAILABLE',
+    });
+    vi.mocked(flowApi.saveFlowFixture).mockResolvedValue({ strongEtag: '"parent-fixture-r1"', replayed: false,
+      value: { schemaVersion: 'bloge.fixtureSetSaveReceipt.v1', fixtureSetId: 'parent.parent-default',
+        revision: 1, fingerprint: hash('q'), subject: parentVersion, caseIds: ['default'],
+        status: 'PRIVATE_DRAFT', statusRevision: 1 } });
+    vi.mocked(flowApi.simulateFlowFixture).mockResolvedValue({
+      schemaVersion: 'bloge.simulationRun.v1', runId: 'parent-run', status: 'SUCCEEDED', output: { orderCount: 2 },
+      nodes: [{ nodeId: 'step1', status: 'COMPLETED', execution: 'MOCKED', fixtureSource: 'APPLY_CASE',
+        egress: { decision: 'NOT_APPLICABLE', attempted: false } }],
+      verdicts: { execution: 'PASSED_WITH_MOCKS', contract: 'PASSED', assertions: 'PASSED', governance: 'NOT_CHECKED' },
+      diagnostics: [],
+    });
+
+    await act(async () => root.render(<AuthoringWorkbench />));
+    await act(async () => { change('flow-name', 'Parent'); change('flow-id', 'parent'); });
+    await add('Customer child tool');
+    expect(element('flow-node-list').textContent).toContain('published-child@4');
+    await act(async () => button('save-flow').click());
+    await act(async () => tab('Versions').click());
+    await act(async () => button('publish-flow').click());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    const nodeMode = host.querySelectorAll<HTMLInputElement>('input[name="flow-fixture-mode"]')[1];
+    await act(async () => nodeMode.click());
+    await act(async () => {
+      change('flow-fixture-input', '{"customerId":"c-1"}');
+      change('flow-fixture-output', '{"orderCount":2}');
+    });
+    await act(async () => button('save-flow-fixture').click());
+
+    expect(flowApi.saveFlowFixture).toHaveBeenCalledWith('parent.parent-default', expect.objectContaining({
+      subject: parentVersion, cases: [expect.objectContaining({ controls: [{
+        target: { kind: 'NODE', nodeId: 'step1' },
+        behavior: { kind: 'APPLY_CASE', fixtureSetId: 'child.default', revision: 2, caseId: 'default' },
+      }] })],
+    }), null, expect.stringMatching(/^save-flow-fixture:parent.parent-default:/));
+    expect(element('flow-simulation-panel').textContent).toContain('PASSED_WITH_MOCKS');
+  });
+
   it('opens one payload-free legacy Fixture review against the exact reauthored Flow draft', async () => {
     window.history.replaceState(null, '', '/workbench/?flowId=customer-orders&tab=fixture'
       + '&legacyFixtureDraftId=legacy-draft&legacyFixtureRevision=3');
@@ -203,7 +262,7 @@ describe('Tool and Solution object page', () => {
         layout: { nodes: { profile: { x: 120, y: 160 } } },
       },
     });
-    vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([catalogItem(profile)]);
     vi.mocked(flowApi.readLegacyFixtureReauthorPreview).mockResolvedValue({
       schemaVersion: 'bloge.legacyFixtureReauthorPreview.v1',
       source: { draftId: 'legacy-draft', revision: 3 }, targetFlowId: 'customer-orders',
@@ -223,6 +282,14 @@ describe('Tool and Solution object page', () => {
         revision: 1, fingerprint: hash('d'), subject: target, caseIds: ['default'],
         status: 'PRIVATE_DRAFT', statusRevision: 1,
       },
+    });
+    const publishedSubject = {
+      kind: 'FLOW_VERSION' as const, publicationId: 'published-customer-orders',
+      revision: 1, fingerprint: hash('e'),
+    };
+    vi.mocked(flowApi.publishFlow).mockResolvedValue({
+      schemaVersion: 'bloge.reusableFlowPublishReceipt.v1', source: target,
+      version: publishedSubject, catalog: 'AVAILABLE',
     });
     vi.mocked(flowApi.simulateFlowFixture).mockResolvedValue({
       schemaVersion: 'bloge.simulationRun.v1', runId: 'run-legacy-fixture', status: 'SUCCEEDED',
@@ -260,6 +327,16 @@ describe('Tool and Solution object page', () => {
       expect.stringMatching(/^save-flow-fixture:customer-orders.default:/),
     );
     expect(element('flow-simulation-output').textContent).toContain('new-value');
+
+    await act(async () => tab('Versions').click());
+    await act(async () => button('publish-flow').click());
+    await act(async () => button('save-flow-fixture').click());
+
+    expect(flowApi.saveFlowFixture).toHaveBeenCalledTimes(2);
+    expect(flowApi.saveFlowFixture).toHaveBeenLastCalledWith(
+      'customer-orders.default', expect.objectContaining({ subject: publishedSubject }), '"fixture-r1"',
+      expect.stringMatching(/^save-flow-fixture:customer-orders.default:/),
+    );
   });
 
   it('reloads an exact Flow draft and publishes the same authority', async () => {
@@ -282,7 +359,7 @@ describe('Tool and Solution object page', () => {
         layout: { nodes: { step1: { x: 120, y: 160 } } },
       },
     });
-    vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([catalogItem(profile)]);
     vi.mocked(flowApi.publishFlow).mockResolvedValue({
       schemaVersion: 'bloge.reusableFlowPublishReceipt.v1',
       source: { kind: 'FLOW_DRAFT', draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
@@ -297,7 +374,7 @@ describe('Tool and Solution object page', () => {
     await act(async () => tab('Versions').click());
     await act(async () => button('publish-flow').click());
 
-    expect(api.readApiResource).toHaveBeenCalledWith('profile', 3);
+    expect(flowApi.listComposableCatalog).toHaveBeenCalled();
     expect(flowApi.publishFlow).toHaveBeenCalledWith(
       'overview', { kind: 'FLOW_DRAFT', draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
       expect.stringMatching(/^publish-flow:overview:/),
@@ -324,7 +401,7 @@ describe('Tool and Solution object page', () => {
         layout: { nodes: { step1: { x: 120, y: 160 } } },
       },
     });
-    vi.mocked(api.readApiResource).mockResolvedValue(stored(profile));
+    vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([catalogItem(profile)]);
     vi.mocked(flowApi.readLatestFlowVersion).mockResolvedValue({
       schemaVersion: 'bloge.reusableFlowVersion.v1', publicationId: 'published-overview', revision: 3,
       fingerprint: hash('e'), source: { draftId: 'draft-1', revision: 2, fingerprint: hash('c') },
@@ -344,8 +421,11 @@ describe('Tool and Solution object page', () => {
   });
 
   async function add(id: string) {
-    await act(async () => change('flow-resource-id', id));
-    await act(async () => button('add-flow-resource').click());
+    const select = element<HTMLSelectElement>('flow-catalog-selection');
+    const option = [...select.options].find((candidate) => candidate.textContent?.includes(id));
+    if (!option) throw new Error(`Missing catalog item ${id}`);
+    await act(async () => changeSelect('flow-catalog-selection', option.value));
+    await act(async () => button('add-flow-catalog-item').click());
   }
 
   function change(testId: string, value: string) {
@@ -353,6 +433,11 @@ describe('Tool and Solution object page', () => {
     const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function changeSelect(testId: string, value: string) {
+    const input = element<HTMLSelectElement>(testId);
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(input, value);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function tab(name: string): HTMLButtonElement {
@@ -369,7 +454,13 @@ describe('Tool and Solution object page', () => {
   }
 });
 
-function stored(value: ApiResourceSpec) { return { value, strongEtag: '"resource-r3"', replayed: false }; }
+function catalogItem(value: ApiResourceSpec) {
+  return {
+    schemaVersion: 'bloge.composableCatalogItem.v1' as const, displayName: value.displayName,
+    reference: { kind: 'API_RESOURCE' as const, resourceId: value.resourceId,
+      revision: value.revision, fingerprint: value.fingerprint }, contract: value.contract,
+  };
+}
 function resource(resourceId: string, input: Record<string, string>, output: Record<string, string>): ApiResourceSpec {
   return {
     schemaVersion: 'bloge.apiResourceSpec.v1', resourceId, revision: 3, fingerprint: hash('a'),

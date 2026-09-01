@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFlowFixtureCommand, buildReusableFlowCommand, type ResolvedApiNode } from './flowModel';
+import {
+  buildFlowFixtureCommand, buildParentFlowFixtureCommand, buildReusableFlowCommand, type ResolvedFlowNode,
+} from './flowModel';
 import type { ApiResourceSpec } from './model';
 
 describe('simple reusable Flow model', () => {
@@ -65,10 +67,43 @@ describe('simple reusable Flow model', () => {
       }],
     });
   });
+
+  it('pins an immutable Flow Version and authors exact node APPLY_CASE controls', () => {
+    const child = flowNode('child', 'published-child', { customerId: 'string' }, { orderCount: 'integer' });
+    const fixture = {
+      schemaVersion: 'bloge.fixtureSetSummary.v1' as const, fixtureSetId: 'child.default', revision: 2,
+      fingerprint: hash('f'), displayName: 'Child default', subject: child.item.reference,
+      cases: [{ caseId: 'default', name: 'Default' }], status: 'PRIVATE_DRAFT' as const, statusRevision: 1,
+    };
+    const flow = buildReusableFlowCommand({
+      flowId: 'parent', displayName: 'Parent', kind: 'SOLUTION', description: '',
+    }, [child]);
+    const command = buildParentFlowFixtureCommand({
+      kind: 'FLOW_VERSION', publicationId: 'published-parent', revision: 1, fingerprint: hash('p'),
+    }, 'Parent default', '{"customerId":"c-1"}', '{"orderCount":2}', [child], { child: fixture });
+
+    expect(flow.flow.graph.nodes[0].use).toEqual(child.item.reference);
+    expect(command.cases[0].controls).toEqual([{
+      target: { kind: 'NODE', nodeId: 'child' },
+      behavior: { kind: 'APPLY_CASE', fixtureSetId: 'child.default', revision: 2, caseId: 'default' },
+    }]);
+  });
 });
 
-function node(nodeId: string, spec: ApiResourceSpec): ResolvedApiNode {
-  return { nodeId, label: spec.displayName, resource: spec };
+function node(nodeId: string, spec: ApiResourceSpec): ResolvedFlowNode {
+  return { nodeId, label: spec.displayName, item: {
+    schemaVersion: 'bloge.composableCatalogItem.v1', displayName: spec.displayName,
+    reference: { kind: 'API_RESOURCE', resourceId: spec.resourceId, revision: spec.revision,
+      fingerprint: spec.fingerprint }, contract: spec.contract,
+  } };
+}
+
+function flowNode(nodeId: string, publicationId: string, input: Record<string, string>, output: Record<string, string>): ResolvedFlowNode {
+  return { nodeId, label: publicationId, item: {
+    schemaVersion: 'bloge.composableCatalogItem.v1', displayName: publicationId,
+    reference: { kind: 'FLOW_VERSION', publicationId, revision: 4, fingerprint: hash('v') },
+    contract: { input: envelope(input, Object.keys(input)), output: envelope(output, Object.keys(output)) },
+  } };
 }
 
 function resource(resourceId: string, required: string[], input: Record<string, string>, output: Record<string, string>): ApiResourceSpec {

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -24,4 +25,6 @@ public interface ApiResourceCommitStore extends AuthoringCommandClaimStore {
     /** Resolves one committed historical revision by its opaque strong validator. */
     Optional<StoredApiResource> findRevisionByStrongEtag(AuthoringScope scope, String resourceId,
                                                          String strongEtag);
+    /** Lists a bounded stable snapshot of committed heads for catalog selection. */
+    default List<StoredApiResource> listHeads(AuthoringScope scope, int limit) { return List.of(); }
 }

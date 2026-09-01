@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.flow;
 
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
@@ -69,6 +70,38 @@ class ApiResourceComposableCatalogTest {
         });
         assertThat(catalog.resolve(SCOPE, new ReusableFlowCommand.ComposableRef.FlowVersion(
                 "publication-tool", 2, "sha256:" + "9".repeat(64)))).isEmpty();
+    }
+
+    @Test
+    void listsOneBoundedUnifiedSnapshotWithExactResourceAndLatestFlowCoordinates() {
+        ApiResourceCommitStore resources = mock(ApiResourceCommitStore.class);
+        ReusableFlowPublicationStore publications = mock(ReusableFlowPublicationStore.class);
+        ApiResourceSpec resource = mock(ApiResourceSpec.class);
+        StoredApiResource stored = mock(StoredApiResource.class);
+        ApiResourceCommand.Contract resourceContract = new ApiResourceCommand.Contract(
+                schema("customerId"), schema("tier"));
+        when(resource.resourceId()).thenReturn("customer.profile");
+        when(resource.revision()).thenReturn(3);
+        when(resource.fingerprint()).thenReturn(FINGERPRINT);
+        when(resource.displayName()).thenReturn("Customer profile");
+        when(resource.contract()).thenReturn(resourceContract);
+        when(stored.resource()).thenReturn(resource);
+        when(resources.listHeads(SCOPE, 100)).thenReturn(List.of(stored));
+        when(publications.listLatestVersions(SCOPE, 100)).thenReturn(List.of(flowVersion()));
+
+        var items = new ApiResourceComposableCatalog(resources, publications).list(
+                SCOPE, java.util.Set.of(ComposableCatalog.Kind.API_RESOURCE,
+                        ComposableCatalog.Kind.FLOW_VERSION), 100);
+
+        assertThat(items).extracting(item -> item.reference().getClass().getSimpleName())
+                .containsExactly("ApiResource", "FlowVersion");
+        assertThat(items).extracting(item -> item.reference().id())
+                .containsExactly("customer.profile", "publication-tool");
+        assertThat(items).allSatisfy(item -> {
+            assertThat(item.schemaVersion()).isEqualTo("bloge.composableCatalogItem.v1");
+            assertThat(item.contract().input().schema()).isNotNull();
+            assertThat(item.contract().output().schema()).isNotNull();
+        });
     }
 
     private static ReusableFlowVersion flowVersion() {

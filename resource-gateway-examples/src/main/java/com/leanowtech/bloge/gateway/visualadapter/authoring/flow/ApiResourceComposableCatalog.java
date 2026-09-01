@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.flow;
 
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalogItem;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableDefinition;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
@@ -9,8 +10,12 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiRes
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.StoredApiResource;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /** Resolves exact reusable Flow dependencies from committed API Resource authority. */
 public final class ApiResourceComposableCatalog implements ComposableCatalog {
@@ -53,5 +58,33 @@ public final class ApiResourceComposableCatalog implements ComposableCatalog {
         return Optional.of(new ComposableDefinition(reference,
                 stored.get().resource().contract().input(),
                 stored.get().resource().contract().output()));
+    }
+
+    @Override public List<ComposableCatalogItem> list(
+            AuthoringScope scope, Set<Kind> kinds, int limit) {
+        if (scope == null || kinds == null || kinds.isEmpty() || limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("catalog query is invalid");
+        }
+        ArrayList<ComposableCatalogItem> items = new ArrayList<>();
+        if (kinds.contains(Kind.API_RESOURCE)) {
+            resources.listHeads(scope, limit).forEach(stored -> items.add(new ComposableCatalogItem(
+                    ComposableCatalogItem.SCHEMA_VERSION, stored.resource().displayName(),
+                    new ReusableFlowCommand.ComposableRef.ApiResource(stored.resource().resourceId(),
+                            Math.toIntExact(stored.resource().revision()), stored.resource().fingerprint()),
+                    new ReusableFlowCommand.Contract(stored.resource().contract().input(),
+                            stored.resource().contract().output()))));
+        }
+        if (kinds.contains(Kind.FLOW_VERSION) && flows != null) {
+            flows.listLatestVersions(scope, limit).forEach(version -> items.add(new ComposableCatalogItem(
+                    ComposableCatalogItem.SCHEMA_VERSION, version.displayName(),
+                    new ReusableFlowCommand.ComposableRef.FlowVersion(version.publicationId(),
+                            version.revision(), version.fingerprint()), version.contract())));
+        }
+        return items.stream().sorted(Comparator
+                        .comparing((ComposableCatalogItem item) -> item.reference() instanceof
+                                ReusableFlowCommand.ComposableRef.ApiResource ? 0 : 1)
+                        .thenComparing(ComposableCatalogItem::displayName)
+                        .thenComparing(item -> item.reference().id()))
+                .limit(limit).toList();
     }
 }

@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.Stro
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -207,6 +209,18 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
                         throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
                                 "committed resource ETag provenance is ambiguous");
                     });
+        }
+    }
+
+    @Override public List<StoredApiResource> listHeads(AuthoringScope scope, int limit) {
+        if (scope == null || limit < 1 || limit > 100) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "catalog query is invalid");
+        }
+        synchronized (state.monitor) {
+            return state.heads.entrySet().stream()
+                    .filter(entry -> entry.getKey().scope().equals(scope))
+                    .sorted(Comparator.comparing(entry -> entry.getKey().resourceId()))
+                    .limit(limit).map(Map.Entry::getValue).toList();
         }
     }
 

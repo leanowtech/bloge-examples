@@ -371,6 +371,21 @@ i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite, and bundle gates
 different server-derived Connection and no preseeded Connection id is used. The final serial `clean verify` completed
 with `Tests run: 8,259; failures: 0; errors: 0; skipped: 38` and `BUILD SUCCESS` in 11:43.
 
+Tool and Solution composition now reads one trusted-scope, payload-free Catalog from
+`GET /api/authoring/catalog`. The list contains committed API Resource heads and the latest immutable Flow Versions;
+every choice carries its exact revision/fingerprint and input/output Contract. A published child Flow can therefore
+be selected directly as a parent Solution node without exposing draft layout, Fixture values, credentials, or
+protected material. The Fixture task offers two explicit modes: a whole-Flow `SUBJECT + RETURN`, or complete
+per-node `NODE + APPLY_CASE` controls. Parent Simulation resolves the selected child Case, applies parent mappings,
+does not expand or execute the child Flow, and reports `MOCKED`, `APPLY_CASE`, inherited fidelity, and `NO_EGRESS`
+for the exact node. The focused frontend gate is **20/20 green** and the affected backend Catalog/publication/
+Fixture/simulation gate is **28/28 green**. The production frontend build passes i18n **39/39**, UX **52/52**,
+host **21/21**, TypeScript, Vite, and bundle checks; `AuthorCanvas` starts at **349.73 KiB / 21 files** under the
+350 KiB ceiling. A real Chrome task completes API creation, child Tool publication and Fixture authoring, parent
+Solution composition, node Case application, protected share/review, and governed rerun in **36 primary actions**.
+The final serial `clean verify` reports `Tests run: 8,262; failures: 0; errors: 0; skipped: 38` and
+`BUILD SUCCESS`.
+
 The same `/workbench/` route now owns Tool and Solution object pages. Authors add committed API Resources in
 execution order; the page pins every exact Resource revision/fingerprint and derives the DAG only from explicit
 input mappings. A same-name, same-type field is wired from the nearest prior node output; otherwise it remains a

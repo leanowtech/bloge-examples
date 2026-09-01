@@ -2589,3 +2589,68 @@ BUILD SUCCESS; 11:43
 `FLOW_VERSION` 作为父级节点，也没有可见的节点级 Fixture `APPLY_CASE` 创作/模拟闭环。390 px 完整链、迁移
 coverage receipt/bulk replay 与真实 PostgreSQL/Vault 属于 P2 或外部环境证据。当前本地实现/验收差距保守估计
 约 **3%–5%**，仍未满足低于 3% 的停止条件；下一步继续关闭 Flow Version 父级复用与节点 Fixture 主线。
+
+## 56. Iteration 55 — 统一 Catalog、Flow Version 复用与节点 Case 模拟
+
+日期：2026-09-01。
+
+### 已完成
+
+- 新增 payload-free `ComposableCatalogItem` 与认证只读端点 `GET /api/authoring/catalog`。端点只使用可信
+  tenant/project/environment，返回 committed API Resource head 与 latest immutable Flow Version 的 exact
+  revision/fingerprint/Contract；Draft layout、Fixture value、credential、provider locator 和受保护 material 不进入 wire。
+- `ApiResourceCommitStore` 与 `ReusableFlowPublicationStore` 增加有界、稳定排序的 committed list seam；
+  InMemory/JDBC 实现都复用现有完整 read closure，不把 staged、损坏或跨 scope authority 暴露为 Catalog 项。
+- Tool/Solution 对象页从同一个 Catalog 添加 `API_RESOURCE` 或 `FLOW_VERSION` 节点，持久化 exact composable
+  coordinate。发布后的 child Tool 可以被 parent Solution 直接选择，不再要求作者复制 Graph 或手工输入 publication id。
+- Fixture task 明确区分 whole-Flow `SUBJECT + RETURN` 与 parent per-node Case 两种模式。节点模式要求所有 parent
+  node 都选择 exact child Fixture revision/Case，并保存 `NODE + APPLY_CASE`；前端不注入 Fixture value 或受保护材料。
+- Parent Simulation 通过既有 `ParentFlowApplyCaseCompiler` 解析 exact child Subject、Case 和生命周期，执行 parent
+  mapping-defined DAG，但不展开 child Flow、不发起 egress。每个节点返回 `COMPLETED / MOCKED / APPLY_CASE /
+  NOT_APPLICABLE / NO_EGRESS`，overall 为 `PASSED_WITH_MOCKS`。
+- 单浏览器主链现在从两个新 API/Connection 开始，完成 child Tool DAG、legacy Fixture 显式重录、immutable Flow
+  Version 发布、parent Solution Catalog 组合、节点 Case 应用、模拟、protected share、独立 reviewer 审核和 governed
+  rerun。动作后只读核对父 Fixture 权威为 `step1 -> APPLY_CASE(child fixture r2/default)`，不是页面文案推断。
+
+### 验证
+
+```text
+npm test -- --run src/authoring-workbench/flowModel.test.ts \
+  src/authoring-workbench/flowApi.test.ts \
+  src/authoring-workbench/FlowObjectPage.test.tsx
+
+Test Files: 3 passed; Tests: 20 passed
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiResourceComposableCatalogTest,ComposableCatalogControllerTest,ReusableFlowFixtureModuleTest,\
+ParentFlowApplyCaseCompilerTest,WholeFlowSimulationModuleTest,SimulationModuleTest,\
+InMemoryReusableFlowPublicationStoreTest,JdbcReusableFlowPublicationStoreTest' test
+
+Tests run: 28; Failures: 0; Errors: 0; Skipped: 0
+
+npm run build
+i18n: 39/39; UX: 52/52; host: 21/21; TypeScript, Vite and bundle: PASS
+AuthorCanvas startup closure: 349.73 KiB / 21 files
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=VisualAuthoringBrowserDomTest#\
+simpleWorkbenchCompletesApiDagAndReviewedFixtureTaskWithinBoundedActions test
+
+Tests run: 1; Failures: 0; Errors: 0; Skipped: 0
+primaryActions: 36; elapsedMs: 11,970
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,262; Failures: 0; Errors: 0; Skipped: 38
+BUILD SUCCESS; Total time: 12:39 min
+```
+
+### 当前差距评估
+
+标准对象页现已闭合本地核心任务：简洁接入 API → 多 API 编排并发布 child Tool → 从统一 Catalog 复用 immutable
+Flow Version 组成 parent Solution → 为 parent node 选择 exact child Case → deny-all 模拟 → protected share/review →
+governed rerun。此前审计指出的主要本地 P1 已关闭；按已批准范围复核，本地代码与验收差距约 **1%–2%**，低于
+3% 停止条件。未完成项均保持诚实边界：390 px 的整条 36 动作链尚未单独重跑，迁移 coverage receipt/bulk replay
+仍是 P2；真实 PostgreSQL migration/lock 认证、Remote OpenAPI authenticated egress 与外部 Vault/provider 则属于
+部署环境证据，不能由本地 H2、单机 Chrome 或 fake provider 代替。

@@ -99,6 +99,21 @@ function AppShell() {
   }, [t, title]);
 
   if (spine === 'v1' && window.location.pathname === '/') return <SpineLauncherFrame />;
+  const workspace = route === 'workbench'
+    ? <AuthoringWorkbench />
+    : route === 'capabilities'
+    ? <CapabilityStudio />
+    : route === 'business-mirror'
+    ? <BusinessMirrorWorkspace />
+    : route === 'correctness'
+    ? <CorrectnessStudio />
+    : route === 'libraries'
+    ? <LibraryWorkbench />
+    : route === 'showcase'
+    ? <Showcase />
+    : route === 'rehearsals'
+      ? <RehearsalWorkbench />
+      : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />;
 
   return (
     <div className={`app app-${route}`}>
@@ -168,38 +183,8 @@ function AppShell() {
       <Suspense fallback={<WorkspaceLoading />}>
         <HostReadySignal route={route} />
         {toolCoordinate ? (
-          <ToolObjectShell coordinate={toolCoordinate}>
-            {route === 'workbench'
-              ? <AuthoringWorkbench />
-              : route === 'capabilities'
-              ? <CapabilityStudio />
-              : route === 'business-mirror'
-              ? <BusinessMirrorWorkspace />
-              : route === 'correctness'
-              ? <CorrectnessStudio />
-              : route === 'libraries'
-              ? <LibraryWorkbench />
-              : route === 'showcase'
-              ? <Showcase />
-              : route === 'rehearsals'
-                ? <RehearsalWorkbench />
-                : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
-          </ToolObjectShell>
-        ) : route === 'workbench'
-          ? <AuthoringWorkbench />
-          : route === 'capabilities'
-          ? <CapabilityStudio />
-          : route === 'business-mirror'
-          ? <BusinessMirrorWorkspace />
-          : route === 'correctness'
-          ? <CorrectnessStudio />
-          : route === 'libraries'
-          ? <LibraryWorkbench />
-          : route === 'showcase'
-          ? <Showcase />
-          : route === 'rehearsals'
-            ? <RehearsalWorkbench />
-            : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
+          <ToolObjectShell coordinate={toolCoordinate}>{workspace}</ToolObjectShell>
+        ) : workspace}
       </Suspense>
     </div>
   );

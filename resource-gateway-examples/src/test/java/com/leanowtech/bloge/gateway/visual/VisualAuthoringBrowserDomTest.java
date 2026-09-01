@@ -72,6 +72,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDec
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.InMemoryApiConnectionCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.CompositeFixtureSetAuthorityReader;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.FixtureSetPrecondition;
@@ -79,6 +80,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemor
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.InMemoryStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.InMemoryReusableFlowPublicationStore;
+import com.leanowtech.bloge.gateway.visual.authoring.flow.ComposableCatalog;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
@@ -105,6 +107,7 @@ import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessF
 import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessFixtureSetReviewMaterialGate;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ComposableCatalogController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringProblemHandler;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiConnectionStoreResourceProjectionResolver;
@@ -437,16 +440,29 @@ class VisualAuthoringBrowserDomTest {
             return new ApiResourceAuthoringController(facade, authenticator, mapper);
         }
 
-        /** Compiles visible API-only DAGs against the same committed Resource authority. */
+        /** Shares one exact Resource/Flow-Version catalog across selection, compile and simulation. */
+        @Bean
+        ComposableCatalog browserComposableCatalog(
+                InMemoryApiResourceCommitStore resources,
+                InMemoryReusableFlowPublicationStore publications) {
+            return new ApiResourceComposableCatalog(resources, publications);
+        }
+
+        /** Exposes the production trusted-scope composable Catalog read model. */
+        @Bean
+        @ConditionalOnMissingBean(ComposableCatalogController.class)
+        ComposableCatalogController browserComposableCatalogController(
+                ComposableCatalog catalog, IntegrationRequestAuthenticator authenticator) {
+            return new ComposableCatalogController(catalog, authenticator);
+        }
+
+        /** Compiles visible API/Flow-Version DAGs against the shared exact catalog. */
         @Bean
         ReusableFlowModule browserReusableFlowModule(
-                InMemoryApiResourceCommitStore resources,
+                ComposableCatalog catalog,
                 InMemoryReusableFlowDraftStore drafts,
                 InMemoryReusableFlowPublicationStore publications) {
-            return new ReusableFlowModule(
-                    new ReusableFlowCompiler(
-                            new ApiResourceComposableCatalog(resources, publications)),
-                    drafts, publications);
+            return new ReusableFlowModule(new ReusableFlowCompiler(catalog), drafts, publications);
         }
 
         /** Exposes the production authenticated reusable Flow transport in the browser context. */
@@ -475,9 +491,19 @@ class VisualAuthoringBrowserDomTest {
         ReusableFlowFixtureModule browserReusableFlowFixtureModule(
                 InMemoryReusableFlowPublicationStore publications,
                 InMemoryReusableFlowDraftStore drafts,
-                InMemoryStandaloneFixtureSetStore fixtures) {
+                InMemoryStandaloneFixtureSetStore fixtures,
+                ParentFlowApplyCaseCompiler parentCompiler) {
             return new ReusableFlowFixtureModule(
-                    publications, drafts, fixtures, new WholeFlowFixtureMaterializer(), null);
+                    publications, drafts, fixtures, new WholeFlowFixtureMaterializer(), parentCompiler);
+        }
+
+        /** Resolves exact leaf Cases for visible non-recursive node-level APPLY_CASE authoring. */
+        @Bean
+        ParentFlowApplyCaseCompiler browserParentFlowApplyCaseCompiler(
+                ComposableCatalog catalog, InMemoryApiFixtureSetCommitStore generatedFixtures,
+                InMemoryStandaloneFixtureSetStore fixtures) {
+            return new ParentFlowApplyCaseCompiler(catalog,
+                    new CompositeFixtureSetAuthorityReader(List.of(generatedFixtures, fixtures)));
         }
 
         /** Uses production protected-material and catalog services for visible Fixture sharing. */
@@ -543,10 +569,11 @@ class VisualAuthoringBrowserDomTest {
                 InMemoryStandaloneFixtureSetStore fixtures,
                 InMemoryReusableFlowPublicationStore publications,
                 InMemoryReusableFlowDraftStore drafts,
+                ParentFlowApplyCaseCompiler parentCompiler,
                 FixtureAssetSimulationResolver fixtureAssets) {
             return new SimulationModule(resources,
                     new CompositeFixtureSetAuthorityReader(List.of(generatedFixtures, fixtures)),
-                    new SimulationModule.Authorities(publications, drafts, null, fixtureAssets),
+                    new SimulationModule.Authorities(publications, drafts, parentCompiler, fixtureAssets),
                     new InMemorySimulationRunStore());
         }
 
@@ -1222,6 +1249,9 @@ class VisualAuthoringBrowserDomTest {
     private InMemoryReusableFlowPublicationStore browserReusableFlowPublicationStore;
 
     @Autowired
+    private ComposableCatalog browserComposableCatalog;
+
+    @Autowired
     private ReusableFlowFixtureModule browserReusableFlowFixtureModule;
 
     @Autowired
@@ -1599,16 +1629,98 @@ class VisualAuthoringBrowserDomTest {
         assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-simulation-output']"))).getText())
                 .contains("\"orderCount\": 2");
-
         trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(4)"), actions);
         trackedClick(wait, By.cssSelector("[data-testid='publish-flow']"), actions);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='flow-fixture-panel']")));
-        trackedClick(wait, By.cssSelector("[data-testid='open-flow-fixture']"), actions);
+
+        // Re-save the leaf whole-Flow Return against its immutable version so a parent can reuse it.
+        trackedClick(wait, By.cssSelector("[data-testid='save-flow-fixture']"), actions);
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-simulation-output']"))).getText())
+                .contains("\"orderCount\": 2");
+        var childSubject = browserReusableFlowPublicationStore.findLatestVersion(scope, flowId)
+                .orElseThrow().subject();
+        assertThat(browserComposableCatalog.list(scope, Set.of(
+                        ComposableCatalog.Kind.API_RESOURCE, ComposableCatalog.Kind.FLOW_VERSION), 100))
+                .anyMatch(item -> item.reference() instanceof
+                        ReusableFlowCommand.ComposableRef.FlowVersion reference
+                        && reference.publicationId().equals(childSubject.publicationId())
+                        && reference.revision() == childSubject.revision()
+                        && reference.fingerprint().equals(childSubject.fingerprint()));
+
+        // Compose a parent Solution from the unified Catalog and apply the leaf Case to its Flow node.
+        trackedClick(wait, By.cssSelector(".api-resource-object-header a"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='simple-authoring-home']")));
+        trackedClick(wait, By.cssSelector("[data-testid='create-solution']"), actions);
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='flow-name']"))), "Customer solution");
+        String parentFlowId = "customer_solution_" + suffix;
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='flow-id']")), parentFlowId);
+        WebElement childVersion;
+        try {
+            childVersion = wait.until(ignored -> new Select(driver.findElement(
+                            By.cssSelector("[data-testid='flow-catalog-selection']"))).getOptions().stream()
+                    .filter(option -> option.getAttribute("value").startsWith("FLOW_VERSION:"))
+                    .findFirst().orElse(null));
+        } catch (TimeoutException failure) {
+            String options = new Select(driver.findElement(
+                    By.cssSelector("[data-testid='flow-catalog-selection']"))).getOptions().stream()
+                    .map(WebElement::getText).collect(java.util.stream.Collectors.joining(" | "));
+            String message = driver.findElements(By.cssSelector("[data-testid='flow-message']")).stream()
+                    .map(WebElement::getText).collect(java.util.stream.Collectors.joining(" | "));
+            throw new AssertionError("Flow catalog did not expose published child; options="
+                    + options + "; message=" + message, failure);
+        }
+        new Select(driver.findElement(By.cssSelector("[data-testid='flow-catalog-selection']")))
+                .selectByValue(childVersion.getAttribute("value"));
+        trackedClick(wait, By.cssSelector("[data-testid='add-flow-catalog-item']"), actions);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-node-list']")).getText())
+                .contains(flowId, childSubject.publicationId());
+        trackedClick(wait, By.cssSelector("[data-testid='save-flow']"), actions);
+        trackedClick(wait, By.cssSelector(".object-tabs button:nth-child(4)"), actions);
+        trackedClick(wait, By.cssSelector("[data-testid='publish-flow']"), actions);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-fixture-panel']")));
+        List<WebElement> fixtureModes = driver.findElements(By.cssSelector(
+                "input[name='flow-fixture-mode']"));
+        assertThat(fixtureModes).hasSize(2);
+        fixtureModes.get(1).click();
+        actions.incrementAndGet();
+        wait.until(ignored -> new Select(driver.findElement(By.cssSelector(
+                "[data-testid='flow-node-fixture:step1']"))).getOptions().stream()
+                .anyMatch(option -> fixtureSetId.equals(option.getAttribute("value"))));
+        new Select(driver.findElement(By.cssSelector(
+                "[data-testid='flow-node-fixture:step1']"))).selectByValue(fixtureSetId);
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='flow-fixture-input']")),
+                "{\n  \"customerId\": \"customer-1\"\n}");
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='flow-fixture-output']")),
+                "{\n  \"customerId\": \"customer-1\",\n  \"orderCount\": 2,\n"
+                        + "  \"customerLabel\": \"customer-1 orders\"\n}");
+        trackedClick(wait, By.cssSelector("[data-testid='save-flow-fixture']"), actions);
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='flow-simulation-node:step1']"))).getText())
+                .contains("COMPLETED", "MOCKED", "APPLY_CASE", "NOT_APPLICABLE", "NO_EGRESS");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='flow-simulation-panel']")).getText())
+                .contains("PASSED_WITH_MOCKS");
+        var parentSubject = browserReusableFlowPublicationStore.findLatestVersion(scope, parentFlowId)
+                .orElseThrow().subject();
+        var parentFixture = browserStandaloneFixtureSetStore.findHead(
+                scope, parentFlowId + ".parent-default").orElseThrow(
+                        () -> new AssertionError("visible parent Fixture save did not persist its authority"));
+        assertThat(parentFixture.generated().view().subject()).isEqualTo(parentSubject);
+        FixtureSetCommand.Control parentControl = parentFixture.generated().view().cases()
+                .getFirst().controls().getFirst();
+        assertThat(parentControl.target()).isEqualTo(new FixtureSetCommand.Target.Node("step1"));
+        assertThat(parentControl.behavior()).isEqualTo(new FixtureSetCommand.Behavior.ApplyCase(
+                fixtureSetId, 2, "default"));
+
+        driver.get("http://localhost:" + port + "/workbench/?fixtureSetId=" + fixtureSetId);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='fixture-object-page']")));
         assertThat(driver.findElement(By.cssSelector("[data-testid='fixture-authority']")).getText())
-                .contains("Flow Draft");
+                .contains("Flow Version");
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='fixture-share-redaction-paths']"))), "/customerLabel");
         trackedClick(wait, By.cssSelector("[data-testid='share-fixture-object']"), actions);
@@ -1652,7 +1764,7 @@ class VisualAuthoringBrowserDomTest {
         var active = browserStandaloneFixtureSetStore.findHead(scope, fixtureSetId)
                 .orElseThrow(() -> new AssertionError("visible task did not persist its Fixture head"));
         assertThat(active.generated().view().subject()).isEqualTo(
-                browserReusableFlowDraftStore.findHead(scope, flowId).orElseThrow().subject());
+                browserReusableFlowPublicationStore.findLatestVersion(scope, flowId).orElseThrow().subject());
         FixtureSetCommand.Behavior.Return returned = (FixtureSetCommand.Behavior.Return)
                 active.generated().view().cases().getFirst().controls().getFirst().behavior();
         FixtureSetCommand.Material.FixtureAsset material =
@@ -1663,7 +1775,7 @@ class VisualAuthoringBrowserDomTest {
                         .FixtureAssetDescriptor.FixtureLifecycle.ACTIVE);
 
         Duration elapsed = Duration.between(started, Instant.now());
-        assertThat(actions.get()).isEqualTo(28);
+        assertThat(actions.get()).isEqualTo(36);
         assertThat(elapsed).isLessThan(Duration.ofSeconds(90));
         System.out.printf("[simple-authoring-task] primaryActions=%d elapsedMs=%d%n",
                 actions.get(), elapsed.toMillis());

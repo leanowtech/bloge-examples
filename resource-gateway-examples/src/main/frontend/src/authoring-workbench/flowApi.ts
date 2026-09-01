@@ -8,8 +8,10 @@ import type {
   FixtureReviewCommand,
   FixtureReviewReceipt,
   FixtureSetView,
+  ComposableCatalogItem,
   FlowDraftRef,
   FlowVersionRef,
+  ApiResourceRef,
   LegacyFixtureReauthorPreview,
   LegacyReusableFlowReauthorPreview,
   ReusableFlowVersion,
@@ -25,6 +27,18 @@ export interface FixtureReadResponse {
   value: FixtureSetView;
   strongEtag: string | null;
   replayed: false;
+}
+
+/** Lists exact API Resource and immutable Flow Version choices from one trusted-scope catalog. */
+export async function listComposableCatalog(
+  transport: AuthoringWorkbenchTransport = fetch,
+): Promise<ComposableCatalogItem[]> {
+  const query = new URLSearchParams();
+  query.append('kind', 'API_RESOURCE');
+  query.append('kind', 'FLOW_VERSION');
+  return body(await transport(`/api/authoring/catalog?${query}`, {
+    headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
+  }));
 }
 
 /** Reads one fixture-free reusable Flow command projected from one exact legacy graph coordinate. */
@@ -106,12 +120,13 @@ export async function readFlowFixture(
 
 /** Discovers payload-free Fixtures for one exact draft or immutable version Subject. */
 export async function listFlowFixtures(
-  subject: FlowDraftRef | FlowVersionRef,
+  subject: ApiResourceRef | FlowDraftRef | FlowVersionRef,
   transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<FixtureSetSummary[]> {
   const query = new URLSearchParams({
     subjectKind: subject.kind,
-    subjectId: subject.kind === 'FLOW_DRAFT' ? subject.draftId : subject.publicationId,
+    subjectId: subject.kind === 'FLOW_DRAFT' ? subject.draftId
+      : subject.kind === 'FLOW_VERSION' ? subject.publicationId : subject.resourceId,
     subjectRevision: String(subject.revision), subjectFingerprint: subject.fingerprint,
   });
   return body(await transport(`/api/authoring/fixture-sets?${query}`, {

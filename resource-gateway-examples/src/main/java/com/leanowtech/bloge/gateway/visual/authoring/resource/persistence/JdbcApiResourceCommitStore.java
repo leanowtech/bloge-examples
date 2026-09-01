@@ -340,6 +340,31 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         }
     }
 
+    @Override public List<StoredApiResource> listHeads(AuthoringScope scope, int limit) {
+        Objects.requireNonNull(scope, "scope");
+        if (limit < 1 || limit > 100) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "catalog query is invalid");
+        }
+        try {
+            List<String> ids = jdbc.query("""
+                    SELECT resource_id
+                      FROM rg_api_resource_heads
+                     WHERE tenant_id=? AND project_id=? AND environment_id=?
+                     ORDER BY resource_id
+                     LIMIT ?
+                    """, (rs, row) -> rs.getString(1), scope.tenantId(), scope.projectId(),
+                    scope.environmentId(), limit);
+            return ids.stream().map(id -> findHead(scope, id)
+                            .orElseThrow(() -> error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                                    "catalog head provenance is missing")))
+                    .toList();
+        } catch (ApiResourceCommitStoreException failure) {
+            throw failure;
+        } catch (DataAccessException failure) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "catalog read failed");
+        }
+    }
+
     private Optional<StoredApiResource> read(AuthoringScope scope, String resourceId, Long revision) {
         String sql = revision == null ? READ_JOIN : REVISION_READ_JOIN;
         Object[] args = revision == null

@@ -4,7 +4,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 
 import java.time.Clock;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -82,6 +84,18 @@ public final class InMemoryReusableFlowPublicationStore implements ReusableFlowP
                         && entry.getKey().publicationId().equals(publicationId))
                 .max(java.util.Comparator.comparingInt(entry -> entry.getKey().revision()))
                 .map(Map.Entry::getValue);
+    }
+
+    @Override public synchronized List<ReusableFlowVersion> listLatestVersions(
+            AuthoringScope scope, int limit) {
+        if (scope == null || limit < 1 || limit > 100) {
+            throw new ReusableFlowFailure(ReusableFlowFailure.Code.VALIDATION);
+        }
+        return identities.keySet().stream().filter(key -> key.scope().equals(scope))
+                .sorted(Comparator.comparing(FlowKey::flowId)).limit(limit)
+                .map(key -> findLatestVersion(scope, key.flowId())
+                        .orElseThrow(() -> new ReusableFlowFailure(ReusableFlowFailure.Code.INTEGRITY)))
+                .toList();
     }
 
     private static void requireIntent(ReusableFlowPublishIntent intent) {

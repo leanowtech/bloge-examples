@@ -32,7 +32,7 @@ import ReactFlow, {
   Position,
   getSmoothStepPath,
 } from 'reactflow';
-import { ChevronLeft, ChevronRight, CopyPlus, LockKeyhole, Minus, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CopyPlus, LockKeyhole, Minus } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 import {
@@ -12670,7 +12670,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onClick={() => zoomCanvasBy('in')}
               disabled={nodes.length === 0}
             >
-              <Plus size={14} aria-hidden="true" />
+              <span aria-hidden="true">+</span>
             </button>
             <button
               type="button"

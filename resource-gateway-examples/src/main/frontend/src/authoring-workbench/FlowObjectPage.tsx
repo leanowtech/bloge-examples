@@ -2,8 +2,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Boxes, Plus, Rocket, TestTube2, Trash2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
-import { readApiResource } from './api';
 import {
+  listComposableCatalog,
   listFlowFixtures,
   publishFlow,
   readLegacyFixtureReauthorPreview,
@@ -17,6 +17,7 @@ import {
 } from './flowApi';
 import {
   buildFlowFixtureCommand,
+  buildParentFlowFixtureCommand,
   buildReusableFlowCommand,
   type FlowDraftRef,
   type FlowFormDraft,
@@ -24,7 +25,8 @@ import {
   type LegacyFixtureReauthorPreview,
   type LegacyReusableFlowReauthorPreview,
   type ReusableFlowCommand,
-  type ResolvedApiNode,
+  type ComposableCatalogItem,
+  type ResolvedFlowNode,
 } from './flowModel';
 import type { FixtureSetSummary, SimulationRun } from './model';
 
@@ -48,8 +50,9 @@ export default function FlowObjectPage({
   const [draft, setDraft] = useState<FlowFormDraft>({
     flowId: initialFlowId, displayName: '', kind: initialKind, description: '',
   });
-  const [nodes, setNodes] = useState<ResolvedApiNode[]>([]);
-  const [resourceId, setResourceId] = useState('');
+  const [nodes, setNodes] = useState<ResolvedFlowNode[]>([]);
+  const [catalog, setCatalog] = useState<ComposableCatalogItem[]>([]);
+  const [catalogCoordinate, setCatalogCoordinate] = useState('');
   const [strongEtag, setStrongEtag] = useState<string | null>(null);
   const [subject, setSubject] = useState<FlowDraftRef | null>(null);
   const [publishedSubject, setPublishedSubject] = useState<FlowVersionRef | null>(null);
@@ -57,6 +60,9 @@ export default function FlowObjectPage({
   const [fixtureEtag, setFixtureEtag] = useState<string | null>(null);
   const [fixtureInput, setFixtureInput] = useState('{}');
   const [fixtureOutput, setFixtureOutput] = useState('{}');
+  const [fixtureMode, setFixtureMode] = useState<'WHOLE_FLOW' | 'NODE_CASES'>('WHOLE_FLOW');
+  const [nodeFixtureOptions, setNodeFixtureOptions] = useState<Record<string, FixtureSetSummary[]>>({});
+  const [nodeFixtureSelections, setNodeFixtureSelections] = useState<Record<string, FixtureSetSummary>>({});
   const [run, setRun] = useState<SimulationRun | null>(null);
   const [published, setPublished] = useState('');
   const [legacyPreview, setLegacyPreview] = useState<LegacyReusableFlowReauthorPreview | null>(null);
@@ -69,16 +75,28 @@ export default function FlowObjectPage({
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
+    void listComposableCatalog().then((items) => {
+      if (!cancelled) {
+        setCatalog(items);
+        setCatalogCoordinate((current) => current || catalogKey(items[0]?.reference));
+      }
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (!initialFlowId) return;
     let cancelled = false;
     const latest = initialLegacyFixture ? Promise.resolve(null) : readLatestFlowVersion(initialFlowId);
-    void Promise.all([readFlow(initialFlowId), latest]).then(async ([stored, currentVersion]) => {
-      const restored = await Promise.all(stored.value.graph.nodes.map(async (node) => {
-        if (node.use.kind !== 'API_RESOURCE') throw new Error('This simple page supports API Resource nodes.');
-        const resource = await readApiResource(node.use.resourceId, node.use.revision);
-        if (resource.value.fingerprint !== node.use.fingerprint) throw new Error('A Flow dependency has drifted.');
-        return { nodeId: node.nodeId, label: node.label, resource: resource.value };
-      }));
+    void Promise.all([readFlow(initialFlowId), latest, listComposableCatalog()])
+      .then(async ([stored, currentVersion, items]) => {
+      const restored = stored.value.graph.nodes.map((node) => {
+        const item = exactCatalogItem(items, node.use);
+        return { nodeId: node.nodeId, label: node.label, item };
+      });
       if (cancelled) return;
       const exactSubject: FlowDraftRef = {
         kind: 'FLOW_DRAFT', draftId: stored.value.draftId,
@@ -89,6 +107,7 @@ export default function FlowObjectPage({
         kind: stored.value.kind, description: stored.value.description,
       });
       setNodes(restored);
+      setCatalog(items);
       setStrongEtag(stored.strongEtag);
       setSubject(exactSubject);
       const currentPublished = currentVersion && currentVersion.source.draftId === exactSubject.draftId
@@ -125,14 +144,11 @@ export default function FlowObjectPage({
   useEffect(() => {
     if (!initialLegacyFlow) return;
     let cancelled = false;
-    void readLegacyReusableFlowPreview(
+    void Promise.all([readLegacyReusableFlowPreview(
       initialLegacyFlow.sourceKind, initialLegacyFlow.sourceId, initialLegacyFlow.sourceRevision,
-    ).then(async (preview) => {
-      const restored = await Promise.all(preview.suggestedFlow.flow.graph.nodes.map(async (node) => {
-        if (node.use.kind !== 'API_RESOURCE') throw new Error('This simple page supports API Resource nodes.');
-        const resource = await readApiResource(node.use.resourceId, node.use.revision);
-        if (resource.value.fingerprint !== node.use.fingerprint) throw new Error('A Flow dependency has drifted.');
-        return { nodeId: node.nodeId, label: node.label, resource: resource.value };
+    ), listComposableCatalog()]).then(async ([preview, items]) => {
+      const restored = preview.suggestedFlow.flow.graph.nodes.map((node) => ({
+        nodeId: node.nodeId, label: node.label, item: exactCatalogItem(items, node.use),
       }));
       if (cancelled) return;
       setDraft({
@@ -142,6 +158,7 @@ export default function FlowObjectPage({
         description: preview.suggestedFlow.flow.description,
       });
       setNodes(restored);
+      setCatalog(items);
       setLegacyPreview(preview);
       setImportedFlow(preview.suggestedFlow);
       setMessage(t('Review'));
@@ -166,16 +183,34 @@ export default function FlowObjectPage({
     return () => { cancelled = true; };
   }, [initialLegacyFixture]);
 
-  const addResource = async () => {
+  useEffect(() => {
+    if (tab !== 'fixture' || !publishedSubject || nodes.length === 0) return;
+    let cancelled = false;
+    void Promise.all(nodes.map(async (node) => [node.nodeId,
+      await listFlowFixtures(node.item.reference)] as const)).then((entries) => {
+      if (cancelled) return;
+      const options = Object.fromEntries(entries);
+      setNodeFixtureOptions(options);
+      setNodeFixtureSelections((current) => Object.fromEntries(nodes.flatMap((node) => {
+        const selected = current[node.nodeId] ?? options[node.nodeId]?.[0];
+        return selected ? [[node.nodeId, selected]] : [];
+      })));
+    }).catch((failure: unknown) => {
+      if (!cancelled) setMessage(errorMessage(failure));
+    });
+    return () => { cancelled = true; };
+  }, [nodes, publishedSubject, tab]);
+
+  const addCatalogSelection = async () => {
     setBusy(true);
     setMessage('');
     try {
-      const stored = await readApiResource(resourceId.trim());
+      const item = catalog.find((value) => catalogKey(value.reference) === catalogCoordinate);
+      if (!item) throw new Error('Select a catalog item.');
       const nodeId = nextNodeId(nodes);
-      setNodes([...nodes, { nodeId, label: stored.value.displayName, resource: stored.value }]);
+      setNodes([...nodes, { nodeId, label: item.displayName, item }]);
       setImportedFlow(null);
-      setResourceId('');
-      setMessage(t('Added exact committed API Resource.'));
+      setMessage('');
     } catch (failure) {
       setMessage(errorMessage(failure));
     } finally {
@@ -226,13 +261,19 @@ export default function FlowObjectPage({
     setBusy(true);
     setMessage('');
     try {
-      const fixtureSetId = `${draft.flowId.trim()}.default`;
-      const command = buildFlowFixtureCommand(
-        fixtureSubject, `${draft.displayName.trim()} default`, fixtureInput, fixtureOutput,
-      );
+      const parentMode = fixtureMode === 'NODE_CASES';
+      if (parentMode && !publishedSubject) throw new Error('Publish the parent Flow before applying node Cases.');
+      const fixtureSetId = `${draft.flowId.trim()}.${parentMode ? 'parent-default' : 'default'}`;
+      const command = parentMode
+        ? buildParentFlowFixtureCommand(publishedSubject!, `${draft.displayName.trim()} parent default`,
+          fixtureInput, fixtureOutput, nodes, nodeFixtureSelections)
+        : buildFlowFixtureCommand(
+          fixtureSubject, `${draft.displayName.trim()} default`, fixtureInput, fixtureOutput,
+        );
       const saved = await saveFlowFixture(
         fixtureSetId, command, fixtureEtag, operationKey('save-flow-fixture', fixtureSetId),
       );
+      setLegacyFixturePreview(null);
       setFixtureEtag(saved.strongEtag);
       setFixture({
         schemaVersion: 'bloge.fixtureSetSummary.v1', fixtureSetId: saved.value.fixtureSetId,
@@ -339,19 +380,23 @@ export default function FlowObjectPage({
               onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></Field>
           </section>
           <section>
-            <h2>{t('API steps')}</h2>
-            <p>{t('Each step is pinned to the exact committed Resource revision. Reorder by removing and adding again.')}</p>
+            <h2>{t('Dependencies')}</h2>
             <div className="flow-add-resource">
-              <input data-testid="flow-resource-id" placeholder={t('API Resource ID')} value={resourceId}
-                onChange={(event) => setResourceId(event.target.value)} />
-              <button type="button" data-testid="add-flow-resource" disabled={busy || !resourceId.trim()}
-                onClick={addResource}><Plus aria-hidden="true" /> {t('Add API')}</button>
+              <select data-testid="flow-catalog-selection" value={catalogCoordinate}
+                onChange={(event) => setCatalogCoordinate(event.target.value)}>
+                {catalog.map((item) => <option key={catalogKey(item.reference)} value={catalogKey(item.reference)}>
+                  {item.reference.kind === 'API_RESOURCE' ? 'API' : 'Flow'} · {item.displayName}
+                  {' · '}{catalogLabel(item.reference)}
+                </option>)}
+              </select>
+              <button type="button" data-testid="add-flow-catalog-item" disabled={busy || !catalogCoordinate}
+                onClick={addCatalogSelection}><Plus aria-hidden="true" /> {t('Add item')}</button>
             </div>
             <ol className="flow-node-list" data-testid="flow-node-list">
               {nodes.map((node, index) => (
                 <li key={node.nodeId}>
                   <span>{index + 1}</span>
-                  <div><strong>{node.label}</strong><small>{node.resource.resourceId}@{node.resource.revision}</small></div>
+                  <div><strong>{node.label}</strong><small>{catalogLabel(node.item.reference)}</small></div>
                   <button type="button" aria-label={`${t('Remove')} ${node.label}`}
                     onClick={() => {
                       setNodes(nodes.filter((value) => value.nodeId !== node.nodeId));
@@ -387,6 +432,28 @@ export default function FlowObjectPage({
             ))}</ul>
           </section>}
           <p>{t('Define one whole-flow input and returned output. Internal API calls stay unexecuted.')}</p>
+          {publishedSubject && <div className="fixture-mode" data-testid="flow-fixture-mode">
+            <label><input type="radio" name="flow-fixture-mode" checked={fixtureMode === 'WHOLE_FLOW'}
+              onChange={() => setFixtureMode('WHOLE_FLOW')} />{t('Return')}</label>
+            <label><input type="radio" name="flow-fixture-mode" checked={fixtureMode === 'NODE_CASES'}
+              onChange={() => setFixtureMode('NODE_CASES')} />{t('Node')} · {t('Case')}</label>
+          </div>}
+          {fixtureMode === 'NODE_CASES' && <div data-testid="flow-node-fixtures">
+            {nodes.map((node) => <Field key={node.nodeId} label={`${node.label} · ${catalogLabel(node.item.reference)}`}>
+              <select data-testid={`flow-node-fixture:${node.nodeId}`}
+                value={nodeFixtureSelections[node.nodeId]?.fixtureSetId ?? ''}
+                onChange={(event) => {
+                  const selected = nodeFixtureOptions[node.nodeId]?.find(
+                    (option) => option.fixtureSetId === event.target.value,
+                  );
+                  if (selected) setNodeFixtureSelections({ ...nodeFixtureSelections, [node.nodeId]: selected });
+                }}>
+                <option value="">{t('Fixture')}</option>
+                {(nodeFixtureOptions[node.nodeId] ?? []).map((option) => <option key={option.fixtureSetId}
+                  value={option.fixtureSetId}>{option.displayName} · {option.cases[0]?.name}</option>)}
+              </select>
+            </Field>)}
+          </div>}
           <div className="object-example-grid">
             <Field label={t('Fixture input')}><textarea data-testid="flow-fixture-input" rows={9}
               value={fixtureInput} onChange={(event) => setFixtureInput(event.target.value)} /></Field>
@@ -394,7 +461,9 @@ export default function FlowObjectPage({
               value={fixtureOutput} onChange={(event) => setFixtureOutput(event.target.value)} /></Field>
           </div>
           <button type="button" className="primary-object-action" data-testid="save-flow-fixture"
-            disabled={busy || !(publishedSubject ?? subject)} onClick={saveFixtureAndSimulate}>
+            disabled={busy || !(publishedSubject ?? subject)
+              || fixtureMode === 'NODE_CASES' && nodes.some((node) => !nodeFixtureSelections[node.nodeId])}
+            onClick={saveFixtureAndSimulate}>
             <TestTube2 aria-hidden="true" /> {busy ? t('Saving and simulating...') : t('Save Fixture and simulate')}
           </button>
           {fixture && <button type="button" data-testid="rerun-flow-fixture" disabled={busy}
@@ -416,6 +485,12 @@ export default function FlowObjectPage({
               <div><span>{t('Execution')}</span><strong>{run.verdicts.execution}</strong></div>
             </div>
             <pre data-testid="flow-simulation-output">{JSON.stringify(run.output ?? null, null, 2)}</pre>
+            <ul className="simulation-node-evidence" data-testid="flow-simulation-nodes">
+              {run.nodes.map((node) => <li key={node.nodeId} data-testid={`flow-simulation-node:${node.nodeId}`}>
+                {node.nodeId} · {node.status} · {node.execution} · {node.fixtureSource}
+                {' · '}{node.egress.decision} · {node.egress.attempted ? 'EGRESS_ATTEMPTED' : 'NO_EGRESS'}
+              </li>)}
+            </ul>
           </> : <p>{t('Save a Flow Fixture to simulate it without external effects.')}</p>}
         </section>
       )}
@@ -440,10 +515,28 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="object-field"><span>{label}</span>{children}</label>;
 }
 
-function nextNodeId(nodes: ResolvedApiNode[]): string {
+function nextNodeId(nodes: ResolvedFlowNode[]): string {
   let index = nodes.length + 1;
   while (nodes.some((node) => node.nodeId === `step${index}`)) index += 1;
   return `step${index}`;
+}
+
+function catalogKey(reference: ComposableCatalogItem['reference'] | undefined): string {
+  if (!reference) return '';
+  return `${reference.kind}:${reference.kind === 'API_RESOURCE'
+    ? reference.resourceId : reference.publicationId}:${reference.revision}:${reference.fingerprint}`;
+}
+
+function catalogLabel(reference: ComposableCatalogItem['reference']): string {
+  return `${reference.kind === 'API_RESOURCE' ? reference.resourceId : reference.publicationId}@${reference.revision}`;
+}
+
+function exactCatalogItem(
+  items: ComposableCatalogItem[], reference: ComposableCatalogItem['reference'],
+): ComposableCatalogItem {
+  const item = items.find((candidate) => catalogKey(candidate.reference) === catalogKey(reference));
+  if (!item) throw new Error('A Flow dependency is unavailable or has drifted.');
+  return item;
 }
 
 function tabLabel(tab: FlowTab): string {

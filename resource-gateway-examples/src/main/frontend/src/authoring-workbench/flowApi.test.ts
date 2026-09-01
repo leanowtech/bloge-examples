@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  listComposableCatalog,
   listFlowFixtures,
   publishFlow,
   readFixtureSet,
@@ -18,6 +19,17 @@ import {
 import type { FixtureReviewCommand, FixtureSetCommand, FixtureShareCommand, ReusableFlowCommand } from './flowModel';
 
 describe('reusable Flow object transport', () => {
+  it('lists both exact composable kinds through one payload-free catalog request', async () => {
+    const transport = vi.fn().mockResolvedValue(response([]));
+
+    await listComposableCatalog(transport);
+
+    expect(transport.mock.calls[0][0]).toBe(
+      '/api/authoring/catalog?kind=API_RESOURCE&kind=FLOW_VERSION');
+    const headers = new Headers(transport.mock.calls[0][1]?.headers);
+    expect(headers.get('X-Purpose')).toBe('API_RESOURCE_AUTHORING');
+    expect(headers.get('Idempotency-Key')).toBeNull();
+  });
   it('reads a payload-free legacy Fixture review without mutation headers', async () => {
     const transport = vi.fn().mockResolvedValue(response({
       schemaVersion: 'bloge.legacyFixtureReauthorPreview.v1',

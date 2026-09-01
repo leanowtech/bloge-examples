@@ -1,4 +1,4 @@
-import type { ApiResourceSpec, JsonObject, SchemaEnvelope } from './model';
+import type { FixtureSetSummary, JsonObject, SchemaEnvelope } from './model';
 
 export type FlowKind = 'TOOL' | 'SOLUTION';
 
@@ -41,10 +41,17 @@ export interface ApiResourceRef {
 
 export type FixtureSubjectRef = ApiResourceRef | FlowDraftRef | FlowVersionRef;
 
-export interface ResolvedApiNode {
+export interface ComposableCatalogItem {
+  schemaVersion: 'bloge.composableCatalogItem.v1';
+  displayName: string;
+  reference: ApiResourceRef | FlowVersionRef;
+  contract: { input: SchemaEnvelope; output: SchemaEnvelope };
+}
+
+export interface ResolvedFlowNode {
   nodeId: string;
   label: string;
-  resource: ApiResourceSpec;
+  item: ComposableCatalogItem;
 }
 
 export interface ReusableFlowCommand {
@@ -58,7 +65,7 @@ export interface ReusableFlowCommand {
       nodes: Array<{
         nodeId: string;
         label: string;
-        use: { kind: 'API_RESOURCE'; resourceId: string; revision: number; fingerprint: string };
+        use: ApiResourceRef | FlowVersionRef;
         inputs: Array<{
           to: string;
           from: { kind: 'FLOW_INPUT'; path: string }
@@ -233,7 +240,7 @@ export interface FixtureReviewReceipt {
 }
 
 /** Builds an exact API-only reusable DAG and derives edges solely from input mappings. */
-export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedApiNode[]): ReusableFlowCommand {
+export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedFlowNode[]): ReusableFlowCommand {
   identifier(draft.flowId, 'Flow ID');
   const displayName = draft.displayName.trim();
   if (!displayName || displayName.length > 200) throw new Error('Flow name is required.');
@@ -247,7 +254,7 @@ export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedAp
     const nodeId = identifier(node.nodeId, 'Node ID');
     if (seen.has(nodeId)) throw new Error('Node IDs must be unique.');
     seen.add(nodeId);
-    const inputs = Object.entries(node.resource.contract.input.schema.properties).map(([name, schema]) => {
+    const inputs = Object.entries(node.item.contract.input.schema.properties).map(([name, schema]) => {
       const prior = findPriorOutput(nodes, index, name, schema.type);
       if (prior) {
         return { to: `$.${name}`, from: { kind: 'NODE_OUTPUT' as const, nodeId: prior.nodeId, path: `$.${name}` } };
@@ -255,17 +262,14 @@ export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedAp
       const existing = flowProperties[name];
       if (existing && existing.type !== schema.type) throw new Error(`Input ${name} has incompatible types.`);
       flowProperties[name] = structuredClone(schema);
-      if (node.resource.contract.input.schema.required.includes(name) && !flowRequired.includes(name)) {
+      if (node.item.contract.input.schema.required.includes(name) && !flowRequired.includes(name)) {
         flowRequired.push(name);
       }
       return { to: `$.${name}`, from: { kind: 'FLOW_INPUT' as const, path: `$.${name}` } };
     });
     return {
-      nodeId, label: node.label.trim() || node.resource.displayName,
-      use: {
-        kind: 'API_RESOURCE' as const, resourceId: node.resource.resourceId,
-        revision: node.resource.revision, fingerprint: node.resource.fingerprint,
-      },
+      nodeId, label: node.label.trim() || node.item.displayName,
+      use: structuredClone(node.item.reference),
       inputs,
     };
   });
@@ -276,13 +280,38 @@ export function buildReusableFlowCommand(draft: FlowFormDraft, nodes: ResolvedAp
       displayName, kind: draft.kind, description: draft.description,
       contract: {
         input: envelope(flowProperties, flowRequired),
-        output: structuredClone(last.resource.contract.output),
+        output: structuredClone(last.item.contract.output),
       },
       graph: { nodes: graphNodes, output: { nodeId: graphNodes[graphNodes.length - 1].nodeId, path: '$' } },
       layout: {
         nodes: Object.fromEntries(graphNodes.map((node, index) => [node.nodeId, { x: 120 + index * 280, y: 160 }])),
       },
     },
+  };
+}
+
+/** Builds one parent-Flow Case whose every node explicitly reuses an exact leaf Fixture Case. */
+export function buildParentFlowFixtureCommand(
+  subject: FlowVersionRef, displayName: string, inputSource: string, outputSource: string,
+  nodes: ResolvedFlowNode[], selections: Record<string, FixtureSetSummary>,
+): FixtureSetCommand {
+  const input = objectJson(inputSource, 'Fixture input');
+  const output = objectJson(outputSource, 'Fixture output');
+  const controls = nodes.map((node) => {
+    const selected = selections[node.nodeId];
+    const fixtureCase = selected?.cases[0];
+    if (!selected || !fixtureCase) throw new Error(`Select one Fixture Case for ${node.label}.`);
+    return {
+      target: { kind: 'NODE' as const, nodeId: node.nodeId },
+      behavior: {
+        kind: 'APPLY_CASE' as const, fixtureSetId: selected.fixtureSetId,
+        revision: selected.revision, caseId: fixtureCase.caseId,
+      },
+    };
+  });
+  return {
+    schemaVersion: 'bloge.fixtureSetCommand.v1', displayName: requiredText(displayName, 'Fixture name'), subject,
+    cases: [{ caseId: 'default', name: 'Default', input, controls, expect: { output } }],
   };
 }
 
@@ -305,9 +334,9 @@ export function buildFlowFixtureCommand(
   };
 }
 
-function findPriorOutput(nodes: ResolvedApiNode[], before: number, name: string, type: string) {
+function findPriorOutput(nodes: ResolvedFlowNode[], before: number, name: string, type: string) {
   for (let index = before - 1; index >= 0; index -= 1) {
-    const schema = nodes[index].resource.contract.output.schema.properties[name];
+    const schema = nodes[index].item.contract.output.schema.properties[name];
     if (schema?.type === type) return nodes[index];
   }
   return null;
