@@ -242,8 +242,10 @@ class VisualCanvasDemoScriptTest {
         assertThat(source).contains(
                 "RG_API_RESOURCE_AUTHORING_ENABLED=\"${RG_API_RESOURCE_AUTHORING_ENABLED:-true}\"",
                 "RG_REUSABLE_FLOW_AUTHORING_ENABLED=\"${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}\"",
+                "RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=\"${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:-true}\"",
                 "export RG_API_RESOURCE_AUTHORING_ENABLED",
-                "export RG_REUSABLE_FLOW_AUTHORING_ENABLED");
+                "export RG_REUSABLE_FLOW_AUTHORING_ENABLED",
+                "export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED");
 
         Process process = new ProcessBuilder("bash", SCRIPT.toString(), "--help")
                 .redirectErrorStream(true)

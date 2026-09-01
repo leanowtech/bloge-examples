@@ -59,7 +59,9 @@ The JDBC authoring store, first Resource application facade, and HTTP adapter ar
 `PUT /api/authoring/resources/{resourceId}` only when `gateway.authoring.api-resource.enabled=true`; the default
 application configuration remains disabled. The repository launchers `scripts/start-examples.sh` and
 `scripts/start-visual-canvas-demo.sh` default both API Resource and reusable Flow authoring to enabled after the
-required migrations are installed. Set either `RG_API_RESOURCE_AUTHORING_ENABLED=false` or
+required migrations are installed. For their embedded H2 database, the launchers install each migration once and
+record its checksum in `rg_local_authoring_schema_migrations`. PostgreSQL migrations remain external. Set either
+`RG_API_RESOURCE_AUTHORING_ENABLED=false` or
 `RG_REUSABLE_FLOW_AUTHORING_ENABLED=false` to opt out for a launcher invocation.
 Apply the migrations in order:
 

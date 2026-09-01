@@ -39,6 +39,9 @@ spring.bloge:
 # ── Gateway layer ────────────────────────────────────────────────────────
 gateway:
   authoring:
+    local-schema-bootstrap:
+      # Repository launchers enable this only for their embedded H2 database.
+      enabled: ${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:false}
     api-resource:
       # Durable API Resource authoring is opt-in; the versioned schema must be installed first.
       enabled: ${RG_API_RESOURCE_AUTHORING_ENABLED:false}

@@ -82,9 +82,10 @@ RG_REUSABLE_FLOW_AUTHORING_ENABLED=false \
 ./scripts/start-examples.sh resource-gateway
 ```
 
+The launchers install the versioned authoring migrations once when they use the
+embedded H2 database, recording checksums in `rg_local_authoring_schema_migrations`.
 The application configuration itself remains fail-closed when the JAR is started
-directly. Apply the Resource Gateway authoring migrations before using either
-script against a new database.
+directly, and PostgreSQL deployments still apply migrations externally.
 
 PID files are written to `target/example-pids/`, and logs are written to
 `target/example-logs/`. The start script runs Graph Engine through its Maven
