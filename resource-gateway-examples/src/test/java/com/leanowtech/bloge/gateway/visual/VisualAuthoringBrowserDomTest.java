@@ -56,6 +56,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.FixtureSetShareMaterialWriter;
@@ -108,6 +109,7 @@ import com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.CorrectnessF
 import com.leanowtech.bloge.gateway.visualadapter.authoring.connection.ApiConnectionAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ComposableCatalogController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowDslProjector;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringController;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowAuthoringProblemHandler;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.resource.ApiConnectionStoreResourceProjectionResolver;
@@ -465,13 +467,19 @@ class VisualAuthoringBrowserDomTest {
             return new ReusableFlowModule(new ReusableFlowCompiler(catalog), drafts, publications);
         }
 
+        /** Uses the production DSL projector in the isolated browser authoring context. */
+        @Bean
+        ReusableFlowDslProjector browserReusableFlowDslProjector(DslImportService importer) {
+            return new ReusableFlowDslProjector(importer);
+        }
+
         /** Exposes the production authenticated reusable Flow transport in the browser context. */
         @Bean
         ReusableFlowAuthoringController browserReusableFlowAuthoringController(
                 ReusableFlowModule module,
                 IntegrationRequestAuthenticator authenticator,
                 ObjectMapper mapper,
-                com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowDslProjector projector) {
+                ReusableFlowDslProjector projector) {
             return new ReusableFlowAuthoringController(module, authenticator, mapper, projector);
         }
 
