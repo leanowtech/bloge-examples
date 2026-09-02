@@ -332,6 +332,13 @@ compiler/runtime/configuration/schema gate is **41/41 green** with no failures, 
 the Call Site authority, a production Operator runtime adapter, standalone Operator/Function Fixture Set authoring,
 UI/Scenario bridges, and browser acceptance remain subsequent slices.
 
+The first component-Fixture application slice adds `ComponentFixtureSetModule` and
+`ComponentFixtureSetMaterializer`. Exact Operator and built-in Function authorities can now be converted into private,
+revisioned whole-subject Fixture material through the existing CAS/idempotency store contract. Inputs, inline Return
+outputs, and expectations are checked against compiler-owned schemas; component Fixtures reject Node controls,
+`APPLY_CASE`, and unsupported fidelity before persistence. The in-memory application gate is **3/3 green**. JDBC
+subject-coordinate persistence, authenticated dispatch, and production discovery are intentionally the next slice.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

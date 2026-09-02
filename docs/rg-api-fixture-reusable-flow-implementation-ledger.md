@@ -3072,3 +3072,33 @@ BUILD SUCCESS
 Operator/Function standalone Fixture Set authoring/query、S6/S7 UI/Pin/Promote/Scenario bridge 与真实浏览器验收
 仍是明确缺口。下一轮优先完成组件 Fixture Set 的持久化/查询 authority，再把稳定 Call Site publication 与真实
 Operator adapter 接入；随后才进入前端与浏览器闭环。
+
+## 67. Iteration 66 — Component Fixture application materialization
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `ComponentFixtureSetMaterializer`，把 exact Operator/Function authority 的 input/output contract 转成私有
+  whole-subject Fixture revision；Inline Return、Case input 与 Expect 均按 exact schema 校验。
+- 新增 `ComponentFixtureSetModule`，在消费 Standalone Fixture CAS/idempotency authority 前解析 exact component；
+  支持 Create、opaque ETag update 和 exact replay。
+- 组件 Fixture 只允许 Subject control；Node、`APPLY_CASE` 与非 output-level fidelity 在持久化前 fail closed，避免把
+  Flow 内部控制语义误用于 Operator/Function。
+- 测试覆盖 Operator create/update/list、Function exact replay、component drift、Node/APPLY_CASE 拒绝与失败后无
+  可见 head。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml -Dtest=ComponentFixtureSetModuleTest test
+
+Tests run: 3; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+该提交只闭合 component Fixture 的 application/materialization seam，尚未迁移 V016 JDBC subject coordinate，也
+未接 authenticated save/list transport，因此总体完成度仍保守维持 **94%**、差距约 **6%**。下一步直接完成
+JDBC authority 泛化、readiness、HTTP subject query 与 runtime configuration；不能把 in-memory 证据冒充生产可用。
