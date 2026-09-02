@@ -2,6 +2,11 @@
 
 本文面向需要把外部 API 接入 Resource Gateway、定义算子与 built-in function、用 Fixture 做无外部副作用验证，并把多个 API 资源组合成可复用 Tool 的作者。
 
+如果需要绕过界面、只用 HTTP 命令复核 API Resource → Default Fixture → 单资源模拟 → 三 API DAG Tool →
+Tool Fixture → whole-Tool 模拟的完整链路，请使用
+[curl Fixture 与 Tool 演示剧本](resource-gateway-curl-fixture-tool-demo-runbook.md)。该剧本附带可直接运行的 shell 脚本，
+并逐项解释精确 revision/fingerprint、幂等键和运行 evidence。
+
 截图来自 2026-09-01 当前代码启动后的真实工作台。界面、Controller、Facade、Fixture 物化和 Simulation Module 均为实际实现；截图环境使用浏览器验收的本地身份与内存权威，不访问真实外部 API，也不包含生产凭据。
 
 ## 1. 先理解六个对象
