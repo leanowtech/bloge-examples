@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "bloge.simulationCommand.v2",
+  "subject": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "input": { "kind": "INLINE", "value": {} },
+  "fixturePlan": { "kind": "NONE" },
+  "executionPolicy": {
+    "externalReads": { "kind": "DENY" },
+    "externalWrites": { "kind": "DENY" }
+  },
+  "invocationKey": "caller-must-not-control-this"
+}

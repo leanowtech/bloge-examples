@@ -31,11 +31,21 @@ class ReusableFlowFixtureReviewModuleTest {
     void reviewerActivatesExactAssetsAndReplayDoesNotRepeatGovernanceWrites() {
         ReusableFlowVersion version = version();
         InMemoryStandaloneFixtureSetStore store = new InMemoryStandaloneFixtureSetStore();
-        GeneratedDefaultFixture source = new WholeFlowFixtureMaterializer().generate("cases", version,
-                command(version.subject(), FixtureSetCommand.Target.subject(),
+        FixtureSetCommand template = command(version.subject(), FixtureSetCommand.Target.subject(),
                         FixtureSetCommand.Behavior.returned(
                                 FixtureSetCommand.Material.inline(output())),
-                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL));
+                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL);
+        FixtureSetCommand.Case original = template.cases().getFirst();
+        FixtureSetCommand conditioned = new FixtureSetCommand(template.schemaVersion(),
+                template.displayName(), template.subject(), List.of(new FixtureSetCommand.Case(
+                original.caseId(), original.name(), original.input(),
+                new FixtureSetCommand.Condition("customer-1", List.of(
+                        new FixtureSetCommand.Predicate.Eq("$.customerId",
+                                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance
+                                        .textNode("customer-1")))),
+                original.controls(), original.expect())));
+        GeneratedDefaultFixture source = new WholeFlowFixtureMaterializer().generate(
+                "cases", version, conditioned);
         var saved = store.save(new StandaloneFixtureSetSaveIntent(
                 SCOPE, "author", "cases", ExpectedRevision.create(), "save",
                 fingerprint('1'), source));
@@ -66,6 +76,8 @@ class ReusableFlowFixtureReviewModuleTest {
         assertThat(completed.view().status().name()).isEqualTo("TEAM_AVAILABLE");
         assertThat(completed.view().revision()).isEqualTo(3);
         assertThat(completed.receipt().activatedAssetCount()).isEqualTo(1);
+        assertThat(completed.view().cases().getFirst().when())
+                .extracting(FixtureSetCommand.Condition::conditionId).isEqualTo("customer-1");
         assertThat(((FixtureSetCommand.Material.FixtureAsset)
                 ((FixtureSetCommand.Behavior.Return) completed.view().cases().getFirst()
                         .controls().getFirst().behavior()).material()).revision()).isEqualTo(5);

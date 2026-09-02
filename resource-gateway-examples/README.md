@@ -254,6 +254,17 @@ rejected for both direct Simulation and parent-Flow `APPLY_CASE`, so a lifecycle
 holding an older Case coordinate. The focused Simulation/parent-Flow gate is **13/13 green** with no failures,
 errors, or skips.
 
+Caller-directed Simulation v2 S1 now freezes `bloge.simulationCommand.v2` and
+`bloge.fixtureSetCommand.v2` without changing the v1 HTTP surface. Business `input` and `fixturePlan` are independent;
+commands can name an exact Case, a stable condition, or unique automatic matching against an exact Fixture Set
+revision and fingerprint. The closed condition language supports only `EQ`, `IN`, `PRESENT`, `ABSENT`, and bounded
+`NUMBER_RANGE` over `$` or direct object-property paths. Scripts, regular expressions, environment access, runtime
+Invocation Keys, mutable heads, credentials, and caller-supplied Fixture outputs are absent from the wire contract.
+The exact v2 Subject union includes API Resource, Flow Draft/Version, Operator Version, and Built-in Function Version;
+only the API Resource `SUBJECT` compiler path is executable in S1. Nested node paths, Call Sites, Simulation Run v2,
+HTTP, and UI remain later slices and fail closed rather than falling back to v1 semantics. The focused S1 plus v1
+Fixture/Simulation compatibility gate is **66/66 green** with no failures, errors, or skips.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

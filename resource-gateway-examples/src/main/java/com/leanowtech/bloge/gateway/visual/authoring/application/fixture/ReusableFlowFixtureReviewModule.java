@@ -147,7 +147,7 @@ public final class ReusableFlowFixtureReviewModule {
             throw failure(ApiFixtureSetAuthoringFailure.Code.INTEGRITY);
         }).toList();
         return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
-                fixtureCase.input(), controls, fixtureCase.expect());
+                fixtureCase.input(), fixtureCase.when(), controls, fixtureCase.expect());
     }
 
     private static ApiFixtureSetAuthoringFailure failure(ApiFixtureSetAuthoringFailure.Code code) {

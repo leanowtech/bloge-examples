@@ -80,6 +80,40 @@
         { "$ref": "#/$defs/flowVersionRef" }
       ]
     },
+    "operatorVersionRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "OPERATOR_VERSION" },
+        "libraryId": { "$ref": "#/$defs/identifier" },
+        "libraryRevision": { "$ref": "#/$defs/revision" },
+        "operatorRef": { "$ref": "#/$defs/identifier" },
+        "contractFingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "required": ["kind", "libraryId", "libraryRevision", "operatorRef", "contractFingerprint"],
+      "additionalProperties": false
+    },
+    "builtinFunctionVersionRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "BUILTIN_FUNCTION_VERSION" },
+        "catalogId": { "$ref": "#/$defs/identifier" },
+        "catalogRevision": { "$ref": "#/$defs/revision" },
+        "functionName": { "$ref": "#/$defs/identifier" },
+        "signatureFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "runtimeFingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "required": ["kind", "catalogId", "catalogRevision", "functionName", "signatureFingerprint", "runtimeFingerprint"],
+      "additionalProperties": false
+    },
+    "exactSubjectRefV2": {
+      "oneOf": [
+        { "$ref": "#/$defs/apiResourceRef" },
+        { "$ref": "#/$defs/flowDraftRef" },
+        { "$ref": "#/$defs/flowVersionRef" },
+        { "$ref": "#/$defs/operatorVersionRef" },
+        { "$ref": "#/$defs/builtinFunctionVersionRef" }
+      ]
+    },
     "composableRef": {
       "oneOf": [
         { "$ref": "#/$defs/apiResourceRef" },

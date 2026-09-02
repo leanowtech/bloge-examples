@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "bloge.fixtureSetCommand.v2",
+  "displayName": "Customer profile fixtures",
+  "subject": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "cases": [
+    {
+      "caseId": "known-customer",
+      "name": "Known customer",
+      "driverInput": { "customerId": "customer-1001" },
+      "controls": [
+        {
+          "target": { "kind": "SUBJECT" },
+          "behavior": { "kind": "RETURN", "material": { "kind": "INLINE", "value": { "tier": "VIP" } } },
+          "fidelity": "OUTPUT_LEVEL"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "bloge.fixtureSetCommand.v2",
+  "displayName": "Unsafe fixtures",
+  "subject": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "cases": [
+    {
+      "caseId": "unsafe",
+      "name": "Unsafe",
+      "when": {
+        "conditionId": "unsafe",
+        "all": [ { "path": "$.customer", "operator": "SCRIPT", "value": "env.SECRET" } ]
+      },
+      "controls": [
+        { "target": { "kind": "SUBJECT" }, "behavior": { "kind": "REAL" } }
+      ]
+    }
+  ]
+}

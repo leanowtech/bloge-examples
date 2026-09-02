@@ -153,7 +153,7 @@ public final class ReusableFlowFixtureShareModule {
                 control.target(), FixtureSetCommand.Behavior.returned(protectedMaterial.material()),
                 control.fidelity());
         return new FixtureSetCommand.Case(fixtureCase.caseId(), fixtureCase.name(),
-                fixtureCase.input(), List.of(protectedControl),
+                fixtureCase.input(), fixtureCase.when(), List.of(protectedControl),
                 new FixtureSetCommand.Expect(protectedMaterial.safeOutput()));
     }
 

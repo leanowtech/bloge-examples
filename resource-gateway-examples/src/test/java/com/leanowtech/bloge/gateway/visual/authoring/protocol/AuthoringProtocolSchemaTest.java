@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionChe
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCheckResult;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.DefaultFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommandV2;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
@@ -31,6 +32,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPre
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.ExactFixtureSubjectRefV2;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationCommandV2;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.OpenApiResourceDesignContractImporter;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
@@ -76,6 +79,7 @@ class AuthoringProtocolSchemaTest {
             Map.entry("reusable-flow-publish-command", "reusable-flow-publish-command-v1.schema.json"),
             Map.entry("reusable-flow-publish-receipt", "reusable-flow-publish-receipt-v1.schema.json"),
             Map.entry("fixture-set", "fixture-set-command-v1.schema.json"),
+            Map.entry("fixture-set-v2", "fixture-set-command-v2.schema.json"),
             Map.entry("fixture-set-receipt", "fixture-set-receipt-v1.schema.json"),
             Map.entry("fixture-set-summary-collection", "fixture-set-summary-collection-v1.schema.json"),
             Map.entry("fixture-share-command", "fixture-share-command-v1.schema.json"),
@@ -90,8 +94,54 @@ class AuthoringProtocolSchemaTest {
             Map.entry("legacy-flow-preview", "legacy-flow-preview-v1.schema.json"),
             Map.entry("legacy-resource-preview", "legacy-resource-preview-v1.schema.json"),
             Map.entry("simulation-request", "simulation-request-v1.schema.json"),
+            Map.entry("simulation-command-v2", "simulation-command-v2.schema.json"),
             Map.entry("simulation-run", "simulation-run-v1.schema.json"),
             Map.entry("problem-detail", "problem-detail-v1.schema.json"));
+
+    @Test
+    void callerDirectedCommandsRoundTripAgainstFrozenV2Schemas() throws Exception {
+        String fingerprint = "sha256:" + "a".repeat(64);
+        var fixtureReference = new SimulationCommandV2.ExactFixtureSetRef(
+                "lookup-fixtures", 4, "sha256:" + "b".repeat(64));
+        var function = new ExactFixtureSubjectRefV2.BuiltinFunctionVersion(
+                "bloge-builtins", 7, "lookup", "sha256:" + "c".repeat(64),
+                "sha256:" + "d".repeat(64));
+        var simulation = new SimulationCommandV2(SimulationCommandV2.SCHEMA_VERSION, function,
+                new SimulationCommandV2.Input.CaseInput(fixtureReference, "known-customer"),
+                new SimulationCommandV2.FixturePlan.Bindings(SimulationCommandV2.Unmatched.BLOCK,
+                        List.of(new SimulationCommandV2.FixtureBinding(
+                                new SimulationCommandV2.FixtureTarget.CallSite(
+                                        List.of("risk-tool"), "lookup-customer"),
+                                new SimulationCommandV2.FixtureSelection.AutoMatch(fixtureReference)))),
+                SimulationCommandV2.ExecutionPolicy.denyAll());
+        Path simulationSchema = SCHEMA_ROOT.resolve("simulation-command-v2.schema.json");
+        JsonNode simulationWire = MAPPER.valueToTree(simulation);
+        assertThat(validationErrors(read(simulationSchema), simulationWire, simulationSchema)).isEmpty();
+        assertThat(MAPPER.treeToValue(simulationWire, SimulationCommandV2.class)).isEqualTo(simulation);
+        assertThat(simulation.toString()).doesNotContain("known-customer", "lookup-customer");
+
+        ObjectNode driverInput = MAPPER.createObjectNode().put("customerLevel", "VIP");
+        var fixture = new FixtureSetCommandV2(FixtureSetCommandV2.SCHEMA_VERSION,
+                "Risk operator fixtures", new ExactFixtureSubjectRefV2.OperatorVersion(
+                "risk-library", 12, "risk.score", fingerprint),
+                List.of(new FixtureSetCommandV2.Case("vip", "VIP", driverInput,
+                        new FixtureSetCommand.Condition("vip", List.of(
+                                new FixtureSetCommand.Predicate.Eq(
+                                        "$.customerLevel", MAPPER.getNodeFactory().textNode("VIP")))),
+                        List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
+                                FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(
+                                        MAPPER.createObjectNode().put("decision", "APPROVE"))),
+                                FixtureSetCommand.Fidelity.OUTPUT_LEVEL)),
+                        new FixtureSetCommand.Expect(
+                                MAPPER.createObjectNode().put("decision", "APPROVE")))));
+        Path fixtureSchema = SCHEMA_ROOT.resolve("fixture-set-command-v2.schema.json");
+        JsonNode fixtureWire = MAPPER.valueToTree(fixture);
+        assertThat(validationErrors(read(fixtureSchema), fixtureWire, fixtureSchema)).isEmpty();
+        assertThat(MAPPER.treeToValue(fixtureWire, FixtureSetCommandV2.class)).isEqualTo(fixture);
+        driverInput.put("credential", "must-not-leak");
+        assertThat(fixture.cases().getFirst().driverInput().has("credential")).isFalse();
+        assertThat(fixture.toString()).doesNotContain("VIP", "APPROVE", "must-not-leak");
+    }
 
     @Test
     void openApiPreviewCommandAndGeneratedViewRoundTripAgainstFrozenSchemas() throws Exception {

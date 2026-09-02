@@ -2787,3 +2787,45 @@ PostgreSQL/Vault/REMOTE egress 和 8 位外部目标用户计时仍保持为外�
 本地负例与对象页主链已闭合；三 API Resource DAG 在 1280 px 与 390 px 均完成 41 个主动作。`v1.1` 执行计划
 已同步为当前事实。本地代码与验收剩余差距评估为约 **1%**，低于 3% 停止条件；该 1% 不被虚构实现填充，
 对应真实 PostgreSQL/Vault/REMOTE authenticated egress 和外部目标用户研究证据。
+
+## 60. Iteration 59 — Caller-directed Fixture Simulation v2 S1
+
+日期：2026-09-02。
+
+### 已完成
+
+- 冻结 `bloge.simulationCommand.v2`：输入、Fixture Plan 和外部访问策略是三个独立轴；Plan 为 `NONE`、
+  `CASE_CONTROLS` 或 `BINDINGS`，Target 为 `SUBJECT`、`NODE_PATH` 或 `CALL_SITE`，Selection 为精确 Case、
+  稳定 conditionId 或唯一自动匹配。调用方不能提交 Runtime Invocation Key、Fixture 输出或可变 Head。
+- 冻结 `bloge.fixtureSetCommand.v2`：Case 用 `driverInput` 驱动直接运行，用独立 `when` 匹配其他运行的真实输入。
+  条件语言只包含 `EQ`、`IN`、`PRESENT`、`ABSENT`、`NUMBER_RANGE`，并限制路径深度、谓词数量与集合大小。
+- 新增五类 exact v2 Subject：API Resource、Flow Draft、Flow Version、Operator Version、Built-in Function Version。
+  Operator 携带 contract fingerprint；Function 同时携带 signature/runtime fingerprint。当前持久化适配只转换既有
+  三类 Subject，Operator/Function 在 S4/S5 接入各自 authority 前保持 fail closed。
+- 新增 `FixturePlanCompiler` 深模块的 API Resource `SUBJECT` tracer。它关闭 exact revision/fingerprint、生命周期、
+  Subject、一致 Case/Condition、Target overlap、条件求值与 payload-safe plan fingerprint；`CASE_INPUT` 不会隐式启用
+  Controls，`EXACT_CASE` 也不会伪装成条件命中。
+- Fixture View、share 和 review 复制链保留 `when`；测试证明受保护 Material 替换与 reviewer 激活不会丢失条件。
+- 两个新顶层 Schema 都有 minimal/complete/invalid goldens，并进入 schema 目录的双向 family 完整性门禁。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='FixturePlanCompilerTest,AuthoringProtocolSchemaTest,DefaultFixtureSetMaterializerTest,\
+ApiFixtureSetAuthoringFacadeTest,InMemoryApiFixtureSetCommitStoreTest,\
+InMemoryStandaloneFixtureSetShareTest,JdbcStandaloneFixtureSetStoreTest,\
+ReusableFlowFixtureReviewModuleTest,SimulationModuleTest,WholeFlowSimulationModuleTest,\
+JdbcSimulationRunStoreTest,ApiSimulationControllerTest' test
+
+Tests run: 66; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 `rg-caller-directed-fixture-simulation-proposal-v2.md` 的 S0–S7 与 18 条完成条件复核，当前整体实现覆盖约
+**66%**，剩余差距约 **34%**，尚未达到停止条件。S0 既有资产链和本轮 S1 已闭合；下一最大缺口是 S2：把
+API Resource 的已解析 Plan 投影为真实 `RETURN/ERROR/TIMEOUT/REPLAY` 执行，持久化
+`bloge.simulationRun.v2` 逐 Invocation 证据，并提供 authenticated/idempotent HTTP。随后才进入 Flow/DAG 的
+逐节点动态匹配、Operator、Built-in Function Call Site、UI 与 Scenario bridge；不能把冻结 Schema 当成运行能力。

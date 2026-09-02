@@ -1312,3 +1312,13 @@ v2 不新增平行的 Fixture Studio。它进入 1.3.0 已定义的对象主线�
 两份设计没有方向冲突。1.3.0 是对象化创作、治理和可见体验的基线；v2 是调用方选择、编译、
 执行与证据协议的深化。正确的实现方式是共享同一 Fixture Set、Fixture Asset、Fidelity、staleness 和
 Scenario 资产，不再新增第二份 Mock 存储、第二套条件编译器或第二个 Fixture 工作台。
+
+## 27. 实施状态
+
+截至 2026-09-02，S1 已实现并通过聚焦回归：`SimulationCommand v2`、`FixtureSetCommand v2`、五类 exact
+Subject、受限 Condition、API Resource `SUBJECT` Plan 编译、Target overlap 与 payload-safe fingerprint 均已落地。
+冻结 Schema 的 minimal/complete/invalid goldens 与既有 v1 Fixture/Simulation 兼容测试共 **66/66 green**。
+
+当前总体覆盖约 **66%**，剩余约 **34%**。该数字包含复用的 1.3.0 sample/Pin/Promote/governance 和既有 v1
+Simulation 资产，但不把它们冒充 v2 运行证据。下一步是 S2 API Resource Runtime + Simulation Run v2；
+`NODE_PATH`、Call Site、Operator/Function authority、逐 Invocation 匹配和 v2 UI 尚未实现，继续 fail closed。

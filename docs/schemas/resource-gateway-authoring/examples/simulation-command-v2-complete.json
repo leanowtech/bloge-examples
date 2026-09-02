@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "bloge.simulationCommand.v2",
+  "subject": {
+    "kind": "BUILTIN_FUNCTION_VERSION",
+    "catalogId": "bloge-builtins",
+    "catalogRevision": 7,
+    "functionName": "lookup",
+    "signatureFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runtimeFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "input": {
+    "kind": "CASE_INPUT",
+    "fixtureSet": {
+      "fixtureSetId": "lookup-fixtures",
+      "revision": 4,
+      "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "caseId": "known-customer"
+  },
+  "fixturePlan": {
+    "kind": "BINDINGS",
+    "unmatched": "BLOCK",
+    "bindings": [
+      {
+        "target": { "kind": "CALL_SITE", "nodePath": ["risk-tool"], "callSiteId": "lookup-customer" },
+        "selection": {
+          "kind": "MATCH_CONDITION",
+          "fixtureSet": {
+            "fixtureSetId": "lookup-fixtures",
+            "revision": 4,
+            "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "conditionId": "known-customer"
+        }
+      }
+    ]
+  },
+  "executionPolicy": {
+    "externalReads": {
+      "kind": "ALLOW_EXACT",
+      "resources": [
+        {
+          "kind": "API_RESOURCE",
+          "resourceId": "customer.get-profile",
+          "revision": 3,
+          "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "justification": "Fallback to this exact read-only resource when no fixture matches"
+    },
+    "externalWrites": { "kind": "DENY" }
+  }
+}

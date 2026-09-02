@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "bloge.fixtureSetCommand.v2",
+  "displayName": "Risk operator fixtures",
+  "subject": {
+    "kind": "OPERATOR_VERSION",
+    "libraryId": "risk-library",
+    "libraryRevision": 12,
+    "operatorRef": "risk.score",
+    "contractFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "cases": [
+    {
+      "caseId": "vip-sg",
+      "name": "VIP customer in Singapore",
+      "driverInput": { "customer": { "level": "VIP", "age": 36 }, "region": "SG" },
+      "when": {
+        "conditionId": "vip-sg",
+        "all": [
+          { "path": "$.customer.level", "operator": "EQ", "value": "VIP" },
+          { "path": "$.region", "operator": "IN", "values": ["SG", "HK"] },
+          { "path": "$.customer.age", "operator": "NUMBER_RANGE", "minimum": 21, "maximum": 65 },
+          { "path": "$.customer", "operator": "PRESENT" },
+          { "path": "$.blocked", "operator": "ABSENT" }
+        ]
+      },
+      "controls": [
+        {
+          "target": { "kind": "SUBJECT" },
+          "behavior": {
+            "kind": "RETURN",
+            "material": {
+              "kind": "FIXTURE_ASSET",
+              "fixtureAssetId": "risk-vip-output",
+              "revision": 2,
+              "schemaFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+          },
+          "fidelity": "OUTPUT_LEVEL"
+        }
+      ],
+      "expect": { "output": { "decision": "APPROVE" } }
+    }
+  ]
+}
