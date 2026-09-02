@@ -36,6 +36,7 @@ class FlowSimulationModuleV2Test {
     private static final String FLOW = "sha256:" + "a".repeat(64);
     private static final String PROFILE = "sha256:" + "b".repeat(64);
     private static final String CREDIT = "sha256:" + "c".repeat(64);
+    private static final String OPERATOR = "sha256:" + "d".repeat(64);
 
     @Test
     void executesDifferentFixturesPerDagNodeAfterApplyingMappings() {
@@ -132,6 +133,51 @@ class FlowSimulationModuleV2Test {
             assertThat(invocation.fixtureCase()).isNull();
         });
         verify(compiler, never()).resolveInvocation(any(), any(), any(), any());
+    }
+
+    @Test
+    void replacesAnExactOperatorDagNodeWithoutExecutingTheComponent() {
+        FlowFixturePlanCompilerV2 compiler = mock(FlowFixturePlanCompilerV2.class);
+        ExactFixtureSubjectRefV2.FlowVersion root =
+                new ExactFixtureSubjectRefV2.FlowVersion("root", 1, FLOW);
+        ExactFixtureSubjectRefV2.OperatorVersion operator =
+                new ExactFixtureSubjectRefV2.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        ReusableFlowCommand.Node authored = new ReusableFlowCommand.Node(
+                "risk", "Risk score",
+                new ReusableFlowCommand.ComposableRef.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR),
+                List.of(new ReusableFlowCommand.Input("$.score",
+                        new ReusableFlowCommand.MappingSource.FlowInput("$.score"))));
+        ReusableFlowCommand.Graph graph = new ReusableFlowCommand.Graph(
+                List.of(authored), new ReusableFlowCommand.Output("risk", "$"));
+        ResolvedFlowSimulationPlanV2.Node node = new ResolvedFlowSimulationPlanV2.Node(
+                List.of("risk"), operator, new ReusableFlowCommand.Contract(schema(), schema()),
+                authored, null);
+        ResolvedFlowSimulationPlanV2.Binding binding = binding(
+                List.of("risk"), "risk-operator-fixtures");
+        ResolvedFlowSimulationPlanV2 plan = new ResolvedFlowSimulationPlanV2(
+                root, schema(), schema(), graph, JSON.createObjectNode().put("score", 720),
+                SimulationCommandV2.Unmatched.BLOCK, Map.of(List.of("risk"), node),
+                Map.of(List.of("risk"), binding), "sha256:" + "e".repeat(64));
+        when(compiler.compile(eq(SCOPE), any())).thenReturn(plan);
+        when(compiler.resolveInvocation(eq(SCOPE), eq(node), eq(binding), any())).thenReturn(
+                selection(List.of("risk"), "risk-operator-fixtures", "approved",
+                        JSON.createObjectNode().put("risk", "low")));
+        FlowSimulationModuleV2 module = module(
+                mock(ApiResourceCommitStore.class), compiler, "sim-operator-flow", "operator-");
+
+        SimulationRunV2 run = module.execute(SCOPE, "operator-flow-key", command(plan), null).run();
+
+        assertThat(run.status()).isEqualTo(SimulationRunV2.Status.SUCCEEDED);
+        assertThat(run.output()).isEqualTo(JSON.createObjectNode().put("risk", "low"));
+        assertThat(run.invocations()).singleElement().satisfies(invocation -> {
+            assertThat(invocation.invocationKey()).isEqualTo("operator-1");
+            assertThat(invocation.subject()).isEqualTo(operator);
+            assertThat(invocation.execution()).isEqualTo(SimulationRunV2.Execution.MOCKED);
+            assertThat(invocation.target()).isEqualTo(
+                    new SimulationCommandV2.FixtureTarget.NodePath(List.of("risk")));
+        });
     }
 
     private static FlowSimulationModuleV2 module(

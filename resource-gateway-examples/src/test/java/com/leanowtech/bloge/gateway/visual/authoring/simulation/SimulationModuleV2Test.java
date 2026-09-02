@@ -255,6 +255,66 @@ class SimulationModuleV2Test {
         verify(flows).execute(SCOPE, "flow-key", command, identity());
     }
 
+    @Test
+    void operatorAndBuiltinFunctionSubjectsUseTheSameFixtureRuntime() {
+        ExactFixtureSubjectRefV2.OperatorVersion operator = new ExactFixtureSubjectRefV2.OperatorVersion(
+                "risk-library", 3, "risk:score", "sha256:" + "7".repeat(64));
+        Fixture operatorFixture = componentFixture(operator, "operator-fixtures", output("operator"));
+        ComponentSimulationAuthorityV2 authority = (scope, subject) -> subject.equals(operator)
+                ? Optional.of(new ComponentSimulationAuthorityV2.ComponentContract(
+                resource().contract().input(), resource().contract().output(), List.of()))
+                : Optional.empty();
+        SimulationModuleV2 operatorModule = componentModule(operatorFixture, authority);
+
+        SimulationRunV2 operatorRun = operatorModule.execute(SCOPE, "operator-key",
+                command(operatorFixture, input("one"), exact(operatorFixture))).run();
+
+        assertThat(operatorRun.status()).isEqualTo(SimulationRunV2.Status.SUCCEEDED);
+        assertThat(operatorRun.subject()).isEqualTo(operator);
+        assertThat(operatorRun.invocations()).singleElement().satisfies(invocation -> {
+            assertThat(invocation.target()).isInstanceOf(SimulationCommandV2.FixtureTarget.Subject.class);
+            assertThat(invocation.execution()).isEqualTo(SimulationRunV2.Execution.MOCKED);
+            assertThat(invocation.outputFingerprint()).isEqualTo(
+                    com.leanowtech.bloge.gateway.visual.authoring.resource.persistence
+                            .AuthoringFingerprints.of(output("operator")));
+        });
+
+        ExactFixtureSubjectRefV2.BuiltinFunctionVersion function =
+                new ExactFixtureSubjectRefV2.BuiltinFunctionVersion("bloge", 1, "lookup",
+                        "sha256:" + "8".repeat(64), "sha256:" + "9".repeat(64));
+        Fixture functionFixture = componentFixture(function, "function-fixtures", output("function"));
+        ComponentSimulationAuthorityV2 functionAuthority = (scope, subject) -> subject.equals(function)
+                ? Optional.of(new ComponentSimulationAuthorityV2.ComponentContract(
+                resource().contract().input(), resource().contract().output(), List.of()))
+                : Optional.empty();
+
+        SimulationRunV2 functionRun = componentModule(functionFixture, functionAuthority).execute(
+                SCOPE, "function-key", command(functionFixture, input("one"), exact(functionFixture))).run();
+
+        assertThat(functionRun.status()).isEqualTo(SimulationRunV2.Status.SUCCEEDED);
+        assertThat(functionRun.subject()).isEqualTo(function);
+    }
+
+    @Test
+    void componentAuthorityDriftFailsBeforeTheRunCoordinateIsClaimed() {
+        ExactFixtureSubjectRefV2.OperatorVersion operator = new ExactFixtureSubjectRefV2.OperatorVersion(
+                "risk-library", 3, "risk:score", "sha256:" + "7".repeat(64));
+        Fixture fixture = componentFixture(operator, "operator-fixtures", output("operator"));
+        InMemorySimulationRunV2Store runs = new InMemorySimulationRunV2Store();
+        SimulationModuleV2 module = new SimulationModuleV2(fixture.resources(),
+                new FixturePlanCompiler(fixture.fixtures()), null, null, null, runs,
+                Clock.fixed(NOW, ZoneOffset.UTC), () -> "sim-component", () -> "inv-component",
+                null, (scope, subject) -> Optional.empty());
+
+        assertThatThrownBy(() -> module.execute(SCOPE, "drift",
+                command(fixture, input("one"), exact(fixture))))
+                .isInstanceOf(SimulationFailure.class)
+                .extracting(value -> ((SimulationFailure) value).code())
+                .isEqualTo(SimulationFailure.Code.NOT_FOUND);
+        assertThat(runs.claim(SCOPE, "drift", "sha256:" + "a".repeat(64),
+                () -> "unclaimed", NOW)).isEqualTo(new SimulationRunV2Store.Claim.Acquired("unclaimed"));
+    }
+
     private static SimulationModuleV2 module(
             Fixture fixture, FixtureAssetSimulationResolver assets, SimulationReplayResolver replays,
             SimulationFixtureUsageRecorder usage, SimulationRunV2Store runs,
@@ -263,6 +323,40 @@ class SimulationModuleV2Test {
                 assets, replays, usage, runs, Clock.fixed(NOW, ZoneOffset.UTC),
                 () -> "sim-v2-" + runIds.incrementAndGet(),
                 () -> "inv-v2-" + invocationIds.incrementAndGet());
+    }
+
+    private static SimulationModuleV2 componentModule(
+            Fixture fixture, ComponentSimulationAuthorityV2 authority) {
+        return new SimulationModuleV2(fixture.resources(), new FixturePlanCompiler(fixture.fixtures()),
+                null, null, null, new InMemorySimulationRunV2Store(),
+                Clock.fixed(NOW, ZoneOffset.UTC), () -> "sim-component", () -> "inv-component",
+                null, authority);
+    }
+
+    private static Fixture componentFixture(
+            ExactFixtureSubjectRefV2 subject, String fixtureSetId, JsonNode fixtureOutput) {
+        FixtureSubjectRef legacy = subject.toLegacyAuthority();
+        FixtureSetCommand.Case fixtureCase = new FixtureSetCommand.Case(
+                "case-1", "Case one", input("driver"),
+                List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(fixtureOutput)),
+                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL)), new FixtureSetCommand.Expect(fixtureOutput));
+        String fingerprint = FixtureSetFingerprints.of(fixtureSetId, legacy, List.of(fixtureCase));
+        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION, fixtureSetId, 1,
+                fingerprint, 1, fixtureSetId, legacy, List.of(fixtureCase),
+                FixtureSetView.Status.PRIVATE_DRAFT);
+        GeneratedDefaultFixture generated = new GeneratedDefaultFixture(view,
+                new FixtureSetSaveReceipt(FixtureSetSaveReceipt.SCHEMA_VERSION, fixtureSetId, 1,
+                        fingerprint, legacy, List.of("case-1"),
+                        FixtureSetView.Status.PRIVATE_DRAFT, 1),
+                new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION, fixtureSetId, 1,
+                        fingerprint, fixtureSetId, legacy,
+                        List.of(new FixtureSetSummary.CaseSummary("case-1", "Case one")),
+                        FixtureSetView.Status.PRIVATE_DRAFT, 1),
+                List.of(new GeneratedDefaultFixture.CaseMapping("case-1", "case-1")));
+        StoredFixtureSet stored = new StoredFixtureSet(SCOPE, generated);
+        return new Fixture(mock(ApiResourceCommitStore.class), reader(stored), subject,
+                new SimulationCommandV2.ExactFixtureSetRef(fixtureSetId, 1, fingerprint));
     }
 
     private static Fixture fixture(FixtureSetView.Status status, FixtureSetCommand.Behavior behavior,
@@ -355,6 +449,6 @@ class SimulationModuleV2Test {
     }
 
     private record Fixture(ApiResourceCommitStore resources, FixtureSetAuthorityReader fixtures,
-                           ExactFixtureSubjectRefV2.ApiResource subject,
+                           ExactFixtureSubjectRefV2 subject,
                            SimulationCommandV2.ExactFixtureSetRef reference) { }
 }

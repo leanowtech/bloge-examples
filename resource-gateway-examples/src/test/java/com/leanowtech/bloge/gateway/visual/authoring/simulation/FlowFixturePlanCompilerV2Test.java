@@ -27,6 +27,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class FlowFixturePlanCompilerV2Test {
@@ -36,6 +37,7 @@ class FlowFixturePlanCompilerV2Test {
     private static final String CHILD = "sha256:" + "b".repeat(64);
     private static final String PROFILE = "sha256:" + "c".repeat(64);
     private static final String CREDIT = "sha256:" + "d".repeat(64);
+    private static final String OPERATOR = "sha256:" + "1".repeat(64);
 
     @Test
     void compilesExactNestedNodePathsWithoutResolvingDynamicConditionsEarly() {
@@ -138,6 +140,43 @@ class FlowFixturePlanCompilerV2Test {
                 .isInstanceOf(FixturePlanFailure.class)
                 .extracting(value -> ((FixturePlanFailure) value).code())
                 .isEqualTo(FixturePlanFailure.Code.FIXTURE_STALE);
+    }
+
+    @Test
+    void compilesExactOperatorNodeContractAndFixtureBinding() {
+        ReusableFlowPublicationStore publications = mock(ReusableFlowPublicationStore.class);
+        ReusableFlowCommand.ComposableRef.OperatorVersion operator =
+                new ReusableFlowCommand.ComposableRef.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        ReusableFlowVersion root = flow("root", ROOT, List.of(node("risk", operator,
+                List.of(new ReusableFlowCommand.Input("$.score",
+                        new ReusableFlowCommand.MappingSource.FlowInput("$.score"))))), "risk");
+        when(publications.findVersion(SCOPE, "root", 1)).thenReturn(Optional.of(root));
+        ComponentSimulationAuthorityV2 components = mock(ComponentSimulationAuthorityV2.class);
+        ExactFixtureSubjectRefV2.OperatorVersion subject =
+                new ExactFixtureSubjectRefV2.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        when(components.resolve(SCOPE, subject)).thenReturn(Optional.of(
+                new ComponentSimulationAuthorityV2.ComponentContract(schema(), schema(), List.of())));
+        FlowFixturePlanCompilerV2 compiler = new FlowFixturePlanCompilerV2(publications,
+                mock(ReusableFlowDraftStore.class),
+                new FixturePlanCompiler(mock(FixtureSetAuthorityReader.class)), components);
+        SimulationCommandV2.ExactFixtureSetRef fixture =
+                new SimulationCommandV2.ExactFixtureSetRef(
+                        "risk-operator-fixtures", 2, "sha256:" + "2".repeat(64));
+
+        ResolvedFlowSimulationPlanV2 plan = compiler.compile(SCOPE,
+                command(List.of(binding(List.of("risk"), fixture))));
+
+        assertThat(plan.nodes()).containsOnlyKeys(List.of("risk"));
+        assertThat(plan.nodes().get(List.of("risk"))).satisfies(value -> {
+            assertThat(value.subject()).isEqualTo(subject);
+            assertThat(value.contract()).isEqualTo(
+                    new ReusableFlowCommand.Contract(schema(), schema()));
+            assertThat(value.childGraph()).isNull();
+        });
+        assertThat(plan.bindings()).containsOnlyKeys(List.of("risk"));
+        verify(components).resolve(SCOPE, subject);
     }
 
     private static SimulationCommandV2 command(List<SimulationCommandV2.FixtureBinding> bindings) {

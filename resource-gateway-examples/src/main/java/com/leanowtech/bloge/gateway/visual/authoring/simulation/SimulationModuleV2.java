@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Author
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.StoredApiResource;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import java.time.Clock;
@@ -42,6 +43,7 @@ public final class SimulationModuleV2 {
     private final SimulationFixtureUsageRecorder usage;
     private final SimulationRunV2Store runs;
     private final FlowSimulationModuleV2 flows;
+    private final ComponentSimulationAuthorityV2 components;
     private final Clock clock;
     private final Supplier<String> runIds;
     private final Supplier<String> invocationIds;
@@ -53,7 +55,7 @@ public final class SimulationModuleV2 {
                               SimulationFixtureUsageRecorder usage,
                               SimulationRunV2Store runs) {
         this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
-                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), null);
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), null, null);
     }
 
     /** Creates the API Resource runtime with an optional exact reusable-Flow runtime. */
@@ -63,7 +65,18 @@ public final class SimulationModuleV2 {
                               SimulationFixtureUsageRecorder usage,
                               SimulationRunV2Store runs, FlowSimulationModuleV2 flows) {
         this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
-                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), flows);
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), flows, null);
+    }
+
+    /** Creates the unified runtime with exact Flow, Operator and built-in Function authorities. */
+    public SimulationModuleV2(ApiResourceCommitStore resources, FixturePlanCompiler plans,
+                              FixtureAssetSimulationResolver protectedFixtures,
+                              SimulationReplayResolver replays,
+                              SimulationFixtureUsageRecorder usage,
+                              SimulationRunV2Store runs, FlowSimulationModuleV2 flows,
+                              ComponentSimulationAuthorityV2 components) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), flows, components);
     }
 
     /** Package-visible deterministic time and identity seam for behavior tests. */
@@ -73,7 +86,7 @@ public final class SimulationModuleV2 {
                        SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
                        Supplier<String> invocationIds) {
         this(resources, plans, protectedFixtures, replays, usage, runs, clock, runIds,
-                invocationIds, null);
+                invocationIds, null, null);
     }
 
     SimulationModuleV2(ApiResourceCommitStore resources, FixturePlanCompiler plans,
@@ -81,6 +94,16 @@ public final class SimulationModuleV2 {
                        SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
                        SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
                        Supplier<String> invocationIds, FlowSimulationModuleV2 flows) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, clock, runIds,
+                invocationIds, flows, null);
+    }
+
+    SimulationModuleV2(ApiResourceCommitStore resources, FixturePlanCompiler plans,
+                       FixtureAssetSimulationResolver protectedFixtures,
+                       SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
+                       SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
+                       Supplier<String> invocationIds, FlowSimulationModuleV2 flows,
+                       ComponentSimulationAuthorityV2 components) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.plans = Objects.requireNonNull(plans, "plans");
         this.protectedFixtures = protectedFixtures;
@@ -88,6 +111,7 @@ public final class SimulationModuleV2 {
         this.usage = usage == null ? SimulationFixtureUsageRecorder.none() : usage;
         this.runs = Objects.requireNonNull(runs, "runs");
         this.flows = flows;
+        this.components = components;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.runIds = Objects.requireNonNull(runIds, "runIds");
         this.invocationIds = Objects.requireNonNull(invocationIds, "invocationIds");
@@ -110,7 +134,7 @@ public final class SimulationModuleV2 {
             return flows.execute(scope, idempotencyKey, command, identity);
         }
         ResolvedFixturePlan plan = compile(scope, command);
-        StoredApiResource resource = resource(scope, plan.subject());
+        SubjectContract contract = contract(scope, plan.subject());
         requireSupportedPlan(plan);
         String requestFingerprint = AuthoringFingerprints.of(JSON.valueToTree(command));
         Instant startedAt = clock.instant();
@@ -127,7 +151,7 @@ public final class SimulationModuleV2 {
             throw failure(SimulationFailure.Code.BUSY);
         }
         String runId = ((SimulationRunV2Store.Claim.Acquired) claim).runId();
-        SimulationRunV2 completed = run(runId, startedAt, requestFingerprint, plan, resource, identity);
+        SimulationRunV2 completed = run(scope, runId, startedAt, requestFingerprint, plan, contract, identity);
         SimulationRunV2 committed = runs.complete(
                 scope, idempotencyKey, requestFingerprint, completed);
         recordUsage(scope, committed);
@@ -147,11 +171,11 @@ public final class SimulationModuleV2 {
         return read(scope, runId).orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
     }
 
-    private SimulationRunV2 run(String runId, Instant startedAt, String requestFingerprint,
-                                ResolvedFixturePlan plan, StoredApiResource resource,
+    private SimulationRunV2 run(AuthoringScope scope, String runId, Instant startedAt, String requestFingerprint,
+                                ResolvedFixturePlan plan, SubjectContract contract,
                                 SimulationIdentity identity) {
         List<VisualDiagnostic> inputProblems = VisualSchemaValidator.validateValue(
-                resource.resource().contract().input(), javaValue(plan.input()), "/input");
+                contract.input(), javaValue(plan.input()), "/input");
         if (!inputProblems.isEmpty()) {
             return failedContract(runId, startedAt, requestFingerprint, plan, inputProblems);
         }
@@ -162,7 +186,7 @@ public final class SimulationModuleV2 {
         ResolvedFixturePlan.Selection selection = plan.selections().getFirst();
         FixtureSetCommand.Behavior behavior = selection.control().behavior();
         if (behavior instanceof FixtureSetCommand.Behavior.Return returned) {
-            return returned(runId, startedAt, requestFingerprint, plan, resource, selection,
+            return returned(runId, startedAt, requestFingerprint, plan, contract, selection,
                     returned.material(), identity);
         }
         if (behavior instanceof FixtureSetCommand.Behavior.Replay replay) {
@@ -172,7 +196,7 @@ public final class SimulationModuleV2 {
             }
             JsonNode output;
             try {
-                output = replays.resolve(resource.scope(), replay.replayId(), replay.fingerprint());
+                output = replays.resolve(scope, replay.replayId(), replay.fingerprint());
             } catch (RuntimeException unavailable) {
                 return blocked(runId, startedAt, requestFingerprint, plan,
                         "REPLAY_MATERIAL_UNAVAILABLE", "Replay material is unavailable.");
@@ -181,7 +205,7 @@ public final class SimulationModuleV2 {
                 return blocked(runId, startedAt, requestFingerprint, plan,
                         "REPLAY_MATERIAL_UNAVAILABLE", "Replay material is unavailable.");
             }
-            return completedOutput(runId, startedAt, requestFingerprint, plan, resource, selection,
+            return completedOutput(runId, startedAt, requestFingerprint, plan, contract, selection,
                     output, SimulationRunV2.Provenance.REPLAY, null);
         }
         if (behavior instanceof FixtureSetCommand.Behavior.Error) {
@@ -221,14 +245,14 @@ public final class SimulationModuleV2 {
 
     private SimulationRunV2 returned(
             String runId, Instant startedAt, String requestFingerprint, ResolvedFixturePlan plan,
-            StoredApiResource resource, ResolvedFixturePlan.Selection selection,
+            SubjectContract contract, ResolvedFixturePlan.Selection selection,
             FixtureSetCommand.Material material, SimulationIdentity identity) {
         if (material instanceof FixtureSetCommand.Material.Inline inline) {
             if (selection.fixtureStatus() != FixtureSetView.Status.PRIVATE_DRAFT) {
                 return blocked(runId, startedAt, requestFingerprint, plan,
                         "FIXTURE_MATERIAL_UNAVAILABLE", "Fixture material is unavailable.");
             }
-            return completedOutput(runId, startedAt, requestFingerprint, plan, resource, selection,
+            return completedOutput(runId, startedAt, requestFingerprint, plan, contract, selection,
                     inline.value(), SimulationRunV2.Provenance.PINNED_PRIVATE, null);
         }
         FixtureSetCommand.Material.FixtureAsset asset =
@@ -251,16 +275,16 @@ public final class SimulationModuleV2 {
         }
         SimulationRunV2.FixtureAssetRef assetRef = new SimulationRunV2.FixtureAssetRef(
                 asset.fixtureAssetId(), asset.revision(), asset.schemaFingerprint());
-        return completedOutput(runId, startedAt, requestFingerprint, plan, resource, selection,
+        return completedOutput(runId, startedAt, requestFingerprint, plan, contract, selection,
                 output, SimulationRunV2.Provenance.GOVERNED_ASSET, assetRef);
     }
 
     private SimulationRunV2 completedOutput(
             String runId, Instant startedAt, String requestFingerprint, ResolvedFixturePlan plan,
-            StoredApiResource resource, ResolvedFixturePlan.Selection selection, JsonNode output,
+            SubjectContract contract, ResolvedFixturePlan.Selection selection, JsonNode output,
             SimulationRunV2.Provenance provenance, SimulationRunV2.FixtureAssetRef assetRef) {
         List<VisualDiagnostic> problems = VisualSchemaValidator.validateValue(
-                resource.resource().contract().output(), javaValue(output), "/output");
+                contract.output(), javaValue(output), "/output");
         if (!problems.isEmpty()) {
             return failedOutput(runId, startedAt, requestFingerprint, plan, selection, output,
                     provenance, assetRef, problems);
@@ -367,9 +391,12 @@ public final class SimulationModuleV2 {
                         scope, run.runId(), value.invocationKey(), value.fixtureAssetRef()));
     }
 
-    private StoredApiResource resource(AuthoringScope scope, ExactFixtureSubjectRefV2 subject) {
+    private SubjectContract contract(AuthoringScope scope, ExactFixtureSubjectRefV2 subject) {
         if (!(subject instanceof ExactFixtureSubjectRefV2.ApiResource ref)) {
-            throw failure(SimulationFailure.Code.UNSUPPORTED);
+            if (components == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
+            ComponentSimulationAuthorityV2.ComponentContract resolved = components.resolve(scope, subject)
+                    .orElseThrow(() -> failure(SimulationFailure.Code.NOT_FOUND));
+            return new SubjectContract(resolved.input(), resolved.output());
         }
         try {
             StoredApiResource stored = resources.findRevision(scope, ref.resourceId(), ref.revision())
@@ -380,7 +407,8 @@ public final class SimulationModuleV2 {
             if (!storedRef.equals(ref)) {
                 throw failure(SimulationFailure.Code.INTEGRITY);
             }
-            return stored;
+            return new SubjectContract(stored.resource().contract().input(),
+                    stored.resource().contract().output());
         } catch (SimulationFailure failure) {
             throw failure;
         } catch (ApiResourceCommitStoreException failure) {
@@ -468,4 +496,5 @@ public final class SimulationModuleV2 {
 
     private static Object javaValue(JsonNode value) { return JSON.convertValue(value, Object.class); }
     private static SimulationFailure failure(SimulationFailure.Code code) { return new SimulationFailure(code); }
+    private record SubjectContract(SchemaEnvelope input, SchemaEnvelope output) { }
 }

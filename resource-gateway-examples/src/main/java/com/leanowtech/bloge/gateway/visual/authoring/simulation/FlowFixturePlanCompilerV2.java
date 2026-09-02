@@ -35,13 +35,23 @@ public final class FlowFixturePlanCompilerV2 {
     private final ReusableFlowPublicationStore publications;
     private final ReusableFlowDraftStore drafts;
     private final FixturePlanCompiler fixtures;
+    private final ComponentSimulationAuthorityV2 components;
 
     public FlowFixturePlanCompilerV2(ReusableFlowPublicationStore publications,
                                      ReusableFlowDraftStore drafts,
                                      FixturePlanCompiler fixtures) {
+        this(publications, drafts, fixtures, null);
+    }
+
+    /** Creates a compiler that can also resolve exact Operator DAG nodes. */
+    public FlowFixturePlanCompilerV2(ReusableFlowPublicationStore publications,
+                                     ReusableFlowDraftStore drafts,
+                                     FixturePlanCompiler fixtures,
+                                     ComponentSimulationAuthorityV2 components) {
         this.publications = publications;
         this.drafts = drafts;
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
+        this.components = components;
     }
 
     /** Compiles one exact Flow command without reading mutable heads or Fixture material. */
@@ -141,6 +151,11 @@ public final class FlowFixturePlanCompilerV2 {
                 FlowAuthority authority = authority(scope, subject);
                 contract = authority.contract();
                 child = authority.graph();
+            } else if (subject instanceof ExactFixtureSubjectRefV2.OperatorVersion) {
+                if (components == null) throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
+                ComponentSimulationAuthorityV2.ComponentContract component = components.resolve(scope, subject)
+                        .orElseThrow(() -> failure(FixturePlanFailure.Code.FIXTURE_STALE));
+                contract = new ReusableFlowCommand.Contract(component.input(), component.output());
             } else {
                 contract = null;
             }
@@ -184,10 +199,14 @@ public final class FlowFixturePlanCompilerV2 {
             return new ExactFixtureSubjectRefV2.ApiResource(
                     resource.resourceId(), resource.revision(), resource.fingerprint());
         }
-        ReusableFlowCommand.ComposableRef.FlowVersion flow =
-                (ReusableFlowCommand.ComposableRef.FlowVersion) reference;
-        return new ExactFixtureSubjectRefV2.FlowVersion(
-                flow.publicationId(), flow.revision(), flow.fingerprint());
+        if (reference instanceof ReusableFlowCommand.ComposableRef.FlowVersion flow) {
+            return new ExactFixtureSubjectRefV2.FlowVersion(
+                    flow.publicationId(), flow.revision(), flow.fingerprint());
+        }
+        ReusableFlowCommand.ComposableRef.OperatorVersion operator =
+                (ReusableFlowCommand.ComposableRef.OperatorVersion) reference;
+        return new ExactFixtureSubjectRefV2.OperatorVersion(operator.libraryId(), operator.revision(),
+                operator.operatorRef(), operator.fingerprint());
     }
 
     private static SimulationCommandV2.Unmatched unmatched(SimulationCommandV2 command) {

@@ -1344,7 +1344,15 @@ match；`CASE_CONTROLS` 编译为固定工具方案。每个动态节点生成�
 Invocation；整体 Fixture 会跳过后代，未整体替代时本地展开。未匹配外部 API 仍零网络阻断。S3 与 v1 parent
 Flow 兼容聚焦门为 **48/48 green**。
 
-当前总体覆盖约 **87%**，剩余约 **13%**。S0–S3 的 schema、API Resource、Flow/DAG、Invocation evidence 与
-HTTP 主链已闭合；当前最大缺口转为 S4/S5 的 Operator/Function exact authority、独立 Subject runtime 与稳定
-Call Site，其后是 S6/S7 UI、Pin/Promote/Scenario bridge 和真实浏览器验收。当前 Flow 模型没有循环/重试节点，
-但动态解析 seam 已保证每次实际调用重新选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。
+S4 已接入统一 component authority。Operator 通过 immutable library revision、operator ref 与 contract fingerprint
+解析，Built-in Function 通过 catalog revision、signature fingerprint 与 runtime fingerprint 解析；漂移在 run claim
+前拒绝。两类独立 Subject 复用同一 behavior、schema validation、Invocation evidence 与 idempotency runtime。
+Reusable Flow wire 也新增 exact Operator composable ref，Flow compiler 从同一 authority 获取节点契约，运行时可用
+`NODE_PATH` Fixture 替代 Operator 节点而不执行真实组件。component authority、独立执行、Operator DAG、配置与
+schema 聚焦门为 **48/48 green**。
+
+当前总体覆盖约 **91%**，剩余约 **9%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
+Built-in Function 独立 Subject、Invocation evidence 与 HTTP 主链已闭合。最大缺口转为 S5 compiler-owned 稳定
+Call Site（同节点同名调用不得串桩）、Operator/Function Fixture Set 持久化与检索，以及 S6/S7 UI、Pin/Promote/
+Scenario bridge 和真实浏览器验收。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已保证每次实际调用重新
+选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。

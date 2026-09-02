@@ -260,10 +260,10 @@ commands can name an exact Case, a stable condition, or unique automatic matchin
 revision and fingerprint. The closed condition language supports only `EQ`, `IN`, `PRESENT`, `ABSENT`, and bounded
 `NUMBER_RANGE` over `$` or direct object-property paths. Scripts, regular expressions, environment access, runtime
 Invocation Keys, mutable heads, credentials, and caller-supplied Fixture outputs are absent from the wire contract.
-The exact v2 Subject union includes API Resource, Flow Draft/Version, Operator Version, and Built-in Function Version;
-only the API Resource `SUBJECT` compiler path is executable in S1. Nested node paths, Call Sites, v2 execution,
-HTTP, and UI remain later slices and fail closed rather than falling back to v1 semantics. The focused S1 plus v1
-Fixture/Simulation compatibility gate is **66/66 green** with no failures, errors, or skips.
+The exact v2 Subject union includes API Resource, Flow Draft/Version, Operator Version, and Built-in Function Version.
+S1 originally executed only API Resource subjects; the later S3/S4 slices now add Flow DAG, Operator, and independent
+built-in Function execution while stable Function Call Sites remain fail closed. The focused S1 plus v1
+Fixture/Simulation compatibility gate was **66/66 green** with no failures, errors, or skips.
 
 Caller-directed Simulation v2 S2a now freezes `bloge.simulationRun.v2` and stores immutable evidence for every
 dynamic invocation. Each evidence entry has a server-generated Invocation Key, optional parent, exact target and
@@ -307,6 +307,17 @@ invocations, whole-Flow Fixtures suppress descendants, and unbound child Flows e
 nodes remain blocked with zero network access. Node and Flow input/output contracts are validated, and governed usage
 continues through the committed invocation evidence seam. The focused S3 plus v1 parent-Flow compatibility gate is
 **48/48 green** with no failures, errors or skips.
+
+S4 adds one exact component authority shared by independent simulation and reusable-Flow compilation. Operator
+subjects resolve an immutable Operator Library revision, canonical operator ref, contract fingerprint, and port-derived
+input/output schemas. Built-in Function subjects resolve a catalog revision plus exact signature and runtime
+fingerprints. Drift or a missing component is rejected before a run claim. The API Resource behavior executor is reused
+for component `RETURN`, `ERROR`, `TIMEOUT`, `REPLAY`, contract validation, immutable invocation evidence, and
+idempotency; no second mock runtime or material store was introduced. Reusable Flows can now place exact Operator
+versions as DAG nodes and replace those nodes through `NODE_PATH` fixtures without executing the component. The focused
+component authority, independent runtime, Operator DAG, configuration, and schema gate is **48/48 green** with no
+failures, errors, or skips. Stable compiler-owned Function Call Sites, component Fixture Set authoring, UI/Scenario
+bridges, and browser acceptance remain subsequent slices.
 
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a

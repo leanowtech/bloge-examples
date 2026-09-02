@@ -2988,3 +2988,45 @@ S3 的 exact `NODE_PATH`、动态节点匹配、CASE_CONTROLS、嵌套整体替�
 多 API DAG 主链已闭合。现有 Flow wire 没有 loop/retry node；实现保证每次实际 runtime 调用都经过同一动态
 resolver 并获取新 Invocation Key，后续 loop/retry adapter 不得缓存首次匹配。下一轮进入 S4/S5 Operator 与
 Built-in Function exact authority、独立运行和 Call Site；其后闭合 UI/Scenario/Pin bridge 与真实浏览器证据。
+
+## 65. Iteration 64 — Caller-directed Fixture Simulation v2 S4 component authority
+
+日期：2026-09-02。
+
+### 已完成
+
+- v1 Fixture persistence Subject 与 v2 exact Subject 之间增加 Operator Version、Built-in Function Version 的无损转换；
+  Operator 保存 library/revision/ref/contract fingerprint，Function 保存 catalog/revision/name/signature/runtime
+  fingerprint。Schema union 同步扩展，旧三类 Subject 仍兼容。
+- 新增 `ComponentSimulationAuthorityV2` 深模块。它只接受 immutable component coordinate，返回 input/output
+  contract 与 compiler-owned Call Site 清单；JavaDoc 明确 source line 与 AST index 只能作为诊断，不能成为 wire
+  identity。
+- production adapter 从 exact Operator Library revision 解析 operator ref、contract fingerprint 与 port schema；
+  built-in catalog 以 `BuiltInFunctionContract.callableFingerprint` 和 runtime generation 派生 exact 双 fingerprint。
+  任一 revision/fingerprint 漂移都返回 absent，并在 run claim 前 fail closed。
+- `SimulationModuleV2` 统一执行 API Resource、Operator 与 Built-in Function Subject；三者共享 Fixture Case
+  选择、`RETURN/ERROR/TIMEOUT/REPLAY`、schema validation、Invocation evidence 与 idempotency，不复制执行器。
+- Reusable Flow wire 增加 exact Operator composable ref；Flow compiler 从同一 component authority 获取节点契约，
+  `FlowSimulationModuleV2` 可通过 `NODE_PATH` Fixture 替代 Operator DAG 节点，且不会执行真实组件。
+- 测试覆盖独立 Operator/Function Fixture、authority drift before claim、Operator Library contract/port schema、
+  built-in signature/runtime drift、Flow Operator 节点编译与实际 DAG mock evidence。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='SimulationModuleV2Test,CatalogComponentSimulationAuthorityV2Test,\
+FlowFixturePlanCompilerV2Test,FlowSimulationModuleV2Test,\
+ApiSimulationApplicationConfigurationTest,AuthoringProtocolSchemaTest' test
+
+Tests run: 48; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 与 18 条完成条件复核，整体覆盖从约 **87%** 保守调整为 **91%**，剩余差距约 **9%**。
+S4 的 exact Operator authority、独立执行和 Flow DAG 节点替代，以及 Built-in Function 独立 Subject 已闭合。
+尚未把 compiler-owned stable Call Site 接到执行路径，也未为 Operator/Function 提供 standalone Fixture Set
+authoring/query；UI、Pin/Promote、Scenario bridge 和真实浏览器证据仍待完成。下一轮先关闭 S5：同一节点内两个
+同名函数调用必须由不同稳定 Call Site 选择不同 Fixture，并为每次动态调用生成独立 Invocation Key。

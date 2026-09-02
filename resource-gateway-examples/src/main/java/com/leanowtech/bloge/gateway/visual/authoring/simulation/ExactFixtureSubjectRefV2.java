@@ -79,8 +79,16 @@ public sealed interface ExactFixtureSubjectRefV2 permits ExactFixtureSubjectRefV
         if (subject instanceof FixtureSubjectRef.FlowDraft value) {
             return new FlowDraft(value.draftId(), value.revision(), value.fingerprint());
         }
-        FixtureSubjectRef.FlowVersion value = (FixtureSubjectRef.FlowVersion) subject;
-        return new FlowVersion(value.publicationId(), value.revision(), value.fingerprint());
+        if (subject instanceof FixtureSubjectRef.FlowVersion value) {
+            return new FlowVersion(value.publicationId(), value.revision(), value.fingerprint());
+        }
+        if (subject instanceof FixtureSubjectRef.OperatorVersion value) {
+            return new OperatorVersion(value.libraryId(), value.libraryRevision(), value.operatorRef(),
+                    value.contractFingerprint());
+        }
+        FixtureSubjectRef.BuiltinFunctionVersion value = (FixtureSubjectRef.BuiltinFunctionVersion) subject;
+        return new BuiltinFunctionVersion(value.catalogId(), value.catalogRevision(), value.functionName(),
+                value.signatureFingerprint(), value.runtimeFingerprint());
     }
 
     /** Converts authorities supported by the v1 persistence layer; later subject slices add stores. */
@@ -95,7 +103,13 @@ public sealed interface ExactFixtureSubjectRefV2 permits ExactFixtureSubjectRefV
             return new FixtureSubjectRef.FlowVersion(
                     value.publicationId(), value.revision(), value.fingerprint());
         }
-        throw new IllegalStateException("subject persistence adapter is unavailable");
+        if (this instanceof OperatorVersion value) {
+            return new FixtureSubjectRef.OperatorVersion(value.libraryId(), value.libraryRevision(),
+                    value.operatorRef(), value.contractFingerprint());
+        }
+        BuiltinFunctionVersion value = (BuiltinFunctionVersion) this;
+        return new FixtureSubjectRef.BuiltinFunctionVersion(value.catalogId(), value.catalogRevision(),
+                value.functionName(), value.signatureFingerprint(), value.runtimeFingerprint());
     }
 
     private static void require(String id, int revision, String fingerprint) {

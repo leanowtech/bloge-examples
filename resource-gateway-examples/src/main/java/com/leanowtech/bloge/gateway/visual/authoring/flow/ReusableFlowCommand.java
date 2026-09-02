@@ -94,9 +94,11 @@ public record ReusableFlowCommand(String schemaVersion, Flow flow) {
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "kind")
     @JsonSubTypes({
             @JsonSubTypes.Type(value = ComposableRef.ApiResource.class, name = "API_RESOURCE"),
-            @JsonSubTypes.Type(value = ComposableRef.FlowVersion.class, name = "FLOW_VERSION")
+            @JsonSubTypes.Type(value = ComposableRef.FlowVersion.class, name = "FLOW_VERSION"),
+            @JsonSubTypes.Type(value = ComposableRef.OperatorVersion.class, name = "OPERATOR_VERSION")
     })
-    public sealed interface ComposableRef permits ComposableRef.ApiResource, ComposableRef.FlowVersion {
+    public sealed interface ComposableRef permits ComposableRef.ApiResource, ComposableRef.FlowVersion,
+            ComposableRef.OperatorVersion {
         String id();
         int revision();
         String fingerprint();
@@ -115,6 +117,17 @@ public record ReusableFlowCommand(String schemaVersion, Flow flow) {
                 fingerprint = Objects.requireNonNull(fingerprint, "fingerprint");
             }
             @Override public String id() { return publicationId; }
+        }
+
+        /** Exact operator revision placeable as one reusable-Flow DAG node. */
+        record OperatorVersion(String libraryId, int revision, String operatorRef,
+                               String fingerprint) implements ComposableRef {
+            public OperatorVersion {
+                libraryId = Objects.requireNonNull(libraryId, "libraryId");
+                operatorRef = Objects.requireNonNull(operatorRef, "operatorRef");
+                fingerprint = Objects.requireNonNull(fingerprint, "fingerprint");
+            }
+            @Override public String id() { return libraryId + ":" + operatorRef; }
         }
     }
 

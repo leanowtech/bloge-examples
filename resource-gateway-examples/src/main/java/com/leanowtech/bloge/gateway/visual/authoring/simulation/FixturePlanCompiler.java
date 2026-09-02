@@ -51,10 +51,8 @@ public final class FixturePlanCompiler {
             List<ResolvedFixturePlan.Selection> selections =
                     command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.CaseControls controls
                             ? caseControls(scope, command, input, controls)
-                            : command.subject() instanceof ExactFixtureSubjectRefV2.ApiResource
-                            ? bindings(scope, command, input,
-                            (SimulationCommandV2.FixturePlan.Bindings) command.fixturePlan())
-                            : throwFailure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
+                            : bindings(scope, command, input,
+                            (SimulationCommandV2.FixturePlan.Bindings) command.fixturePlan());
             SimulationCommandV2.Unmatched unmatched = command.fixturePlan()
                     instanceof SimulationCommandV2.FixturePlan.CaseControls controls
                     ? controls.unmatched()
@@ -94,6 +92,10 @@ public final class FixturePlanCompiler {
         List<ResolvedFixturePlan.Selection> resolved = new ArrayList<>();
         for (SimulationCommandV2.FixtureBinding binding : plan.bindings()) {
             requireSupportedTarget(binding.target());
+            if (!(command.subject() instanceof ExactFixtureSubjectRefV2.ApiResource)
+                    && !(binding.target() instanceof SimulationCommandV2.FixtureTarget.Subject)) {
+                throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
+            }
             resolved.add(resolveInvocation(scope, command.subject(), binding.target(),
                     binding.selection(), input));
         }

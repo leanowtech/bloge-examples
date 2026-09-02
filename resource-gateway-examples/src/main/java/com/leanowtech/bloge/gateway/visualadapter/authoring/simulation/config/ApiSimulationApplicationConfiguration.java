@@ -15,6 +15,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationReplayResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2Store;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.ComponentSimulationAuthorityV2;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.CatalogComponentSimulationAuthorityV2;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,6 +28,15 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "gateway.authoring.api-resource", name = "enabled", havingValue = "true")
 public class ApiSimulationApplicationConfiguration {
+    /** Resolves exact Operator revisions and the immutable server built-in catalog. */
+    @Bean
+    @ConditionalOnMissingBean
+    ComponentSimulationAuthorityV2 componentSimulationAuthorityV2(
+            ObjectProvider<OperatorLibraryRegistry> libraries) {
+        return new CatalogComponentSimulationAuthorityV2(
+                libraries.getIfAvailable(OperatorLibraryRegistry::empty));
+    }
+
     /** Creates the single immutable Fixture Plan compiler shared by v2 execution paths. */
     @Bean
     @ConditionalOnMissingBean
@@ -37,9 +49,10 @@ public class ApiSimulationApplicationConfiguration {
     @ConditionalOnMissingBean
     FlowFixturePlanCompilerV2 flowFixturePlanCompilerV2(
             ObjectProvider<ReusableFlowPublicationStore> publications,
-            ObjectProvider<ReusableFlowDraftStore> drafts, FixturePlanCompiler fixtures) {
+            ObjectProvider<ReusableFlowDraftStore> drafts, FixturePlanCompiler fixtures,
+            ComponentSimulationAuthorityV2 components) {
         return new FlowFixturePlanCompilerV2(
-                publications.getIfAvailable(), drafts.getIfAvailable(), fixtures);
+                publications.getIfAvailable(), drafts.getIfAvailable(), fixtures, components);
     }
 
     /** Executes local Flow topology while external API fallbacks remain fail-closed. */
@@ -81,8 +94,8 @@ public class ApiSimulationApplicationConfiguration {
             ObjectProvider<FixtureAssetSimulationResolver> fixtureAssets,
             ObjectProvider<SimulationReplayResolver> replays,
             ObjectProvider<SimulationFixtureUsageRecorder> usage,
-            FlowSimulationModuleV2 flows) {
+            FlowSimulationModuleV2 flows, ComponentSimulationAuthorityV2 components) {
         return new SimulationModuleV2(resources, plans, fixtureAssets.getIfAvailable(),
-                replays.getIfAvailable(), usage.getIfAvailable(), runs, flows);
+                replays.getIfAvailable(), usage.getIfAvailable(), runs, flows, components);
     }
 }
