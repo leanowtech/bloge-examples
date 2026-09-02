@@ -3205,3 +3205,49 @@ BUILD SUCCESS
 
 这不改变 caller-directed Fixture simulation v2 的总体 **96% / 4%** 评估：production Call Site publication、
 真实 Operator adapter、S6/S7 UI/Scenario bridge 等剩余项仍必须独立闭合，不能用本轮 DSL-first curl 证据代替。
+
+## 70. Iteration 69 — Fixture demo managed startup and shutdown
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `scripts/start-caller-directed-fixture-demo.sh`。脚本复用 `example-services.sh` 的 Maven 打包、PID、日志、
+  端口占用和 readiness 管理，并为本地 H2 演示启用 API Resource、Reusable Flow、authoring migration bootstrap
+  与 `API_RESOURCE_AUTHORING` purpose。
+- 启动成功不再只依据首页可访问。脚本继续校验 `/api/authoring/availability` 的两个能力，并使用演示身份读取
+  authoring catalog，证明 Bearer Token 与 purpose 可用；失败时输出可诊断响应并返回非零状态。
+- 新增 `scripts/stop-caller-directed-fixture-demo.sh`。停服继续使用仓库启动器的进程命令校验，PID 指向其他程序时
+  拒绝终止。
+- curl runbook 补全 Java/Maven/BLOGE 依赖、`curl`/`jq`、端口、环境变量、日志、PID、自定义端口、H2 与
+  PostgreSQL migration 边界，以及启动和停服步骤。
+
+### 验证
+
+```text
+bash -n scripts/start-caller-directed-fixture-demo.sh \
+  scripts/stop-caller-directed-fixture-demo.sh \
+  scripts/curl-caller-directed-fixture-demo.sh
+
+exit: 0
+```
+
+```text
+scripts/start-caller-directed-fixture-demo.sh
+RG_DEMO_ID=start-stop-1788352350 scripts/curl-caller-directed-fixture-demo.sh
+scripts/stop-caller-directed-fixture-demo.sh
+
+Resource Gateway package: BUILD SUCCESS
+Capability probe: apiResource=true, reusableFlow=true
+Authenticated catalog probe: HTTP success
+API Resource Fixture simulation: SUCCEEDED, MOCKED
+Three-API BLOGE DSL DAG simulation: SUCCEEDED, 3/3 MOCKED
+Whole-Tool Fixture simulation: SUCCEEDED, MOCKED
+Final service status: stopped
+```
+
+### 当前差距评估
+
+本地 curl 演示的启动参数、身份 purpose、schema bootstrap、能力验证、日志/PID 与安全停服已形成一条可复现
+闭环。该操作性切片没有新增生产部署能力：PostgreSQL 仍须由部署系统应用正式 migrations，生产 Token、purpose
+和外部 Secret Provider 仍由部署方配置；专用启动脚本明确只面向本地 H2 演示。

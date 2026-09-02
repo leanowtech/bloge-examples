@@ -30,18 +30,52 @@ DAG 的前两个节点都读取 Tool 输入中的 `customerId`；第三个节点
 
 ## 2. 前置条件
 
-需要 Java 25、Maven、`curl` 和 `jq`。
+需要满足以下条件：
 
-仓库启动器已默认启用 API Resource 与 Reusable Flow authoring。演示身份还必须获准使用
-`API_RESOURCE_AUTHORING` purpose：
+- Java 25 和 Maven 可用；
+- BLOGE 依赖已安装到本地 Maven 仓库；
+- `curl` 和 `jq` 可用；
+- 默认端口 `8081` 未被其他进程占用，或通过 `RESOURCE_GATEWAY_PORT` 指定其他端口。
+
+使用演示专用启动脚本。脚本复用仓库统一的构建、PID、日志和安全停服逻辑，并设置以下默认值：
+
+| 变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `RESOURCE_GATEWAY_PORT` | `8081` | Resource Gateway 监听端口 |
+| `RG_API_RESOURCE_AUTHORING_ENABLED` | `true` | 启用 API Resource authoring |
+| `RG_REUSABLE_FLOW_AUTHORING_ENABLED` | `true` | 启用 Reusable Flow authoring |
+| `RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED` | `true` | 为本地嵌入式 H2 应用 authoring migrations |
+| `RG_INTEGRATION_ALLOWED_PURPOSES` | `API_RESOURCE_AUTHORING` | 允许演示使用的 authoring purpose；已有列表会保留并补入该值 |
+| `RG_TOKEN` | `bloge-aneke-demo-token` | 启动后只读鉴权探针使用的演示 Token |
+| `RG_PURPOSE` | `API_RESOURCE_AUTHORING` | 启动后只读鉴权探针使用的 purpose |
+
+启动：
 
 ```bash
-RG_INTEGRATION_ALLOWED_PURPOSES=API_RESOURCE_AUTHORING \
-  scripts/example-services.sh start resource-gateway
+scripts/start-caller-directed-fixture-demo.sh
 ```
 
-默认地址为 `http://localhost:8081`，默认演示 Bearer Token 为
-`bloge-aneke-demo-token`。先检查两个能力是否可用：
+脚本会依次完成以下检查：
+
+1. 构建并启动 Resource Gateway；
+2. 等待服务页面可访问；
+3. 确认 API Resource 和 Reusable Flow 两个能力均已启用；
+4. 使用演示身份读取 authoring catalog，确认 Token 和 purpose 可用。
+
+成功后，Resource Gateway 日志位于 `target/example-logs/resource-gateway.log`，PID 位于
+`target/example-pids/resource-gateway.pid`。默认地址为 `http://localhost:8081`。
+
+如需修改端口，启动和演示必须使用相同地址：
+
+```bash
+RESOURCE_GATEWAY_PORT=8091 scripts/start-caller-directed-fixture-demo.sh
+RG_BASE_URL=http://localhost:8091 scripts/curl-caller-directed-fixture-demo.sh
+```
+
+本地 schema bootstrap 只适用于演示使用的嵌入式 H2。连接 PostgreSQL 时，应先按顺序应用正式 migration，
+并设置 `RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=false`。
+
+也可以单独检查两个能力：
 
 ```bash
 curl --fail-with-body --silent --show-error \
@@ -57,6 +91,14 @@ curl --fail-with-body --silent --show-error \
   "reusableFlow": true
 }
 ```
+
+停止：
+
+```bash
+scripts/stop-caller-directed-fixture-demo.sh
+```
+
+停服脚本只终止仓库启动器识别出的 Resource Gateway 进程。若 PID 指向其他程序，脚本会拒绝终止。
 
 ## 3. 一键执行完整剧本
 

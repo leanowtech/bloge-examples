@@ -19,7 +19,10 @@ For a terminal-only, executable customer-retention scenario covering three API R
 BLOGE-DSL-first DAG composition with immutable dependency pins, caller-selected Fixture Cases,
 Tool Fixture authoring, and immutable run evidence,
 see the [curl Fixture and Tool demo runbook](../docs/resource-gateway-curl-fixture-tool-demo-runbook.md) and
-[`scripts/curl-caller-directed-fixture-demo.sh`](../scripts/curl-caller-directed-fixture-demo.sh).
+[`scripts/curl-caller-directed-fixture-demo.sh`](../scripts/curl-caller-directed-fixture-demo.sh). Use the matching
+[`scripts/start-caller-directed-fixture-demo.sh`](../scripts/start-caller-directed-fixture-demo.sh) and
+[`scripts/stop-caller-directed-fixture-demo.sh`](../scripts/stop-caller-directed-fixture-demo.sh) wrappers to start
+the local H2-backed service with the required authoring flags and purpose, then stop the exact managed process.
 The DSL save endpoint accepts only the lossless reusable-Flow subset and exact immutable dependency pins;
 unsupported syntax, semantic drift, mixed round-trip diagnostics, and malformed wire fields fail closed.
 

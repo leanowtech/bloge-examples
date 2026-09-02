@@ -100,7 +100,7 @@ curl --fail-with-body --silent --show-error \
 show "Authoring availability" "${WORK_DIR}/availability.json"
 require_jq '.apiResource == true and .reusableFlow == true' \
     "${WORK_DIR}/availability.json" \
-    'Start the service with API Resource and reusable Flow authoring enabled.'
+    'Run scripts/start-caller-directed-fixture-demo.sh before this demo.'
 
 # 2. Define three exact API Resources. Connections are credential-free and are
 #    never contacted by this demo because every execution is Fixture-controlled.
