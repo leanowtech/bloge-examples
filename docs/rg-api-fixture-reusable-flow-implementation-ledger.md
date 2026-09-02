@@ -3160,6 +3160,9 @@ Site authority/runtime，再实现最小 UI/Scenario 主链；差距仍高于 3%
   revision 与 fingerprint。未知 pin、遗漏 pin、多余 pin、投影不完整或 parser diagnostic 均 fail closed。
 - 当前写入入口只接受可无损投影的严格子集：普通 composable node、Flow input、Node output 与常量 binding。
   Transform、branch、retry/fallback、raw expression 等尚不能无损映射的语义会明确拒绝，不静默降级。
+- DSL command 在 HTTP 反序列化边界严格执行冻结 schema 的版本、长度、必填字段与 pin key 约束；官方 importer
+  的 warning-only unsupported coverage 也会拒绝。仅当 round-trip 的全部失败证据精确为已 pin 外部算子不在普通目录时，
+  才允许 topology-only 投影；`DRIFT`、schema/codegen 失败、未知函数或混合 diagnostics 均 fail closed。
 - curl 演示脚本和操作手册改为 DSL-first：创建三个带 Default Fixture 的 API Resource，以 DSL 组装客户挽留
   Tool，发布后分别执行节点级 Fixture DAG 模拟和 whole-Tool Fixture 模拟。
 
@@ -3170,12 +3173,12 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest=ReusableFlowDslProjectorTest,ReusableFlowAuthoringControllerTest,\
 ReusableFlowAuthoringApplicationConfigurationTest,AuthoringProtocolSchemaTest test
 
-Tests run: 30; Failures: 0; Errors: 0; Skipped: 0
+Tests run: 34; Failures: 0; Errors: 0; Skipped: 0
 BUILD SUCCESS
 ```
 
 ```text
-RG_DEMO_ID=dsl-review-1788336271 RG_KEEP_DEMO_FILES=true \
+RG_DEMO_ID=dsl-final-1788340830 RG_KEEP_DEMO_FILES=false \
   scripts/curl-caller-directed-fixture-demo.sh
 
 exit: 0
@@ -3187,7 +3190,7 @@ Whole-Tool Fixture simulation: SUCCEEDED, subject execution MOCKED, egress.attem
 ```text
 mvn -f resource-gateway-examples/pom.xml clean verify
 
-Tests run: 8,333; Failures: 0; Errors: 0; Skipped: 39
+Tests run: 8,337; Failures: 0; Errors: 0; Skipped: 39
 BUILD SUCCESS
 ```
 

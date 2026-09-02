@@ -20,6 +20,8 @@ BLOGE-DSL-first DAG composition with immutable dependency pins, caller-selected 
 Tool Fixture authoring, and immutable run evidence,
 see the [curl Fixture and Tool demo runbook](../docs/resource-gateway-curl-fixture-tool-demo-runbook.md) and
 [`scripts/curl-caller-directed-fixture-demo.sh`](../scripts/curl-caller-directed-fixture-demo.sh).
+The DSL save endpoint accepts only the lossless reusable-Flow subset and exact immutable dependency pins;
+unsupported syntax, semantic drift, mixed round-trip diagnostics, and malformed wire fields fail closed.
 
 ## What You Get
 
