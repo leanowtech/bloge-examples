@@ -6,7 +6,10 @@
 
 适用范围：API Resource、Reusable Flow、Operator、Built-in Function 的 Fixture 配置与模拟执行
 
-关联基线：`rg-api-fixture-reusable-flow-authoring-proposal-v1.md`
+关联基线：
+
+- `rg-api-fixture-reusable-flow-authoring-proposal-v1.md`
+- `rg-evolution-design-1.3.0.md`
 
 ## 1. 文档目的
 
@@ -84,9 +87,9 @@ Fixture 条件必须保存在受版本控制的 Fixture Case 中。模拟请求�
 模拟请求不得上传任意条件表达式或任意 Mock 输出。否则服务端无法证明本次模拟使用了哪一个
 受治理的 Fixture 版本，也无法稳定回放。
 
-### 3.3 解析结果必须固化为精确 Case
+### 3.3 每次 Invocation 的解析结果必须固化为精确 Case
 
-即使调用方使用 `conditionId` 或自动匹配，Simulation Run 也必须记录最终解析出的：
+即使调用方使用 `conditionId` 或自动匹配，每个 Invocation evidence 也必须记录最终解析出的：
 
 - `fixtureSetId`
 - `revision`
@@ -98,6 +101,44 @@ Fixture 条件必须保存在受版本控制的 Fixture Case 中。模拟请求�
 - `matchedBy`
 
 条件名称只是选择入口，不是最终证据。
+
+### 3.4 与 1.3.0 的关系
+
+本方案不是另建一套 Fixture 系统，而是把 1.3.0 已定义的创作与治理链扩展成调用方可复用的
+执行协议：
+
+```text
+simulate sample
+  -> pin
+  -> 保存为 PRIVATE Fixture Case revision
+  -> 可选晋级为 governed Fixture Asset
+  -> 由 Simulation Command 精确选择或按条件匹配
+  -> 编译为 Resolved Fixture Plan
+  -> 按 Invocation 执行并生成证据
+  -> 幂等累计治理资产 usage
+```
+
+1.3.0 负责回答“Fixture 如何从一次模拟结果沉淀为可治理资产、如何在工具主线中被看见”；
+本文负责回答“调用方如何在一次 API、工具或 DAG 模拟中，安全且可回放地选择这些资产”。
+
+以下边界保持不变：
+
+- `ToolCoordinate` 只用于界面主线和路由，不进入 GraphDraft、Scenario、Fixture 或 Simulation wire contract。
+- `sample` 和尚未保存的 `pinned` 状态是编辑态数据，不能成为外部调用方引用。
+- 现有 `GraphDraft.nodeFixtures` 是运行适配层输入，不升级为 v2 公共协议。
+- v2 只引用已保存的 Fixture Set revision；受保护输出继续由服务端 Material authority 解析。
+
+### 3.5 融合后的双链模型
+
+系统保留两条职责清晰、通过精确 revision 相接的链：
+
+| 链 | 入口 | 终点 | 权威对象 |
+| --- | --- | --- | --- |
+| Fixture 创作与治理链 | 模拟结果 sample | PRIVATE Case 或 governed Asset | Fixture Set revision、Fixture Asset revision |
+| Fixture 选择与执行链 | Simulation Command | Simulation Run evidence | Resolved Fixture Plan、Invocation Evidence |
+
+创作链不能直接注入运行时状态；执行链不能上传任意 Mock 输出。两条链只通过精确 Fixture revision、
+fingerprint 和受保护 Material reference 连接。
 
 ## 4. 领域术语
 
@@ -111,8 +152,12 @@ Fixture 条件必须保存在受版本控制的 Fixture Case 中。模拟请求�
 | Fixture Binding | Fixture Plan 中一个 Target 与一个 Selection 的绑定 |
 | Target | Subject、DAG Node 或 Built-in Function Call Site |
 | Selection | 精确 Case、命名条件或自动匹配策略 |
-| Resolved Fixture Plan | 服务端将全部 Selection 解析为精确 Case 后形成的不可变运行计划 |
-| Call Site | 编译产物中某一次 Built-in Function 调用的稳定身份 |
+| Resolved Fixture Plan | 服务端将 Subject、Target、精确 Fixture revision、选择规则和策略闭包后形成的不可变运行计划 |
+| Resolved Fixture Selection | 某个 Invocation 使用实际输入解析出的精确 Fixture Case 和 Behavior |
+| Fixture Provenance | Fixture 从 `sample`、`pinned` 到 `governed` 的来源与治理状态 |
+| Fixture Asset | 服务端治理、脱敏、审阅和激活后的受保护 Fixture Material |
+| Call Site | 编译产物中某个可拦截调用位置的静态稳定身份 |
+| Invocation Key | Runtime 为一次具体运行、尝试和调用序号生成的动态身份 |
 | Unmatched Policy | 没有 Fixture Binding 的调用点应阻断还是尝试真实执行 |
 
 ## 5. 核心不变量
@@ -131,6 +176,12 @@ Fixture 条件必须保存在受版本控制的 Fixture Case 中。模拟请求�
 12. Built-in Function Fixture 必须定位到精确 Call Site，不能只按函数名全局替换。
 13. 运行证据必须记录精确解析结果，不能只记录条件名称。
 14. Fixture 条件和 Material 的变更必须产生新的 Fixture Set revision。
+15. `ToolCoordinate`、画布坐标、组件 test id 和临时 AST 下标不得进入 v2 wire identity。
+16. 调用方只能绑定静态 Target 或 Call Site，不能提交或猜测 Runtime `InvocationKey`。
+17. 重试、循环、嵌套 Flow 和同一 Call Site 的多次调用必须产生不同 Invocation Key，并逐次解析、逐次记证据。
+18. `sample` 或未保存的 `pinned` Fixture 不得被 Simulation Command 引用。
+19. schema 或 runtime fingerprint 漂移的 Fixture 必须标记 `STALE`，不得参加条件匹配或自动匹配。
+20. governed Fixture usage 按已提交的 `(runId, invocationKey, assetRef)` 幂等累计一次。
 
 ## 6. `SimulationCommand v2`
 
@@ -447,6 +498,28 @@ lookup(customerId) + lookup(referrerId)
 
 Call Site authority 是 Built-in Function Fixture 进入统一 Simulation 前的实现前置条件。
 
+### 10.3 静态 Call Site 与动态 Invocation Key
+
+1.3.0 中节点和函数调用的可见身份只解决“代码里的哪个位置”。实际运行还必须区分“这个位置的
+第几次调用”。因此 v2 严格分离：
+
+```ts
+interface InvocationIdentity {
+  invocationKey: string;       // 服务端生成的 opaque identity
+  runId: string;
+  target: FixtureTarget;       // 静态 Target / Call Site
+  attempt: number;             // 重试或恢复尝试
+  ordinal: number;             // 同一静态调用点在本次尝试中的调用序号
+  parentInvocationKey?: string;
+}
+```
+
+- Fixture Plan 只绑定静态 `target`。
+- Runtime 在每次即将调用前创建 `InvocationKey`，再用该次实际输入解析条件。
+- `foreach`、重试、递归或嵌套 Flow 不共享 Invocation Key。
+- Resume 必须恢复同一个 Resolved Fixture Plan fingerprint 和已提交的 Invocation evidence；不得重新自动匹配后覆盖历史结果。
+- 调用方提交 `invocationKey` 一律按非法字段拒绝。
+
 ## 11. 三类调用示例
 
 ### 11.1 API Resource：按条件模拟
@@ -596,6 +669,20 @@ Call Site authority 是 Built-in Function Fixture 进入统一 Simulation 前的
 - 同一 Target 出现两个 Selection；
 - 一个 Fixture Plan 同时通过 `CASE_CONTROLS` 和 `BINDINGS` 提供控制。
 
+### 12.4 Decision Scenario 边界
+
+1.3.0 已冻结的 Decision Scenario 语义继续保留：
+
+- 决策表枚举产生的 Scenario 默认 `dependencies=[]`，表示业务样例和期望，不自动自我 Mock。
+- Given/Then 与 Fixture `when` 不互相转换：前者是业务断言，后者是调用时选择 Mock 的适用条件。
+- “Use expected output as Return fixture” 是用户显式创作动作，必须保存为新的 PRIVATE Fixture Case revision。
+- OPERATOR 契约用 canonical `operatorRef`，GRAPH 契约用 `nodeId`；编译器再投影为 v2 静态 Target。
+- expected output 必须深拷贝，不能携带 Credential、Fixture Asset Material 或 Replay 内容。
+- 保存完成前只是编辑态 override，不能被其他 Simulation Command 引用。
+
+Scenario Compiler 的职责是把显式保存的 dependency 编译成 Fixture Binding；它不能把 Decision Table
+predicate 自动改写成 Fixture Condition，也不能为了让断言通过而自动生成 Return Fixture。
+
 ## 13. `FixturePlanCompiler` 深模块
 
 ### 13.1 Interface
@@ -655,6 +742,19 @@ Flow 节点的条件不能在请求入口统一求值，因为后续节点输入
 4. 解析成精确 Case 和 Behavior。
 5. 执行 Fixture 行为或真实调用。
 
+### 13.4 每次 Invocation 的解析闭包
+
+`ResolvedFixturePlan` 冻结“允许哪些静态 Target 使用哪些精确 Fixture Set revision”；对于条件选择，
+最终 `caseId` 仍在每个 Invocation 输入产生后解析。每次解析必须：
+
+1. 使用当前 Invocation 的实际输入和静态 Target。
+2. 只读取计划中已钉住的 Fixture Set revision。
+3. 校验 Fixture、Target Contract 和 runtime fingerprint 未漂移。
+4. 将选中的 Case、Behavior、Fidelity 和匹配原因写入该 Invocation evidence。
+5. 在调用前完成 fail-closed 校验；零命中、多命中、STALE 或不支持的 Fidelity 都不进入 Kernel。
+
+该闭包避免循环第二次调用复用第一次命中结果，也避免重试时静默切换到新的 Fixture Head。
+
 ## 14. 行为与 Fidelity
 
 | Behavior | API Resource | Flow | Operator | Built-in Function |
@@ -695,6 +795,8 @@ interface SimulationRunV2 {
 
 ```ts
 interface InvocationEvidence {
+  invocationKey: string;
+  parentInvocationKey?: string;
   target: FixtureTarget;
   subject: ExactFixtureSubjectRefV2;
   status: 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'SKIPPED';
@@ -708,6 +810,12 @@ interface InvocationEvidence {
   };
   behavior?: 'RETURN' | 'ERROR' | 'TIMEOUT' | 'REPLAY';
   fidelity?: 'OUTPUT_LEVEL' | 'PROTOCOL_DERIVED' | 'TRANSPORT_LEVEL';
+  provenance?: 'PINNED_PRIVATE' | 'GOVERNED_ASSET' | 'REPLAY';
+  fixtureAssetRef?: {
+    fixtureAssetId: string;
+    revision: number;
+    schemaFingerprint: string;
+  };
   inputFingerprint: string;
   outputFingerprint?: string;
   egress: EgressEvidence;
@@ -723,6 +831,25 @@ interface InvocationEvidence {
 - Fixture Asset 内容；
 - Replay 内容；
 - Error Behavior 的敏感 message。
+
+### 15.3 四维结论
+
+沿用 1.3.0 的诚实结论模型，不用一个泛化 `PASSED` 掩盖不同证明边界：
+
+```ts
+interface SimulationVerdicts {
+  execution: 'PASSED' | 'FAILED' | 'BLOCKED';
+  assertions: 'PASSED' | 'FAILED' | 'NOT_CHECKED';
+  contract: 'VALID' | 'INVALID' | 'NOT_CHECKED';
+  governance: 'PASSED' | 'FAILED' | 'NOT_CHECKED';
+  aggregate: 'READY' | 'NOT_READY';
+}
+```
+
+- Fixture 条件命中只证明选择规则成立，不证明业务断言通过。
+- Fixture 返回成功只证明 Execution 按计划完成，不证明真实 Provider 可用。
+- 只有四维全部满足对应门槛时，`aggregate` 才能为 `READY`。
+- 未执行断言、契约或治理检查时必须显示 `NOT_CHECKED`，不能折叠成 Passed。
 
 ## 16. HTTP 协议
 
@@ -757,7 +884,6 @@ Pragma: no-cache
 | 422 | `FIXTURE_SUBJECT_MISMATCH` | Fixture Subject 与 Target Subject 不一致 |
 | 422 | `FIXTURE_CONDITION_NOT_SATISFIED` | 指定条件不满足实际输入 |
 | 422 | `FIXTURE_AUTO_MATCH_EMPTY` | 自动匹配没有命中 |
-| 422 | `FIXTURE_AUTO_MATCH_AMBIGUOUS` | 自动匹配命中多个 Case |
 | 422 | `FIXTURE_TARGET_OVERLAP` | 父 Target 与后代 Target 或重复 Target 冲突 |
 | 424 | `FIXTURE_MATERIAL_UNAVAILABLE` | 受保护 Material 或 Replay authority 不可用 |
 | 503 | `SIMULATION_BUSY` | 相同幂等命令仍在执行 |
@@ -830,6 +956,23 @@ v1 迁移规则：
 - 可列出编译后的稳定 Call Site；
 - authority 变化后可将关联 Fixture 标为 `STALE`。
 
+### 18.4 1.3.0 Fixture provenance 与治理资产桥接
+
+| 编辑态/治理态 | v2 中的含义 | 是否可被外部 Simulation Command 引用 |
+| --- | --- | --- |
+| `sample` | 一次 Simulation Run 的临时输出 | 否 |
+| `pinned` 未保存 | 当前编辑会话中的待保存 Fixture | 否 |
+| `pinned` 已保存 | PRIVATE Fixture Case revision，Material 为服务端保存的 INLINE 内容 | 是，按精确 Fixture Set revision 引用 |
+| `governed` | Fixture Case 的 Material 指向精确 ACTIVE Fixture Asset revision | 是，需 Material Read 权限 |
+| `STALE` | Subject schema 或 runtime fingerprint 已漂移 | 否，直到重捕获或产生兼容的新 revision |
+
+Pin 动作必须返回可见保存回执，至少包含 `fixtureSetId`、`revision`、`fingerprint` 和 `caseId`。
+Promote 不得原地改写旧 Case；它创建 Fixture Asset revision，并创建新的 Fixture Set revision，将 Material
+引用切换到该 Asset。旧 revision 保持不可变，已有 Simulation Run 仍可审计。
+
+治理资产的 `usageCount` 只在 Simulation Run 与 Invocation evidence 成功提交后增加，并以
+`(runId, invocationKey, fixtureAssetId, assetRevision)` 唯一约束防止重试重复累计。
+
 ## 19. 前端交互
 
 ### 19.1 模拟面板
@@ -862,6 +1005,18 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 对外部 API 的真实 Read 必须二次确认并显示允许清单。
 - 不提供在模拟面板直接粘贴 Mock 输出的快捷入口。
 - 需要新 Mock 输出时，引导到 Fixture Object 创建新 revision。
+
+### 19.4 融入 1.3.0 工具主线
+
+v2 不新增平行的 Fixture Studio。它进入 1.3.0 已定义的对象主线：
+
+- **Feed**：捕获 sample、Pin、保存 PRIVATE Case、Promote、选择 Case/Condition、配置 Fixture Plan。
+- **Prove**：展示 Resolved Plan、逐 Invocation evidence、四维结论、真实外部访问决定和治理状态。
+- API Resource、Reusable Flow、Operator 和 Built-in Function 使用同一 Fixture Plan 交互模型。
+- Flow 页面按 DAG 展开节点；Function 只作为所属节点下的 Call Site 展示。
+
+`ToolCoordinate` 可以继续驱动 Thread Rail、Breadcrumb 和 UI 定位，但只能以 props 或 `data-tool-*`
+存在。Fixture Plan 保存时必须转换为 Subject/Target 的正式 authority，不能把路由 query 或画布坐标写入协议。
 
 ## 20. 可观测性
 
@@ -907,7 +1062,27 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 不把缺失 Binding 自动解释为 `REAL`；
 - 不把多 Case 命中按顺序选择第一条。
 
+### 21.3 加法式发布与回滚
+
+沿用 1.3.0 的对象主线 overlay 策略：
+
+- v2 协议、Fixture Plan 编辑器和 Invocation evidence 由独立 feature switch 门控。
+- switch 关闭时不挂载新组件，v1 请求、证据和页面行为保持不变。
+- 先在 API Resource 对象页启用，再扩展 Flow、Operator、Built-in Function。
+- 不在 `AuthorCanvas` 中复制 Fixture 编译逻辑；所有入口调用同一个 `FixturePlanCompiler`。
+- 回滚只关闭 v2 入口，不删除已保存 Fixture revision 或 Simulation Run evidence。
+
 ## 22. 实施阶段
+
+### 阶段 S0：融合 1.3.0 资产链
+
+- 冻结 `sample -> pinned -> PRIVATE Case -> governed Asset` 的状态与保存回执。
+- 明确 Pin、Promote 和 governed Material 的 revision 不可变语义。
+- 复用现有三种 Resource Fidelity、schema stale 检测和 usage 计数能力。
+- 冻结静态 Call Site 与动态 Invocation Key 的职责边界。
+- 保持 feature switch 关闭时 v1 UI 和协议不变。
+
+验收：编辑态临时输出不能被外部引用；保存后的 Case 可精确引用；Promote 不改写历史 revision。
 
 ### 阶段 S1：Schema 与纯编译模型
 
@@ -934,6 +1109,7 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 支持 `CASE_CONTROLS` 作为可复用工具模拟方案。
 - 支持局部 Fixture 和 Unmatched Policy。
 - 支持嵌套 Flow 的整体替代与展开执行。
+- 每次循环、重试和嵌套调用生成独立 Invocation Key 并逐次匹配。
 
 验收：同一个工具运行中，不同 API 节点可选择不同 Case，并产生逐节点证据。
 
@@ -959,7 +1135,18 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 节点/Call Site Fixture 选择器。
 - Condition 编辑器和匹配预览。
 - Resolved Evidence 展示。
+- 接入 1.3.0 的 Feed/Prove 对象主线与四维结论。
+- 接入 sample、Pin、Promote、governed picker 和 stale 提示，不新增平行 Fixture Studio。
 - 更新 API Resource、Flow、Operator、Function 操作手册和截图。
+
+### 阶段 S7：Decision Scenario 桥接
+
+- 保持决策表枚举 Scenario 的 `dependencies=[]`。
+- 通过可见“Use expected output as Return fixture”动作创建 PRIVATE Case revision。
+- Scenario Compiler 将显式 dependency 投影为 v2 Fixture Binding。
+- 四维结果分别展示 Execution、Assertions、Contract 和 Governance。
+
+验收：没有自动自 Mock；保存的 Return Fixture 可复用；一次 Fixture 成功不会被泛化成工具 Ready。
 
 ## 23. 测试矩阵
 
@@ -983,6 +1170,9 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 父 Target 与后代 Target 重叠。
 - v1 Case 不参与条件匹配。
 - protected Material 无权限时 fail-closed。
+- STALE Fixture 不参与条件匹配或自动匹配。
+- retry、foreach 和嵌套调用按不同 Invocation Key 独立解析。
+- Resume 只能恢复同一 Resolved Plan fingerprint，不重新匹配 Fixture Head。
 
 ### 23.3 API Resource
 
@@ -1001,6 +1191,7 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 嵌套 Flow 展开后的层级路径解析。
 - 前序 Fixture 输出进入后序节点条件匹配。
 - DAG 拓扑与 output contract 验证。
+- 同一 Call Site 多次 Invocation 可以因实际输入命中不同 Case，证据互不覆盖。
 
 ### 23.5 Operator 与 Function
 
@@ -1010,14 +1201,35 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 - 同名不同签名不串用。
 - 同节点两个同名 Call Site 分别绑定。
 - Call Site authority 漂移后 Fixture `STALE`。
+- 调用方提交 Invocation Key 被 schema 拒绝。
 
-### 23.6 HTTP 与安全
+### 23.6 创作、治理与 Scenario 桥接
+
+- sample 只能 Pin，不能直接进入 Simulation Command。
+- Pin 保存回执产生精确 PRIVATE Fixture Case revision。
+- Promote 创建新的 Fixture Asset 和 Fixture Set revision，不改写旧 revision。
+- governed Fixture 每个已提交 Invocation 只累计一次 usage。
+- schema/runtime fingerprint 漂移后 picker 显示 STALE，运行 fail-closed。
+- Decision Scenario 枚举保持 `dependencies=[]`。
+- 显式 expected Return Fixture 保存后才能被 Scenario Compiler 使用。
+- Given/Then predicate 不会被自动转换成 Fixture Condition。
+- 四维 verdict 独立计算，缺失维度保持 `NOT_CHECKED`。
+
+### 23.7 HTTP 与安全
 
 - 401/403 在读取 Fixture Material 前拒绝。
 - 跨 Scope 引用统一 404。
 - 幂等 Replay 返回同一 Resolved Plan 和 Run。
 - 同一幂等键不同 Plan 返回 409。
 - 错误、日志和证据不泄漏输入、输出、条件值或 Material。
+
+### 23.8 UI 与兼容
+
+- feature switch 关闭时不挂载 v2 组件，v1 交互和请求保持不变。
+- Feed 中完成 capture、Pin、Promote、选择和 Plan 保存。
+- Prove 中展示逐 Invocation evidence 与四维 verdict。
+- 1280px 真实浏览器完成 API 导入、DAG 编排、Fixture 沉淀、跨工具复用和模拟。
+- happy path 不要求粘贴手写 JSON，也不出现新的全屏 Fixture Studio。
 
 ## 24. 验收标准
 
@@ -1035,6 +1247,12 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 10. 运行结果明确区分强制 Case、条件命中、自动匹配和真实执行。
 11. 零命中、多命中、Target 重叠和 Subject 不匹配全部 fail-closed。
 12. 受保护 Material、Credential 和业务 payload 不进入日志或安全错误。
+13. sample、Pin、Promote、PRIVATE Case 和 governed Asset 形成一条可见且可审计的资产链。
+14. 每个运行时调用都有独立 Invocation Key；重试、循环和嵌套调用的证据不互相覆盖。
+15. governed Fixture usage 按已提交 Invocation 幂等累计，失败和重放不重复计数。
+16. Decision Scenario 只有在用户显式保存 Return Fixture 后才产生 Mock control。
+17. Execution、Assertions、Contract 和 Governance 分维展示，只有全部满足门槛才显示 Ready。
+18. v2 关闭时，1.3.0 之前的 v1 协议与界面保持原样。
 
 ## 25. 待确认决策
 
@@ -1046,5 +1264,51 @@ Built-in Function 使用节点下的 Call Site 子列表，不混入普通 DAG N
 4. 是否允许 `EXACT_CASE` 忽略 `when`，用于故障注入；本文建议允许并在证据中明确标记。
 5. `unmatched=REAL` 是否在普通界面出现；本文建议仅在高级入口出现。
 6. Built-in Function Call Site authority 是否作为 S5 前置单独冻结。
+7. Pin 是否直接保存 PRIVATE Fixture Case；本文建议一次可见动作完成 Pin 与保存，并返回精确回执。
+8. STALE Fixture 是否允许特权用户强制运行；本文建议 v2 首版一律 fail-closed，通过新 revision 重捕获。
 
 在以上决策确认前，不应修改现有 v1 wire schema 或直接实现 Controller 字段。
+
+## 26. 与 `rg-evolution-design-1.3.0.md` 的交叉比对结论
+
+### 26.1 直接吸收
+
+| 1.3.0 来源 | 1.3.0 设计 | 本方案的融合结果 |
+| --- | --- | --- |
+| §七、§8.5 | Define → Wire → Publish → Feed → Decide → Prove 工具主线 | Fixture 创作与选择进入 Feed，Resolved evidence 与四维结论进入 Prove |
+| §8.3 Phase C | `sample -> pinned -> governed` provenance | 扩展为 `sample -> pinned -> PRIVATE Case revision -> governed Asset revision` |
+| §二、§8.3 | 三种 API Resource Fidelity | 原样保留；其他 Subject 只有 Runtime 显式声明后才能提升 Fidelity |
+| §8.3、§十 | schema fingerprint 漂移检测 | 提升为 Compiler 和 Runtime 的 `STALE` fail-closed 门禁 |
+| §二、§8.3 | governed Asset 生命周期与 `usageCount` | 由每个已提交 Invocation 的精确 Asset 引用幂等累计 |
+| §8.4 Phase D | 显式“Use expected output as Return fixture” | 保持显式创作；保存为 Case 后由 Scenario Compiler 生成 Binding |
+| §二、§六、§8.5 | Execution/Assertions/Contract/Governance 四维结论 | 固化进 `SimulationRunV2.verdicts`，禁止泛化 Passed |
+| §五、§8.1 | 对象主线 overlay 与 feature switch | 作为 v2 UI 发布和回滚策略，不新建平行 Studio |
+| §8.5 | 真实浏览器、不手写 JSON 的验收 | 纳入 S6/S7 和 UI 兼容测试 |
+
+### 26.2 v2 新增
+
+以下能力在 1.3.0 中只有交互或局部运行形态，本文将其提升为统一协议：
+
+- 将本次业务输入与 Fixture 控制彻底分离。
+- 调用方按精确 Case、稳定 conditionId 或唯一自动匹配选择 Fixture。
+- 为多 API DAG、嵌套 Flow、Operator 和 Built-in Function 统一 Target/Selection。
+- 将静态 Call Site 与动态 Invocation Key 分离，覆盖循环、重试和恢复。
+- 生成不可变 Resolved Fixture Plan 和逐 Invocation 审计证据。
+- 明确 `unmatched` 与真实外部访问授权互不替代。
+
+### 26.3 明确不融合
+
+以下内容看似相近，但不得进入 v2 公共协议：
+
+- 不把 `ToolCoordinate`、画布位置或 UI test id 当作 Fixture Target。
+- 不让外部调用方直接引用临时 sample、未保存 pinned 状态或 `GraphDraft.nodeFixtures`。
+- 不把 Decision Table predicate 自动复制成 Fixture Condition。
+- 不把 expected assertion 自动变成自 Mock，从而制造自证通过。
+- 不按函数名全局替换 Built-in Function；必须使用稳定 Call Site。
+- 不用一个 `PASSED` 同时代表运行成功、断言成功、契约有效和治理合规。
+
+### 26.4 最终融合判断
+
+两份设计没有方向冲突。1.3.0 是对象化创作、治理和可见体验的基线；v2 是调用方选择、编译、
+执行与证据协议的深化。正确的实现方式是共享同一 Fixture Set、Fixture Asset、Fidelity、staleness 和
+Scenario 资产，不再新增第二份 Mock 存储、第二套条件编译器或第二个 Fixture 工作台。
