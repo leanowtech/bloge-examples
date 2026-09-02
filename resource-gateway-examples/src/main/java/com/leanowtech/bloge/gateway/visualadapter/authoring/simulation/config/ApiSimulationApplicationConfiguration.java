@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationReplay
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2Store;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.ComponentSimulationAuthorityV2;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.ComponentCallSiteRuntimeV2;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.CatalogComponentSimulationAuthorityV2;
 import org.springframework.beans.factory.ObjectProvider;
@@ -62,9 +63,12 @@ public class ApiSimulationApplicationConfiguration {
             ApiResourceCommitStore resources, FlowFixturePlanCompilerV2 plans,
             ObjectProvider<FixtureAssetSimulationResolver> fixtureAssets,
             ObjectProvider<SimulationReplayResolver> replays,
-            ObjectProvider<SimulationFixtureUsageRecorder> usage, SimulationRunV2Store runs) {
+            ObjectProvider<SimulationFixtureUsageRecorder> usage,
+            ObjectProvider<ComponentCallSiteRuntimeV2> componentRuntime,
+            SimulationRunV2Store runs) {
         return new FlowSimulationModuleV2(resources, plans, fixtureAssets.getIfAvailable(),
-                replays.getIfAvailable(), usage.getIfAvailable(), runs);
+                replays.getIfAvailable(), usage.getIfAvailable(), runs,
+                componentRuntime.getIfAvailable());
     }
 
     /** Fails startup when any Resource, Fixture or V013 authority is absent. */

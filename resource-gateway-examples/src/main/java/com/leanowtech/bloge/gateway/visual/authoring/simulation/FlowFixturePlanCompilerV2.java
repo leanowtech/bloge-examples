@@ -64,7 +64,7 @@ public final class FlowFixturePlanCompilerV2 {
         JsonNode input = input(scope, command);
         LinkedHashMap<List<String>, ResolvedFlowSimulationPlanV2.Node> nodes = new LinkedHashMap<>();
         expand(scope, root.graph(), List.of(), new HashSet<>(Set.of(command.subject())), nodes, 0);
-        Map<List<String>, ResolvedFlowSimulationPlanV2.Binding> bindings = bindings(scope, command, input, nodes);
+        CompiledBindings bindings = bindings(scope, command, input, nodes);
         ObjectNode closure = JSON.createObjectNode();
         closure.set("subject", JSON.valueToTree(command.subject()));
         closure.put("inputFingerprint", AuthoringFingerprints.of(input));
@@ -73,7 +73,8 @@ public final class FlowFixturePlanCompilerV2 {
                 .map(value -> Map.of("path", value.path(), "subject", value.subject())).toList()));
         closure.set("fixturePlan", JSON.valueToTree(command.fixturePlan()));
         return new ResolvedFlowSimulationPlanV2(command.subject(), root.contract().input(),
-                root.contract().output(), root.graph(), input, unmatched(command), nodes, bindings,
+                root.contract().output(), root.graph(), input, unmatched(command), nodes,
+                bindings.nodes(), bindings.callSites(),
                 AuthoringFingerprints.of(closure));
     }
 
@@ -82,7 +83,7 @@ public final class FlowFixturePlanCompilerV2 {
             AuthoringScope scope, ResolvedFlowSimulationPlanV2.Node node,
             ResolvedFlowSimulationPlanV2.Binding binding, JsonNode invocationInput) {
         if (binding.fixedSelection() != null) return binding.fixedSelection();
-        return fixtures.resolveInvocation(scope, node.subject(), binding.target(),
+        return fixtures.resolveInvocation(scope, bindingSubject(node, binding.target()), binding.target(),
                 binding.selection(), invocationInput);
     }
 
@@ -92,14 +93,19 @@ public final class FlowFixturePlanCompilerV2 {
             SimulationCommandV2.FixtureTarget target,
             com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand.Behavior.ApplyCase appliedCase,
             JsonNode invocationInput) {
-        return fixtures.resolveAppliedCase(scope, node.subject(), target, appliedCase, invocationInput);
+        return fixtures.resolveAppliedCase(
+                scope, bindingSubject(node, target), target, appliedCase, invocationInput);
     }
 
-    private Map<List<String>, ResolvedFlowSimulationPlanV2.Binding> bindings(
+    private CompiledBindings bindings(
             AuthoringScope scope, SimulationCommandV2 command, JsonNode input,
             Map<List<String>, ResolvedFlowSimulationPlanV2.Node> nodes) {
         LinkedHashMap<List<String>, ResolvedFlowSimulationPlanV2.Binding> result = new LinkedHashMap<>();
-        if (command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.None) return result;
+        LinkedHashMap<SimulationCommandV2.FixtureTarget.CallSite,
+                ResolvedFlowSimulationPlanV2.Binding> callSites = new LinkedHashMap<>();
+        if (command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.None) {
+            return new CompiledBindings(result, callSites);
+        }
         if (command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.CaseControls) {
             ResolvedFixturePlan parent = fixtures.compile(scope, command);
             for (ResolvedFixturePlan.Selection selection : parent.selections()) {
@@ -107,26 +113,36 @@ public final class FlowFixturePlanCompilerV2 {
                     throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
                 }
                 add(result, target.nodePath(), new ResolvedFlowSimulationPlanV2.Binding(
-                        target, null, selection), nodes);
+                        target, null, selection), nodes, callSites.keySet());
             }
-            return result;
+            return new CompiledBindings(result, callSites);
         }
         SimulationCommandV2.FixturePlan.Bindings authored =
                 (SimulationCommandV2.FixturePlan.Bindings) command.fixturePlan();
         for (SimulationCommandV2.FixtureBinding binding : authored.bindings()) {
-            if (!(binding.target() instanceof SimulationCommandV2.FixtureTarget.NodePath target)) {
+            if (binding.target() instanceof SimulationCommandV2.FixtureTarget.NodePath target) {
+                add(result, target.nodePath(), new ResolvedFlowSimulationPlanV2.Binding(
+                        target, binding.selection(), null), nodes, callSites.keySet());
+                continue;
+            }
+            if (!(binding.target() instanceof SimulationCommandV2.FixtureTarget.CallSite target)) {
                 throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
             }
-            add(result, target.nodePath(), new ResolvedFlowSimulationPlanV2.Binding(
-                    target, binding.selection(), null), nodes);
+            addCallSite(callSites, target, new ResolvedFlowSimulationPlanV2.Binding(
+                    target, binding.selection(), null), nodes, result.keySet());
         }
-        return result;
+        return new CompiledBindings(result, callSites);
     }
 
     private static void add(Map<List<String>, ResolvedFlowSimulationPlanV2.Binding> result,
                             List<String> path, ResolvedFlowSimulationPlanV2.Binding binding,
-                            Map<List<String>, ResolvedFlowSimulationPlanV2.Node> nodes) {
+                            Map<List<String>, ResolvedFlowSimulationPlanV2.Node> nodes,
+                            Set<SimulationCommandV2.FixtureTarget.CallSite> callSites) {
         if (!nodes.containsKey(path)) throw failure(FixturePlanFailure.Code.FIXTURE_SUBJECT_MISMATCH);
+        if (callSites.stream().anyMatch(value -> prefix(path, value.nodePath())
+                || path.equals(value.nodePath()))) {
+            throw failure(FixturePlanFailure.Code.TARGET_OVERLAP);
+        }
         if (result.putIfAbsent(List.copyOf(path), binding) != null) {
             throw failure(FixturePlanFailure.Code.TARGET_OVERLAP);
         }
@@ -134,6 +150,26 @@ public final class FlowFixturePlanCompilerV2 {
             if (!existing.equals(path) && (prefix(existing, path) || prefix(path, existing))) {
                 throw failure(FixturePlanFailure.Code.TARGET_OVERLAP);
             }
+        }
+    }
+
+    private static void addCallSite(
+            Map<SimulationCommandV2.FixtureTarget.CallSite, ResolvedFlowSimulationPlanV2.Binding> result,
+            SimulationCommandV2.FixtureTarget.CallSite target,
+            ResolvedFlowSimulationPlanV2.Binding binding,
+            Map<List<String>, ResolvedFlowSimulationPlanV2.Node> nodes,
+            Set<List<String>> nodeBindings) {
+        ResolvedFlowSimulationPlanV2.Node node = nodes.get(target.nodePath());
+        if (node == null || node.callSites().stream()
+                .noneMatch(value -> value.callSiteId().equals(target.callSiteId()))) {
+            throw failure(FixturePlanFailure.Code.FIXTURE_SUBJECT_MISMATCH);
+        }
+        if (nodeBindings.stream().anyMatch(value -> value.equals(target.nodePath())
+                || prefix(value, target.nodePath()))) {
+            throw failure(FixturePlanFailure.Code.TARGET_OVERLAP);
+        }
+        if (result.putIfAbsent(target, binding) != null) {
+            throw failure(FixturePlanFailure.Code.TARGET_OVERLAP);
         }
     }
 
@@ -146,6 +182,7 @@ public final class FlowFixturePlanCompilerV2 {
             ExactFixtureSubjectRefV2 subject = subject(authored.use());
             ReusableFlowCommand.Contract contract;
             ReusableFlowCommand.Graph child = null;
+            List<ComponentSimulationAuthorityV2.CallSite> callSites = List.of();
             if (subject instanceof ExactFixtureSubjectRefV2.FlowVersion) {
                 if (!ancestors.add(subject)) throw failure(FixturePlanFailure.Code.INTEGRITY);
                 FlowAuthority authority = authority(scope, subject);
@@ -156,11 +193,13 @@ public final class FlowFixturePlanCompilerV2 {
                 ComponentSimulationAuthorityV2.ComponentContract component = components.resolve(scope, subject)
                         .orElseThrow(() -> failure(FixturePlanFailure.Code.FIXTURE_STALE));
                 contract = new ReusableFlowCommand.Contract(component.input(), component.output());
+                callSites = component.callSites();
             } else {
                 contract = null;
             }
             if (nodes.putIfAbsent(path, new ResolvedFlowSimulationPlanV2.Node(
-                    path, subject, contract, authored, child)) != null || nodes.size() > MAX_NODES) {
+                    path, subject, contract, authored, child, callSites)) != null
+                    || nodes.size() > MAX_NODES) {
                 throw failure(FixturePlanFailure.Code.INTEGRITY);
             }
             if (child != null) {
@@ -231,5 +270,20 @@ public final class FlowFixturePlanCompilerV2 {
         return new FixturePlanFailure(code);
     }
 
+    private static ExactFixtureSubjectRefV2 bindingSubject(
+            ResolvedFlowSimulationPlanV2.Node node, SimulationCommandV2.FixtureTarget target) {
+        if (!(target instanceof SimulationCommandV2.FixtureTarget.CallSite callSite)) {
+            return node.subject();
+        }
+        return node.callSites().stream()
+                .filter(value -> value.callSiteId().equals(callSite.callSiteId()))
+                .map(ComponentSimulationAuthorityV2.CallSite::callable)
+                .findFirst().orElseThrow(() -> failure(FixturePlanFailure.Code.FIXTURE_STALE));
+    }
+
     private record FlowAuthority(ReusableFlowCommand.Contract contract, ReusableFlowCommand.Graph graph) { }
+    private record CompiledBindings(
+            Map<List<String>, ResolvedFlowSimulationPlanV2.Binding> nodes,
+            Map<SimulationCommandV2.FixtureTarget.CallSite,
+                    ResolvedFlowSimulationPlanV2.Binding> callSites) { }
 }

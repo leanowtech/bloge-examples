@@ -319,6 +319,19 @@ component authority, independent runtime, Operator DAG, configuration, and schem
 failures, errors, or skips. Stable compiler-owned Function Call Sites, component Fixture Set authoring, UI/Scenario
 bridges, and browser acceptance remain subsequent slices.
 
+S5 now adds the compiler/runtime seam for exact built-in Function Call Sites. `StableFunctionCallSiteCompilerV2`
+derives identity from a server-owned persisted authoring id plus callable, bindings, and input/output contracts;
+layout and source diagnostics cannot change that identity. Semantic edits mint a new Call Site id, while unchanged
+semantics preserve the previous id. Flow Fixture compilation accepts `CALL_SITE` targets only when the exact Operator
+authority contains that id, rejects node/Call Site overlap, and resolves Fixture Sets against the built-in callable
+rather than the owning Operator. `ComponentCallSiteRuntimeV2` intercepts every dynamic invocation immediately before
+the real function call. Each retry or repeated invocation re-evaluates Fixture conditions against its actual input and
+gets a fresh Invocation Key; two same-name calls in one Operator cannot share a Fixture accidentally. Missing production
+component runtime support blocks honestly instead of falling through to a global function-name replacement. The focused
+compiler/runtime/configuration/schema gate is **41/41 green** with no failures, errors, or skips. Durable publication of
+the Call Site authority, a production Operator runtime adapter, standalone Operator/Function Fixture Set authoring,
+UI/Scenario bridges, and browser acceptance remain subsequent slices.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

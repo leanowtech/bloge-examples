@@ -3030,3 +3030,45 @@ S4 的 exact Operator authority、独立执行和 Flow DAG 节点替代，以及
 尚未把 compiler-owned stable Call Site 接到执行路径，也未为 Operator/Function 提供 standalone Fixture Set
 authoring/query；UI、Pin/Promote、Scenario bridge 和真实浏览器证据仍待完成。下一轮先关闭 S5：同一节点内两个
 同名函数调用必须由不同稳定 Call Site 选择不同 Fixture，并为每次动态调用生成独立 Invocation Key。
+
+## 66. Iteration 65 — Caller-directed Fixture Simulation v2 S5 stable Call Site runtime
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `StableFunctionCallSiteCompilerV2`。Call Site 身份只由服务端持久化 authoring id、精确 callable、canonical
+  argument bindings 与 input/output contract 产生；source line、column 和 layout metadata 只作诊断，不能进入
+  wire identity。语义不变时复用上一编译产物的 id，binding/contract/callable 漂移时生成新 id。
+- `ResolvedFlowSimulationPlanV2` 将 Node binding 与 Call Site binding 分开保存；Operator Node 同时携带 exact
+  compiler-owned Call Site authority。`FlowFixturePlanCompilerV2` 校验 node path + callSiteId，拒绝 Node/Call Site
+  overlap，并以 built-in callable Subject 而不是 owning Operator Subject 解析 Fixture。
+- 新增 `ComponentCallSiteRuntimeV2` 深运行 seam。Operator adapter 在每次真实 built-in 调用前进入 interceptor；
+  interceptor 按本次实际输入重新解析 Case，决定 mock 或继续真实调用。实现不缓存第一次选择，也不接受调用方
+  提交 Runtime Invocation Key。
+- `FlowSimulationModuleV2` 为 Operator 父调用和每个 Function 子调用生成独立 Invocation Key；Function 子证据
+  使用 `CALL_SITE` target、exact callable Subject、父 Invocation Key 和各自 Fixture Case。缺失 runtime adapter、
+  未知 Call Site、Fixture 不匹配或 schema drift 均 fail closed，不按函数名做全局替换。
+- 测试覆盖 formatting/layout 不改变 Call Site identity、语义变化换 id、同节点两个同名 Call Site 分别命中不同
+  Fixture、同一 Call Site 两次动态调用按不同输入命中不同 Case、所有子 Invocation Key 互不覆盖，以及 callable
+  Subject 解析边界。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='StableFunctionCallSiteCompilerV2Test,FlowFixturePlanCompilerV2Test,FlowSimulationModuleV2Test,\
+ApiSimulationApplicationConfigurationTest,AuthoringProtocolSchemaTest' test
+
+Tests run: 41; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 与 18 条完成条件复核，整体覆盖从约 **91%** 保守调整为 **94%**，剩余差距约 **6%**。
+本轮关闭了 S5 的稳定 identity、同名调用隔离、逐次动态匹配与 Invocation evidence 主路径，但没有把 compiler
+产物持久化到 production Operator/Flow publication authority，也没有 production Operator runtime adapter。
+Operator/Function standalone Fixture Set authoring/query、S6/S7 UI/Pin/Promote/Scenario bridge 与真实浏览器验收
+仍是明确缺口。下一轮优先完成组件 Fixture Set 的持久化/查询 authority，再把稳定 Call Site publication 与真实
+Operator adapter 接入；随后才进入前端与浏览器闭环。

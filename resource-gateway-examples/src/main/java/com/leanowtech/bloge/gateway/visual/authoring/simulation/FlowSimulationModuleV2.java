@@ -42,6 +42,7 @@ public final class FlowSimulationModuleV2 {
     private final SimulationReplayResolver replays;
     private final SimulationFixtureUsageRecorder usage;
     private final SimulationRunV2Store runs;
+    private final ComponentCallSiteRuntimeV2 componentRuntime;
     private final Clock clock;
     private final Supplier<String> runIds;
     private final Supplier<String> invocationIds;
@@ -53,7 +54,18 @@ public final class FlowSimulationModuleV2 {
                                   SimulationFixtureUsageRecorder usage,
                                   SimulationRunV2Store runs) {
         this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
-                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID());
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), null);
+    }
+
+    /** Creates the Flow runtime with optional compiler-owned function Call Site execution. */
+    public FlowSimulationModuleV2(ApiResourceCommitStore resources, FlowFixturePlanCompilerV2 plans,
+                                  FixtureAssetSimulationResolver protectedFixtures,
+                                  SimulationReplayResolver replays,
+                                  SimulationFixtureUsageRecorder usage,
+                                  SimulationRunV2Store runs,
+                                  ComponentCallSiteRuntimeV2 componentRuntime) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), componentRuntime);
     }
 
     /** Deterministic identity/time seam used only by package behavior tests. */
@@ -62,12 +74,23 @@ public final class FlowSimulationModuleV2 {
                            SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
                            SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
                            Supplier<String> invocationIds) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, clock, runIds,
+                invocationIds, null);
+    }
+
+    FlowSimulationModuleV2(ApiResourceCommitStore resources, FlowFixturePlanCompilerV2 plans,
+                           FixtureAssetSimulationResolver protectedFixtures,
+                           SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
+                           SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
+                           Supplier<String> invocationIds,
+                           ComponentCallSiteRuntimeV2 componentRuntime) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.plans = Objects.requireNonNull(plans, "plans");
         this.protectedFixtures = protectedFixtures;
         this.replays = replays;
         this.usage = usage == null ? SimulationFixtureUsageRecorder.none() : usage;
         this.runs = Objects.requireNonNull(runs, "runs");
+        this.componentRuntime = componentRuntime;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.runIds = Objects.requireNonNull(runIds, "runIds");
         this.invocationIds = Objects.requireNonNull(invocationIds, "invocationIds");
@@ -156,6 +179,8 @@ public final class FlowSimulationModuleV2 {
                 return null;
             }
             ResolvedFlowSimulationPlanV2.Binding binding = plan.bindings().get(path);
+            Map<SimulationCommandV2.FixtureTarget.CallSite,
+                    ResolvedFlowSimulationPlanV2.Binding> callSiteBindings = callSiteBindings(plan, path);
             JsonNode output;
             if (binding != null) {
                 ResolvedFixturePlan.Selection selected;
@@ -171,7 +196,8 @@ public final class FlowSimulationModuleV2 {
                                 invocationInput, null));
                         return null;
                     }
-                    output = mock(scope, node, selected, invocationInput, invocationKey,
+                    output = mock(scope, node.subject(), binding.target(), selected,
+                            invocationInput, invocationKey,
                             parentInvocationKey, state, identity);
                 } catch (FixturePlanFailure failure) {
                     state.blocked = true;
@@ -182,6 +208,9 @@ public final class FlowSimulationModuleV2 {
                             invocationInput, null));
                     return null;
                 }
+            } else if (!callSiteBindings.isEmpty()) {
+                output = executeComponent(scope, plan, node, callSiteBindings, invocationInput,
+                        invocationKey, parentInvocationKey, state, identity);
             } else if (node.childGraph() != null) {
                 SimulationCommandV2.FixtureTarget target =
                         new SimulationCommandV2.FixtureTarget.NodePath(path);
@@ -229,8 +258,123 @@ public final class FlowSimulationModuleV2 {
         return current;
     }
 
+    private JsonNode executeComponent(
+            AuthoringScope scope, ResolvedFlowSimulationPlanV2 plan,
+            ResolvedFlowSimulationPlanV2.Node node,
+            Map<SimulationCommandV2.FixtureTarget.CallSite,
+                    ResolvedFlowSimulationPlanV2.Binding> bindings,
+            JsonNode input, String invocationKey, String parentInvocationKey,
+            State state, SimulationIdentity identity) {
+        SimulationCommandV2.FixtureTarget.NodePath nodeTarget =
+                new SimulationCommandV2.FixtureTarget.NodePath(node.path());
+        if (!(node.subject() instanceof ExactFixtureSubjectRefV2.OperatorVersion operator)
+                || componentRuntime == null) {
+            state.blocked = true;
+            state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                    "COMPONENT_RUNTIME_UNAVAILABLE", "Local component execution is unavailable."));
+            state.invocations.add(realInvocation(invocationKey, parentInvocationKey, nodeTarget,
+                    node.subject(), SimulationRunV2.InvocationStatus.BLOCKED, input, null));
+            return null;
+        }
+        int evidenceIndex = state.invocations.size();
+        JsonNode output;
+        try {
+            output = componentRuntime.execute(scope, operator, input, (actual, callInput, realCall) ->
+                    executeCallSite(scope, plan, node, bindings, actual, callInput, realCall,
+                            invocationKey, state, identity));
+        } catch (FixturePlanFailure failure) {
+            state.blocked = true;
+            state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                    map(failure.code()).name(), "Function Call Site Fixture could not be resolved."));
+            output = null;
+        } catch (RuntimeException failure) {
+            state.failed = true;
+            state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                    "COMPONENT_EXECUTION_FAILED", "Local component execution failed."));
+            output = null;
+        }
+        SimulationRunV2.InvocationStatus status = state.blocked
+                ? SimulationRunV2.InvocationStatus.BLOCKED : state.failed
+                ? SimulationRunV2.InvocationStatus.FAILED : SimulationRunV2.InvocationStatus.COMPLETED;
+        state.invocations.add(evidenceIndex, realInvocation(invocationKey, parentInvocationKey,
+                nodeTarget, node.subject(), status, input, output));
+        return output;
+    }
+
+    private JsonNode executeCallSite(
+            AuthoringScope scope, ResolvedFlowSimulationPlanV2 plan,
+            ResolvedFlowSimulationPlanV2.Node node,
+            Map<SimulationCommandV2.FixtureTarget.CallSite,
+                    ResolvedFlowSimulationPlanV2.Binding> bindings,
+            ComponentSimulationAuthorityV2.CallSite actual, JsonNode input,
+            ComponentCallSiteRuntimeV2.RealFunctionCall realCall,
+            String parentInvocationKey, State state, SimulationIdentity identity) {
+        ComponentSimulationAuthorityV2.CallSite authority = node.callSites().stream()
+                .filter(value -> value.callSiteId().equals(actual.callSiteId()))
+                .findFirst().orElseThrow(() -> new FixturePlanFailure(FixturePlanFailure.Code.FIXTURE_STALE));
+        if (!authority.equals(actual)) {
+            throw new FixturePlanFailure(FixturePlanFailure.Code.FIXTURE_STALE);
+        }
+        SimulationCommandV2.FixtureTarget.CallSite target =
+                new SimulationCommandV2.FixtureTarget.CallSite(node.path(), authority.callSiteId());
+        String invocationKey = invocationIds.get();
+        if (!validate(authority.input(), input, "/input").isEmpty()) {
+            state.failed = true;
+            state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                    "CALL_SITE_INPUT_INVALID", "Function input does not satisfy its exact contract."));
+            state.invocations.add(realInvocation(invocationKey, parentInvocationKey, target,
+                    authority.callable(), SimulationRunV2.InvocationStatus.FAILED, input, null));
+            return null;
+        }
+        ResolvedFlowSimulationPlanV2.Binding binding = bindings.get(target);
+        JsonNode output;
+        if (binding == null) {
+            if (plan.unmatched() == SimulationCommandV2.Unmatched.BLOCK) {
+                state.blocked = true;
+                state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                        "UNMATCHED_FUNCTION_INVOCATION",
+                        "Built-in Function invocation is not Fixture controlled."));
+                state.invocations.add(realInvocation(invocationKey, parentInvocationKey, target,
+                        authority.callable(), SimulationRunV2.InvocationStatus.BLOCKED, input, null));
+                return null;
+            }
+            output = realCall.invoke();
+            state.invocations.add(realInvocation(invocationKey, parentInvocationKey, target,
+                    authority.callable(), SimulationRunV2.InvocationStatus.COMPLETED, input, output));
+        } else {
+            ResolvedFixturePlan.Selection selected = plans.resolveInvocation(scope, node, binding, input);
+            selected = unwrapAppliedCase(scope, node, target, selected, input);
+            if (selected.control().behavior() instanceof FixtureSetCommand.Behavior.Real) {
+                output = realCall.invoke();
+                state.invocations.add(realInvocation(invocationKey, parentInvocationKey, target,
+                        authority.callable(), SimulationRunV2.InvocationStatus.COMPLETED, input, output));
+            } else {
+                output = mock(scope, authority.callable(), target, selected, input, invocationKey,
+                        parentInvocationKey, state, identity);
+            }
+        }
+        if (output != null && !validate(authority.output(), output, "/output").isEmpty()) {
+            state.failed = true;
+            state.diagnostics.add(new SimulationRunV2.Diagnostic(
+                    "CALL_SITE_OUTPUT_INVALID", "Function output does not satisfy its exact contract."));
+        }
+        return output;
+    }
+
+    private static Map<SimulationCommandV2.FixtureTarget.CallSite,
+            ResolvedFlowSimulationPlanV2.Binding> callSiteBindings(
+            ResolvedFlowSimulationPlanV2 plan, List<String> nodePath) {
+        LinkedHashMap<SimulationCommandV2.FixtureTarget.CallSite,
+                ResolvedFlowSimulationPlanV2.Binding> result = new LinkedHashMap<>();
+        plan.callSiteBindings().forEach((target, binding) -> {
+            if (target.nodePath().equals(nodePath)) result.put(target, binding);
+        });
+        return Map.copyOf(result);
+    }
+
     private JsonNode mock(
-            AuthoringScope scope, ResolvedFlowSimulationPlanV2.Node node,
+            AuthoringScope scope, ExactFixtureSubjectRefV2 subject,
+            SimulationCommandV2.FixtureTarget target,
             ResolvedFixturePlan.Selection selected, JsonNode input, String invocationKey,
             String parentInvocationKey, State state, SimulationIdentity identity) {
         FixtureSetCommand.Behavior behavior = selected.control().behavior();
@@ -239,7 +383,8 @@ public final class FlowSimulationModuleV2 {
             state.blocked = true;
             state.diagnostics.add(new SimulationRunV2.Diagnostic(
                     "FIXTURE_FIDELITY_UNSUPPORTED", "Flow nodes support output-level Fixture simulation only."));
-            state.invocations.add(mockInvocation(invocationKey, parentInvocationKey, node, selected,
+            state.invocations.add(mockInvocation(invocationKey, parentInvocationKey, subject,
+                    target, selected,
                     SimulationRunV2.InvocationStatus.BLOCKED, input, null, null));
             return null;
         }
@@ -295,16 +440,17 @@ public final class FlowSimulationModuleV2 {
         SimulationRunV2.InvocationStatus status = state.blocked
                 ? SimulationRunV2.InvocationStatus.BLOCKED : state.failed
                 ? SimulationRunV2.InvocationStatus.FAILED : SimulationRunV2.InvocationStatus.COMPLETED;
-        state.invocations.add(mockInvocation(invocationKey, parentInvocationKey, node, selected,
+        state.invocations.add(mockInvocation(invocationKey, parentInvocationKey, subject, target, selected,
                 status, input, output, assetRef));
         return output;
     }
 
     private static SimulationRunV2.Invocation mockInvocation(
-            String key, String parent, ResolvedFlowSimulationPlanV2.Node node,
+            String key, String parent, ExactFixtureSubjectRefV2 subject,
+            SimulationCommandV2.FixtureTarget target,
             ResolvedFixturePlan.Selection selected, SimulationRunV2.InvocationStatus status,
             JsonNode input, JsonNode output, SimulationRunV2.FixtureAssetRef assetRef) {
-        return new SimulationRunV2.Invocation(key, parent, selected.target(), node.subject(), status,
+        return new SimulationRunV2.Invocation(key, parent, target, subject, status,
                 SimulationRunV2.Execution.MOCKED, matchedBy(selected.matchedBy()),
                 new SimulationRunV2.FixtureCase(selected.fixtureSet().fixtureSetId(),
                         selected.fixtureSet().revision(), selected.fixtureSet().fingerprint(), selected.caseId()),

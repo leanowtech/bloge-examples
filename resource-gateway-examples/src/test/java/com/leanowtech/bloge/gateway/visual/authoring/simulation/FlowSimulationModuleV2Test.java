@@ -180,6 +180,105 @@ class FlowSimulationModuleV2Test {
         });
     }
 
+    @Test
+    void twoSameNameFunctionCallSitesUseDifferentFixturesAndInvocationKeys() {
+        FlowFixturePlanCompilerV2 compiler = mock(FlowFixturePlanCompilerV2.class);
+        ExactFixtureSubjectRefV2.FlowVersion root =
+                new ExactFixtureSubjectRefV2.FlowVersion("root", 1, FLOW);
+        ExactFixtureSubjectRefV2.OperatorVersion operator =
+                new ExactFixtureSubjectRefV2.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        ExactFixtureSubjectRefV2.BuiltinFunctionVersion lookup =
+                new ExactFixtureSubjectRefV2.BuiltinFunctionVersion(
+                        "bloge", 1, "lookup", "sha256:" + "4".repeat(64),
+                        "sha256:" + "5".repeat(64));
+        ComponentSimulationAuthorityV2.CallSite customer =
+                new ComponentSimulationAuthorityV2.CallSite(
+                        "lookup:customer", lookup, schema(), schema(),
+                        "sha256:" + "6".repeat(64));
+        ComponentSimulationAuthorityV2.CallSite referrer =
+                new ComponentSimulationAuthorityV2.CallSite(
+                        "lookup:referrer", lookup, schema(), schema(),
+                        "sha256:" + "7".repeat(64));
+        ReusableFlowCommand.Node authored = new ReusableFlowCommand.Node(
+                "risk", "Risk", new ReusableFlowCommand.ComposableRef.OperatorVersion(
+                "risk-library", 3, "risk.score", OPERATOR), List.of());
+        ReusableFlowCommand.Graph graph = new ReusableFlowCommand.Graph(
+                List.of(authored), new ReusableFlowCommand.Output("risk", "$"));
+        ResolvedFlowSimulationPlanV2.Node node = new ResolvedFlowSimulationPlanV2.Node(
+                List.of("risk"), operator, new ReusableFlowCommand.Contract(schema(), schema()),
+                authored, null, List.of(customer, referrer));
+        SimulationCommandV2.FixtureTarget.CallSite customerTarget =
+                new SimulationCommandV2.FixtureTarget.CallSite(
+                        List.of("risk"), customer.callSiteId());
+        SimulationCommandV2.FixtureTarget.CallSite referrerTarget =
+                new SimulationCommandV2.FixtureTarget.CallSite(
+                        List.of("risk"), referrer.callSiteId());
+        ResolvedFlowSimulationPlanV2.Binding customerBinding = callSiteBinding(
+                customerTarget, "customer-fixtures", "customer-case");
+        ResolvedFlowSimulationPlanV2.Binding referrerBinding = callSiteBinding(
+                referrerTarget, "referrer-fixtures", "referrer-case");
+        ResolvedFlowSimulationPlanV2 plan = new ResolvedFlowSimulationPlanV2(
+                root, schema(), schema(), graph, JSON.createObjectNode(),
+                SimulationCommandV2.Unmatched.BLOCK, Map.of(List.of("risk"), node), Map.of(),
+                Map.of(customerTarget, customerBinding, referrerTarget, referrerBinding),
+                "sha256:" + "8".repeat(64));
+        when(compiler.compile(eq(SCOPE), any())).thenReturn(plan);
+        when(compiler.resolveInvocation(eq(SCOPE), eq(node), eq(customerBinding), any()))
+                .thenAnswer(invocation -> {
+                    JsonNode actualInput = invocation.getArgument(3);
+                    boolean retry = "c-2".equals(actualInput.path("id").asText());
+                    return selection(List.of("risk"), "customer-fixtures",
+                            retry ? "customer-retry" : "customer-case",
+                            JSON.createObjectNode().put("value", retry ? "customer-2" : "customer"),
+                            customerTarget);
+                });
+        when(compiler.resolveInvocation(eq(SCOPE), eq(node), eq(referrerBinding), any())).thenReturn(
+                selection(List.of("risk"), "referrer-fixtures", "referrer-case",
+                        JSON.createObjectNode().put("value", "referrer"), referrerTarget));
+        AtomicInteger realCalls = new AtomicInteger();
+        ComponentCallSiteRuntimeV2 runtime = (scope, subject, input, interceptor) -> {
+            JsonNode left = interceptor.invoke(customer,
+                    JSON.createObjectNode().put("id", "c-1"), () -> {
+                        realCalls.incrementAndGet();
+                        return JSON.createObjectNode().put("value", "real-customer");
+                    });
+            JsonNode retried = interceptor.invoke(customer,
+                    JSON.createObjectNode().put("id", "c-2"), () -> {
+                        realCalls.incrementAndGet();
+                        return JSON.createObjectNode().put("value", "real-customer-2");
+                    });
+            JsonNode right = interceptor.invoke(referrer,
+                    JSON.createObjectNode().put("id", "r-1"), () -> {
+                        realCalls.incrementAndGet();
+                        return JSON.createObjectNode().put("value", "real-referrer");
+                    });
+            return JSON.createObjectNode().set(
+                    "lookups", JSON.createArrayNode().add(left).add(retried).add(right));
+        };
+        AtomicInteger invocation = new AtomicInteger();
+        FlowSimulationModuleV2 module = new FlowSimulationModuleV2(
+                mock(ApiResourceCommitStore.class), compiler, null, null, null,
+                new InMemorySimulationRunV2Store(), Clock.fixed(NOW, ZoneOffset.UTC),
+                () -> "sim-call-sites", () -> "call-inv-" + invocation.incrementAndGet(), runtime);
+
+        SimulationRunV2 run = module.execute(SCOPE, "call-sites", command(plan), null).run();
+
+        assertThat(run.status()).isEqualTo(SimulationRunV2.Status.SUCCEEDED);
+        assertThat(realCalls).hasValue(0);
+        assertThat(run.invocations()).hasSize(4);
+        assertThat(run.invocations()).extracting(SimulationRunV2.Invocation::invocationKey)
+                .containsExactly("call-inv-1", "call-inv-2", "call-inv-3", "call-inv-4");
+        assertThat(run.invocations().subList(1, 4))
+                .extracting(SimulationRunV2.Invocation::target)
+                .containsExactly(customerTarget, customerTarget, referrerTarget);
+        assertThat(run.invocations().subList(1, 4))
+                .extracting(value -> value.fixtureCase().caseId())
+                .containsExactly("customer-case", "customer-retry", "referrer-case");
+        assertThat(run.invocations().subList(1, 4))
+                .allSatisfy(value -> assertThat(value.parentInvocationKey()).isEqualTo("call-inv-1"));
+    }
+
     private static FlowSimulationModuleV2 module(
             ApiResourceCommitStore resources, FlowFixturePlanCompilerV2 compiler,
             String runId, String invocationPrefix) {
@@ -268,6 +367,27 @@ class FlowSimulationModuleV2Test {
                 new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
                         FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output)),
                         FixtureSetCommand.Fidelity.OUTPUT_LEVEL), null);
+    }
+
+    private static ResolvedFixturePlan.Selection selection(
+            List<String> path, String fixtureId, String caseId, JsonNode output,
+            SimulationCommandV2.FixtureTarget target) {
+        return new ResolvedFixturePlan.Selection(target,
+                new SimulationCommandV2.ExactFixtureSetRef(
+                        fixtureId, 1, "sha256:" + "1".repeat(64)),
+                caseId, ResolvedFixturePlan.MatchedBy.EXACT_CASE,
+                FixtureSetView.Status.PRIVATE_DRAFT,
+                new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(output)),
+                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL), null);
+    }
+
+    private static ResolvedFlowSimulationPlanV2.Binding callSiteBinding(
+            SimulationCommandV2.FixtureTarget.CallSite target, String fixtureSetId, String caseId) {
+        return new ResolvedFlowSimulationPlanV2.Binding(target,
+                new SimulationCommandV2.FixtureSelection.ExactCase(
+                        new SimulationCommandV2.ExactFixtureSetRef(
+                                fixtureSetId, 1, "sha256:" + "1".repeat(64)), caseId), null);
     }
 
     private static ReusableFlowCommand.Node node(

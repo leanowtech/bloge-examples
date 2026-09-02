@@ -179,6 +179,113 @@ class FlowFixturePlanCompilerV2Test {
         verify(components).resolve(SCOPE, subject);
     }
 
+    @Test
+    void bindsTwoSameNameFunctionsToDifferentCompilerOwnedCallSites() {
+        ReusableFlowPublicationStore publications = mock(ReusableFlowPublicationStore.class);
+        ReusableFlowCommand.ComposableRef.OperatorVersion operator =
+                new ReusableFlowCommand.ComposableRef.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        when(publications.findVersion(SCOPE, "root", 1)).thenReturn(Optional.of(flow(
+                "root", ROOT, List.of(node("risk", operator, List.of())), "risk")));
+        ExactFixtureSubjectRefV2.OperatorVersion operatorSubject =
+                new ExactFixtureSubjectRefV2.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        ExactFixtureSubjectRefV2.BuiltinFunctionVersion function =
+                new ExactFixtureSubjectRefV2.BuiltinFunctionVersion(
+                        "bloge", 1, "lookup", "sha256:" + "2".repeat(64),
+                        "sha256:" + "3".repeat(64));
+        ComponentSimulationAuthorityV2 components = mock(ComponentSimulationAuthorityV2.class);
+        when(components.resolve(SCOPE, operatorSubject)).thenReturn(Optional.of(
+                new ComponentSimulationAuthorityV2.ComponentContract(schema(), schema(), List.of(
+                        new ComponentSimulationAuthorityV2.CallSite(
+                                "lookup:customer", function, schema(), schema(),
+                                "sha256:" + "4".repeat(64)),
+                        new ComponentSimulationAuthorityV2.CallSite(
+                                "lookup:referrer", function, schema(), schema(),
+                                "sha256:" + "5".repeat(64))))));
+        FlowFixturePlanCompilerV2 compiler = new FlowFixturePlanCompilerV2(publications,
+                mock(ReusableFlowDraftStore.class),
+                new FixturePlanCompiler(mock(FixtureSetAuthorityReader.class)), components);
+        SimulationCommandV2.ExactFixtureSetRef left = new SimulationCommandV2.ExactFixtureSetRef(
+                "lookup-customer", 1, "sha256:" + "6".repeat(64));
+        SimulationCommandV2.ExactFixtureSetRef right = new SimulationCommandV2.ExactFixtureSetRef(
+                "lookup-referrer", 1, "sha256:" + "7".repeat(64));
+        SimulationCommandV2.FixtureTarget.CallSite leftTarget =
+                new SimulationCommandV2.FixtureTarget.CallSite(
+                        List.of("risk"), "lookup:customer");
+        SimulationCommandV2.FixtureTarget.CallSite rightTarget =
+                new SimulationCommandV2.FixtureTarget.CallSite(
+                        List.of("risk"), "lookup:referrer");
+        SimulationCommandV2 command = new SimulationCommandV2(
+                SimulationCommandV2.SCHEMA_VERSION,
+                new ExactFixtureSubjectRefV2.FlowVersion("root", 1, ROOT),
+                new SimulationCommandV2.Input.Inline(JSON.createObjectNode()),
+                new SimulationCommandV2.FixturePlan.Bindings(SimulationCommandV2.Unmatched.BLOCK,
+                        List.of(
+                                new SimulationCommandV2.FixtureBinding(leftTarget,
+                                        new SimulationCommandV2.FixtureSelection.ExactCase(left, "customer")),
+                                new SimulationCommandV2.FixtureBinding(rightTarget,
+                                        new SimulationCommandV2.FixtureSelection.ExactCase(right, "referrer")))),
+                SimulationCommandV2.ExecutionPolicy.denyAll());
+
+        ResolvedFlowSimulationPlanV2 plan = compiler.compile(SCOPE, command);
+
+        assertThat(plan.callSiteBindings()).containsOnlyKeys(leftTarget, rightTarget);
+        assertThat(plan.bindings()).isEmpty();
+        assertThat(plan.nodes().get(List.of("risk")).callSites())
+                .extracting(ComponentSimulationAuthorityV2.CallSite::callSiteId)
+                .containsExactly("lookup:customer", "lookup:referrer");
+    }
+
+    @Test
+    void resolvesCallSiteFixtureAgainstTheCallableRatherThanOwningOperator() {
+        ReusableFlowPublicationStore publications = mock(ReusableFlowPublicationStore.class);
+        ReusableFlowCommand.ComposableRef.OperatorVersion operator =
+                new ReusableFlowCommand.ComposableRef.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        when(publications.findVersion(SCOPE, "root", 1)).thenReturn(Optional.of(flow(
+                "root", ROOT, List.of(node("risk", operator, List.of())), "risk")));
+        ExactFixtureSubjectRefV2.OperatorVersion operatorSubject =
+                new ExactFixtureSubjectRefV2.OperatorVersion(
+                        "risk-library", 3, "risk.score", OPERATOR);
+        ExactFixtureSubjectRefV2.BuiltinFunctionVersion function =
+                new ExactFixtureSubjectRefV2.BuiltinFunctionVersion(
+                        "bloge", 1, "lookup", "sha256:" + "2".repeat(64),
+                        "sha256:" + "3".repeat(64));
+        ComponentSimulationAuthorityV2.CallSite site =
+                new ComponentSimulationAuthorityV2.CallSite(
+                        "lookup:customer", function, schema(), schema(),
+                        "sha256:" + "4".repeat(64));
+        ComponentSimulationAuthorityV2 components = mock(ComponentSimulationAuthorityV2.class);
+        when(components.resolve(SCOPE, operatorSubject)).thenReturn(Optional.of(
+                new ComponentSimulationAuthorityV2.ComponentContract(
+                        schema(), schema(), List.of(site))));
+        FixtureSetAuthorityReader fixtures = mock(FixtureSetAuthorityReader.class);
+        SimulationCommandV2.ExactFixtureSetRef fixture = functionFixture(fixtures, function);
+        FlowFixturePlanCompilerV2 compiler = new FlowFixturePlanCompilerV2(publications,
+                mock(ReusableFlowDraftStore.class), new FixturePlanCompiler(fixtures), components);
+        SimulationCommandV2.FixtureTarget.CallSite target =
+                new SimulationCommandV2.FixtureTarget.CallSite(
+                        List.of("risk"), site.callSiteId());
+        SimulationCommandV2 command = new SimulationCommandV2(
+                SimulationCommandV2.SCHEMA_VERSION,
+                new ExactFixtureSubjectRefV2.FlowVersion("root", 1, ROOT),
+                new SimulationCommandV2.Input.Inline(JSON.createObjectNode()),
+                new SimulationCommandV2.FixturePlan.Bindings(SimulationCommandV2.Unmatched.BLOCK,
+                        List.of(new SimulationCommandV2.FixtureBinding(target,
+                                new SimulationCommandV2.FixtureSelection.AutoMatch(fixture)))),
+                SimulationCommandV2.ExecutionPolicy.denyAll());
+        ResolvedFlowSimulationPlanV2 plan = compiler.compile(SCOPE, command);
+        ResolvedFlowSimulationPlanV2.Node node = plan.nodes().get(List.of("risk"));
+
+        ResolvedFixturePlan.Selection selected = compiler.resolveInvocation(
+                SCOPE, node, plan.callSiteBindings().get(target),
+                JSON.createObjectNode().put("id", "c-1"));
+
+        assertThat(selected.caseId()).isEqualTo("customer");
+        assertThat(selected.target()).isEqualTo(target);
+    }
+
     private static SimulationCommandV2 command(List<SimulationCommandV2.FixtureBinding> bindings) {
         return new SimulationCommandV2(SimulationCommandV2.SCHEMA_VERSION,
                 new ExactFixtureSubjectRefV2.FlowVersion("root", 1, ROOT),
@@ -285,6 +392,39 @@ class FlowFixturePlanCompilerV2Test {
         when(authority.findRevision(SCOPE, "root-plan", 1))
                 .thenReturn(Optional.of(new StoredFixtureSet(SCOPE, generated)));
         return new SimulationCommandV2.ExactFixtureSetRef("root-plan", 1, fingerprint);
+    }
+
+    private static SimulationCommandV2.ExactFixtureSetRef functionFixture(
+            FixtureSetAuthorityReader authority,
+            ExactFixtureSubjectRefV2.BuiltinFunctionVersion exactSubject) {
+        FixtureSubjectRef subject = exactSubject.toLegacyAuthority();
+        FixtureSetCommand.Condition condition = new FixtureSetCommand.Condition(
+                "customer", List.of(new FixtureSetCommand.Predicate.Eq(
+                "$.id", JSON.getNodeFactory().textNode("c-1"))));
+        FixtureSetCommand.Case fixtureCase = new FixtureSetCommand.Case(
+                "customer", "Customer", JSON.createObjectNode().put("id", "c-1"), condition,
+                List.of(new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
+                        FixtureSetCommand.Behavior.returned(FixtureSetCommand.Material.inline(
+                                JSON.createObjectNode().put("value", "customer"))),
+                        FixtureSetCommand.Fidelity.OUTPUT_LEVEL)), null);
+        String fingerprint = FixtureSetFingerprints.of(
+                "Lookup", subject, List.of(fixtureCase));
+        FixtureSetView view = new FixtureSetView(FixtureSetView.SCHEMA_VERSION,
+                "lookup-fixtures", 1, fingerprint, 1, "Lookup", subject,
+                List.of(fixtureCase), FixtureSetView.Status.PRIVATE_DRAFT);
+        GeneratedDefaultFixture generated = new GeneratedDefaultFixture(view,
+                new FixtureSetSaveReceipt(FixtureSetSaveReceipt.SCHEMA_VERSION,
+                        "lookup-fixtures", 1, fingerprint, subject, List.of("customer"),
+                        FixtureSetView.Status.PRIVATE_DRAFT, 1),
+                new FixtureSetSummary(FixtureSetSummary.SCHEMA_VERSION,
+                        "lookup-fixtures", 1, fingerprint, "Lookup", subject,
+                        List.of(new FixtureSetSummary.CaseSummary("customer", "Customer")),
+                        FixtureSetView.Status.PRIVATE_DRAFT, 1),
+                List.of(new GeneratedDefaultFixture.CaseMapping("customer", "customer")));
+        when(authority.findRevision(SCOPE, "lookup-fixtures", 1))
+                .thenReturn(Optional.of(new StoredFixtureSet(SCOPE, generated)));
+        return new SimulationCommandV2.ExactFixtureSetRef(
+                "lookup-fixtures", 1, fingerprint);
     }
 
     private static SchemaEnvelope schema() {

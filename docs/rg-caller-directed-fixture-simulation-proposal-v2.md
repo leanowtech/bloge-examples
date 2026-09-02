@@ -1351,8 +1351,10 @@ Reusable Flow wire 也新增 exact Operator composable ref，Flow compiler 从�
 `NODE_PATH` Fixture 替代 Operator 节点而不执行真实组件。component authority、独立执行、Operator DAG、配置与
 schema 聚焦门为 **48/48 green**。
 
-当前总体覆盖约 **91%**，剩余约 **9%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
-Built-in Function 独立 Subject、Invocation evidence 与 HTTP 主链已闭合。最大缺口转为 S5 compiler-owned 稳定
-Call Site（同节点同名调用不得串桩）、Operator/Function Fixture Set 持久化与检索，以及 S6/S7 UI、Pin/Promote/
-Scenario bridge 和真实浏览器验收。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已保证每次实际调用重新
-选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。
+当前总体覆盖约 **94%**，剩余约 **6%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
+Built-in Function 独立 Subject、Invocation evidence 与 HTTP 主链已闭合。S5 已增加 compiler-owned 稳定 Call
+Site 与逐次动态拦截 seam：同节点同名调用可分别绑定 Fixture，同一静态 Call Site 多次调用会按实际输入重新选
+Case，并产生不同 Invocation Key。尚未闭合的 S5 边界是把 Call Site authority 持久化到 Operator/Flow 发布产物、
+接入 production Operator runtime adapter，以及 Operator/Function Fixture Set 的独立持久化与检索。S6/S7 的 UI、
+Pin/Promote、Scenario bridge 和真实浏览器验收也仍待完成。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已
+保证每次实际调用重新选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。
