@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SimulationModuleV2Test {
@@ -231,6 +232,27 @@ class SimulationModuleV2Test {
         assertThat(runs.claim(SCOPE, "real", "sha256:" + "a".repeat(64),
                 () -> "still-free", NOW)).isEqualTo(
                 new SimulationRunV2Store.Claim.Acquired("still-free"));
+    }
+
+    @Test
+    void exactFlowSubjectsDelegateToTheFlowRuntimeWithoutApiCompilation() {
+        ApiResourceCommitStore resources = mock(ApiResourceCommitStore.class);
+        FixturePlanCompiler plans = mock(FixturePlanCompiler.class);
+        FlowSimulationModuleV2 flows = mock(FlowSimulationModuleV2.class);
+        SimulationModuleV2 module = new SimulationModuleV2(resources, plans, null, null, null,
+                new InMemorySimulationRunV2Store(), flows);
+        SimulationCommandV2 command = new SimulationCommandV2(SimulationCommandV2.SCHEMA_VERSION,
+                new ExactFixtureSubjectRefV2.FlowVersion(
+                        "risk-tool", 2, "sha256:" + "5".repeat(64)),
+                new SimulationCommandV2.Input.Inline(input("one")),
+                new SimulationCommandV2.FixturePlan.None(), SimulationCommandV2.ExecutionPolicy.denyAll());
+        SimulationExecutionResultV2 expected = new SimulationExecutionResultV2(
+                mock(SimulationRunV2.class), false);
+        when(flows.execute(SCOPE, "flow-key", command, identity())).thenReturn(expected);
+
+        assertThat(module.execute(SCOPE, "flow-key", command, identity())).isEqualTo(expected);
+
+        verify(flows).execute(SCOPE, "flow-key", command, identity());
     }
 
     private static SimulationModuleV2 module(

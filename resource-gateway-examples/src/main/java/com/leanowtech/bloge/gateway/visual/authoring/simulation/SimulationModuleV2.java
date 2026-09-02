@@ -41,6 +41,7 @@ public final class SimulationModuleV2 {
     private final SimulationReplayResolver replays;
     private final SimulationFixtureUsageRecorder usage;
     private final SimulationRunV2Store runs;
+    private final FlowSimulationModuleV2 flows;
     private final Clock clock;
     private final Supplier<String> runIds;
     private final Supplier<String> invocationIds;
@@ -52,7 +53,17 @@ public final class SimulationModuleV2 {
                               SimulationFixtureUsageRecorder usage,
                               SimulationRunV2Store runs) {
         this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
-                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID());
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), null);
+    }
+
+    /** Creates the API Resource runtime with an optional exact reusable-Flow runtime. */
+    public SimulationModuleV2(ApiResourceCommitStore resources, FixturePlanCompiler plans,
+                              FixtureAssetSimulationResolver protectedFixtures,
+                              SimulationReplayResolver replays,
+                              SimulationFixtureUsageRecorder usage,
+                              SimulationRunV2Store runs, FlowSimulationModuleV2 flows) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, Clock.systemUTC(),
+                () -> "sim-" + UUID.randomUUID(), () -> "inv-" + UUID.randomUUID(), flows);
     }
 
     /** Package-visible deterministic time and identity seam for behavior tests. */
@@ -61,12 +72,22 @@ public final class SimulationModuleV2 {
                        SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
                        SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
                        Supplier<String> invocationIds) {
+        this(resources, plans, protectedFixtures, replays, usage, runs, clock, runIds,
+                invocationIds, null);
+    }
+
+    SimulationModuleV2(ApiResourceCommitStore resources, FixturePlanCompiler plans,
+                       FixtureAssetSimulationResolver protectedFixtures,
+                       SimulationReplayResolver replays, SimulationFixtureUsageRecorder usage,
+                       SimulationRunV2Store runs, Clock clock, Supplier<String> runIds,
+                       Supplier<String> invocationIds, FlowSimulationModuleV2 flows) {
         this.resources = Objects.requireNonNull(resources, "resources");
         this.plans = Objects.requireNonNull(plans, "plans");
         this.protectedFixtures = protectedFixtures;
         this.replays = replays;
         this.usage = usage == null ? SimulationFixtureUsageRecorder.none() : usage;
         this.runs = Objects.requireNonNull(runs, "runs");
+        this.flows = flows;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.runIds = Objects.requireNonNull(runIds, "runIds");
         this.invocationIds = Objects.requireNonNull(invocationIds, "invocationIds");
@@ -83,6 +104,11 @@ public final class SimulationModuleV2 {
                                                SimulationCommandV2 command,
                                                SimulationIdentity identity) {
         validate(scope, idempotencyKey, command, identity);
+        if (command.subject() instanceof ExactFixtureSubjectRefV2.FlowDraft
+                || command.subject() instanceof ExactFixtureSubjectRefV2.FlowVersion) {
+            if (flows == null) throw failure(SimulationFailure.Code.UNSUPPORTED);
+            return flows.execute(scope, idempotencyKey, command, identity);
+        }
         ResolvedFixturePlan plan = compile(scope, command);
         StoredApiResource resource = resource(scope, plan.subject());
         requireSupportedPlan(plan);

@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicatio
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FlowFixturePlanCompilerV2;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FlowSimulationModuleV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixturePlanCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFixtureUsageRecorder;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
@@ -28,6 +30,28 @@ public class ApiSimulationApplicationConfiguration {
     @ConditionalOnMissingBean
     FixturePlanCompiler fixturePlanCompiler(FixtureSetAuthorityReader fixtures) {
         return new FixturePlanCompiler(fixtures);
+    }
+
+    /** Compiles exact draft/version topology when reusable-Flow authorities are installed. */
+    @Bean
+    @ConditionalOnMissingBean
+    FlowFixturePlanCompilerV2 flowFixturePlanCompilerV2(
+            ObjectProvider<ReusableFlowPublicationStore> publications,
+            ObjectProvider<ReusableFlowDraftStore> drafts, FixturePlanCompiler fixtures) {
+        return new FlowFixturePlanCompilerV2(
+                publications.getIfAvailable(), drafts.getIfAvailable(), fixtures);
+    }
+
+    /** Executes local Flow topology while external API fallbacks remain fail-closed. */
+    @Bean
+    @ConditionalOnMissingBean
+    FlowSimulationModuleV2 flowSimulationModuleV2(
+            ApiResourceCommitStore resources, FlowFixturePlanCompilerV2 plans,
+            ObjectProvider<FixtureAssetSimulationResolver> fixtureAssets,
+            ObjectProvider<SimulationReplayResolver> replays,
+            ObjectProvider<SimulationFixtureUsageRecorder> usage, SimulationRunV2Store runs) {
+        return new FlowSimulationModuleV2(resources, plans, fixtureAssets.getIfAvailable(),
+                replays.getIfAvailable(), usage.getIfAvailable(), runs);
     }
 
     /** Fails startup when any Resource, Fixture or V013 authority is absent. */
@@ -56,8 +80,9 @@ public class ApiSimulationApplicationConfiguration {
             ApiResourceCommitStore resources, FixturePlanCompiler plans, SimulationRunV2Store runs,
             ObjectProvider<FixtureAssetSimulationResolver> fixtureAssets,
             ObjectProvider<SimulationReplayResolver> replays,
-            ObjectProvider<SimulationFixtureUsageRecorder> usage) {
+            ObjectProvider<SimulationFixtureUsageRecorder> usage,
+            FlowSimulationModuleV2 flows) {
         return new SimulationModuleV2(resources, plans, fixtureAssets.getIfAvailable(),
-                replays.getIfAvailable(), usage.getIfAvailable(), runs);
+                replays.getIfAvailable(), usage.getIfAvailable(), runs, flows);
     }
 }

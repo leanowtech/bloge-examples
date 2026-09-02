@@ -2949,3 +2949,42 @@ BUILD SUCCESS
 S2 API Resource 从 Plan 编译、行为执行、Invocation evidence、V013 持久化到 authenticated HTTP 已闭合。
 下一轮进入 S3：为 Reusable Flow/DAG 建立 exact `NODE_PATH` authority、逐动态调用匹配、父子 Invocation Key 与
 嵌套 Flow 整体替代/展开语义；之后再闭合 Operator、Built-in Function Call Site、UI 与 Scenario bridge。
+
+## 64. Iteration 63 — Caller-directed Fixture Simulation v2 S3 Flow/DAG runtime
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `FlowFixturePlanCompilerV2` 深模块。exact Flow draft/version 与每个 nested Flow revision/fingerprint 在
+  执行前钉住；拓扑限制 16 层、256 节点，并拒绝 cycle、unknown path 与 ancestor/descendant overlap。
+- 显式 `NODE_PATH` Binding 只冻结 exact Fixture Set selection。`MATCH_CONDITION`/`AUTO_MATCH` 在 DAG mapping
+  生成该动态 Invocation 的真实输入后才解析，避免用顶层 command input 误选 Case。
+- `CASE_CONTROLS` 使用 parent Flow Fixture Case 的已保存 Node controls，编译为固定 tool plan；`APPLY_CASE`
+  继续按 exact revision/case 逐层解析并限制深度，不读取 mutable Fixture head。
+- 新增 `FlowSimulationModuleV2`。多 API DAG 可为每个节点选择不同 Fixture；每个动态调用生成新 Invocation Key，
+  nested Flow container 形成 parent key。整体替代 nested Flow 时不执行任何后代；无整体替代时本地展开。
+- 节点/Flow input/output 使用各自 exact contract 校验。Inline、governed Asset、Replay、Error、Timeout 与断言
+  形成逐节点 evidence；governed usage 仍只从 committed COMPLETED Invocation 投影。Flow/Operator 不支持的高
+  fidelity 与未匹配外部 API 均 fail closed，零网络访问。
+- `SimulationModuleV2` 与 feature-scoped configuration 已接入 Flow runtime；v1 API/Flow simulation 保持兼容。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='FlowFixturePlanCompilerV2Test,FlowSimulationModuleV2Test,FlowSimulationV2IntegrationTest,\
+FixturePlanCompilerTest,SimulationModuleV2Test,ApiSimulationApplicationConfigurationTest,\
+ApiSimulationControllerTest,WholeFlowSimulationModuleTest,ParentFlowApplyCaseCompilerTest' test
+
+Tests run: 48; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 与 18 条完成条件复核，整体覆盖从约 **81%** 保守调整为 **87%**，剩余差距约 **13%**。
+S3 的 exact `NODE_PATH`、动态节点匹配、CASE_CONTROLS、嵌套整体替代/展开、父子 Invocation evidence 和
+多 API DAG 主链已闭合。现有 Flow wire 没有 loop/retry node；实现保证每次实际 runtime 调用都经过同一动态
+resolver 并获取新 Invocation Key，后续 loop/retry adapter 不得缓存首次匹配。下一轮进入 S4/S5 Operator 与
+Built-in Function exact authority、独立运行和 Call Site；其后闭合 UI/Scenario/Pin bridge 与真实浏览器证据。

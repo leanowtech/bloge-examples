@@ -48,14 +48,13 @@ public final class FixturePlanCompiler {
             if (command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.None) {
                 return plan(command.subject(), input, SimulationCommandV2.Unmatched.BLOCK, List.of());
             }
-            if (!(command.subject() instanceof ExactFixtureSubjectRefV2.ApiResource)) {
-                throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
-            }
             List<ResolvedFixturePlan.Selection> selections =
                     command.fixturePlan() instanceof SimulationCommandV2.FixturePlan.CaseControls controls
                             ? caseControls(scope, command, input, controls)
-                            : bindings(scope, command, input,
-                            (SimulationCommandV2.FixturePlan.Bindings) command.fixturePlan());
+                            : command.subject() instanceof ExactFixtureSubjectRefV2.ApiResource
+                            ? bindings(scope, command, input,
+                            (SimulationCommandV2.FixturePlan.Bindings) command.fixturePlan())
+                            : throwFailure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
             SimulationCommandV2.Unmatched unmatched = command.fixturePlan()
                     instanceof SimulationCommandV2.FixturePlan.CaseControls controls
                     ? controls.unmatched()
@@ -95,15 +94,58 @@ public final class FixturePlanCompiler {
         List<ResolvedFixturePlan.Selection> resolved = new ArrayList<>();
         for (SimulationCommandV2.FixtureBinding binding : plan.bindings()) {
             requireSupportedTarget(binding.target());
-            StoredFixtureSet stored = fixture(scope, binding.selection().fixtureSet());
-            requireSubject(command, stored);
-            FixtureSetCommand.Case fixtureCase = select(stored, binding.selection(), input);
-            FixtureSetCommand.Control control = control(fixtureCase, binding.target());
-            resolved.add(new ResolvedFixturePlan.Selection(binding.target(), binding.selection().fixtureSet(),
-                    fixtureCase.caseId(), matchedBy(binding.selection()),
-                    stored.generated().view().status(), control, fixtureCase.expect()));
+            resolved.add(resolveInvocation(scope, command.subject(), binding.target(),
+                    binding.selection(), input));
         }
         return List.copyOf(resolved);
+    }
+
+    private static List<ResolvedFixturePlan.Selection> throwFailure(FixturePlanFailure.Code code) {
+        throw failure(code);
+    }
+
+    /**
+     * Resolves one pinned selection at the moment a dynamic invocation has its actual input.
+     *
+     * <p>Flow runtimes use this seam after DAG mapping. The Fixture Set must belong to the exact
+     * invoked component, while the returned evidence target remains the caller's full static node
+     * path. Component Fixture Sets author their behavior at {@code SUBJECT}; callers cannot smuggle
+     * a different internal target through this adapter.</p>
+     */
+    public ResolvedFixturePlan.Selection resolveInvocation(
+            AuthoringScope scope, ExactFixtureSubjectRefV2 invokedSubject,
+            SimulationCommandV2.FixtureTarget evidenceTarget,
+            SimulationCommandV2.FixtureSelection selection, JsonNode invocationInput) {
+        if (scope == null || invokedSubject == null || evidenceTarget == null || selection == null
+                || invocationInput == null) {
+            throw failure(FixturePlanFailure.Code.VALIDATION);
+        }
+        StoredFixtureSet stored = fixture(scope, selection.fixtureSet());
+        if (!invokedSubject.equals(ExactFixtureSubjectRefV2.from(stored.generated().view().subject()))) {
+            throw failure(FixturePlanFailure.Code.FIXTURE_SUBJECT_MISMATCH);
+        }
+        FixtureSetCommand.Case fixtureCase = select(stored, selection, invocationInput);
+        FixtureSetCommand.Control control = control(fixtureCase,
+                new SimulationCommandV2.FixtureTarget.Subject());
+        return new ResolvedFixturePlan.Selection(evidenceTarget, selection.fixtureSet(),
+                fixtureCase.caseId(), matchedBy(selection), stored.generated().view().status(),
+                control, fixtureCase.expect());
+    }
+
+    /** Resolves a persisted APPLY_CASE reference without consulting a mutable Fixture head. */
+    public ResolvedFixturePlan.Selection resolveAppliedCase(
+            AuthoringScope scope, ExactFixtureSubjectRefV2 invokedSubject,
+            SimulationCommandV2.FixtureTarget evidenceTarget,
+            FixtureSetCommand.Behavior.ApplyCase appliedCase, JsonNode invocationInput) {
+        if (appliedCase == null) throw failure(FixturePlanFailure.Code.VALIDATION);
+        StoredFixtureSet stored = fixtures.findRevision(
+                        scope, appliedCase.fixtureSetId(), appliedCase.revision())
+                .orElseThrow(() -> failure(FixturePlanFailure.Code.FIXTURE_NOT_FOUND));
+        SimulationCommandV2.ExactFixtureSetRef reference = new SimulationCommandV2.ExactFixtureSetRef(
+                appliedCase.fixtureSetId(), appliedCase.revision(), stored.generated().view().fingerprint());
+        return resolveInvocation(scope, invokedSubject, evidenceTarget,
+                new SimulationCommandV2.FixtureSelection.ExactCase(reference, appliedCase.caseId()),
+                invocationInput);
     }
 
     private JsonNode input(AuthoringScope scope, SimulationCommandV2 command) {
@@ -189,7 +231,9 @@ public final class FixturePlanCompiler {
     }
 
     private static void requireSupportedTarget(SimulationCommandV2.FixtureTarget target) {
-        if (!(target instanceof SimulationCommandV2.FixtureTarget.Subject)) {
+        if (!(target instanceof SimulationCommandV2.FixtureTarget.Subject)
+                && !(target instanceof SimulationCommandV2.FixtureTarget.NodePath node
+                && node.nodePath().size() == 1)) {
             throw failure(FixturePlanFailure.Code.TARGET_UNSUPPORTED);
         }
     }

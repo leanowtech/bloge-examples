@@ -297,6 +297,17 @@ automatic-match, overlap, stale and material failures map to exact payload-free 
 server error. Optional protected-material, replay and usage providers remain fail-closed when absent. The focused
 controller/configuration/v2-module gate is **20/20 green** with no failures, errors or skips.
 
+S3 adds a dedicated Flow compiler/runtime rather than extending the API Resource executor with DAG concerns.
+`FlowFixturePlanCompilerV2` loads an exact draft or published version, recursively pins nested Flow revisions,
+builds bounded hierarchical `NODE_PATH` topology, rejects missing/cyclic/overlapping targets and preserves pinned
+Fixture revisions. Condition and automatic selection run only after DAG mapping produces the actual node input.
+`CASE_CONTROLS` becomes a fixed reusable tool plan, while explicit bindings may select different Cases for each API
+node. `FlowSimulationModuleV2` assigns a fresh Invocation Key per dynamic node; nested Flow containers become parent
+invocations, whole-Flow Fixtures suppress descendants, and unbound child Flows expand locally. Unmatched external API
+nodes remain blocked with zero network access. Node and Flow input/output contracts are validated, and governed usage
+continues through the committed invocation evidence seam. The focused S3 plus v1 parent-Flow compatibility gate is
+**48/48 green** with no failures, errors or skips.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixtureAssetSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.FixturePlanCompiler;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FlowFixturePlanCompilerV2;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.FlowSimulationModuleV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModuleV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
@@ -42,6 +44,8 @@ class ApiSimulationApplicationConfigurationTest {
                 .withBean(SimulationRunV2Store.class, () -> mock(SimulationRunV2Store.class))
                 .run(context -> {
                     assertThat(context).hasSingleBean(FixturePlanCompiler.class);
+                    assertThat(context).hasSingleBean(FlowFixturePlanCompilerV2.class);
+                    assertThat(context).hasSingleBean(FlowSimulationModuleV2.class);
                     assertThat(context).hasSingleBean(SimulationModule.class);
                     assertThat(context).hasSingleBean(SimulationModuleV2.class);
                 });
@@ -58,7 +62,10 @@ class ApiSimulationApplicationConfigurationTest {
                         () -> mock(ReusableFlowPublicationStore.class))
                 .withBean(ParentFlowApplyCaseCompiler.class,
                         () -> mock(ParentFlowApplyCaseCompiler.class))
-                .run(context -> assertThat(context).hasSingleBean(SimulationModule.class));
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SimulationModule.class);
+                    assertThat(context).hasSingleBean(FlowSimulationModuleV2.class);
+                });
     }
 
     @Test
@@ -69,7 +76,10 @@ class ApiSimulationApplicationConfigurationTest {
                 .withBean(SimulationRunStore.class, () -> mock(SimulationRunStore.class))
                 .withBean(SimulationRunV2Store.class, () -> mock(SimulationRunV2Store.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
-                .run(context -> assertThat(context).hasSingleBean(SimulationModule.class));
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SimulationModule.class);
+                    assertThat(context).hasSingleBean(FlowSimulationModuleV2.class);
+                });
     }
 
     @Test

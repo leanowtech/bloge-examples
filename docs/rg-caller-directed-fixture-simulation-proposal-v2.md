@@ -1338,6 +1338,13 @@ S2c 复用同一 authenticated/idempotent POST/GET 路径，按 exact `schemaVer
 code。应用配置显式组装 compiler 与 v2 module，缺失可选 material/replay/usage provider 时继续 fail closed。
 controller/configuration/v2 module 聚焦门为 **20/20 green**。
 
-当前总体覆盖约 **81%**，剩余约 **19%**。S2 的 API Resource 编译、执行、证据、持久化与 HTTP 主链已闭合；
-下一最大缺口是 S3 的 `NODE_PATH`、DAG 动态逐调用匹配与嵌套 Flow，随后是 S4/S5 的 Operator/Function authority
-和 Call Site，以及 S6/S7 UI、Pin/Promote/Scenario bridge。尚未实现的目标继续 fail closed。
+S3 已增加独立 Flow compiler/runtime：exact draft/version 会递归展开为受界层级 topology；`NODE_PATH` 缺失、
+循环、祖先/后代 overlap 均在执行前拒绝。显式 Binding 在 DAG mapping 生成真实节点输入后才解析 condition/auto
+match；`CASE_CONTROLS` 编译为固定工具方案。每个动态节点生成不同 Invocation Key，嵌套 Flow container 作为父
+Invocation；整体 Fixture 会跳过后代，未整体替代时本地展开。未匹配外部 API 仍零网络阻断。S3 与 v1 parent
+Flow 兼容聚焦门为 **48/48 green**。
+
+当前总体覆盖约 **87%**，剩余约 **13%**。S0–S3 的 schema、API Resource、Flow/DAG、Invocation evidence 与
+HTTP 主链已闭合；当前最大缺口转为 S4/S5 的 Operator/Function exact authority、独立 Subject runtime 与稳定
+Call Site，其后是 S6/S7 UI、Pin/Promote/Scenario bridge 和真实浏览器验收。当前 Flow 模型没有循环/重试节点，
+但动态解析 seam 已保证每次实际调用重新选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。
