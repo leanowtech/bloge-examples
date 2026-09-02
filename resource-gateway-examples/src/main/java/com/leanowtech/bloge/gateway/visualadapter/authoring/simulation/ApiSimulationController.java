@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -51,6 +52,7 @@ public final class ApiSimulationController {
     private final ObjectMapper strictMapper;
 
     /** Creates the adapter over the single deep Simulation module. */
+    @Autowired
     public ApiSimulationController(SimulationModule module, SimulationModuleV2 moduleV2,
                                    IntegrationRequestAuthenticator authenticator, ObjectMapper mapper) {
         this.module = Objects.requireNonNull(module, "module");

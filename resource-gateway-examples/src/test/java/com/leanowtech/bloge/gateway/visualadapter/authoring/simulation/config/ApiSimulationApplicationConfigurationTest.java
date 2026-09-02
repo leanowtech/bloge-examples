@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
@@ -13,8 +15,11 @@ import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModuleV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2Store;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.simulation.ApiSimulationController;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -98,4 +103,24 @@ class ApiSimulationApplicationConfigurationTest {
                     assertThat(context).hasSingleBean(FixtureAssetSimulationResolver.class);
                 });
     }
+
+    @Test
+    void enabledHttpAdapterSelectsTheCompleteV2Constructor() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(HttpAdapterConfiguration.class)
+                .withPropertyValues("gateway.authoring.api-resource.enabled=true")
+                .withBean(SimulationModule.class, () -> mock(SimulationModule.class))
+                .withBean(SimulationModuleV2.class, () -> mock(SimulationModuleV2.class))
+                .withBean(IntegrationRequestAuthenticator.class,
+                        () -> mock(IntegrationRequestAuthenticator.class))
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(ApiSimulationController.class);
+                });
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @Import(ApiSimulationController.class)
+    static class HttpAdapterConfiguration { }
 }
