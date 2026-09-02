@@ -19,6 +19,11 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveResult
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowStoredDraft;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
@@ -79,6 +84,48 @@ class ReusableFlowAuthoringControllerTest {
                 org.mockito.ArgumentMatchers.eq("flow-create"), any());
         assertThat(scope.getValue()).isEqualTo(new AuthoringScope("tenant-a", "project-a", "test"));
         assertThat(precondition.getValue()).isInstanceOf(ReusableFlowPrecondition.Create.class);
+    }
+
+    @Test
+    void dslMediaTypeProjectsAndSavesThroughTheSameCanonicalModule() throws Exception {
+        ReusableFlowModule module = mock(ReusableFlowModule.class);
+        when(module.save(any(AuthoringScope.class), any(String.class), any(String.class),
+                any(ReusableFlowPrecondition.class), any(String.class), any(ReusableFlowCommand.class)))
+                .thenReturn(saved());
+        ReusableFlowDslCommand dslCommand = new ReusableFlowDslCommand(null, "Customer profile tool",
+                ReusableFlowCommand.Kind.TOOL, "Returns one customer profile.",
+                new ReusableFlowDslCommand.Source("customer-profile.bloge", """
+                        graph customerProfile {
+                          input { customerId: String }
+                          output { customerId: String }
+                          node profile : "resource:customer-profile" {
+                            input { customerId = ctx.customerId }
+                          }
+                        }
+                        """),
+                Map.of("resource:customer-profile", new ReusableFlowCommand.ComposableRef.ApiResource(
+                        "customer-profile", 1, "sha256:" + "a".repeat(64))));
+
+        mvc(module).perform(put("/api/authoring/flows/customer-tool")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-None-Match", "*")
+                        .header("Idempotency-Key", "flow-dsl-create")
+                        .contentType(MediaType.valueOf("application/vnd.bloge.reusable-flow-dsl+json"))
+                        .content(JSON.writeValueAsString(dslCommand)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"flow-etag\""));
+
+        ArgumentCaptor<ReusableFlowCommand> command = ArgumentCaptor.forClass(ReusableFlowCommand.class);
+        verify(module).save(any(), org.mockito.ArgumentMatchers.eq("author"),
+                org.mockito.ArgumentMatchers.eq("customer-tool"), any(ReusableFlowPrecondition.class),
+                org.mockito.ArgumentMatchers.eq("flow-dsl-create"), command.capture());
+        assertThat(command.getValue().flow().graph().nodes()).singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo("profile");
+                    assertThat(node.use()).isEqualTo(dslCommand.dependencyPins().get(
+                            "resource:customer-profile"));
+                });
     }
 
     @Test
@@ -206,8 +253,18 @@ class ReusableFlowAuthoringControllerTest {
                 Set.of("authors"), "INTERNAL", "", Instant.MAX);
         IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
                 new StaticBearerIntegrationIdentityResolver("author-token", identity, false), new RecordingAudit());
-        return MockMvcBuilders.standaloneSetup(new ReusableFlowAuthoringController(module, authenticator, JSON))
+        return MockMvcBuilders.standaloneSetup(new ReusableFlowAuthoringController(
+                        module, authenticator, JSON, dslProjector()))
                 .setControllerAdvice(new ReusableFlowAuthoringProblemHandler()).build();
+    }
+
+    private static ReusableFlowDslProjector dslProjector() {
+        VisualOperatorCatalog emptyCatalog = new VisualOperatorCatalog() {
+            @Override public List<OperatorDefinition> list(OperatorCatalogQuery query) { return List.of(); }
+            @Override public Optional<OperatorDefinition> find(String operatorRef) { return Optional.empty(); }
+        };
+        return new ReusableFlowDslProjector(
+                new DslImportService(emptyCatalog, new OperatorLibraryValidator()));
     }
 
     private static ReusableFlowSaveResult saved() {

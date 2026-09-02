@@ -470,8 +470,9 @@ class VisualAuthoringBrowserDomTest {
         ReusableFlowAuthoringController browserReusableFlowAuthoringController(
                 ReusableFlowModule module,
                 IntegrationRequestAuthenticator authenticator,
-                ObjectMapper mapper) {
-            return new ReusableFlowAuthoringController(module, authenticator, mapper);
+                ObjectMapper mapper,
+                com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowDslProjector projector) {
+            return new ReusableFlowAuthoringController(module, authenticator, mapper, projector);
         }
 
         /** Maps visible reusable Flow failures to the production payload-free Problem surface. */

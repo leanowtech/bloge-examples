@@ -74,6 +74,7 @@ class AuthoringProtocolSchemaTest {
             Map.entry("openapi-preview-command", "openapi-preview-command-v1.schema.json"),
             Map.entry("openapi-preview-view", "openapi-preview-view-v1.schema.json"),
             Map.entry("reusable-flow", "reusable-flow-command-v1.schema.json"),
+            Map.entry("reusable-flow-dsl", "reusable-flow-dsl-command-v1.schema.json"),
             Map.entry("reusable-flow-draft", "reusable-flow-draft-v1.schema.json"),
             Map.entry("reusable-flow-receipt", "reusable-flow-receipt-v1.schema.json"),
             Map.entry("reusable-flow-version", "reusable-flow-version-v1.schema.json"),

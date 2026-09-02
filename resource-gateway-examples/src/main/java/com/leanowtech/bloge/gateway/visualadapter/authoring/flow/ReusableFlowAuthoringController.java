@@ -46,19 +46,23 @@ import java.util.regex.Pattern;
 @RequestMapping("/api/authoring/flows")
 @ConditionalOnProperty(prefix = "gateway.authoring.reusable-flow", name = "enabled", havingValue = "true")
 public final class ReusableFlowAuthoringController {
+    static final String DSL_MEDIA_TYPE = "application/vnd.bloge.reusable-flow-dsl+json";
     private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]*");
 
     private final ReusableFlowModule module;
     private final IntegrationRequestAuthenticator authenticator;
     private final ObjectMapper strictMapper;
+    private final ReusableFlowDslProjector dslProjector;
 
     public ReusableFlowAuthoringController(ReusableFlowModule module,
                                            IntegrationRequestAuthenticator authenticator,
-                                           ObjectMapper mapper) {
+                                           ObjectMapper mapper,
+                                           ReusableFlowDslProjector dslProjector) {
         this.module = Objects.requireNonNull(module, "module");
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.strictMapper = Objects.requireNonNull(mapper, "mapper").copy()
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        this.dslProjector = Objects.requireNonNull(dslProjector, "dslProjector");
     }
 
     /** Returns the current or one exact committed Flow draft and strong ETag. */
@@ -99,6 +103,30 @@ public final class ReusableFlowAuthoringController {
                 .body(result.receipt());
     }
 
+    /**
+     * Parses BLOGE DSL, freezes exact dependency pins, and saves the resulting canonical Flow.
+     *
+     * <p>Fixture selections remain part of simulation commands and cannot enter the authored DSL
+     * or its content fingerprint.</p>
+     */
+    @PutMapping(path = "/{flowId}", consumes = DSL_MEDIA_TYPE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<ReusableFlowSaveReceipt> saveDsl(
+            @PathVariable String flowId, @RequestHeader HttpHeaders headers,
+            @RequestBody JsonNode commandWire, HttpServletRequest request) {
+        IntegrationRequestContext context = authenticate(
+                headers, IntegrationOperation.AUTHORING_REUSABLE_FLOW_WRITE, request);
+        ReusableFlowSaveResult result = module.save(trustedScope(context), context.actorId(), flowId,
+                precondition(headers, context.correlationId()),
+                idempotencyKey(headers, context.correlationId()),
+                dslProjector.project(dslCommand(commandWire, context.correlationId())));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .header(HttpHeaders.ETAG, result.strongEtag())
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                .body(result.receipt());
+    }
+
     /** Authenticates before rejecting a missing or unsupported content type. */
     @PutMapping(path = "/{flowId}", consumes = MediaType.ALL_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -107,7 +135,8 @@ public final class ReusableFlowAuthoringController {
         IntegrationRequestContext context = authenticate(
                 headers, IntegrationOperation.AUTHORING_REUSABLE_FLOW_WRITE, request);
         throw invalid("RG.AUTHORING.REUSABLE_FLOW.CONTENT_TYPE_REQUIRED",
-                "Reusable Flow commands must use application/json.", context.correlationId(), 415,
+                "Reusable Flow commands must use application/json or " + DSL_MEDIA_TYPE + ".",
+                context.correlationId(), 415,
                 "urn:bloge:problem:unsupported-authoring-media");
     }
 
@@ -164,6 +193,18 @@ public final class ReusableFlowAuthoringController {
         try {
             ReusableFlowPublishCommand command = strictMapper.treeToValue(
                     wire, ReusableFlowPublishCommand.class);
+            if (command == null) throw invalidRequest(correlationId);
+            return command;
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (RuntimeException | java.io.IOException failure) {
+            throw invalidRequest(correlationId);
+        }
+    }
+
+    private ReusableFlowDslCommand dslCommand(JsonNode wire, String correlationId) {
+        try {
+            ReusableFlowDslCommand command = strictMapper.treeToValue(wire, ReusableFlowDslCommand.class);
             if (command == null) throw invalidRequest(correlationId);
             return command;
         } catch (IntegrationProblemException failure) {

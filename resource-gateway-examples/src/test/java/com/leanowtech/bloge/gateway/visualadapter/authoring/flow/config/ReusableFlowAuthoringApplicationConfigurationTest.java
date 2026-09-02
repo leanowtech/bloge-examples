@@ -6,7 +6,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowDslProjector;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -31,22 +33,26 @@ class ReusableFlowAuthoringApplicationConfigurationTest {
                 .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
                 .withBean(ReusableFlowPublicationStore.class, () -> mock(ReusableFlowPublicationStore.class))
+                .withBean(DslImportService.class, () -> mock(DslImportService.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).getBean(ComposableCatalog.class)
                             .isInstanceOf(ApiResourceComposableCatalog.class);
                     assertThat(context).hasSingleBean(ReusableFlowCompiler.class);
+                    assertThat(context).hasSingleBean(ReusableFlowDslProjector.class);
                     assertThat(context).hasSingleBean(ReusableFlowModule.class);
                 });
 
         runner.withPropertyValues("gateway.authoring.reusable-flow.enabled=true")
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
                 .withBean(ReusableFlowPublicationStore.class, () -> mock(ReusableFlowPublicationStore.class))
+                .withBean(DslImportService.class, () -> mock(DslImportService.class))
                 .run(context -> assertThat(context).hasFailed());
 
         runner.withPropertyValues("gateway.authoring.reusable-flow.enabled=true")
                 .withBean(ApiResourceCommitStore.class, () -> mock(ApiResourceCommitStore.class))
                 .withBean(ReusableFlowDraftStore.class, () -> mock(ReusableFlowDraftStore.class))
+                .withBean(DslImportService.class, () -> mock(DslImportService.class))
                 .run(context -> assertThat(context).hasFailed());
     }
 }

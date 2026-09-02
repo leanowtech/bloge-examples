@@ -6,7 +6,9 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowDraftStore
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowModule;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicationStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStore;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ApiResourceComposableCatalog;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.flow.ReusableFlowDslProjector;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -29,6 +31,13 @@ public class ReusableFlowAuthoringApplicationConfiguration {
     @ConditionalOnMissingBean
     ReusableFlowCompiler reusableFlowCompiler(ComposableCatalog catalog) {
         return new ReusableFlowCompiler(catalog);
+    }
+
+    /** Reuses the official BLOGE importer to project DSL-first requests into the canonical command. */
+    @Bean
+    @ConditionalOnMissingBean
+    ReusableFlowDslProjector reusableFlowDslProjector(DslImportService importer) {
+        return new ReusableFlowDslProjector(importer);
     }
 
     /** Creates the deep compile/save/read module over one durable store. */

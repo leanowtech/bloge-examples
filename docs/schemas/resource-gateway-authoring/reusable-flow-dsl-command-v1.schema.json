@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/reusable-flow-dsl-command-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.reusableFlowDslSaveCommand.v1" },
+    "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" },
+    "kind": { "enum": ["TOOL", "SOLUTION"] },
+    "description": { "type": "string", "maxLength": 2000 },
+    "source": {
+      "type": "object",
+      "properties": {
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "dsl": { "type": "string", "minLength": 1, "maxLength": 524288 }
+      },
+      "required": ["sourceId", "dsl"],
+      "additionalProperties": false
+    },
+    "dependencyPins": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$": {
+          "$ref": "common-v1.schema.json#/$defs/composableRef"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["schemaVersion", "displayName", "kind", "description", "source", "dependencyPins"],
+  "additionalProperties": false
+}
