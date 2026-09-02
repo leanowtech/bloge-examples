@@ -27,7 +27,7 @@ class LocalAuthoringSchemaBootstrapConfigurationTest {
 
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_local_authoring_schema_migrations", Integer.class))
-                .isEqualTo(18);
+                .isEqualTo(19);
         assertThatCode(() -> {
             new ApiResourceAuthoringSchemaReadiness(jdbc);
             new ApiConnectionAuthoringSchemaReadiness(jdbc);
