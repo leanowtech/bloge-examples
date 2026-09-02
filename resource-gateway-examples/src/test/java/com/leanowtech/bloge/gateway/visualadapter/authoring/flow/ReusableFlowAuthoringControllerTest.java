@@ -92,7 +92,8 @@ class ReusableFlowAuthoringControllerTest {
         when(module.save(any(AuthoringScope.class), any(String.class), any(String.class),
                 any(ReusableFlowPrecondition.class), any(String.class), any(ReusableFlowCommand.class)))
                 .thenReturn(saved());
-        ReusableFlowDslCommand dslCommand = new ReusableFlowDslCommand(null, "Customer profile tool",
+        ReusableFlowDslCommand dslCommand = new ReusableFlowDslCommand(ReusableFlowDslCommand.SCHEMA_VERSION,
+                "Customer profile tool",
                 ReusableFlowCommand.Kind.TOOL, "Returns one customer profile.",
                 new ReusableFlowDslCommand.Source("customer-profile.bloge", """
                         graph customerProfile {
@@ -126,6 +127,36 @@ class ReusableFlowAuthoringControllerTest {
                     assertThat(node.use()).isEqualTo(dslCommand.dependencyPins().get(
                             "resource:customer-profile"));
                 });
+    }
+
+    @Test
+    void dslMediaTypeRejectsSchemaInvalidWireBeforeTheCanonicalModule() throws Exception {
+        ReusableFlowModule module = mock(ReusableFlowModule.class);
+        when(module.save(any(AuthoringScope.class), any(String.class), any(String.class),
+                any(ReusableFlowPrecondition.class), any(String.class), any(ReusableFlowCommand.class)))
+                .thenReturn(saved());
+        String invalid = """
+                {
+                  "displayName": "Customer profile tool",
+                  "kind": "TOOL",
+                  "description": "Returns one customer profile.",
+                  "source": {"dsl": "graph empty { output { value: String } }"},
+                  "dependencyPins": {"bad key!": {"kind": "API_RESOURCE", "resourceId": "profile",
+                    "revision": 1, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+                }
+                """;
+
+        mvc(module).perform(put("/api/authoring/flows/customer-tool")
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING")
+                        .header("If-None-Match", "*")
+                        .header("Idempotency-Key", "flow-invalid-dsl")
+                        .contentType(MediaType.valueOf("application/vnd.bloge.reusable-flow-dsl+json"))
+                        .content(invalid))
+                .andExpect(status().isBadRequest());
+
+        verify(module, never()).save(any(AuthoringScope.class), any(String.class), any(String.class),
+                any(ReusableFlowPrecondition.class), any(String.class), any(ReusableFlowCommand.class));
     }
 
     @Test

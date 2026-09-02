@@ -58,7 +58,8 @@ class ReusableFlowDslProjectorTest {
     void rejectsUnpinnedOrLossyDslInsteadOfSilentlyChangingTheFlow() {
         ReusableFlowDslProjector projector = new ReusableFlowDslProjector(importer());
 
-        assertThatThrownBy(() -> projector.project(command(dsl(), Map.of())))
+        assertThatThrownBy(() -> projector.project(command(dsl(), Map.of(
+                        "resource:unused", resource("unused", "d")))))
                 .isInstanceOf(ReusableFlowFailure.class)
                 .extracting(failure -> ((ReusableFlowFailure) failure).code())
                 .isEqualTo(ReusableFlowFailure.Code.VALIDATION);
@@ -73,11 +74,46 @@ class ReusableFlowDslProjectorTest {
                 }
                 """, Map.of("resource:customer-profile", resource("customer-profile", "a")))))
                 .isInstanceOf(ReusableFlowFailure.class);
+
+        assertThatThrownBy(() -> projector.project(command("""
+                import "shared.bloge" as shared
+                graph lossyImport {
+                  input { customerId: String }
+                  output { customerId: String }
+                  node profile : "resource:customer-profile" {
+                    input { customerId = ctx.customerId }
+                  }
+                }
+                """, Map.of("resource:customer-profile", resource("customer-profile", "a")))))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(failure -> ((ReusableFlowFailure) failure).code())
+                .isEqualTo(ReusableFlowFailure.Code.VALIDATION);
+    }
+
+    @Test
+    void commandEnforcesTheFrozenDslWireBounds() {
+        ReusableFlowCommand.ComposableRef resource = resource("customer-profile", "a");
+        Map<String, ReusableFlowCommand.ComposableRef> pins = Map.of(
+                "resource:customer-profile", resource);
+
+        assertThatThrownBy(() -> new ReusableFlowDslCommand(null, "Flow",
+                ReusableFlowCommand.Kind.TOOL, "description",
+                new ReusableFlowDslCommand.Source("flow.bloge", dsl()), pins))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ReusableFlowDslCommand.Source(" ", dsl()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ReusableFlowDslCommand.Source("flow.bloge", "x".repeat(524_289)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ReusableFlowDslCommand(ReusableFlowDslCommand.SCHEMA_VERSION,
+                "Flow", ReusableFlowCommand.Kind.TOOL, "description",
+                new ReusableFlowDslCommand.Source("flow.bloge", dsl()), Map.of("bad key!", resource)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static ReusableFlowDslCommand command(
             String dsl, Map<String, ReusableFlowCommand.ComposableRef> pins) {
-        return new ReusableFlowDslCommand(null, "Customer retention offer tool",
+        return new ReusableFlowDslCommand(ReusableFlowDslCommand.SCHEMA_VERSION,
+                "Customer retention offer tool",
                 ReusableFlowCommand.Kind.TOOL,
                 "Combines customer profile, account value and offer recommendation APIs.",
                 new ReusableFlowDslCommand.Source("customer-retention.bloge", dsl), pins);

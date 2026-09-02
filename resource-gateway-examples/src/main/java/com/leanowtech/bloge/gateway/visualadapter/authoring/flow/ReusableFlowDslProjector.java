@@ -24,8 +24,11 @@ import java.util.Set;
  * <p>The official DSL importer remains the only parser. This adapter accepts ordinary node input
  * bindings that can be represented losslessly as {@code FLOW_INPUT}, {@code NODE_OUTPUT}, or
  * {@code CONSTANT}; transforms, branches, retry/fallback attributes, expressions, and unpinned
- * operators fail closed rather than being silently dropped. The existing reusable-Flow compiler
- * subsequently validates exact dependency fingerprints, schemas, mappings, cycles, and output.</p>
+ * operators fail closed rather than being silently dropped. When pinned external resources are
+ * intentionally absent from the generic operator catalog, exact {@code dependencyPins} replace
+ * only that catalog evidence; unsupported DSL syntax and missing functions still fail closed.
+ * The existing reusable-Flow compiler subsequently validates exact dependency fingerprints,
+ * schemas, mappings, cycles, and output.</p>
  */
 public final class ReusableFlowDslProjector {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -49,7 +52,8 @@ public final class ReusableFlowDslProjector {
         DslVisualProjection projection = importer.preview(new DslImportPreviewRequest(
                 command.source().sourceId(), command.source().dsl(), List.of(), List.of(),
                 "reusable-flow", Map.of()));
-        if (projection.diagnostics().stream().anyMatch(VisualDiagnostic::error)) {
+        if (projection.diagnostics().stream().anyMatch(VisualDiagnostic::error)
+                || projection.coverage().unsupportedSyntaxCount() > 0) {
             throw invalid();
         }
 
@@ -73,6 +77,11 @@ public final class ReusableFlowDslProjector {
             positions.put(node.id(), new ReusableFlowCommand.Position(node.position().x(), node.position().y()));
         }
         if (!usedPins.equals(command.dependencyPins().keySet())) {
+            throw invalid();
+        }
+        boolean pinnedExternalCatalogClosure = projection.coverage().missingFunctionCount() == 0
+                && projection.coverage().missingOperatorCount() == draft.nodes().size();
+        if (!projection.roundTrip().supported() && !pinnedExternalCatalogClosure) {
             throw invalid();
         }
 
