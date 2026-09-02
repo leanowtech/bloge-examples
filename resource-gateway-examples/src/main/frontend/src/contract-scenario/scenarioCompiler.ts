@@ -11,6 +11,8 @@ import { sha256Fingerprint } from './fingerprint';
 import type { ScenarioEditorSnapshot } from './scenarioEditorModel';
 import { normalizeSchema, schemaType } from './schemaWorkbench';
 
+export { compileScenarioFixturePlanV2 } from './scenarioFixturePlanBridge';
+
 export interface ScenarioCompilationProof {
   editorSnapshotFingerprint: string;
   compiledPlanSourceFingerprint: string;

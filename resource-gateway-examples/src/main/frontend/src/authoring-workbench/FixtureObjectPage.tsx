@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Save, Share2, TestTube2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
+import CallerDirectedSimulationPanel from './CallerDirectedSimulationPanel';
 import { buildFixtureObjectCommand, fixtureObjectDraft, type FixtureObjectDraft } from './fixtureModel';
 import { readFixtureSet, reviewFixtureSet, saveFixtureSet, shareFixtureSet, simulateFixtureSetCase } from './flowApi';
 import type { FixtureReviewCommand, FixtureSetView, FixtureShareCommand } from './flowModel';
@@ -223,6 +224,30 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
               <textarea data-testid="fixture-object-output" rows={9} value={draft.outputSource}
                 onChange={(event) => setDraft({ ...draft, outputSource: event.target.value })} /></label>
           </div>
+          <fieldset className="fixture-condition-editor" data-testid="fixture-condition-editor">
+            <legend>{t('Condition')}</legend>
+            <p>Optional. A stable condition lets callers select this Case with Condition or Auto match.</p>
+            <div className="object-form-grid">
+              <label className="object-field"><span>Condition ID</span><input
+                data-testid="fixture-condition-id" value={draft.conditionId}
+                onChange={(event) => setDraft({ ...draft, conditionId: event.target.value })} /></label>
+              <label className="object-field"><span>Input path</span><input
+                data-testid="fixture-condition-path" value={draft.conditionPath}
+                onChange={(event) => setDraft({ ...draft, conditionPath: event.target.value })} /></label>
+              <label className="object-field"><span>Operator</span><select
+                data-testid="fixture-condition-operator" value={draft.conditionOperator}
+                onChange={(event) => setDraft({ ...draft,
+                  conditionOperator: event.target.value as FixtureObjectDraft['conditionOperator'],
+                })}>
+                <option value="EQ">Equals</option><option value="PRESENT">Present</option>
+                <option value="ABSENT">Absent</option>
+              </select></label>
+              {draft.conditionOperator === 'EQ' && <label className="object-field"><span>JSON value</span>
+                <input data-testid="fixture-condition-value" value={draft.conditionValueSource}
+                  onChange={(event) => setDraft({ ...draft, conditionValueSource: event.target.value })} />
+              </label>}
+            </div>
+          </fieldset>
           <button type="button" className="primary-object-action" data-testid="save-fixture-object"
             disabled={busy} onClick={saveAndRun}>
             <Save aria-hidden="true" /> {busy ? t('Saving and simulating...') : t('Save Fixture and simulate')}
@@ -323,6 +348,18 @@ export default function FixtureObjectPage({ initialFixtureSetId }: { initialFixt
         </p>)}
         <pre data-testid="fixture-simulation-output">{JSON.stringify(run.output ?? null, null, 2)}</pre>
       </section>}
+      {canRun && <CallerDirectedSimulationPanel subject={view.subject}
+        initialInput={JSON.stringify(view.cases[0]?.input ?? {}, null, 2)}
+        targets={[{
+          key: 'subject', label: subjectLabel(view), target: { kind: 'SUBJECT' },
+          fixtures: [{
+            schemaVersion: 'bloge.fixtureSetSummary.v1', fixtureSetId: view.fixtureSetId,
+            revision: view.revision, fingerprint: view.fingerprint, displayName: view.displayName,
+            subject: view.subject, cases: view.cases.map((fixtureCase) => ({
+              caseId: fixtureCase.caseId, name: fixtureCase.name,
+            })), status: view.status, statusRevision: view.statusRevision,
+          }],
+        }]} />}
       {message && <p className="object-message" role="status" data-testid="fixture-message">{message}</p>}
     </main>
   );
@@ -332,7 +369,11 @@ function subjectLabel(view: FixtureSetView): string {
   const subject = view.subject;
   if (subject.kind === 'API_RESOURCE') return `API Resource · ${subject.resourceId}@${subject.revision}`;
   if (subject.kind === 'FLOW_DRAFT') return `Flow Draft · ${subject.draftId}@${subject.revision}`;
-  return `Flow Version · ${subject.publicationId}@${subject.revision}`;
+  if (subject.kind === 'FLOW_VERSION') return `Flow Version · ${subject.publicationId}@${subject.revision}`;
+  if (subject.kind === 'OPERATOR_VERSION') {
+    return `Operator · ${subject.operatorRef}@${subject.libraryRevision}`;
+  }
+  return `Built-in Function · ${subject.functionName}@${subject.catalogRevision}`;
 }
 
 function runnable(view: FixtureSetView): boolean {

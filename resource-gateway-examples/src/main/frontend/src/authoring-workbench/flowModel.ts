@@ -39,7 +39,25 @@ export interface ApiResourceRef {
   fingerprint: string;
 }
 
-export type FixtureSubjectRef = ApiResourceRef | FlowDraftRef | FlowVersionRef;
+export interface OperatorVersionRef {
+  kind: 'OPERATOR_VERSION';
+  libraryId: string;
+  libraryRevision: number;
+  operatorRef: string;
+  contractFingerprint: string;
+}
+
+export interface BuiltinFunctionVersionRef {
+  kind: 'BUILTIN_FUNCTION_VERSION';
+  catalogId: string;
+  catalogRevision: number;
+  functionName: string;
+  signatureFingerprint: string;
+  runtimeFingerprint: string;
+}
+
+export type FixtureSubjectRef = ApiResourceRef | FlowDraftRef | FlowVersionRef
+  | OperatorVersionRef | BuiltinFunctionVersionRef;
 
 export interface ComposableCatalogItem {
   schemaVersion: 'bloge.composableCatalogItem.v1';
@@ -152,6 +170,7 @@ export interface FixtureSetCommand {
     caseId: string;
     name: string;
     input: JsonObject;
+    when?: FixtureCondition;
     controls: Array<{
       target: { kind: 'SUBJECT' } | { kind: 'NODE'; nodeId: string };
       behavior: FixtureBehavior;
@@ -160,6 +179,17 @@ export interface FixtureSetCommand {
     expect?: { output: JsonObject };
   }>;
 }
+
+export interface FixtureCondition {
+  conditionId: string;
+  all: FixturePredicate[];
+}
+
+export type FixturePredicate =
+  | { operator: 'EQ'; path: string; value: unknown }
+  | { operator: 'IN'; path: string; values: unknown[] }
+  | { operator: 'PRESENT' | 'ABSENT'; path: string }
+  | { operator: 'NUMBER_RANGE'; path: string; minimum?: number; maximum?: number };
 
 export type FixtureMaterial =
   | { kind: 'INLINE'; value: JsonObject }

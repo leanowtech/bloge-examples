@@ -4,12 +4,16 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthoringWorkbench from './AuthoringWorkbench';
+import * as authoringApi from './api';
 import * as flowApi from './flowApi';
 
 vi.mock('./flowApi', async () => ({
   ...(await vi.importActual<typeof import('./flowApi')>('./flowApi')),
   readFixtureSet: vi.fn(), saveFixtureSet: vi.fn(), shareFixtureSet: vi.fn(),
   reviewFixtureSet: vi.fn(), simulateFixtureSetCase: vi.fn(),
+}));
+vi.mock('./api', async () => ({
+  ...(await vi.importActual<typeof import('./api')>('./api')), readAuthoringAvailability: vi.fn(),
 }));
 
 describe('Fixture object page', () => {
@@ -22,6 +26,9 @@ describe('Fixture object page', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    vi.mocked(authoringApi.readAuthoringAvailability).mockResolvedValue({
+      schemaVersion: 'bloge.authoringAvailability.v1', apiResource: true, reusableFlow: true,
+    });
   });
 
   afterEach(async () => {
@@ -274,6 +281,33 @@ describe('Fixture object page', () => {
     );
     expect(element('fixture-status').textContent).toContain('TEAM_AVAILABLE');
     expect(button('run-fixture-case').disabled).toBe(false);
+  });
+
+  it('uses the same Fixture and caller-simulation surface for an exact Operator version', async () => {
+    vi.mocked(flowApi.readFixtureSet).mockResolvedValue({
+      strongEtag: '"operator-fixture-r1"', replayed: false, value: {
+        schemaVersion: 'bloge.fixtureSet.v1', fixtureSetId: 'risk-score-cases', revision: 1,
+        fingerprint: hash('e'), statusRevision: 1, displayName: 'Risk score cases',
+        subject: {
+          kind: 'OPERATOR_VERSION', libraryId: 'risk-library', libraryRevision: 7,
+          operatorRef: 'risk:score', contractFingerprint: hash('f'),
+        },
+        cases: [{
+          caseId: 'vip', name: 'VIP', input: { tier: 'vip' },
+          controls: [{ target: { kind: 'SUBJECT' }, behavior: {
+            kind: 'RETURN', material: { kind: 'INLINE', value: { score: 900 } },
+          } }], expect: { output: { score: 900 } },
+        }], status: 'PRIVATE_DRAFT',
+      },
+    });
+
+    await act(async () => {
+      root.render(<AuthoringWorkbench />); await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(element('fixture-subject-link').textContent).toContain('Operator · risk:score@7');
+    expect(element('caller-simulation-panel').textContent).toContain('Caller-directed simulation');
+    expect(element('fixture-condition-editor')).toBeTruthy();
   });
 
   function change(testId: string, value: string) {

@@ -170,6 +170,12 @@ export interface FixtureSetSummary {
     kind: 'FLOW_DRAFT'; draftId: string; revision: number; fingerprint: string;
   } | {
     kind: 'FLOW_VERSION'; publicationId: string; revision: number; fingerprint: string;
+  } | {
+    kind: 'OPERATOR_VERSION'; libraryId: string; libraryRevision: number;
+    operatorRef: string; contractFingerprint: string;
+  } | {
+    kind: 'BUILTIN_FUNCTION_VERSION'; catalogId: string; catalogRevision: number;
+    functionName: string; signatureFingerprint: string; runtimeFingerprint: string;
   };
   cases: Array<{ caseId: string; name: string }>;
   status: string;

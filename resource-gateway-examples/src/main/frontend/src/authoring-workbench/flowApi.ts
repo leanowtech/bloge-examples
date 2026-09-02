@@ -8,10 +8,9 @@ import type {
   FixtureReviewCommand,
   FixtureReviewReceipt,
   FixtureSetView,
+  FixtureSubjectRef,
   ComposableCatalogItem,
   FlowDraftRef,
-  FlowVersionRef,
-  ApiResourceRef,
   LegacyFixtureReauthorPreview,
   LegacyReusableFlowReauthorPreview,
   ReusableFlowVersion,
@@ -120,18 +119,47 @@ export async function readFlowFixture(
 
 /** Discovers payload-free Fixtures for one exact draft or immutable version Subject. */
 export async function listFlowFixtures(
-  subject: ApiResourceRef | FlowDraftRef | FlowVersionRef,
+  subject: FixtureSubjectRef,
   transport: AuthoringWorkbenchTransport = fetch,
 ): Promise<FixtureSetSummary[]> {
   const query = new URLSearchParams({
     subjectKind: subject.kind,
-    subjectId: subject.kind === 'FLOW_DRAFT' ? subject.draftId
-      : subject.kind === 'FLOW_VERSION' ? subject.publicationId : subject.resourceId,
-    subjectRevision: String(subject.revision), subjectFingerprint: subject.fingerprint,
+    subjectId: subjectId(subject),
+    subjectRevision: String(subjectRevision(subject)), subjectFingerprint: subjectFingerprint(subject),
   });
+  const memberId = subjectMemberId(subject);
+  if (memberId) query.set('subjectMemberId', memberId);
+  if (subject.kind === 'BUILTIN_FUNCTION_VERSION') {
+    query.set('subjectRuntimeFingerprint', subject.runtimeFingerprint);
+  }
   return body(await transport(`/api/authoring/fixture-sets?${query}`, {
     headers: integrationRequestHeaders('API_RESOURCE_AUTHORING'),
   }));
+}
+
+function subjectId(subject: FixtureSubjectRef): string {
+  if (subject.kind === 'FLOW_DRAFT') return subject.draftId;
+  if (subject.kind === 'FLOW_VERSION') return subject.publicationId;
+  if (subject.kind === 'API_RESOURCE') return subject.resourceId;
+  return subject.kind === 'OPERATOR_VERSION' ? subject.libraryId : subject.catalogId;
+}
+
+function subjectRevision(subject: FixtureSubjectRef): number {
+  if (subject.kind === 'OPERATOR_VERSION') return subject.libraryRevision;
+  if (subject.kind === 'BUILTIN_FUNCTION_VERSION') return subject.catalogRevision;
+  return subject.revision;
+}
+
+function subjectFingerprint(subject: FixtureSubjectRef): string {
+  if (subject.kind === 'OPERATOR_VERSION') return subject.contractFingerprint;
+  if (subject.kind === 'BUILTIN_FUNCTION_VERSION') return subject.signatureFingerprint;
+  return subject.fingerprint;
+}
+
+function subjectMemberId(subject: FixtureSubjectRef): string {
+  if (subject.kind === 'OPERATOR_VERSION') return subject.operatorRef;
+  if (subject.kind === 'BUILTIN_FUNCTION_VERSION') return subject.functionName;
+  return '';
 }
 
 /** Reads the latest immutable server-owned version for a Flow, when one exists. */

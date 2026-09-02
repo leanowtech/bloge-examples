@@ -4,6 +4,7 @@ import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
 import FixtureObjectPage from './FixtureObjectPage';
+import CallerDirectedSimulationPanel from './CallerDirectedSimulationPanel';
 import type { LegacyFixtureReauthorPreview, LegacyReusableFlowReauthorPreview } from './flowModel';
 import {
   listApiResourceFixtures,
@@ -23,6 +24,7 @@ import {
   formDraftFromLegacyPreview,
   formDraftFromSpec,
   type ApiResourceFormDraft,
+  type ApiResourceRef,
   type ApiConnectionView,
   type FixtureSetSummary,
   type LegacyAssetMigrationInventory,
@@ -277,6 +279,7 @@ function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }
   const [strongEtag, setStrongEtag] = useState<string | null>(null);
   const [resourceRevision, setResourceRevision] = useState<number | null>(null);
   const [fixture, setFixture] = useState<FixtureSetSummary | null>(null);
+  const [resourceSubject, setResourceSubject] = useState<ApiResourceRef | null>(null);
   const [run, setRun] = useState<SimulationRun | null>(null);
   const [activeTab, setActiveTab] = useState<ObjectTab>('design');
   const [busy, setBusy] = useState(initialResourceId.length > 0 || initialLegacyResourceId.length > 0);
@@ -305,6 +308,10 @@ function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }
       setDraft(formDraftFromSpec(stored.value));
       setStrongEtag(stored.strongEtag);
       setResourceRevision(stored.value.revision);
+      setResourceSubject({
+        kind: 'API_RESOURCE', resourceId: stored.value.resourceId,
+        revision: stored.value.revision, fingerprint: stored.value.fingerprint,
+      });
       const fixtures = await listApiResourceFixtures(stored.value);
       if (!cancelled) setFixture(fixtures[0] ?? null);
       setMessage(t('Loaded committed Resource.'));
@@ -344,6 +351,7 @@ function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }
       );
       setStrongEtag(save.strongEtag);
       setResourceRevision(save.value.resource.revision);
+      setResourceSubject(save.value.resource);
       const fixture = save.value.defaultFixture;
       const firstCase = fixture?.cases[0];
       if (!fixture || !firstCase) throw new Error('The Resource was saved without a Default Fixture Case.');
@@ -557,7 +565,15 @@ function ApiResourceObjectPage({ initialResourceId, initialLegacyResourceId, t }
       )}
 
       {activeTab === 'fixture' && <FixturePanel fixture={fixture} busy={busy} onRun={runFixture} t={t} />}
-      {activeTab === 'simulation' && <SimulationPanel run={run} t={t} />}
+      {activeTab === 'simulation' && <>
+        <SimulationPanel run={run} t={t} />
+        {resourceSubject && <CallerDirectedSimulationPanel subject={resourceSubject}
+          initialInput={draft.requestExample}
+          targets={[{
+            key: 'subject', label: draft.displayName || resourceSubject.resourceId,
+            target: { kind: 'SUBJECT' }, fixtures: fixture ? [fixture] : [],
+          }]} />}
+      </>}
       {activeTab === 'versions' && (
         <section className="object-task-panel" data-testid="resource-version-panel">
           <h2>{t('Version')}</h2>

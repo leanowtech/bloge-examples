@@ -27,8 +27,29 @@ describe('Fixture object model', () => {
     expect(fixtureObjectDraft(fixture('API_RESOURCE'))).toBeNull();
     expect(() => buildFixtureObjectCommand(fixture('API_RESOURCE'), {
       displayName: 'Changed', caseId: 'default', caseName: 'Default',
-      inputSource: '{}', outputSource: '{}',
+      inputSource: '{}', outputSource: '{}', conditionId: '', conditionPath: '$.',
+      conditionOperator: 'EQ', conditionValueSource: '',
     })).toThrow('edited on the Resource page');
+  });
+
+  it('round-trips one stable condition without changing Fixture material', () => {
+    const view = fixture('FLOW_DRAFT');
+    view.cases[0].when = {
+      conditionId: 'known-customer', all: [{ operator: 'EQ', path: '$.tier', value: 'gold' }],
+    };
+
+    const draft = fixtureObjectDraft(view)!;
+    expect(draft).toMatchObject({
+      conditionId: 'known-customer', conditionPath: '$.tier',
+      conditionOperator: 'EQ', conditionValueSource: '"gold"',
+    });
+    const command = buildFixtureObjectCommand(view, {
+      ...draft, conditionId: 'priority-customer', conditionValueSource: '"platinum"',
+    });
+    expect(command.cases[0].when).toEqual({
+      conditionId: 'priority-customer', all: [{ operator: 'EQ', path: '$.tier', value: 'platinum' }],
+    });
+    expect(command.cases[0].controls).toEqual(view.cases[0].controls);
   });
 });
 

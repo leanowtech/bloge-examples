@@ -20,7 +20,7 @@ import type { FixtureReviewCommand, FixtureSetCommand, FixtureShareCommand, Reus
 
 describe('reusable Flow object transport', () => {
   it('lists both exact composable kinds through one payload-free catalog request', async () => {
-    const transport = vi.fn().mockResolvedValue(response([]));
+    const transport = vi.fn().mockImplementation(async () => response([]));
 
     await listComposableCatalog(transport);
 
@@ -112,6 +112,26 @@ describe('reusable Flow object transport', () => {
     expect(transport.mock.calls[0][0]).toBe('/api/authoring/flows/flow%201/versions/latest');
     expect(transport.mock.calls[1][0]).toContain('subjectKind=FLOW_VERSION');
     expect(transport.mock.calls[1][0]).toContain('subjectId=flow-v');
+  });
+
+  it('discovers Operator and built-in Function Fixtures by their complete exact authority', async () => {
+    const transport = vi.fn().mockImplementation(async () => response([]));
+
+    await listFlowFixtures({
+      kind: 'OPERATOR_VERSION', libraryId: 'risk-library', libraryRevision: 7,
+      operatorRef: 'risk:score', contractFingerprint: hash('c'),
+    }, transport);
+    await listFlowFixtures({
+      kind: 'BUILTIN_FUNCTION_VERSION', catalogId: 'builtin', catalogRevision: 9,
+      functionName: 'normalizeScore', signatureFingerprint: hash('d'), runtimeFingerprint: hash('e'),
+    }, transport);
+
+    expect(transport.mock.calls[0][0]).toContain('subjectKind=OPERATOR_VERSION');
+    expect(transport.mock.calls[0][0]).toContain('subjectId=risk-library');
+    expect(transport.mock.calls[0][0]).toContain('subjectMemberId=risk%3Ascore');
+    expect(transport.mock.calls[1][0]).toContain('subjectKind=BUILTIN_FUNCTION_VERSION');
+    expect(transport.mock.calls[1][0]).toContain('subjectMemberId=normalizeScore');
+    expect(transport.mock.calls[1][0]).toContain(`subjectRuntimeFingerprint=${encodeURIComponent(hash('e'))}`);
   });
 
   it('reads, updates, and simulates an independently addressed Fixture', async () => {

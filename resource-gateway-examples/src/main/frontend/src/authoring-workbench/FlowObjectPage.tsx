@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Boxes, Plus, Rocket, TestTube2, Trash2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
+import CallerDirectedSimulationPanel from './CallerDirectedSimulationPanel';
 import {
   listComposableCatalog,
   listFlowFixtures,
@@ -184,7 +185,7 @@ export default function FlowObjectPage({
   }, [initialLegacyFixture]);
 
   useEffect(() => {
-    if (tab !== 'fixture' || !publishedSubject || nodes.length === 0) return;
+    if ((tab !== 'fixture' && tab !== 'simulation') || !publishedSubject || nodes.length === 0) return;
     let cancelled = false;
     void Promise.all(nodes.map(async (node) => [node.nodeId,
       await listFlowFixtures(node.item.reference)] as const)).then((entries) => {
@@ -492,6 +493,19 @@ export default function FlowObjectPage({
               </li>)}
             </ul>
           </> : <p>{t('Save a Flow Fixture to simulate it without external effects.')}</p>}
+          {(publishedSubject ?? subject) && <CallerDirectedSimulationPanel
+            subject={publishedSubject ?? subject!} initialInput={fixtureInput}
+            targets={[
+              {
+                key: 'subject', label: draft.displayName || draft.flowId,
+                target: { kind: 'SUBJECT' }, fixtures: fixture ? [fixture] : [],
+              },
+              ...nodes.map((node) => ({
+                key: `node:${node.nodeId}`, label: node.label,
+                target: { kind: 'NODE_PATH' as const, nodePath: [node.nodeId] },
+                fixtures: nodeFixtureOptions[node.nodeId] ?? [],
+              })),
+            ]} />}
         </section>
       )}
 

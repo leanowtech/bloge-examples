@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AuthoringWorkbench from './AuthoringWorkbench';
+import * as authoringApi from './api';
 import * as flowApi from './flowApi';
 import type { ApiResourceSpec } from './model';
 
@@ -13,6 +14,9 @@ vi.mock('./flowApi', async () => ({
   listComposableCatalog: vi.fn(),
   readLegacyReusableFlowPreview: vi.fn(), readLegacyFixtureReauthorPreview: vi.fn(),
   saveFlow: vi.fn(), saveFlowFixture: vi.fn(), simulateFlowFixture: vi.fn(), publishFlow: vi.fn(),
+}));
+vi.mock('./api', async () => ({
+  ...(await vi.importActual<typeof import('./api')>('./api')), readAuthoringAvailability: vi.fn(),
 }));
 
 describe('Tool and Solution object page', () => {
@@ -25,6 +29,9 @@ describe('Tool and Solution object page', () => {
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
+    vi.mocked(authoringApi.readAuthoringAvailability).mockResolvedValue({
+      schemaVersion: 'bloge.authoringAvailability.v1', apiResource: true, reusableFlow: true,
+    });
     vi.mocked(flowApi.readLatestFlowVersion).mockResolvedValue(null);
     vi.mocked(flowApi.listFlowFixtures).mockResolvedValue([]);
     vi.mocked(flowApi.listComposableCatalog).mockResolvedValue([]);
