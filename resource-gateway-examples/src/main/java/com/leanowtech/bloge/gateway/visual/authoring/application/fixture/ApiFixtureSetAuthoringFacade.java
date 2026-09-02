@@ -23,25 +23,26 @@ public final class ApiFixtureSetAuthoringFacade {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
     private final FixtureSetAuthorityReader store;
     private final ReusableFlowFixtureModule writer;
+    private final ComponentFixtureSetModule componentWriter;
     private final ReusableFlowFixtureShareModule shareModule;
     private final ReusableFlowFixtureReviewModule reviewModule;
 
     /** Creates the read module over one authority store. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store) {
-        this(store, null, null, null);
+        this(store, null, null, null, null);
     }
 
     /** Creates the complete read/write module when standalone Flow Fixture authoring is available. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
                                         ReusableFlowFixtureModule writer) {
-        this(store, writer, null, null);
+        this(store, writer, null, null, null);
     }
 
     /** Creates the complete read/write/share module. */
     public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
                                         ReusableFlowFixtureModule writer,
                                         ReusableFlowFixtureShareModule shareModule) {
-        this(store, writer, shareModule, null);
+        this(store, writer, null, shareModule, null);
     }
 
     /** Creates the complete read/write/share/review module. */
@@ -49,8 +50,18 @@ public final class ApiFixtureSetAuthoringFacade {
                                         ReusableFlowFixtureModule writer,
                                         ReusableFlowFixtureShareModule shareModule,
                                         ReusableFlowFixtureReviewModule reviewModule) {
+        this(store, writer, null, shareModule, reviewModule);
+    }
+
+    /** Creates the complete Flow/component read/write/share/review module. */
+    public ApiFixtureSetAuthoringFacade(FixtureSetAuthorityReader store,
+                                        ReusableFlowFixtureModule writer,
+                                        ComponentFixtureSetModule componentWriter,
+                                        ReusableFlowFixtureShareModule shareModule,
+                                        ReusableFlowFixtureReviewModule reviewModule) {
         this.store = Objects.requireNonNull(store, "store");
         this.writer = writer;
+        this.componentWriter = componentWriter;
         this.shareModule = shareModule;
         this.reviewModule = reviewModule;
     }
@@ -60,6 +71,14 @@ public final class ApiFixtureSetAuthoringFacade {
             AuthoringScope scope, String actorId, String fixtureSetId,
             FixtureSetPrecondition precondition, String idempotencyKey,
             com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand command) {
+        if (command != null && (command.subject() instanceof FixtureSubjectRef.OperatorVersion
+                || command.subject() instanceof FixtureSubjectRef.BuiltinFunctionVersion)) {
+            if (componentWriter == null) {
+                throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
+            }
+            return componentWriter.save(
+                    scope, actorId, fixtureSetId, precondition, idempotencyKey, command);
+        }
         if (writer == null) throw failure(ApiFixtureSetAuthoringFailure.Code.CAPABILITY_UNAVAILABLE);
         return writer.save(scope, actorId, fixtureSetId, precondition, idempotencyKey, command);
     }

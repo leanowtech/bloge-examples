@@ -27,7 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-/** JDBC V016 authority for independently authored whole-flow Fixture Set revisions. */
+/** JDBC V016–V019 authority for independently authored Flow and component Fixture revisions. */
 public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSetStore {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
@@ -157,8 +157,9 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
         }
         try {
             return exact(jdbc.query("""
-                    SELECT revision, fixture_fingerprint, subject_publication_id,
-                           subject_revision, subject_fingerprint, generated_json, strong_etag
+                    SELECT revision, fixture_fingerprint, subject_kind, subject_publication_id,
+                           subject_revision, subject_member_id, subject_fingerprint,
+                           subject_runtime_fingerprint, generated_json, strong_etag
                       FROM rg_authoring_standalone_fixture_revisions
                      WHERE tenant_id=? AND project_id=? AND environment_id=?
                        AND fixture_set_id=? AND strong_etag=?
@@ -173,11 +174,14 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
 
     @Override public List<FixtureSetSummary> listSummariesBySubject(
             AuthoringScope scope, FixtureSubjectRef subject) {
-        if (scope == null || !(subject instanceof FixtureSubjectRef.FlowVersion flow)) return List.of();
+        if (scope == null || !SubjectColumns.supported(subject)) return List.of();
+        SubjectColumns coordinate = SubjectColumns.of(subject);
         try {
             List<Row> rows = jdbc.query("""
-                    SELECT r.fixture_set_id, r.revision, r.fixture_fingerprint, r.subject_publication_id,
-                           r.subject_revision, r.subject_fingerprint, r.generated_json, r.strong_etag
+                    SELECT r.fixture_set_id, r.revision, r.fixture_fingerprint, r.subject_kind,
+                           r.subject_publication_id, r.subject_revision, r.subject_member_id,
+                           r.subject_fingerprint, r.subject_runtime_fingerprint,
+                           r.generated_json, r.strong_etag
                       FROM rg_authoring_standalone_fixture_heads h
                       JOIN rg_authoring_standalone_fixture_revisions r
                         ON r.tenant_id=h.tenant_id AND r.project_id=h.project_id
@@ -185,15 +189,18 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
                        AND r.revision=h.revision AND r.fixture_fingerprint=h.fixture_fingerprint
                        AND r.strong_etag=h.strong_etag
                      WHERE r.tenant_id=? AND r.project_id=? AND r.environment_id=?
-                       AND r.subject_publication_id=? AND r.subject_revision=?
+                       AND r.subject_kind=? AND r.subject_publication_id=?
+                       AND r.subject_revision=? AND COALESCE(r.subject_member_id, '')=?
                        AND r.subject_fingerprint=?
+                       AND COALESCE(r.subject_runtime_fingerprint, '')=?
                      ORDER BY r.fixture_set_id
                     """, (rs, index) -> new Row(scope, rs.getString(1),
                             Math.toIntExact(rs.getLong(2)), rs.getString(3), rs.getString(4),
-                            Math.toIntExact(rs.getLong(5)), rs.getString(6), rs.getString(7),
-                            rs.getString(8)),
-                    scope.tenantId(), scope.projectId(), scope.environmentId(), flow.publicationId(),
-                    flow.revision(), flow.fingerprint());
+                            rs.getString(5), Math.toIntExact(rs.getLong(6)), rs.getString(7),
+                            rs.getString(8), rs.getString(9), rs.getString(10), rs.getString(11)),
+                    scope.tenantId(), scope.projectId(), scope.environmentId(), coordinate.kind(),
+                    coordinate.authorityId(), coordinate.revision(), coordinate.memberIdOrEmpty(),
+                    coordinate.fingerprint(), coordinate.runtimeFingerprintOrEmpty());
             return rows.stream().map(this::decode).map(value -> value.stored().generated().summary()).toList();
         } catch (RuntimeException failure) {
             throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
@@ -447,8 +454,9 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
 
     private Optional<Row> revision(AuthoringScope scope, String fixtureSetId, int revision) {
         return exact(jdbc.query("""
-                SELECT revision, fixture_fingerprint, subject_publication_id,
-                       subject_revision, subject_fingerprint, generated_json, strong_etag
+                SELECT revision, fixture_fingerprint, subject_kind, subject_publication_id,
+                       subject_revision, subject_member_id, subject_fingerprint,
+                       subject_runtime_fingerprint, generated_json, strong_etag
                   FROM rg_authoring_standalone_fixture_revisions
                  WHERE tenant_id=? AND project_id=? AND environment_id=?
                    AND fixture_set_id=? AND revision=?
@@ -463,8 +471,9 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
 
     private static Row row(AuthoringScope scope, String fixtureSetId, ResultSet rs) throws SQLException {
         return new Row(scope, fixtureSetId, Math.toIntExact(rs.getLong(1)), rs.getString(2),
-                rs.getString(3), Math.toIntExact(rs.getLong(4)), rs.getString(5),
-                rs.getString(6), rs.getString(7));
+                rs.getString(3), rs.getString(4), Math.toIntExact(rs.getLong(5)),
+                rs.getString(6), rs.getString(7), rs.getString(8), rs.getString(9),
+                rs.getString(10));
     }
 
     private void insertIdentity(StandaloneFixtureSetSaveIntent intent) {
@@ -477,57 +486,59 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
     }
 
     private void insertRevision(StandaloneFixtureSetSaveIntent intent, String strongEtag) {
-        FixtureSubjectRef.FlowVersion subject = (FixtureSubjectRef.FlowVersion) intent.generated().view().subject();
+        SubjectColumns subject = SubjectColumns.of(intent.generated().view().subject());
         jdbc.update("""
                 INSERT INTO rg_authoring_standalone_fixture_revisions
                     (tenant_id, project_id, environment_id, fixture_set_id, revision,
-                     fixture_fingerprint, subject_publication_id, subject_revision,
-                     subject_fingerprint, generated_json, strong_etag, committed_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     fixture_fingerprint, subject_kind, subject_publication_id, subject_revision,
+                     subject_member_id, subject_fingerprint, subject_runtime_fingerprint,
+                     generated_json, strong_etag, committed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, intent.scope().tenantId(), intent.scope().projectId(),
                 intent.scope().environmentId(), intent.fixtureSetId(), intent.generated().view().revision(),
-                intent.generated().view().fingerprint(), subject.publicationId(), subject.revision(),
-                subject.fingerprint(), encode(intent.generated()), strongEtag, intent.actorId());
+                intent.generated().view().fingerprint(), subject.kind(), subject.authorityId(),
+                subject.revision(), subject.memberId(), subject.fingerprint(),
+                subject.runtimeFingerprint(), encode(intent.generated()), strongEtag, intent.actorId());
     }
 
     private void insertSharedRevision(
             StandaloneFixtureSetShareIntent intent,
             FixtureShareMaterialization materialization,
             String strongEtag) {
-        FixtureSubjectRef.FlowVersion subject =
-                (FixtureSubjectRef.FlowVersion) materialization.generated().view().subject();
+        SubjectColumns subject = SubjectColumns.of(materialization.generated().view().subject());
         jdbc.update("""
                 INSERT INTO rg_authoring_standalone_fixture_revisions
                     (tenant_id, project_id, environment_id, fixture_set_id, revision,
-                     fixture_fingerprint, subject_publication_id, subject_revision,
-                     subject_fingerprint, generated_json, strong_etag, committed_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     fixture_fingerprint, subject_kind, subject_publication_id, subject_revision,
+                     subject_member_id, subject_fingerprint, subject_runtime_fingerprint,
+                     generated_json, strong_etag, committed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, intent.scope().tenantId(), intent.scope().projectId(),
                 intent.scope().environmentId(), intent.fixtureSetId(),
                 materialization.generated().view().revision(),
-                materialization.generated().view().fingerprint(), subject.publicationId(),
-                subject.revision(), subject.fingerprint(), encode(materialization.generated()),
-                strongEtag, intent.actorId());
+                materialization.generated().view().fingerprint(), subject.kind(), subject.authorityId(),
+                subject.revision(), subject.memberId(), subject.fingerprint(), subject.runtimeFingerprint(),
+                encode(materialization.generated()), strongEtag, intent.actorId());
     }
 
     private void insertReviewedRevision(
             StandaloneFixtureSetReviewIntent intent,
             FixtureReviewMaterialization materialization,
             String strongEtag) {
-        FixtureSubjectRef.FlowVersion subject =
-                (FixtureSubjectRef.FlowVersion) materialization.generated().view().subject();
+        SubjectColumns subject = SubjectColumns.of(materialization.generated().view().subject());
         jdbc.update("""
                 INSERT INTO rg_authoring_standalone_fixture_revisions
                     (tenant_id, project_id, environment_id, fixture_set_id, revision,
-                     fixture_fingerprint, subject_publication_id, subject_revision,
-                     subject_fingerprint, generated_json, strong_etag, committed_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     fixture_fingerprint, subject_kind, subject_publication_id, subject_revision,
+                     subject_member_id, subject_fingerprint, subject_runtime_fingerprint,
+                     generated_json, strong_etag, committed_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, intent.scope().tenantId(), intent.scope().projectId(),
                 intent.scope().environmentId(), intent.fixtureSetId(),
                 materialization.generated().view().revision(),
-                materialization.generated().view().fingerprint(), subject.publicationId(),
-                subject.revision(), subject.fingerprint(), encode(materialization.generated()),
-                strongEtag, intent.actorId());
+                materialization.generated().view().fingerprint(), subject.kind(), subject.authorityId(),
+                subject.revision(), subject.memberId(), subject.fingerprint(), subject.runtimeFingerprint(),
+                encode(materialization.generated()), strongEtag, intent.actorId());
     }
 
     private void insertHead(StandaloneFixtureSetSaveIntent intent, String strongEtag) {
@@ -681,13 +692,11 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
 
     private StoredStandaloneFixtureSet decode(Row row) {
         GeneratedDefaultFixture generated = decode(row.generatedJson(), GeneratedDefaultFixture.class);
+        FixtureSubjectRef subject = SubjectColumns.subject(row);
         if (!generated.view().fixtureSetId().equals(row.fixtureSetId())
                 || generated.view().revision() != row.revision()
                 || !generated.view().fingerprint().equals(row.fixtureFingerprint())
-                || !(generated.view().subject() instanceof FixtureSubjectRef.FlowVersion subject)
-                || !subject.publicationId().equals(row.subjectPublicationId())
-                || subject.revision() != row.subjectRevision()
-                || !subject.fingerprint().equals(row.subjectFingerprint())) {
+                || !generated.view().subject().equals(subject)) {
             throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
         }
         return new StoredStandaloneFixtureSet(
@@ -831,9 +840,61 @@ public final class JdbcStandaloneFixtureSetStore implements StandaloneFixtureSet
     }
 
     private record Row(AuthoringScope scope, String fixtureSetId, int revision,
-                       String fixtureFingerprint, String subjectPublicationId,
-                       int subjectRevision, String subjectFingerprint,
-                       String generatedJson, String strongEtag) { }
+                       String fixtureFingerprint, String subjectKind, String subjectAuthorityId,
+                       int subjectRevision, String subjectMemberId, String subjectFingerprint,
+                       String subjectRuntimeFingerprint, String generatedJson, String strongEtag) { }
+
+    private record SubjectColumns(
+            String kind, String authorityId, int revision, String memberId,
+            String fingerprint, String runtimeFingerprint) {
+        static boolean supported(FixtureSubjectRef subject) {
+            return subject instanceof FixtureSubjectRef.FlowDraft
+                    || subject instanceof FixtureSubjectRef.FlowVersion
+                    || subject instanceof FixtureSubjectRef.OperatorVersion
+                    || subject instanceof FixtureSubjectRef.BuiltinFunctionVersion;
+        }
+
+        static SubjectColumns of(FixtureSubjectRef subject) {
+            if (subject instanceof FixtureSubjectRef.FlowDraft value) {
+                return new SubjectColumns(value.kind(), value.draftId(), value.revision(), null,
+                        value.fingerprint(), null);
+            }
+            if (subject instanceof FixtureSubjectRef.FlowVersion value) {
+                return new SubjectColumns(value.kind(), value.publicationId(), value.revision(), null,
+                        value.fingerprint(), null);
+            }
+            if (subject instanceof FixtureSubjectRef.OperatorVersion value) {
+                return new SubjectColumns(value.kind(), value.libraryId(), value.libraryRevision(),
+                        value.operatorRef(), value.contractFingerprint(), null);
+            }
+            if (subject instanceof FixtureSubjectRef.BuiltinFunctionVersion value) {
+                return new SubjectColumns(value.kind(), value.catalogId(), value.catalogRevision(),
+                        value.functionName(), value.signatureFingerprint(), value.runtimeFingerprint());
+            }
+            throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+        }
+
+        static FixtureSubjectRef subject(Row row) {
+            return switch (row.subjectKind()) {
+                case "FLOW_DRAFT" -> new FixtureSubjectRef.FlowDraft(
+                        row.subjectAuthorityId(), row.subjectRevision(), row.subjectFingerprint());
+                case "FLOW_VERSION" -> new FixtureSubjectRef.FlowVersion(
+                        row.subjectAuthorityId(), row.subjectRevision(), row.subjectFingerprint());
+                case "OPERATOR_VERSION" -> new FixtureSubjectRef.OperatorVersion(
+                        row.subjectAuthorityId(), row.subjectRevision(), row.subjectMemberId(),
+                        row.subjectFingerprint());
+                case "BUILTIN_FUNCTION_VERSION" -> new FixtureSubjectRef.BuiltinFunctionVersion(
+                        row.subjectAuthorityId(), row.subjectRevision(), row.subjectMemberId(),
+                        row.subjectFingerprint(), row.subjectRuntimeFingerprint());
+                default -> throw failure(StandaloneFixtureSetStoreException.Code.INTEGRITY);
+            };
+        }
+
+        String memberIdOrEmpty() { return memberId == null ? "" : memberId; }
+        String runtimeFingerprintOrEmpty() {
+            return runtimeFingerprint == null ? "" : runtimeFingerprint;
+        }
+    }
     private record HeadRow(int revision, String fingerprint, String strongEtag) {
         boolean matches(StoredStandaloneFixtureSet value) {
             return revision == value.stored().generated().view().revision()

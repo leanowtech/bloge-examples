@@ -339,6 +339,14 @@ outputs, and expectations are checked against compiler-owned schemas; component 
 `APPLY_CASE`, and unsupported fidelity before persistence. The in-memory application gate is **3/3 green**. JDBC
 subject-coordinate persistence, authenticated dispatch, and production discovery are intentionally the next slice.
 
+Forward-only V019 now closes that persistence boundary. The existing standalone Fixture revision/head/command tables
+retain their CAS and idempotency protocol while adding an exact subject discriminator, component member id, and Function
+runtime fingerprint. Flow rows migrate in place; Operator and Function rows have database-enforced shapes and round-trip
+through the same `FixtureSetAuthorityReader`. The authenticated Fixture PUT dispatches component Subjects to
+`ComponentFixtureSetModule`, and list discovery accepts `subjectMemberId` plus the Function-only
+`subjectRuntimeFingerprint`; malformed or incomplete coordinates fail before authority access. The combined S5,
+JDBC/readiness, application, configuration, and transport gate is **76/76 green** with no failures, errors, or skips.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct
@@ -423,8 +431,10 @@ idempotency commands, and opaque strong ETags without changing the V012 Resource
 `If-None-Match: *` for create or one strong `If-Match` for update, and requires a bounded `Idempotency-Key`.
 Exact replay is resolved before current-head CAS; historical revisions remain readable and stale new updates fail
 with precondition semantics. A fail-closed composite reader unifies V012 child and V016 standalone Fixture Sets for
-existing GET/list and Simulation paths while rejecting an id that appears in both authorities. V016 is externally
-applied; enabling reusable Flow authoring without it fails startup. The focused materializer/module/store/readiness/
+existing GET/list and Simulation paths while rejecting an id that appears in both authorities. V019 later generalizes
+the standalone subject coordinate to Flow Draft/Version, Operator Version, and built-in Function Version without
+weakening the revision/head protocol. V016 and V019 are externally applied; enabling reusable Flow authoring without
+them fails startup. The focused materializer/module/store/readiness/
 configuration/controller/simulation gate is **48/48 green** with no failures, errors, or skips. Real PostgreSQL,
 parent-Flow `NODE + APPLY_CASE`, sharing, and Tool/Solution object pages remain subsequent slices. The serial
 `clean verify` completed with `Tests run: 8,182; failures: 0; errors: 0; skipped: 33` and `BUILD SUCCESS`.

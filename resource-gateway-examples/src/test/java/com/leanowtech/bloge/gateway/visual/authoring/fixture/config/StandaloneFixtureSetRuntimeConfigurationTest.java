@@ -2,9 +2,11 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ComponentFixtureSetModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureReviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ComponentFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.ParentFlowApplyCaseCompiler;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.JdbcStandaloneFixtureSetStore;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.StandaloneFixtureSetSchemaReadiness;
@@ -37,10 +39,11 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                     () -> mock(ReusableFlowDraftStore.class));
 
     @Test
-    void disabledRuntimeIsAbsentAndEnabledV016ThroughV018CreatesExactModules() {
+    void disabledRuntimeIsAbsentAndEnabledV016ThroughV019CreatesExactModules() {
         runner.run(context -> {
             assertThat(context).doesNotHaveBean(StandaloneFixtureSetStore.class);
             assertThat(context).doesNotHaveBean(ReusableFlowFixtureModule.class);
+            assertThat(context).doesNotHaveBean(ComponentFixtureSetModule.class);
             assertThat(context).doesNotHaveBean(ReusableFlowFixtureShareModule.class);
             assertThat(context).doesNotHaveBean(ReusableFlowFixtureReviewModule.class);
         });
@@ -58,8 +61,10 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                     assertThat(context).getBean(StandaloneFixtureSetStore.class)
                             .isInstanceOf(JdbcStandaloneFixtureSetStore.class);
                     assertThat(context).hasSingleBean(WholeFlowFixtureMaterializer.class);
+                    assertThat(context).hasSingleBean(ComponentFixtureSetMaterializer.class);
                     assertThat(context).hasSingleBean(ParentFlowApplyCaseCompiler.class);
                     assertThat(context).hasSingleBean(ReusableFlowFixtureModule.class);
+                    assertThat(context).hasSingleBean(ComponentFixtureSetModule.class);
                     assertThat(context).hasSingleBean(ReusableFlowFixtureShareModule.class);
                     assertThat(context).hasSingleBean(ReusableFlowFixtureReviewModule.class);
                 });
@@ -81,7 +86,9 @@ public class StandaloneFixtureSetRuntimeConfigurationTest {
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
                 new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
                 new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"),
-                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"))
+                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"),
+                new ClassPathResource(
+                        "db/postgresql/V20260902_019__standalone_component_fixture_subjects.sql"))
                 .execute(source);
     }
 

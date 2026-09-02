@@ -82,11 +82,14 @@ public final class ApiFixtureSetAuthoringController {
             @RequestParam String subjectId,
             @RequestParam String subjectRevision,
             @RequestParam String subjectFingerprint,
+            @RequestParam(required = false) String subjectMemberId,
+            @RequestParam(required = false) String subjectRuntimeFingerprint,
             @RequestHeader HttpHeaders headers,
             HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers, request);
         FixtureSubjectRef subject = subject(subjectKind, subjectId,
                 positiveRevision(subjectRevision, context.correlationId()), subjectFingerprint,
+                subjectMemberId, subjectRuntimeFingerprint,
                 context.correlationId());
         return response(facade.list(trustedScope(context), subject));
     }
@@ -195,13 +198,25 @@ public final class ApiFixtureSetAuthoringController {
         return values.getFirst();
     }
 
-    private static FixtureSubjectRef subject(String kind, String id, int revision, String fingerprint,
-                                              String correlationId) {
+    ResponseEntity<List<FixtureSetSummary>> list(
+            String subjectKind, String subjectId, String subjectRevision,
+            String subjectFingerprint, HttpHeaders headers, HttpServletRequest request) {
+        return list(subjectKind, subjectId, subjectRevision, subjectFingerprint,
+                null, null, headers, request);
+    }
+
+    private static FixtureSubjectRef subject(
+            String kind, String id, int revision, String fingerprint,
+            String memberId, String runtimeFingerprint, String correlationId) {
         try {
             return switch (kind) {
                 case "API_RESOURCE" -> new FixtureSubjectRef.ApiResource(id, revision, fingerprint);
                 case "FLOW_DRAFT" -> new FixtureSubjectRef.FlowDraft(id, revision, fingerprint);
                 case "FLOW_VERSION" -> new FixtureSubjectRef.FlowVersion(id, revision, fingerprint);
+                case "OPERATOR_VERSION" -> new FixtureSubjectRef.OperatorVersion(
+                        id, revision, memberId, fingerprint);
+                case "BUILTIN_FUNCTION_VERSION" -> new FixtureSubjectRef.BuiltinFunctionVersion(
+                        id, revision, memberId, fingerprint, runtimeFingerprint);
                 default -> throw new IllegalArgumentException("unsupported subject kind");
             };
         } catch (RuntimeException failure) {

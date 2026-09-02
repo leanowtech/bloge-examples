@@ -945,7 +945,7 @@ v1 迁移规则：
 - Scope + resolved_plan_fingerprint + started_at；
 - Scope + status + lease_until recovery。
 
-新增 migration 必须向前追加，不修改 V001–V018。
+新增 migration 必须向前追加，不修改 V001–V019。
 
 ### 18.3 Operator 与 Function authority
 
@@ -1351,10 +1351,11 @@ Reusable Flow wire 也新增 exact Operator composable ref，Flow compiler 从�
 `NODE_PATH` Fixture 替代 Operator 节点而不执行真实组件。component authority、独立执行、Operator DAG、配置与
 schema 聚焦门为 **48/48 green**。
 
-当前总体覆盖约 **94%**，剩余约 **6%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
+当前总体覆盖约 **96%**，剩余约 **4%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
 Built-in Function 独立 Subject、Invocation evidence 与 HTTP 主链已闭合。S5 已增加 compiler-owned 稳定 Call
 Site 与逐次动态拦截 seam：同节点同名调用可分别绑定 Fixture，同一静态 Call Site 多次调用会按实际输入重新选
 Case，并产生不同 Invocation Key。尚未闭合的 S5 边界是把 Call Site authority 持久化到 Operator/Flow 发布产物、
-接入 production Operator runtime adapter，以及 Operator/Function Fixture Set 的独立持久化与检索。S6/S7 的 UI、
-Pin/Promote、Scenario bridge 和真实浏览器验收也仍待完成。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已
+接入 production Operator runtime adapter。Operator/Function Fixture Set 已通过 V019 接入统一 revision/head/CAS/
+idempotency authority 与 authenticated save/list transport。S6/S7 的 UI、Pin/Promote、Scenario bridge 和真实浏览器
+验收仍待完成。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已
 保证每次实际调用重新选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。

@@ -112,6 +112,29 @@ class ApiFixtureSetAuthoringControllerTest {
     }
 
     @Test
+    void listsFunctionFixturesByCompleteExactSubjectCoordinate() throws Exception {
+        ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
+        when(facade.list(any(), any())).thenReturn(List.of());
+
+        mvc(facade).perform(get("/api/authoring/fixture-sets")
+                        .queryParam("subjectKind", "BUILTIN_FUNCTION_VERSION")
+                        .queryParam("subjectId", "bloge")
+                        .queryParam("subjectRevision", "4")
+                        .queryParam("subjectMemberId", "lookup")
+                        .queryParam("subjectFingerprint", "sha256:" + "b".repeat(64))
+                        .queryParam("subjectRuntimeFingerprint", "sha256:" + "c".repeat(64))
+                        .header("Authorization", "Bearer author-token")
+                        .header("X-Purpose", "API_RESOURCE_AUTHORING"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<FixtureSubjectRef> subject = ArgumentCaptor.forClass(FixtureSubjectRef.class);
+        verify(facade).list(eq(new AuthoringScope("tenant-a", "project-a", "test")), subject.capture());
+        assertThat(subject.getValue()).isEqualTo(new FixtureSubjectRef.BuiltinFunctionVersion(
+                "bloge", 4, "lookup", "sha256:" + "b".repeat(64),
+                "sha256:" + "c".repeat(64)));
+    }
+
+    @Test
     void malformedSubjectIsRejectedBeforeFacadeAccess() throws Exception {
         ApiFixtureSetAuthoringFacade facade = mock(ApiFixtureSetAuthoringFacade.class);
 

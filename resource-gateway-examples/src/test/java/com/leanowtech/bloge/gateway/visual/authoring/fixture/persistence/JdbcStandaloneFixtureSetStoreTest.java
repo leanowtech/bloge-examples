@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.ComponentFixtureSetMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSaveReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetSummary;
@@ -13,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewComman
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewMaterialization;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureReviewReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.GeneratedDefaultFixture;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSubjectRef;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.WholeFlowFixtureMaterializer;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.JdbcReusableFlowDraftStore;
 import com.leanowtech.bloge.gateway.visual.authoring.flow.JdbcReusableFlowPublicationStore;
@@ -23,6 +25,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowSaveIntent
 import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowVersion;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.ComponentSimulationAuthorityV2;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
@@ -103,6 +106,44 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 "sha256:" + "9".repeat(64));
 
         assertCode(() -> fixture.store().findHead(SCOPE, "cases"),
+                StandaloneFixtureSetStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void componentSubjectsRoundTripListAndRejectCoordinateTampering() {
+        Fixture fixture = fixture("components");
+        FixtureSubjectRef.OperatorVersion operator = new FixtureSubjectRef.OperatorVersion(
+                "risk-library", 3, "risk.score", "sha256:" + "3".repeat(64));
+        FixtureSubjectRef.BuiltinFunctionVersion function =
+                new FixtureSubjectRef.BuiltinFunctionVersion(
+                        "bloge", 1, "lookup", "sha256:" + "4".repeat(64),
+                        "sha256:" + "5".repeat(64));
+        GeneratedDefaultFixture operatorFixture = componentMaterialize(
+                "operator-cases", operator, "Operator cases");
+        GeneratedDefaultFixture functionFixture = componentMaterialize(
+                "function-cases", function, "Function cases");
+
+        fixture.store().save(intent(ExpectedRevision.create(), "operator", operatorFixture,
+                "sha256:" + "6".repeat(64)));
+        fixture.store().save(intent(ExpectedRevision.create(), "function", functionFixture,
+                "sha256:" + "7".repeat(64)));
+        JdbcStandaloneFixtureSetStore reopened = store(fixture.jdbc());
+
+        assertThat(reopened.findHead(SCOPE, "operator-cases")).get()
+                .extracting(value -> value.generated().view().subject()).isEqualTo(operator);
+        assertThat(reopened.findHead(SCOPE, "function-cases")).get()
+                .extracting(value -> value.generated().view().subject()).isEqualTo(function);
+        assertThat(reopened.listSummariesBySubject(SCOPE, operator))
+                .extracting(FixtureSetSummary::fixtureSetId).containsExactly("operator-cases");
+        assertThat(reopened.listSummariesBySubject(SCOPE, function))
+                .extracting(FixtureSetSummary::fixtureSetId).containsExactly("function-cases");
+
+        fixture.jdbc().update("""
+                UPDATE rg_authoring_standalone_fixture_revisions
+                   SET subject_member_id='other'
+                 WHERE fixture_set_id='function-cases'
+                """);
+        assertCode(() -> reopened.findHead(SCOPE, "function-cases"),
                 StandaloneFixtureSetStoreException.Code.INTEGRITY);
     }
 
@@ -245,7 +286,9 @@ public class JdbcStandaloneFixtureSetStoreTest {
                 new ClassPathResource("db/postgresql/V20260901_015__reusable_flow_publications.sql"),
                 new ClassPathResource("db/postgresql/V20260901_016__standalone_flow_fixture_sets.sql"),
                 new ClassPathResource("db/postgresql/V20260901_017__fixture_share_requests.sql"),
-                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"))
+                new ClassPathResource("db/postgresql/V20260901_018__fixture_review_completion.sql"),
+                new ClassPathResource(
+                        "db/postgresql/V20260902_019__standalone_component_fixture_subjects.sql"))
                 .execute(source);
         JdbcTemplate jdbc = new JdbcTemplate(source);
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -281,6 +324,19 @@ public class JdbcStandaloneFixtureSetStoreTest {
         FixtureSetCommand exact = new FixtureSetCommand(
                 FixtureSetCommand.SCHEMA_VERSION, displayName, version.subject(), template.cases());
         return new WholeFlowFixtureMaterializer().generate(id, revision, version, exact);
+    }
+
+    private static GeneratedDefaultFixture componentMaterialize(
+            String id, FixtureSubjectRef subject, String displayName) {
+        FixtureSetCommand command = new FixtureSetCommand(
+                FixtureSetCommand.SCHEMA_VERSION, displayName, subject, List.of(
+                new FixtureSetCommand.Case("case", "case", output(), List.of(
+                        new FixtureSetCommand.Control(FixtureSetCommand.Target.subject(),
+                                FixtureSetCommand.Behavior.returned(
+                                        FixtureSetCommand.Material.inline(output())), null)), null)));
+        return new ComponentFixtureSetMaterializer().generate(
+                id, 1, subject, new ComponentSimulationAuthorityV2.ComponentContract(
+                        SchemaEnvelope.opaque(), SchemaEnvelope.opaque(), List.of()), command);
     }
 
     private static FixtureShareMaterialization pending(

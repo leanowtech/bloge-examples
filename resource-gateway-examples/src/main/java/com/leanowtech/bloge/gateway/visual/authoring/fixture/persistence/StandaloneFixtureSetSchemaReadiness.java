@@ -4,7 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.Objects;
 
-/** Read-only startup probe for the externally applied V016–V018 standalone Fixture schema. */
+/** Read-only startup probe for the externally applied V016–V019 standalone Fixture schema. */
 public final class StandaloneFixtureSetSchemaReadiness {
     /** Fails startup before authoring is exposed when any required authority column is absent. */
     public StandaloneFixtureSetSchemaReadiness(JdbcTemplate jdbc) {
@@ -15,7 +15,8 @@ public final class StandaloneFixtureSetSchemaReadiness {
                 """);
         probe(jdbc, """
                 SELECT fixture_set_id, revision, fixture_fingerprint,
-                       subject_publication_id, subject_revision, subject_fingerprint,
+                       subject_kind, subject_publication_id, subject_revision,
+                       subject_member_id, subject_fingerprint, subject_runtime_fingerprint,
                        generated_json, strong_etag, committed_by
                   FROM rg_authoring_standalone_fixture_revisions WHERE 1=0
                 """);

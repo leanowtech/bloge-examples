@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visualadapter.authoring.fixture.config;
 
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ApiFixtureSetAuthoringFacade;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureModule;
+import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ComponentFixtureSetModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureShareModule;
 import com.leanowtech.bloge.gateway.visual.authoring.application.fixture.ReusableFlowFixtureReviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.persistence.ApiFixtureSetCommitStore;
@@ -41,10 +42,12 @@ public class ApiFixtureSetApplicationConfiguration {
     ApiFixtureSetAuthoringFacade apiFixtureSetAuthoringFacade(
             FixtureSetAuthorityReader reader,
             ObjectProvider<ReusableFlowFixtureModule> writer,
+            ObjectProvider<ComponentFixtureSetModule> componentWriter,
             ObjectProvider<ReusableFlowFixtureShareModule> shareModule,
             ObjectProvider<ReusableFlowFixtureReviewModule> reviewModule) {
         return new ApiFixtureSetAuthoringFacade(
-                reader, writer.getIfAvailable(), shareModule.getIfAvailable(),
+                reader, writer.getIfAvailable(), componentWriter.getIfAvailable(),
+                shareModule.getIfAvailable(),
                 reviewModule.getIfAvailable());
     }
 }

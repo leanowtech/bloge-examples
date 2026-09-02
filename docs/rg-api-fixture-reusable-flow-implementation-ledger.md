@@ -3102,3 +3102,45 @@ BUILD SUCCESS
 该提交只闭合 component Fixture 的 application/materialization seam，尚未迁移 V016 JDBC subject coordinate，也
 未接 authenticated save/list transport，因此总体完成度仍保守维持 **94%**、差距约 **6%**。下一步直接完成
 JDBC authority 泛化、readiness、HTTP subject query 与 runtime configuration；不能把 in-memory 证据冒充生产可用。
+
+## 68. Iteration 67 — Durable component Fixture authority and transport
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 forward-only V019，在 V016 standalone revision 表增加 exact `subject_kind`、component member id 与 Function
+  runtime fingerprint；保留既有 identity/revision/head/command CAS 与 idempotency authority。数据库 CHECK 区分
+  Flow、Operator、Function 必填坐标，篡改或缺失字段 fail closed。
+- `JdbcStandaloneFixtureSetStore` 不再强转 Flow Version。Flow Draft/Version、Operator Version 与 Built-in Function
+  Version 均可保存、重启读取、按 exact Subject 列表查询；JSON view 与结构化列必须完全一致。
+- `StandaloneFixtureSetSchemaReadiness` 升级为 V016–V019 gate，本地 bootstrap 向前追加 V019；缺 V019 的 V018
+  数据库拒绝启用新 runtime。
+- `ApiFixtureSetAuthoringFacade` 按 Subject 类型把 Flow 与 component command 分派给各自深模块；仍复用同一个
+  authenticated `PUT /api/authoring/fixture-sets/{id}`、opaque ETag 与 Idempotency-Key。
+- Fixture list transport 增加 component member id 与 Function runtime fingerprint，完整重建 exact subject；缺失、
+  malformed 或 cross-scope 坐标在读取 authority 前拒绝。
+- 测试覆盖 component JDBC round-trip/restart/list/tamper、V018 缺 V019 startup failure、Spring module assembly、
+  Facade 精确分派、Function HTTP query，以及 S5 compiler/runtime 协同。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='StableFunctionCallSiteCompilerV2Test,FlowFixturePlanCompilerV2Test,FlowSimulationModuleV2Test,\
+ApiSimulationApplicationConfigurationTest,AuthoringProtocolSchemaTest,JdbcStandaloneFixtureSetStoreTest,\
+StandaloneFixtureSetSchemaReadinessTest,StandaloneFixtureSetRuntimeConfigurationTest,\
+ComponentFixtureSetModuleTest,ApiFixtureSetAuthoringFacadeTest,ApiFixtureSetAuthoringControllerTest,\
+ApiFixtureSetApplicationConfigurationTest' test
+
+Tests run: 76; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 与 18 条完成条件复核，整体覆盖从约 **94%** 保守调整为 **96%**，剩余差距约 **4%**。
+组件 Fixture 的 application、JDBC、readiness、统一 save/list transport 已闭合。主要剩余本地缺口是 stable Call
+Site authority 尚未进入 production Operator/Flow publication，`ComponentCallSiteRuntimeV2` 尚无真实 Operator
+adapter，以及 S6/S7 可见选择器、Pin/Promote、Scenario bridge 和真实浏览器验收。下一轮先接 production Call
+Site authority/runtime，再实现最小 UI/Scenario 主链；差距仍高于 3%，不能停止。
