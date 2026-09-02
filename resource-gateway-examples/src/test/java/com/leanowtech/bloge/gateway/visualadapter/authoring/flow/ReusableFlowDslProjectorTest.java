@@ -6,7 +6,11 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
+import com.leanowtech.bloge.gateway.visual.importer.DslRoundTripSummary;
+import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,6 +19,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ReusableFlowDslProjectorTest {
 
@@ -132,6 +139,29 @@ class ReusableFlowDslProjectorTest {
         assertThat(projected.flow().graph().nodes())
                 .extracting(ReusableFlowCommand.Node::nodeId)
                 .containsExactly("first", "second");
+    }
+
+    @Test
+    void rejectsRoundTripFailuresBeyondThePinnedExternalOperators() {
+        DslVisualProjection imported = importer().preview(new DslImportPreviewRequest(
+                "customer-retention.bloge", dsl(), List.of(), List.of(),
+                "reusable-flow", Map.of()));
+        DslVisualProjection lossy = new DslVisualProjection(imported.schemaVersion(), imported.sourceId(),
+                imported.draft(), imported.sourceMap(), imported.coverage(), DslRoundTripSummary.partial(
+                "Graph schema could not be rendered losslessly.", "", "source", "", List.of(
+                VisualDiagnostic.error("visual.codegen.graphSchema.unsupported",
+                        "Graph schema constraint is unsupported.", "/inputSchema/customerId"))),
+                imported.diagnostics());
+        DslImportService importer = mock(DslImportService.class);
+        when(importer.preview(any())).thenReturn(lossy);
+
+        assertThatThrownBy(() -> new ReusableFlowDslProjector(importer).project(command(dsl(), Map.of(
+                "resource:customer-profile", resource("customer-profile", "a"),
+                "resource:account-summary", resource("account-summary", "b"),
+                "resource:retention-offer", resource("retention-offer", "c")))))
+                .isInstanceOf(ReusableFlowFailure.class)
+                .extracting(failure -> ((ReusableFlowFailure) failure).code())
+                .isEqualTo(ReusableFlowFailure.Code.VALIDATION);
     }
 
     private static ReusableFlowDslCommand command(

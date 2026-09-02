@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Projects a strict, composable-node subset of BLOGE DSL into the canonical reusable-Flow command.
@@ -84,7 +85,8 @@ public final class ReusableFlowDslProjector {
                 && projection.coverage().missingOperatorCount() == usedPins.size()
                 && projection.diagnostics().stream().allMatch(diagnostic ->
                 "visual.dslImport.operatorMissing".equals(diagnostic.code())
-                        && usedPins.contains(diagnostic.metadata().get("operatorRef")));
+                        && usedPins.contains(diagnostic.metadata().get("operatorRef")))
+                && onlyPinnedOperatorRoundTripDiagnostics(projection, draft);
         if (!projection.roundTrip().supported() && !pinnedExternalCatalogClosure) {
             throw invalid();
         }
@@ -97,6 +99,21 @@ public final class ReusableFlowDslProjector {
                         new ReusableFlowCommand.Output(selected.nodeId(), path(selected.path()))),
                 new ReusableFlowCommand.Layout(positions));
         return new ReusableFlowCommand(ReusableFlowCommand.SCHEMA_VERSION, flow);
+    }
+
+    private static boolean onlyPinnedOperatorRoundTripDiagnostics(
+            DslVisualProjection projection, GraphDraft draft) {
+        Set<String> expectedTargets = draft.nodes().stream()
+                .map(node -> "/nodes/" + node.id())
+                .collect(Collectors.toUnmodifiableSet());
+        List<VisualDiagnostic> diagnostics = projection.roundTrip().diagnostics();
+        return !diagnostics.isEmpty()
+                && diagnostics.stream().allMatch(diagnostic ->
+                "visual.operator.unknown".equals(diagnostic.code())
+                        && expectedTargets.contains(diagnostic.target()))
+                && diagnostics.stream().map(VisualDiagnostic::target)
+                .collect(Collectors.toUnmodifiableSet())
+                .equals(expectedTargets);
     }
 
     private static boolean supportedConfig(Map<String, Object> config) {
