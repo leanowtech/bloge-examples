@@ -1050,6 +1050,11 @@ Target 全部以这个一致身份计算，不允许 Controller 和 Module 各�
 
 ### 7.5 `SimulationRequest`
 
+> 后续设计：调用方提交业务输入并独立选择 Fixture Plan、按条件匹配 Fixture、控制 Operator 和
+> Built-in Function Call Site 的 v2 协议，见
+> [`rg-caller-directed-fixture-simulation-proposal-v2.md`](rg-caller-directed-fixture-simulation-proposal-v2.md)。
+> 该文档当前为 Proposed，不改变本节 v1 wire contract。
+
 ```ts
 type SimulationExecutionPolicy = {
   externalReads:
