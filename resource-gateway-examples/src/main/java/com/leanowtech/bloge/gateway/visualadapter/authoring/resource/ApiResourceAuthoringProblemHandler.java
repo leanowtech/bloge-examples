@@ -119,8 +119,26 @@ public final class ApiResourceAuthoringProblemHandler {
             case VALIDATION -> simulationMapping(422, "authoring-validation",
                     "Simulation request is invalid", "VALIDATION_FAILED",
                     List.of(action("OPEN_FIELD", "/")));
+            case COMMAND_INVALID -> simulationMapping(400, "bad-authoring-request",
+                    "Simulation command is invalid", "COMMAND_INVALID",
+                    List.of(action("OPEN_FIELD", "/")));
             case NOT_FOUND -> simulationMapping(404, "authoring-resource-not-found",
                     "Simulation source was not found", "NOT_FOUND", List.of());
+            case FIXTURE_SUBJECT_MISMATCH -> simulationMapping(422, "authoring-validation",
+                    "Fixture subject does not match", "FIXTURE_SUBJECT_MISMATCH", List.of());
+            case FIXTURE_CONDITION_NOT_SATISFIED -> simulationMapping(422, "authoring-validation",
+                    "Fixture condition is not satisfied", "FIXTURE_CONDITION_NOT_SATISFIED", List.of());
+            case FIXTURE_AUTO_MATCH_EMPTY -> simulationMapping(422, "authoring-validation",
+                    "No Fixture Case matched", "FIXTURE_AUTO_MATCH_EMPTY", List.of());
+            case FIXTURE_AUTO_MATCH_AMBIGUOUS -> simulationMapping(422, "authoring-validation",
+                    "More than one Fixture Case matched", "FIXTURE_AUTO_MATCH_AMBIGUOUS", List.of());
+            case FIXTURE_TARGET_OVERLAP -> simulationMapping(422, "authoring-validation",
+                    "Fixture targets overlap", "FIXTURE_TARGET_OVERLAP", List.of());
+            case FIXTURE_MATERIAL_UNAVAILABLE -> simulationMapping(424,
+                    "authoring-capability-unavailable", "Fixture material is unavailable",
+                    "FIXTURE_MATERIAL_UNAVAILABLE", List.of());
+            case FIXTURE_STALE -> simulationMapping(424, "authoring-capability-unavailable",
+                    "Fixture revision is stale", "FIXTURE_STALE", List.of());
             case CONFLICT -> simulationMapping(409, "authoring-conflict",
                     "Simulation idempotency key conflicts", "IDEMPOTENCY_CONFLICT", List.of());
             case BUSY -> simulationMapping(409, "authoring-conflict",

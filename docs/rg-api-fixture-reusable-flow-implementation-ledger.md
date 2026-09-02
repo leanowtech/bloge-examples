@@ -2912,3 +2912,40 @@ BUILD SUCCESS
 S2 的 API Resource behavior runtime、契约校验、Invocation evidence 与 usage 投影 seam 已闭合；尚缺同一 HTTP
 路径的 v2 authenticated/idempotent POST/GET 与安全错误映射。其后最大缺口是 S3 Flow/DAG 动态逐 Invocation
 匹配、S4/S5 Operator 与 Built-in Function Call Site、S6/S7 UI/Pin/Scenario bridge 和最终真实浏览器门。
+
+## 63. Iteration 62 — Caller-directed Fixture Simulation v2 S2c transport
+
+日期：2026-09-02。
+
+### 已完成
+
+- 复用 `POST /api/authoring/simulations`，严格按 `schemaVersion` 分派 v1/v2；不新增平行 endpoint，也不允许
+  v2 请求回落到 v1。`GET /api/authoring/simulations/{runId}` 先读取 v2 immutable authority，再读取 v1。
+- v2 使用既有 trusted authentication、scope/actor 投影、`Idempotency-Key`、no-store、replay 与 run-id header。
+  新增专用 `AUTHORING_SIMULATION_RUN` purpose，同时保留 `API_RESOURCE_AUTHORING` 兼容入口。
+- v2 body 通过 strict mapper 解析；未知字段和 caller-supplied Invocation Key 在 module 前被拒绝。Fixture subject、
+  condition、auto-match、target overlap、material、stale 等编译失败映射为 exact payload-free problem code。
+- feature-scoped application configuration 显式组装单一 `FixturePlanCompiler` 与 `SimulationModuleV2`。缺少可选
+  protected material、replay 或 usage port 时 module 保持 fail closed，不会隐式发起网络请求。
+- transport 测试覆盖 trusted v2 POST、v2-first GET、v1 隔离、未知字段前置拒绝及 condition 不满足的 422 映射。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='ApiSimulationControllerTest,ApiSimulationApplicationConfigurationTest,SimulationModuleV2Test' test
+
+Tests run: 20; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+
+Including S1/S2 schema, v1/v2 stores, readiness and v1 module compatibility:
+Tests run: 71; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 和 18 条完成条件复核，整体覆盖从约 **77%** 保守调整为 **81%**，剩余差距约 **19%**。
+S2 API Resource 从 Plan 编译、行为执行、Invocation evidence、V013 持久化到 authenticated HTTP 已闭合。
+下一轮进入 S3：为 Reusable Flow/DAG 建立 exact `NODE_PATH` authority、逐动态调用匹配、父子 Invocation Key 与
+嵌套 Flow 整体替代/展开语义；之后再闭合 Operator、Built-in Function Call Site、UI 与 Scenario bridge。

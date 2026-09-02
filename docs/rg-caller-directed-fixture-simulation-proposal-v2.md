@@ -1332,6 +1332,12 @@ recording authority。输入与成功输出均按 exact Resource contract 验证
 未配置真实读时只形成 `BLOCKED` evidence，不会回落到网络。governed usage 只从已提交的 COMPLETED Invocation
 通过 `runId + invocationKey + asset` 幂等投影。S1/S2 runtime/store/schema 与 v1 兼容门为 **62/62 green**。
 
-当前总体覆盖约 **77%**，剩余约 **23%**。S2 尚缺 authenticated/idempotent v2 POST/GET 与完整错误映射；
-S3 的 `NODE_PATH`、DAG 动态逐调用匹配与嵌套 Flow，S4/S5 的 Operator/Function authority 和 Call Site，以及
-S6/S7 UI、Pin/Promote/Scenario bridge 仍未闭合，继续 fail closed。
+S2c 复用同一 authenticated/idempotent POST/GET 路径，按 exact `schemaVersion` 分派 v1/v2；v2 可使用专用
+`AUTHORING_SIMULATION_RUN` purpose，仍只信任已验证 identity。严格反序列化拒绝 caller-supplied Invocation Key
+和未知字段，Fixture subject/condition/auto-match/overlap/material/stale 等失败使用 payload-free exact problem
+code。应用配置显式组装 compiler 与 v2 module，缺失可选 material/replay/usage provider 时继续 fail closed。
+controller/configuration/v2 module 聚焦门为 **20/20 green**。
+
+当前总体覆盖约 **81%**，剩余约 **19%**。S2 的 API Resource 编译、执行、证据、持久化与 HTTP 主链已闭合；
+下一最大缺口是 S3 的 `NODE_PATH`、DAG 动态逐调用匹配与嵌套 Flow，随后是 S4/S5 的 Operator/Function authority
+和 Call Site，以及 S6/S7 UI、Pin/Promote/Scenario bridge。尚未实现的目标继续 fail closed。

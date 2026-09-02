@@ -286,6 +286,17 @@ invocations through an idempotent `runId + invocationKey + asset` port, so exact
 S1/S2 module, store, schema and v1 compatibility gate is **62/62 green** with no failures, errors, or skips. Authenticated
 v2 transport is still the remaining S2 boundary.
 
+S2c closes that transport boundary without introducing a parallel endpoint. The existing authenticated
+`POST /api/authoring/simulations` dispatches strictly by `schemaVersion` to v1 or v2, and
+`GET /api/authoring/simulations/{runId}` checks the immutable v2 authority before the v1 authority. Both versions
+derive scope and actor only from the trusted integration identity, require one valid `Idempotency-Key`, return
+no-store responses and expose replay/run-id headers. v2 callers may use the dedicated
+`AUTHORING_SIMULATION_RUN` purpose; existing `API_RESOURCE_AUTHORING` clients remain compatible. Unknown v2 fields,
+caller-supplied Invocation Keys and incomplete commands fail before execution. Fixture subject, condition,
+automatic-match, overlap, stale and material failures map to exact payload-free problem codes instead of a generic
+server error. Optional protected-material, replay and usage providers remain fail-closed when absent. The focused
+controller/configuration/v2-module gate is **20/20 green** with no failures, errors or skips.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

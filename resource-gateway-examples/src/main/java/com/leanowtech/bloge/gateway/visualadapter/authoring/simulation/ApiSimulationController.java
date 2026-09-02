@@ -9,11 +9,16 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationCommandV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationExecutionResult;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationExecutionResultV2;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationFailure;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationIdentity;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModule;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationModuleV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2;
 import com.leanowtech.bloge.gateway.visualadapter.authoring.AuthoringRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -31,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /** Thin authenticated HTTP adapter for synchronous immutable Simulation runs. */
@@ -40,13 +46,27 @@ import java.util.regex.Pattern;
 public final class ApiSimulationController {
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}");
     private final SimulationModule module;
+    private final SimulationModuleV2 moduleV2;
     private final IntegrationRequestAuthenticator authenticator;
     private final ObjectMapper strictMapper;
 
     /** Creates the adapter over the single deep Simulation module. */
+    public ApiSimulationController(SimulationModule module, SimulationModuleV2 moduleV2,
+                                   IntegrationRequestAuthenticator authenticator, ObjectMapper mapper) {
+        this.module = Objects.requireNonNull(module, "module");
+        this.moduleV2 = Objects.requireNonNull(moduleV2, "moduleV2");
+        this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
+        this.strictMapper = Objects.requireNonNull(mapper, "mapper").copy()
+                .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    }
+
+    /**
+     * Preserves v1-only embedded test hosts; v2 requests fail closed until the v2 module is supplied.
+     */
     public ApiSimulationController(SimulationModule module, IntegrationRequestAuthenticator authenticator,
                                    ObjectMapper mapper) {
         this.module = Objects.requireNonNull(module, "module");
+        this.moduleV2 = null;
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.strictMapper = Objects.requireNonNull(mapper, "mapper").copy()
                 .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -54,22 +74,34 @@ public final class ApiSimulationController {
 
     /** Runs or exactly replays one fixture-backed Simulation command. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SimulationRun> execute(@RequestHeader HttpHeaders headers,
-                                                  @RequestBody JsonNode wire,
-                                                  HttpServletRequest request) {
+    public ResponseEntity<?> execute(@RequestHeader HttpHeaders headers,
+                                     @RequestBody JsonNode wire,
+                                     HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers,
                 IntegrationOperation.AUTHORING_SIMULATION_EXECUTE, request);
         AuthoringScope scope = trustedScope(context);
-        SimulationExecutionResult result = module.execute(scope, idempotencyKey(headers,
-                context.correlationId()), command(wire, context.correlationId()), identity(scope, context));
-        return response(result.run()).header("Idempotency-Replayed", Boolean.toString(result.replayed()))
-                .body(result.run());
+        String key = idempotencyKey(headers, context.correlationId());
+        SimulationIdentity identity = identity(scope, context);
+        String schemaVersion = wire.path("schemaVersion").asText();
+        if (SimulationCommandV2.SCHEMA_VERSION.equals(schemaVersion)) {
+            if (moduleV2 == null) throw new SimulationFailure(SimulationFailure.Code.UNSUPPORTED);
+            SimulationExecutionResultV2 result = moduleV2.execute(
+                    scope, key, commandV2(wire, context.correlationId()), identity);
+            return response(result.run().runId())
+                    .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                    .body(result.run());
+        }
+        if (!SimulationRequest.SCHEMA_VERSION.equals(schemaVersion)) throw invalidRequest(context.correlationId());
+        SimulationExecutionResult result = module.execute(
+                scope, key, command(wire, context.correlationId()), identity);
+        return response(result.run().runId())
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed())).body(result.run());
     }
 
     /** Authenticates before rejecting an unsupported content type. */
     @PostMapping(consumes = MediaType.ALL_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SimulationRun> unsupportedMedia(@RequestHeader HttpHeaders headers,
-                                                           HttpServletRequest request) {
+    public ResponseEntity<?> unsupportedMedia(@RequestHeader HttpHeaders headers,
+                                              HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers,
                 IntegrationOperation.AUTHORING_SIMULATION_EXECUTE, request);
         throw invalid("RG.AUTHORING.SIMULATION.CONTENT_TYPE_REQUIRED",
@@ -78,13 +110,16 @@ public final class ApiSimulationController {
 
     /** Reads one immutable completed run inside the verified scope. */
     @GetMapping(path = "/{runId}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<SimulationRun> read(@PathVariable String runId,
-                                               @RequestHeader HttpHeaders headers,
-                                               HttpServletRequest request) {
+    public ResponseEntity<?> read(@PathVariable String runId,
+                                  @RequestHeader HttpHeaders headers,
+                                  HttpServletRequest request) {
         IntegrationRequestContext context = authenticate(headers, IntegrationOperation.AUTHORING_SIMULATION_READ,
                 request);
-        SimulationRun run = module.readRequired(trustedScope(context), runId);
-        return response(run).body(run);
+        AuthoringScope scope = trustedScope(context);
+        Optional<SimulationRunV2> v2 = moduleV2 == null ? Optional.empty() : moduleV2.read(scope, runId);
+        if (v2.isPresent()) return response(v2.get().runId()).body(v2.get());
+        SimulationRun run = module.readRequired(scope, runId);
+        return response(run.runId()).body(run);
     }
 
     private IntegrationRequestContext authenticate(HttpHeaders headers, IntegrationOperation operation,
@@ -97,6 +132,18 @@ public final class ApiSimulationController {
     private SimulationRequest command(JsonNode wire, String correlationId) {
         try {
             SimulationRequest command = strictMapper.treeToValue(wire, SimulationRequest.class);
+            if (command == null) throw invalidRequest(correlationId);
+            return command;
+        } catch (IntegrationProblemException failure) {
+            throw failure;
+        } catch (RuntimeException | java.io.IOException failure) {
+            throw invalidRequest(correlationId);
+        }
+    }
+
+    private SimulationCommandV2 commandV2(JsonNode wire, String correlationId) {
+        try {
+            SimulationCommandV2 command = strictMapper.treeToValue(wire, SimulationCommandV2.class);
             if (command == null) throw invalidRequest(correlationId);
             return command;
         } catch (IntegrationProblemException failure) {
@@ -132,9 +179,9 @@ public final class ApiSimulationController {
         }
     }
 
-    private static ResponseEntity.BodyBuilder response(SimulationRun body) {
+    private static ResponseEntity.BodyBuilder response(String runId) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .header(HttpHeaders.PRAGMA, "no-cache").header("X-Simulation-Run-Id", body.runId());
+                .header(HttpHeaders.PRAGMA, "no-cache").header("X-Simulation-Run-Id", runId);
     }
 
     private static IntegrationProblemException invalidRequest(String correlationId) {

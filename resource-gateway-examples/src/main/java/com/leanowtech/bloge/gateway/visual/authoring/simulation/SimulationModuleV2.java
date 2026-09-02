@@ -83,7 +83,7 @@ public final class SimulationModuleV2 {
                                                SimulationCommandV2 command,
                                                SimulationIdentity identity) {
         validate(scope, idempotencyKey, command, identity);
-        ResolvedFixturePlan plan = plans.compile(scope, command);
+        ResolvedFixturePlan plan = compile(scope, command);
         StoredApiResource resource = resource(scope, plan.subject());
         requireSupportedPlan(plan);
         String requestFingerprint = AuthoringFingerprints.of(JSON.valueToTree(command));
@@ -168,6 +168,29 @@ public final class SimulationModuleV2 {
         }
         return blocked(runId, startedAt, requestFingerprint, plan, "FIXTURE_BEHAVIOR_UNSUPPORTED",
                 "Fixture behavior is unsupported for this subject.");
+    }
+
+    private ResolvedFixturePlan compile(AuthoringScope scope, SimulationCommandV2 command) {
+        try {
+            return plans.compile(scope, command);
+        } catch (FixturePlanFailure failure) {
+            throw failure(switch (failure.code()) {
+                case VALIDATION -> SimulationFailure.Code.COMMAND_INVALID;
+                case FIXTURE_NOT_FOUND, CASE_NOT_FOUND, CONDITION_NOT_FOUND ->
+                        SimulationFailure.Code.NOT_FOUND;
+                case FIXTURE_SUBJECT_MISMATCH, FIXTURE_REFERENCE_MISMATCH ->
+                        SimulationFailure.Code.FIXTURE_SUBJECT_MISMATCH;
+                case FIXTURE_STALE -> SimulationFailure.Code.FIXTURE_STALE;
+                case CONDITION_NOT_SATISFIED ->
+                        SimulationFailure.Code.FIXTURE_CONDITION_NOT_SATISFIED;
+                case AUTO_MATCH_EMPTY -> SimulationFailure.Code.FIXTURE_AUTO_MATCH_EMPTY;
+                case AUTO_MATCH_AMBIGUOUS -> SimulationFailure.Code.FIXTURE_AUTO_MATCH_AMBIGUOUS;
+                case TARGET_OVERLAP -> SimulationFailure.Code.FIXTURE_TARGET_OVERLAP;
+                case MATERIAL_UNAVAILABLE -> SimulationFailure.Code.FIXTURE_MATERIAL_UNAVAILABLE;
+                case TARGET_UNSUPPORTED -> SimulationFailure.Code.UNSUPPORTED;
+                case INTEGRITY -> SimulationFailure.Code.INTEGRITY;
+            });
+        }
     }
 
     private SimulationRunV2 returned(
