@@ -3184,6 +3184,16 @@ Three-API BLOGE DSL DAG simulation: SUCCEEDED, 3/3 invocations MOCKED, egress.at
 Whole-Tool Fixture simulation: SUCCEEDED, subject execution MOCKED, egress.attempted=false
 ```
 
+```text
+mvn -f resource-gateway-examples/pom.xml clean verify
+
+Tests run: 8,333; Failures: 0; Errors: 0; Skipped: 39
+BUILD SUCCESS
+```
+
+第一次全量运行在浏览器测试上下文暴露测试专用 `ReusableFlowAuthoringController` 缺少新增 DSL projector bean；
+补为与生产相同的 `DslImportService` → `ReusableFlowDslProjector` 装配后，单类上下文启动与上述最终全量门禁均通过。
+
 ### 当前差距评估
 
 本轮关注目标“curl 调用方使用 BLOGE DSL 创建可复用 DAG Tool”已形成真实 HTTP 闭环：源码导入、精确依赖 pin、
