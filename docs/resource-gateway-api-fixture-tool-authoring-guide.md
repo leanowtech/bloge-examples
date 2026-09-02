@@ -15,13 +15,15 @@
 | Fixture | 某个精确对象修订的测试输入、控制行为或期望输出 | API Default Fixture、Operator/Function Test Case、Tool Fixture |
 | Tool | 按数据依赖组合多个 API Resource 的可复用 DAG | Customer 360 Contract Tool |
 
-关键规则：API Resource 与 Tool 先保存权威对象，再基于精确修订创建并运行 Fixture；Operator/Function 先运行当前 Draft Test Case，再将该精确用例加密保存。后两类目前没有统一的 saved-fixture replay。所有运行证据都不等于治理审批通过。
+关键规则：API Resource 与 Tool 先保存权威对象，再基于精确修订创建并运行 Fixture；Operator/Function
+Fixture 同样绑定不可变 Library/Catalog revision。四类对象现在都使用同一个 `Caller-directed simulation`
+面板选择精确 Fixture revision、Case 或 Condition；所有运行证据都不等于治理审批通过。
 
 ## 2. 前置条件与边界
 
-1. 默认启动不会启用 API Resource authoring。先按顺序应用 `V20260830_001` 至
-   `V20260901_017`，再设置 `RG_API_RESOURCE_AUTHORING_ENABLED=true`。需要编排 Tool 时，同时设置
-   `RG_REUSABLE_FLOW_AUTHORING_ENABLED=true`，然后重启服务。
+1. 先按顺序应用当前 authoring migrations。仓库启动脚本 `scripts/example-services.sh` 与
+   `scripts/visual-canvas-demo.sh` 默认设置 `RG_API_RESOURCE_AUTHORING_ENABLED=true` 和
+   `RG_REUSABLE_FLOW_AUTHORING_ENABLED=true`；生产 `application.yml` 仍默认关闭，直接运行 Spring Boot 时须显式设置。
 2. 当前身份具有 `API_RESOURCE_AUTHORING` 权限，并且 tenant、project、environment 由受信身份解析，不由页面 Header 自报。
 3. 生产环境已应用当前 authoring migrations，并配置所需外部 Secret Provider；没有 provider 时，受保护认证与真实出站必须保持 fail-closed。
 4. 本手册只使用 `RETURN · OUTPUT_LEVEL` 和 whole-flow `RETURN` Fixture，因此运行时不会访问 `api.example.test`。
@@ -147,7 +149,13 @@ Default Fixture 的关键字段：
 
 ![算子 Fixture 的分级、脱敏与加密保存](images/resource-gateway-authoring-guide/08-operator-fixture-governance.png)
 
-当前边界：这个 Library Authoring Fixture 是加密、可审计的测试用例资产，但尚未自动接入 Graph Author 的节点 Fixture picker。要让算子节点在 Graph 模拟中返回 Fixture，仍需走 Graph Node Fixture 的 Pin → Promote → Review → Activate → Reuse 生命周期；不能把本页的 `SCHEMA VALID` 当成节点模拟已完成。
+保存完成后打开该 Fixture Object。页面的 `Caller-directed simulation` 面板会把精确
+`OPERATOR_VERSION` 作为 Subject；选择 `Per-target bindings`、该 Fixture revision 和 Case 后运行。
+这会产生 `SUBJECT · MOCKED` Invocation evidence，而不是执行真实算子实现。若在 Flow 中使用该算子，进入
+Flow 的 Simulation 页，为对应 `NODE_PATH` 选择同一 Fixture。
+
+Graph Author 的旧节点 Fixture picker 仍保留 Pin → Promote → Review → Activate → Reuse 生命周期；它与 v2
+调用方计划共享受保护资产，但不是 v2 wire contract。不能把本页的 `SCHEMA VALID` 当成节点模拟已完成。
 
 ## 5. 给 built-in function 设置 Fixture 并执行真实 runtime 测试
 
@@ -179,15 +187,18 @@ Default Fixture 的关键字段：
 
 保存时 Source 为 `Function test case`、Asset 为 `function`。保存的 payload 包含当前用例参数和 assertion，但 receipt 不回显 payload。
 
-当前边界：`Run case` 运行的是当前 Library Draft 中的 function case；已保存的加密 Function Fixture 目前没有独立的 `Run saved Fixture` 按钮，也不会自动转成 Tool/Graph 的 transient fixture。需要完全统一的 Fixture 重放体验时，应新增由 Fixture receipt/material 驱动的 function replay adapter，而不是从页面状态重建输入。
+保存完成后打开 Function Fixture Object。页面使用精确 `BUILTIN_FUNCTION_VERSION` Subject 和相同的
+`Caller-directed simulation` 面板重放已保存 Case。Flow/Operator 内部的 Function 必须绑定 compiler-owned
+`CALL_SITE`；同名函数的两个静态调用点不会因函数名相同而共享 Fixture。界面不会接受 Runtime
+`InvocationKey`，它只在执行证据中由服务端生成。
 
 ### 5.3 四类对象的执行证据不要混用
 
 | Subject | 当前可见执行 | Fixture 保存 | 已保存 Fixture 自动重放 |
 | --- | --- | --- | --- |
 | API Resource | `Save and simulate` / `Run saved Fixture` | Default Fixture Set | 已闭环 |
-| Operator | `Run case` 仅做 schema contract proof | Operator Test Case | 尚未接入 Graph Node picker |
-| Built-in Function | `Run case` 执行真实隔离 runtime binding | Function Test Case | 尚无独立 saved-fixture replay |
+| Operator | `Run case` 做 schema proof；v2 可模拟精确 Subject/Flow Node | Operator Test Case | 已闭环到 caller-directed panel |
+| Built-in Function | `Run case` 执行隔离 binding；v2 模拟精确 Function Subject | Function Test Case | 已闭环；嵌套调用按稳定 Call Site |
 | Tool/Flow | `Save Fixture and simulate` | Whole-flow 或 Node Case | Whole-flow 已闭环；Node Case 依赖兼容 Fixture |
 
 因此，界面上都出现 `Fixture` 并不表示四种 Subject 已经共享同一套执行适配器。验收时必须读取 evidence 类型、执行 profile、subject coordinate 和 egress 状态。
@@ -280,7 +291,68 @@ Default Fixture 的关键字段：
 
 如果某个节点没有兼容 Fixture、subject revision 不一致或 output schema 不闭合，按钮会保持不可执行或后端返回语义错误。不要改写 subject、revision 或 fingerprint 绕过检查。
 
-## 8. 常见错误与恢复
+## 8. 调用方直接指定 Fixture 条件并模拟
+
+API Resource、Flow、Operator、Built-in Function 的 Simulation 页面现在使用同一个两阶段操作模型：
+
+1. 在 `Input` 中只填写本次业务输入。这里不能上传 Fixture output、Material reference、Credential 或 Invocation Key。
+2. 在 `Fixture Plan` 中选择：
+   - `None`：不应用 Fixture；外部调用默认仍被阻断。
+   - `Saved Case controls`：复用一个已保存 Case 的整套 DAG 控制。
+   - `Per-target bindings`：分别给 Subject、Flow Node 或稳定 Call Site 绑定 Fixture。
+3. 选择 `Unmatched target`：
+   - `Block` 是默认值，未匹配时零网络并留下 `BLOCKED` 证据。
+   - `Real` 只是提出真实读取请求，仍必须通过服务端精确 egress grant；真实写始终拒绝。
+4. 每个 Target 选择一个精确 Fixture Set revision，再选择：
+   - `Exact Case`：直接指定 Case。
+   - `Condition`：指定已保存的稳定 `conditionId`。
+   - `Auto match`：用本次 Invocation 的实际输入匹配；零个或多个命中都会 fail closed。
+5. 单击 `Run Fixture Plan`，在 `Resolved Evidence` 查看最终解析到的 Fixture Case、`MOCKED/REAL`、
+   behavior、fidelity、provenance、egress decision 和四维 verdict。
+
+Condition 在 Fixture Object 的 Case 编辑区维护，只支持 `EQ`、`IN`、`PRESENT`、`ABSENT`、
+`NUMBER_RANGE` 和受限 JSONPath。页面 Match preview 只是本地预览，服务端编译和运行证据才是权威。
+
+### 8.1 API Resource
+
+保存 API 后打开 `Simulation`，把 Target 保持为 `Subject`。例如：
+
+```text
+Input:        {"customerId":"customer-1001","segment":"gold"}
+Plan:         Per-target bindings
+Target:       Subject
+Selection:    Condition / gold-customer
+Unmatched:    Block
+```
+
+命中后 output 来自 exact Case，Invocation 显示 `MOCKED · CONDITION · NO_EGRESS`。
+
+### 8.2 多 API DAG / Reusable Flow
+
+保存或发布 Flow 后打开 `Simulation`。面板同时列出整个 Flow Subject 和每个 `NODE_PATH`：
+
+- 绑定 Subject：整体替代 Flow，内部节点不执行。
+- 绑定若干 Node：DAG 仍按真实 mapping 计算节点输入，每个节点再用自己的实际输入匹配 Condition。
+- 使用 `Saved Case controls`：复用一个不可变工具模拟方案。
+- 未绑定节点选择 `Block` 时，不会悄悄访问外部 API。
+
+一次运行中每个动态节点都会产生不同 Invocation Key；循环、重试、嵌套调用也必须逐次重新匹配，不能复用
+上一次输入的选择结果。
+
+### 8.3 Operator 与 Built-in Function
+
+- Operator Fixture Object 直接以 `OPERATOR_VERSION` 为 Subject；Flow 中以节点 `NODE_PATH` 绑定。
+- Built-in Function Fixture Object 直接以 `BUILTIN_FUNCTION_VERSION` 为 Subject。
+- Function 嵌套在 Operator/Flow 时，必须使用发布产物里的稳定 `CALL_SITE(nodePath, callSiteId)`；禁止按函数名全局替换。
+
+### 8.4 Decision Scenario
+
+决策表枚举产生的 Scenario 继续保持 `dependencies=[]`，不会自动自 Mock。需要模拟时，在 Case 中可见地执行
+`Use expected output as Return fixture`，保存 Scenario 和对应 PRIVATE Fixture 后，Scenario Compiler 才把该
+dependency 投影为 v2 exact binding。Execution、Assertions、Contract、Governance 四维分别展示；Fixture 命中
+不能把工具状态泛化成 `Ready`。
+
+## 9. 常见错误与恢复
 
 | 现象 | 原因 | 恢复动作 |
 | --- | --- | --- |
@@ -292,7 +364,7 @@ Default Fixture 的关键字段：
 | 模拟成功但没有真实 API 日志 | 使用了 `RETURN` Fixture | 这是预期的 `SIMULATED_ONLY/NO_EGRESS`；需要真实读取时改走已授权的 REAL 路径 |
 | Tool 节点字段没有自动连线 | 字段名或 JSON type 不一致 | 统一上游 output 与下游 input 的字段名、类型，重新保存精确 API Resource |
 
-## 9. 验收清单
+## 10. 验收清单
 
 交付一个可复用 Tool 前，至少确认：
 
@@ -304,12 +376,17 @@ Default Fixture 的关键字段：
 - [ ] Tool 节点顺序正确，自动映射字段名和类型一致。
 - [ ] Tool whole-flow Fixture 的 input/output 与 Tool contract 一致。
 - [ ] Tool 模拟显示精确 subject、`MOCKED`、Fixture source 和 `NO_EGRESS`。
+- [ ] 调用方计划中的 Input 与 Fixture Plan 分开；未提交 output、Material、Credential 或 Invocation Key。
+- [ ] Condition/Auto match 最终 evidence 指向一个精确 Fixture revision、Case 和 input fingerprint。
+- [ ] Operator/Function 使用精确 version Subject；嵌套 Function 使用稳定 Call Site，不按函数名替换。
 - [ ] 需要复用时已发布不可变 Flow Version。
 - [ ] 需要共享 Fixture 时已完成独立 reviewer、redaction 与 schema verification；私有模拟不能替代治理审批。
 
-## 10. 截图环境说明
+## 11. 截图环境说明
 
 本手册截图使用 `tenant-a / local / test` 的浏览器验收身份、H2 内存持久化和本地 Static Bearer resolver。它验证了真实页面到服务端模块的操作链，但不构成以下生产证据：
+
+> 当前 `01`—`10` 为此前验收形成的真实运行截图。统一 `Caller-directed simulation` 面板的 API、Flow、Operator、Function 四张新截图因本轮桌面主机锁屏尚未补拍；手册中的操作步骤和字段已经按新面板更新。主机解锁后应补拍 `Resolved Evidence`，不得用设计稿或合成图替代运行证据。
 
 - 外部 Vault/Secret Provider 已部署；
 - 目标 API 网络可达；

@@ -276,6 +276,20 @@ same DataSource and transaction manager. The focused schema/store/configuration 
 failures, errors, or skips. This slice persists evidence only: API Resource behavior execution and authenticated v2
 POST/GET are the next S2 commits.
 
+The S6/S7 caller-facing slice now mounts one typed `Caller-directed simulation` panel on API Resource, reusable Flow,
+Operator Fixture, and built-in Function Fixture objects. Input and Fixture Plan remain separate; authors can select
+saved Case controls or exact per-target Case/Condition/Auto-match bindings, keep unmatched invocations blocked by
+default, preview restricted conditions, and inspect server-owned Resolved Evidence with four independent verdicts.
+Reusable Flows expose the whole Subject plus every static node path. Scenario compilation keeps generated
+`dependencies=[]` fixture-free and projects only explicitly saved Return dependencies; inline outputs and runtime
+Invocation Keys never enter the v2 command. The focused frontend gate is **14 files / 107 tests green**, and
+`npx tsc --noEmit` succeeds. The production publication/runtime path still has to persist and consume compiler-owned
+Function Call Sites; the UI intentionally does not fabricate them.
+The final frontend build passes i18n **39/39**, UX **52/52**, host **21/21**, TypeScript, Vite and bundle gates;
+AuthoringWorkbench starts at **201.83 KiB** and AuthorCanvas at **349.89 KiB**, below the 350 KiB budget. The serial
+`mvn -f resource-gateway-examples/pom.xml clean verify` completed with `Tests run: 8,329; failures: 0; errors: 0;
+skipped: 39` and `BUILD SUCCESS` in 11:42.
+
 S2b connects that evidence authority to a deep API Resource runtime module. Exact Case, stable condition and unique
 automatic matching all execute against the caller's business input. `RETURN` supports private inline and exact
 governed material; `ERROR` and `TIMEOUT` produce deterministic failures without sleeping or exposing configured

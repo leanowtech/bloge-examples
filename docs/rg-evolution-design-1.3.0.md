@@ -255,3 +255,18 @@ enumerate(dt, mode, cap, colToInputPath):
 
 ## 附：对接速查
 `POST /api/visual/graphs/simulate` · `GET /api/visual/operators`(resource:/publication:) · `PUT /admin/resources` · `PUT /admin/resource-design-contracts` · `POST /api/visual/drafts/{id}/publish` · `GET /api/visual/publications/summaries` · **新增** `POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` · `/api/visual/fixture-assets` :review-ready|:activate|:approve · 决策表 config{hitPolicy,conditionColumns,outputColumns,rules[],outputKind} · `ScenarioDraft` provenance=`DECISION_TABLE_ENUMERATION`。
+
+## 附：调用方驱动 Fixture 模拟融合
+
+调用方如何在一次 API、契约化 Tool、Operator 或 Built-in Function 模拟中选择 Fixture，统一由
+[`rg-caller-directed-fixture-simulation-proposal-v2.md`](rg-caller-directed-fixture-simulation-proposal-v2.md)
+定义。该扩展吸收本文的对象主线、sample → pinned → governed 生命周期、三档 Fidelity、staleness、显式
+Scenario RETURN Fixture 和 Execution/Assertions/Contract/Governance 四维结论，同时补充：
+
+- Input 与 Fixture Plan 正交；调用方只引用 exact Fixture revision，不能上传 Mock output。
+- Flow 使用静态 NODE_PATH，函数使用 compiler-owned Call Site；Runtime Invocation Key 只由执行器逐次生成。
+- CASE_CONTROLS 复用工具模拟方案，Binding 支持 Exact Case、Condition 与 Auto match。
+- 未匹配默认 BLOCK；REAL 仍需独立 egress authorization，不能由 Fixture Plan 自行放行。
+
+对应操作入口与截图见
+[`resource-gateway-api-fixture-tool-authoring-guide.md`](resource-gateway-api-fixture-tool-authoring-guide.md)。

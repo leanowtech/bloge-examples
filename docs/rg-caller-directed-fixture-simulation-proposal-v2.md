@@ -1351,11 +1351,30 @@ Reusable Flow wire 也新增 exact Operator composable ref，Flow compiler 从�
 `NODE_PATH` Fixture 替代 Operator 节点而不执行真实组件。component authority、独立执行、Operator DAG、配置与
 schema 聚焦门为 **48/48 green**。
 
-当前总体覆盖约 **96%**，剩余约 **4%**。S0–S4 的 schema、API Resource、Flow/DAG、Operator 独立与 DAG 节点、
-Built-in Function 独立 Subject、Invocation evidence 与 HTTP 主链已闭合。S5 已增加 compiler-owned 稳定 Call
-Site 与逐次动态拦截 seam：同节点同名调用可分别绑定 Fixture，同一静态 Call Site 多次调用会按实际输入重新选
-Case，并产生不同 Invocation Key。尚未闭合的 S5 边界是把 Call Site authority 持久化到 Operator/Flow 发布产物、
-接入 production Operator runtime adapter。Operator/Function Fixture Set 已通过 V019 接入统一 revision/head/CAS/
-idempotency authority 与 authenticated save/list transport。S6/S7 的 UI、Pin/Promote、Scenario bridge 和真实浏览器
-验收仍待完成。当前 Flow 模型没有循环/重试节点，但动态解析 seam 已
-保证每次实际调用重新选择且生成独立 Invocation Key；未来 loop/retry runtime 必须复用该 seam。
+S6 已在对象工作台接入统一 `Caller-directed simulation` 面板。API Resource、Flow、Operator 与 Built-in Function
+共享 `SimulationCommand v2` 类型化 transport；业务 Input 与 Fixture Plan 分区编辑，支持 NONE、CASE_CONTROLS、
+per-target Binding、BLOCK/REAL、Exact Case、Condition、Auto match、匹配预览和 Resolved Evidence。Flow 页面同时列出
+Subject 与每个 `NODE_PATH`；Fixture Object 根据 exact Subject 自动提供 Operator/Function 独立模拟入口。Condition
+由 Fixture Case 编辑并随 revision 保存。前端聚焦门为 **14 files / 107 tests green**，`tsc --noEmit` 通过。
+
+S7 已新增纯 Scenario bridge：生成场景的 `dependencies=[]` 继续编译为 NONE；只有显式保存的 RETURN dependency
+才能投影为 exact v2 Binding，inline output、受保护 Material 和 Runtime Invocation Key 都不会进入命令。Operator
+dependency 使用 exact Subject，Node dependency 使用静态 NODE_PATH；缺少 compiler-owned Call Site 的 function
+selector 继续 fail closed。
+
+最终验收已覆盖完整前后端门禁：`npm run build` 的 i18n **39/39**、UX **52/52**、host **21/21**、
+TypeScript、Vite 与 bundle budget 全部通过；AuthoringWorkbench startup closure 为 **201.83 KiB**，AuthorCanvas
+startup closure 为 **349.89 KiB**，低于 350 KiB 门限。串行
+`mvn -f resource-gateway-examples/pom.xml clean verify` 为 `Tests run: 8329; failures: 0; errors: 0;
+skipped: 39`，`BUILD SUCCESS`，包含真实浏览器回归。新增第 19 条本地 authoring migration 后，bootstrap
+幂等/完整性聚焦门为 **2/2 green**。
+
+当前总体覆盖约 **98%**，剩余约 **2%**，达到本方案“小于 3%”的停止阈值。剩余证据边界不是协议降级：
+
+- production Operator/Flow 发布链仍需把 compiler-owned Call Site authority 随发布产物持久化，并由实际 Operator
+  runtime adapter 消费；当前独立 Function Subject 与运行时拦截 seam 已闭合，但 UI 不伪造不存在的 Call Site。
+- 新 caller-directed 面板已有组件级真实 DOM 行为回归，但本轮桌面浏览器因主机锁屏无法补拍新的运行时截图；
+  既有操作手册保留此前真实页面截图，并已同步新的统一操作步骤。解锁后应补拍 API/Flow/Operator/Function 四张
+  Resolved Evidence 截图，作为发布证据而非代码完成条件。
+- 当前 Flow 模型没有循环/重试节点；动态解析 seam 已保证每次实际调用重新选择并生成独立 Invocation Key，未来
+  loop/retry runtime 必须复用该 seam。
