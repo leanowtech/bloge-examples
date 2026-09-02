@@ -1326,7 +1326,12 @@ fingerprint 与 egress evidence。四维 verdict 继续独立，只有四维全�
 runtime config 在同一 DataSource/transaction manager 上同时装配 v1/v2 store。该切片 schema/store/config 聚焦门
 为 **29/29 green**；包含既有 v1 module/store/readiness/controller 的兼容门为 **46/46 green**。
 
-当前总体覆盖约 **70%**，剩余约 **30%**。该数字只把 v2 evidence wire、持久化、重放和 runtime assembly
-计为完成，不把尚未接入的执行器或 HTTP 冒充为运行能力。下一步完成 S2 API Resource
-`RETURN/ERROR/TIMEOUT/REPLAY` 执行、契约校验、governed usage 幂等记录和 authenticated v2 POST/GET；
-`NODE_PATH`、Call Site、Operator/Function authority、逐 Invocation 动态匹配和 v2 UI 继续 fail closed。
+S2b 已接入 API Resource runtime：精确 Case、conditionId 与唯一自动匹配均使用本次业务输入；`RETURN` 支持
+PRIVATE inline 与 exact governed Asset，`ERROR/TIMEOUT` 不等待、不泄漏配置 message，`REPLAY` 只读取 exact
+recording authority。输入与成功输出均按 exact Resource contract 验证；未选择 Fixture、Material authority 缺失或
+未配置真实读时只形成 `BLOCKED` evidence，不会回落到网络。governed usage 只从已提交的 COMPLETED Invocation
+通过 `runId + invocationKey + asset` 幂等投影。S1/S2 runtime/store/schema 与 v1 兼容门为 **62/62 green**。
+
+当前总体覆盖约 **77%**，剩余约 **23%**。S2 尚缺 authenticated/idempotent v2 POST/GET 与完整错误映射；
+S3 的 `NODE_PATH`、DAG 动态逐调用匹配与嵌套 Flow，S4/S5 的 Operator/Function authority 和 Call Site，以及
+S6/S7 UI、Pin/Promote/Scenario bridge 仍未闭合，继续 fail closed。

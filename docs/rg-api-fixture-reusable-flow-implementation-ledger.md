@@ -2871,3 +2871,44 @@ BUILD SUCCESS
 本轮只关闭 v2 evidence wire、持久化、重放、损坏检测和 runtime assembly；尚未让 API Resource 通过 v2 执行
 `RETURN/ERROR/TIMEOUT/REPLAY`，也未提供 authenticated v2 POST/GET 或 governed usage receipt。下一切片先完成
 S2 runtime，再完成 transport；Flow/DAG、Operator、Built-in Function Call Site、UI 与 Scenario bridge 后续逐层闭合。
+
+## 62. Iteration 61 — Caller-directed Fixture Simulation v2 S2b API Resource runtime
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `SimulationModuleV2` 深模块，消费一个 immutable `ResolvedFixturePlan`，只解析 exact API Resource revision；
+  Resource id/revision/fingerprint 任一漂移均在 claim 前 fail closed。
+- API Resource `SUBJECT` 支持 `EXACT_CASE`、`MATCH_CONDITION`、`AUTO_MATCH` 与 `CASE_CONTROLS` 编译结果。
+  `RETURN` 可使用 PRIVATE inline Material 或经 trusted identity/resolver 读取的 TEAM_AVAILABLE Asset；
+  `ERROR`、`TIMEOUT` 不执行 sleep/网络且不把配置 message 写入 evidence；`REPLAY` 只经 exact replay id +
+  fingerprint authority 返回 payload。
+- 输入与成功输出使用 exact Resource JSON Schema contract 验证；断言、contract、governance 与 execution 分维
+  写入。无 Fixture、Material/Replay authority 缺失、真实读未授权都持久化为 `BLOCKED`，不回落到网络。
+- 每次执行由服务端生成独立 run id 与 Invocation Key。Evidence 保存 exact Case、命中原因、Behavior、Fidelity、
+  Provenance、Asset reference、input/output fingerprint 与 FIXTURE egress，不保存原始输入、credential、header、
+  protected/replay material 或 Error message。
+- governed usage 通过 `SimulationFixtureUsageRecorder` 在 run immutable complete 后投影，只处理 COMPLETED 且有
+  Asset ref 的 Invocation。端口以 `runId + invocationKey + asset` 定义幂等语义；exact run replay 可安全重试投影。
+- `ResolvedFixturePlan.Selection` 增加内部 status/expect authority，保持 material 与 expected output 不进入 wire。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='FixturePlanCompilerTest,SimulationModuleV2Test,SimulationRunV2StoreTest,\
+JdbcSimulationRunV2StoreTest,AuthoringProtocolSchemaTest,SimulationRunRuntimeConfigurationTest,\
+SimulationModuleTest,JdbcSimulationRunStoreTest,SimulationRunSchemaReadinessTest,\
+ApiSimulationControllerTest' test
+
+Tests run: 62; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 和 18 条完成条件复核，整体覆盖从约 **70%** 保守调整为 **77%**，剩余差距约 **23%**。
+S2 的 API Resource behavior runtime、契约校验、Invocation evidence 与 usage 投影 seam 已闭合；尚缺同一 HTTP
+路径的 v2 authenticated/idempotent POST/GET 与安全错误映射。其后最大缺口是 S3 Flow/DAG 动态逐 Invocation
+匹配、S4/S5 Operator 与 Built-in Function Call Site、S6/S7 UI/Pin/Scenario bridge 和最终真实浏览器门。

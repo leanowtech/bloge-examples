@@ -276,6 +276,16 @@ same DataSource and transaction manager. The focused schema/store/configuration 
 failures, errors, or skips. This slice persists evidence only: API Resource behavior execution and authenticated v2
 POST/GET are the next S2 commits.
 
+S2b connects that evidence authority to a deep API Resource runtime module. Exact Case, stable condition and unique
+automatic matching all execute against the caller's business input. `RETURN` supports private inline and exact
+governed material; `ERROR` and `TIMEOUT` produce deterministic failures without sleeping or exposing configured
+messages; `REPLAY` resolves one exact authorized recording. Input and successful output are checked against the exact
+Resource contract. Missing controls, unavailable material and unconfigured real reads are persisted as honest
+`BLOCKED` evidence and never fall through to the network. Governed usage is projected only from committed COMPLETED
+invocations through an idempotent `runId + invocationKey + asset` port, so exact replay does not inflate usage. The
+S1/S2 module, store, schema and v1 compatibility gate is **62/62 green** with no failures, errors, or skips. Authenticated
+v2 transport is still the remaining S2 boundary.
+
 The first Reusable Flow slice now freezes the Java wire authority for
 `bloge.reusableFlowSaveCommand.v1` and compiles it into one deterministic DAG plan. A Flow is explicitly a
 `TOOL` or `SOLUTION`; every node uses an exact `API_RESOURCE` or immutable `FLOW_VERSION` coordinate. Direct

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.simulation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.fixture.FixtureSetView;
 
 import java.util.List;
 
@@ -36,5 +37,7 @@ public record ResolvedFixturePlan(ExactFixtureSubjectRefV2 subject, JsonNode inp
     public record Selection(SimulationCommandV2.FixtureTarget target,
                             SimulationCommandV2.ExactFixtureSetRef fixtureSet,
                             String caseId, MatchedBy matchedBy,
-                            FixtureSetCommand.Control control) { }
+                            FixtureSetView.Status fixtureStatus,
+                            FixtureSetCommand.Control control,
+                            FixtureSetCommand.Expect expect) { }
 }

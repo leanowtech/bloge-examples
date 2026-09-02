@@ -81,7 +81,8 @@ public final class FixturePlanCompiler {
             SimulationCommandV2.FixtureTarget target = target(control.target());
             requireSupportedTarget(target);
             resolved.add(new ResolvedFixturePlan.Selection(target, controls.fixtureSet(),
-                    fixtureCase.caseId(), ResolvedFixturePlan.MatchedBy.CASE_CONTROLS, control));
+                    fixtureCase.caseId(), ResolvedFixturePlan.MatchedBy.CASE_CONTROLS,
+                    stored.generated().view().status(), control, fixtureCase.expect()));
         }
         requireUniqueTargets(resolved.stream().map(ResolvedFixturePlan.Selection::target).toList());
         return List.copyOf(resolved);
@@ -99,7 +100,8 @@ public final class FixturePlanCompiler {
             FixtureSetCommand.Case fixtureCase = select(stored, binding.selection(), input);
             FixtureSetCommand.Control control = control(fixtureCase, binding.target());
             resolved.add(new ResolvedFixturePlan.Selection(binding.target(), binding.selection().fixtureSet(),
-                    fixtureCase.caseId(), matchedBy(binding.selection()), control));
+                    fixtureCase.caseId(), matchedBy(binding.selection()),
+                    stored.generated().view().status(), control, fixtureCase.expect()));
         }
         return List.copyOf(resolved);
     }
