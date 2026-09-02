@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "bloge.simulationRun.v2",
+  "runId": "sim-v2-001",
+  "status": "SUCCEEDED",
+  "subject": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "resolvedFixturePlanFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "output": { "tier": "VIP" },
+  "invocations": [
+    {
+      "invocationKey": "sim-v2-001:subject:1",
+      "target": { "kind": "SUBJECT" },
+      "subject": {
+        "kind": "API_RESOURCE",
+        "resourceId": "customer.get-profile",
+        "revision": 3,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "status": "COMPLETED",
+      "execution": "MOCKED",
+      "matchedBy": "EXACT_CASE",
+      "fixtureCase": {
+        "fixtureSetId": "profile-fixtures",
+        "revision": 4,
+        "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "caseId": "vip"
+      },
+      "behavior": "RETURN",
+      "fidelity": "OUTPUT_LEVEL",
+      "provenance": "PINNED_PRIVATE",
+      "inputFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "outputFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "egress": { "decision": "FIXTURE", "attempted": false }
+    }
+  ],
+  "verdicts": {
+    "execution": "PASSED",
+    "assertions": "NOT_CHECKED",
+    "contract": "VALID",
+    "governance": "NOT_CHECKED",
+    "aggregate": "NOT_READY"
+  },
+  "diagnostics": [],
+  "startedAt": "2026-09-02T00:00:00Z",
+  "endedAt": "2026-09-02T00:00:01Z"
+}

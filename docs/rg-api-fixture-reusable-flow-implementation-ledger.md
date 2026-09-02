@@ -2829,3 +2829,45 @@ BUILD SUCCESS
 API Resource 的已解析 Plan 投影为真实 `RETURN/ERROR/TIMEOUT/REPLAY` 执行，持久化
 `bloge.simulationRun.v2` 逐 Invocation 证据，并提供 authenticated/idempotent HTTP。随后才进入 Flow/DAG 的
 逐节点动态匹配、Operator、Built-in Function Call Site、UI 与 Scenario bridge；不能把冻结 Schema 当成运行能力。
+
+## 61. Iteration 60 — Caller-directed Fixture Simulation v2 S2a evidence authority
+
+日期：2026-09-02。
+
+### 已完成
+
+- 冻结 `bloge.simulationRun.v2`，每个动态调用都有 server-generated Invocation Key、可选父调用、精确
+  Target/Subject、REAL/MOCKED、命中来源、Fixture Set revision/Case/fingerprint、行为、Fidelity、Provenance、
+  governed Asset 坐标、输入/输出 fingerprint 与受界 egress evidence。证据模型不保存原始输入、输出材料、
+  Credential、header 或 replay payload，日志表示也不输出业务 payload。
+- 四维 verdict 保持 Execution、Assertions、Contract、Governance 独立；只有四者全部通过才允许 Aggregate
+  `READY`。run status 与 execution verdict 不一致、重复 Invocation Key 或不完整 Mock evidence 均 fail closed。
+- 新增线程安全内存 authority 与 JDBC authority。JDBC 复用 V013，使用数据库时间租约，支持 acquire、busy、
+  conflict、expired takeover、complete、exact replay、restart read 与 tamper detection。v1/v2 共用 scope +
+  Idempotency-Key；v1 row 对 v2 read 不可见，但仍占有相同幂等坐标。
+- opt-in `SimulationRunRuntimeConfiguration` 在同一 DataSource 和 transaction manager 上同时提供 v1 与 v2
+  authority；缺 V013 或非法 lease 配置仍阻止启动。
+- 新 Schema 加入双向 family completeness gate，并提供 minimal、complete、invalid-ready goldens 与 Java
+  round-trip 证据。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest='SimulationRunV2StoreTest,JdbcSimulationRunV2StoreTest,\
+AuthoringProtocolSchemaTest,SimulationRunRuntimeConfigurationTest' test
+
+Tests run: 29; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+
+Including existing v1 module/store/readiness/controller compatibility:
+Tests run: 46; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+### 当前差距评估
+
+按 v2 提案 S0–S7 与 18 条完成条件复核，整体覆盖从约 **66%** 保守调整为 **70%**，剩余差距约 **30%**。
+本轮只关闭 v2 evidence wire、持久化、重放、损坏检测和 runtime assembly；尚未让 API Resource 通过 v2 执行
+`RETURN/ERROR/TIMEOUT/REPLAY`，也未提供 authenticated v2 POST/GET 或 governed usage receipt。下一切片先完成
+S2 runtime，再完成 transport；Flow/DAG、Operator、Built-in Function Call Site、UI 与 Scenario bridge 后续逐层闭合。

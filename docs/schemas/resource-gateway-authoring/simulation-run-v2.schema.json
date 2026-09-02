@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/simulation-run-v2.schema.json",
+  "$defs": {
+    "fixtureCase": {
+      "type": "object",
+      "properties": {
+        "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+        "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+        "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" }
+      },
+      "required": ["fixtureSetId", "revision", "fingerprint", "caseId"],
+      "additionalProperties": false
+    },
+    "fixtureAssetRef": {
+      "type": "object",
+      "properties": {
+        "fixtureAssetId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+        "schemaFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" }
+      },
+      "required": ["fixtureAssetId", "revision", "schemaFingerprint"],
+      "additionalProperties": false
+    },
+    "invocation": {
+      "type": "object",
+      "properties": {
+        "invocationKey": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "parentInvocationKey": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "target": { "$ref": "simulation-command-v2.schema.json#/$defs/target" },
+        "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRefV2" },
+        "status": { "enum": ["COMPLETED", "FAILED", "BLOCKED", "SKIPPED"] },
+        "execution": { "enum": ["REAL", "MOCKED"] },
+        "matchedBy": { "enum": ["NONE", "EXACT_CASE", "CONDITION", "AUTO_MATCH", "CASE_CONTROLS"] },
+        "fixtureCase": { "$ref": "#/$defs/fixtureCase" },
+        "behavior": { "enum": ["RETURN", "ERROR", "TIMEOUT", "REPLAY"] },
+        "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] },
+        "provenance": { "enum": ["PINNED_PRIVATE", "GOVERNED_ASSET", "REPLAY"] },
+        "fixtureAssetRef": { "$ref": "#/$defs/fixtureAssetRef" },
+        "inputFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+        "outputFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+        "egress": { "$ref": "simulation-run-v1.schema.json#/$defs/egress" }
+      },
+      "required": ["invocationKey", "target", "subject", "status", "execution", "matchedBy", "inputFingerprint", "egress"],
+      "additionalProperties": false
+    },
+    "verdicts": {
+      "type": "object",
+      "properties": {
+        "execution": { "enum": ["PASSED", "FAILED", "BLOCKED"] },
+        "assertions": { "enum": ["PASSED", "FAILED", "NOT_CHECKED"] },
+        "contract": { "enum": ["VALID", "INVALID", "NOT_CHECKED"] },
+        "governance": { "enum": ["PASSED", "FAILED", "NOT_CHECKED"] },
+        "aggregate": { "enum": ["READY", "NOT_READY"] }
+      },
+      "required": ["execution", "assertions", "contract", "governance", "aggregate"],
+      "additionalProperties": false
+    },
+    "diagnostic": {
+      "type": "object",
+      "properties": {
+        "code": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "required": ["code", "message"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.simulationRun.v2" },
+    "runId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "status": { "enum": ["RUNNING", "SUCCEEDED", "FAILED", "BLOCKED"] },
+    "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRefV2" },
+    "requestFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+    "resolvedFixturePlanFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" },
+    "output": {},
+    "invocations": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/invocation" } },
+    "verdicts": { "$ref": "#/$defs/verdicts" },
+    "diagnostics": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/diagnostic" } },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "endedAt": { "type": "string", "format": "date-time" }
+  },
+  "required": ["schemaVersion", "runId", "status", "subject", "requestFingerprint", "resolvedFixturePlanFingerprint", "invocations", "verdicts", "diagnostics", "startedAt"],
+  "additionalProperties": false
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "bloge.simulationRun.v2",
+  "runId": "sim-v2-invalid",
+  "status": "SUCCEEDED",
+  "subject": {
+    "kind": "API_RESOURCE",
+    "resourceId": "customer.get-profile",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "resolvedFixturePlanFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "invocations": [],
+  "verdicts": {
+    "execution": "PASSED",
+    "assertions": "NOT_CHECKED",
+    "contract": "VALID",
+    "governance": "NOT_CHECKED",
+    "aggregate": "PASSED"
+  },
+  "diagnostics": [],
+  "startedAt": "2026-09-02T00:00:00Z",
+  "endedAt": "2026-09-02T00:00:01Z"
+}

@@ -1319,6 +1319,14 @@ Scenario 资产，不再新增第二份 Mock 存储、第二套条件编译器�
 Subject、受限 Condition、API Resource `SUBJECT` Plan 编译、Target overlap 与 payload-safe fingerprint 均已落地。
 冻结 Schema 的 minimal/complete/invalid goldens 与既有 v1 Fixture/Simulation 兼容测试共 **66/66 green**。
 
-当前总体覆盖约 **66%**，剩余约 **34%**。该数字包含复用的 1.3.0 sample/Pin/Promote/governance 和既有 v1
-Simulation 资产，但不把它们冒充 v2 运行证据。下一步是 S2 API Resource Runtime + Simulation Run v2；
-`NODE_PATH`、Call Site、Operator/Function authority、逐 Invocation 匹配和 v2 UI 尚未实现，继续 fail closed。
+S2a 已冻结并实现 `bloge.simulationRun.v2`：每个动态调用保存 server-generated Invocation Key、父调用、精确
+Target/Subject、REAL/MOCKED、命中来源、Fixture Case/Asset 坐标、行为、Fidelity、Provenance、输入/输出
+fingerprint 与 egress evidence。四维 verdict 继续独立，只有四维全部通过才允许 `READY`。内存与 JDBC authority
+均已实现；JDBC 复用 V013，v1/v2 共用 scope + Idempotency-Key 坐标，并对损坏或未知 evidence fail closed。
+runtime config 在同一 DataSource/transaction manager 上同时装配 v1/v2 store。该切片 schema/store/config 聚焦门
+为 **29/29 green**；包含既有 v1 module/store/readiness/controller 的兼容门为 **46/46 green**。
+
+当前总体覆盖约 **70%**，剩余约 **30%**。该数字只把 v2 evidence wire、持久化、重放和 runtime assembly
+计为完成，不把尚未接入的执行器或 HTTP 冒充为运行能力。下一步完成 S2 API Resource
+`RETURN/ERROR/TIMEOUT/REPLAY` 执行、契约校验、governed usage 幂等记录和 authenticated v2 POST/GET；
+`NODE_PATH`、Call Site、Operator/Function authority、逐 Invocation 动态匹配和 v2 UI 继续 fail closed。

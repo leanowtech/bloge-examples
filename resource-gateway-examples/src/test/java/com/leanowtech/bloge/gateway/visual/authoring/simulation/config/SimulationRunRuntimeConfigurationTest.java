@@ -2,8 +2,10 @@ package com.leanowtech.bloge.gateway.visual.authoring.simulation.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.JdbcSimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.JdbcSimulationRunV2Store;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2Store;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.io.ClassPathResource;
@@ -25,7 +27,10 @@ class SimulationRunRuntimeConfigurationTest {
 
     @Test
     void disabledRuntimeIsAbsentAndEnabledRuntimeRequiresV013() {
-        runner.run(context -> assertThat(context).doesNotHaveBean(SimulationRunStore.class));
+        runner.run(context -> {
+            assertThat(context).doesNotHaveBean(SimulationRunStore.class);
+            assertThat(context).doesNotHaveBean(SimulationRunV2Store.class);
+        });
         DataSource missing = dataSource("missing");
         runner.withPropertyValues("gateway.authoring.api-resource.enabled=true")
                 .withBean(JdbcTemplate.class, () -> new JdbcTemplate(missing))
@@ -46,6 +51,8 @@ class SimulationRunRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(SimulationRunSchemaReadiness.class);
                     assertThat(context).getBean(SimulationRunStore.class)
                             .isInstanceOf(JdbcSimulationRunStore.class);
+                    assertThat(context).getBean(SimulationRunV2Store.class)
+                            .isInstanceOf(JdbcSimulationRunV2Store.class);
                 });
 
         SimulationRunStore custom = mock(SimulationRunStore.class);
@@ -55,7 +62,10 @@ class SimulationRunRuntimeConfigurationTest {
                 .withBean(PlatformTransactionManager.class,
                         () -> new DataSourceTransactionManager(other))
                 .withBean(SimulationRunStore.class, () -> custom)
-                .run(context -> assertThat(context).getBean(SimulationRunStore.class).isSameAs(custom));
+                .run(context -> {
+                    assertThat(context).getBean(SimulationRunStore.class).isSameAs(custom);
+                    assertThat(context).hasSingleBean(SimulationRunV2Store.class);
+                });
     }
 
     private static DataSource readyDataSource(String name) {

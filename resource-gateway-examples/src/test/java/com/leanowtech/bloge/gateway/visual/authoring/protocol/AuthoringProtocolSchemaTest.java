@@ -32,6 +32,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPre
 import com.leanowtech.bloge.gateway.visual.authoring.resource.openapi.OpenApiPreviewModule;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRun;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.ExactFixtureSubjectRefV2;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationCommandV2;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -96,6 +97,7 @@ class AuthoringProtocolSchemaTest {
             Map.entry("simulation-request", "simulation-request-v1.schema.json"),
             Map.entry("simulation-command-v2", "simulation-command-v2.schema.json"),
             Map.entry("simulation-run", "simulation-run-v1.schema.json"),
+            Map.entry("simulation-run-v2", "simulation-run-v2.schema.json"),
             Map.entry("problem-detail", "problem-detail-v1.schema.json"));
 
     @Test
@@ -141,6 +143,49 @@ class AuthoringProtocolSchemaTest {
         driverInput.put("credential", "must-not-leak");
         assertThat(fixture.cases().getFirst().driverInput().has("credential")).isFalse();
         assertThat(fixture.toString()).doesNotContain("VIP", "APPROVE", "must-not-leak");
+    }
+
+    @Test
+    void invocationEvidenceRoundTripsAgainstTheFrozenV2RunSchema() throws Exception {
+        var subject = new ExactFixtureSubjectRefV2.ApiResource(
+                "customer.get-profile", 3, "sha256:" + "a".repeat(64));
+        var invocation = new SimulationRunV2.Invocation("sim-v2-001:subject:1", null,
+                new SimulationCommandV2.FixtureTarget.Subject(), subject,
+                SimulationRunV2.InvocationStatus.COMPLETED, SimulationRunV2.Execution.MOCKED,
+                SimulationRunV2.MatchedBy.EXACT_CASE,
+                new SimulationRunV2.FixtureCase("profile-fixtures", 4,
+                        "sha256:" + "d".repeat(64), "vip"),
+                SimulationRunV2.Behavior.RETURN, SimulationRunV2.Fidelity.OUTPUT_LEVEL,
+                SimulationRunV2.Provenance.PINNED_PRIVATE, null,
+                "sha256:" + "e".repeat(64), "sha256:" + "f".repeat(64),
+                new SimulationRun.Egress.Fixture(false));
+        var run = new SimulationRunV2(SimulationRunV2.SCHEMA_VERSION, "sim-v2-001",
+                SimulationRunV2.Status.SUCCEEDED, subject, "sha256:" + "b".repeat(64),
+                "sha256:" + "c".repeat(64), MAPPER.createObjectNode().put("tier", "VIP"),
+                List.of(invocation), new SimulationRunV2.Verdicts(
+                SimulationRunV2.ExecutionVerdict.PASSED,
+                SimulationRunV2.AssertionsVerdict.NOT_CHECKED,
+                SimulationRunV2.ContractVerdict.VALID,
+                SimulationRunV2.GovernanceVerdict.NOT_CHECKED,
+                SimulationRunV2.AggregateVerdict.NOT_READY),
+                List.of(new SimulationRunV2.Diagnostic(
+                        "FIXTURE_USED", "Private business detail must stay out of logs.")),
+                Instant.parse("2026-09-02T00:00:00Z"),
+                Instant.parse("2026-09-02T00:00:01Z"));
+        ObjectMapper mapper = MAPPER.copy().findAndRegisterModules();
+        Path schemaPath = SCHEMA_ROOT.resolve("simulation-run-v2.schema.json");
+        JsonNode wire = mapper.valueToTree(run);
+
+        assertThat(validationErrors(read(schemaPath), wire, schemaPath)).isEmpty();
+        assertThat(mapper.treeToValue(wire, SimulationRunV2.class)).isEqualTo(run);
+        assertThat(run.toString()).doesNotContain("VIP", "Private business detail");
+        assertThatThrownBy(() -> new SimulationRunV2.Verdicts(
+                SimulationRunV2.ExecutionVerdict.PASSED,
+                SimulationRunV2.AssertionsVerdict.NOT_CHECKED,
+                SimulationRunV2.ContractVerdict.VALID,
+                SimulationRunV2.GovernanceVerdict.NOT_CHECKED,
+                SimulationRunV2.AggregateVerdict.READY))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

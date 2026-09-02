@@ -2,8 +2,10 @@ package com.leanowtech.bloge.gateway.visual.authoring.simulation.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.JdbcSimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.JdbcSimulationRunV2Store;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunStore;
+import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunV2Store;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -38,6 +40,27 @@ public class SimulationRunRuntimeConfiguration {
             throw new IllegalStateException("Simulation lease must be between 1 and 3600 seconds");
         }
         return new JdbcSimulationRunStore(jdbc, new TransactionTemplate(transactionManager), mapper,
+                Duration.ofSeconds(leaseSeconds));
+    }
+
+    /**
+     * Creates the v2 invocation-evidence authority over the same V013 table and transaction manager.
+     *
+     * <p>v1 and v2 intentionally share one idempotency coordinate so the same caller key cannot
+     * execute two protocol versions independently.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean(SimulationRunV2Store.class)
+    SimulationRunV2Store simulationRunV2Store(
+            JdbcTemplate jdbc, PlatformTransactionManager transactionManager, ObjectMapper mapper,
+            SimulationRunSchemaReadiness readiness,
+            @Value("${gateway.authoring.api-resource.simulation-lease-seconds:30}")
+            long leaseSeconds) {
+        if (readiness == null) throw new IllegalStateException("Simulation schema is not ready");
+        if (leaseSeconds < 1 || leaseSeconds > 3_600) {
+            throw new IllegalStateException("Simulation lease must be between 1 and 3600 seconds");
+        }
+        return new JdbcSimulationRunV2Store(jdbc, new TransactionTemplate(transactionManager), mapper,
                 Duration.ofSeconds(leaseSeconds));
     }
 }

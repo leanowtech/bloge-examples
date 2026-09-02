@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "bloge.simulationRun.v2",
+  "runId": "sim-v2-002",
+  "status": "SUCCEEDED",
+  "subject": {
+    "kind": "FLOW_VERSION",
+    "publicationId": "risk-tool",
+    "revision": 9,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "requestFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "resolvedFixturePlanFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "output": { "decision": "APPROVE" },
+  "invocations": [
+    {
+      "invocationKey": "sim-v2-002:risk-tool:1",
+      "target": { "kind": "NODE_PATH", "nodePath": ["risk-tool", "profile"] },
+      "subject": {
+        "kind": "API_RESOURCE",
+        "resourceId": "customer.get-profile",
+        "revision": 3,
+        "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "status": "COMPLETED",
+      "execution": "MOCKED",
+      "matchedBy": "CONDITION",
+      "fixtureCase": {
+        "fixtureSetId": "profile-fixtures",
+        "revision": 4,
+        "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "caseId": "vip"
+      },
+      "behavior": "RETURN",
+      "fidelity": "OUTPUT_LEVEL",
+      "provenance": "GOVERNED_ASSET",
+      "fixtureAssetRef": {
+        "fixtureAssetId": "profile-vip-output",
+        "revision": 2,
+        "schemaFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "inputFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "outputFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "egress": { "decision": "FIXTURE", "attempted": false }
+    }
+  ],
+  "verdicts": {
+    "execution": "PASSED",
+    "assertions": "PASSED",
+    "contract": "VALID",
+    "governance": "PASSED",
+    "aggregate": "READY"
+  },
+  "diagnostics": [ { "code": "FIXTURE_CONDITION_MATCHED", "message": "One exact Fixture Case matched." } ],
+  "startedAt": "2026-09-02T00:00:00Z",
+  "endedAt": "2026-09-02T00:00:01Z"
+}
