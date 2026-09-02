@@ -110,6 +110,30 @@ class ReusableFlowDslProjectorTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void permitsMultipleNodesPinnedToTheSameExternalResource() {
+        ReusableFlowDslProjector projector = new ReusableFlowDslProjector(importer());
+        String repeatedResourceDsl = """
+                graph repeatedResource {
+                  input { customerId: String }
+                  output { customerId: String }
+                  node first : "resource:customer-profile" {
+                    input { customerId = ctx.customerId }
+                  }
+                  node second : "resource:customer-profile" {
+                    input { customerId = first.output.customerId }
+                  }
+                }
+                """;
+
+        ReusableFlowCommand projected = projector.project(command(repeatedResourceDsl, Map.of(
+                "resource:customer-profile", resource("customer-profile", "a"))));
+
+        assertThat(projected.flow().graph().nodes())
+                .extracting(ReusableFlowCommand.Node::nodeId)
+                .containsExactly("first", "second");
+    }
+
     private static ReusableFlowDslCommand command(
             String dsl, Map<String, ReusableFlowCommand.ComposableRef> pins) {
         return new ReusableFlowDslCommand(ReusableFlowDslCommand.SCHEMA_VERSION,

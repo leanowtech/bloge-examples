@@ -79,8 +79,12 @@ public final class ReusableFlowDslProjector {
         if (!usedPins.equals(command.dependencyPins().keySet())) {
             throw invalid();
         }
-        boolean pinnedExternalCatalogClosure = projection.coverage().missingFunctionCount() == 0
-                && projection.coverage().missingOperatorCount() == draft.nodes().size();
+        boolean pinnedExternalCatalogClosure = "PARTIAL".equals(projection.roundTrip().status())
+                && projection.coverage().missingFunctionCount() == 0
+                && projection.coverage().missingOperatorCount() == usedPins.size()
+                && projection.diagnostics().stream().allMatch(diagnostic ->
+                "visual.dslImport.operatorMissing".equals(diagnostic.code())
+                        && usedPins.contains(diagnostic.metadata().get("operatorRef")));
         if (!projection.roundTrip().supported() && !pinnedExternalCatalogClosure) {
             throw invalid();
         }
