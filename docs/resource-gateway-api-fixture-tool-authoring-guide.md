@@ -218,6 +218,14 @@ Graph Author 的旧节点 Fixture picker 仍保留 Pin → Promote → Review �
 
 ### 6.1 创建 Tool DAG
 
+HTTP/代码优先的调用方应优先提交 BLOGE DSL，而不是手写完整 canonical Graph JSON。DSL 定义节点、输入输出
+合同和数据映射；`dependencyPins` 把 DSL 中的逻辑 operator ref 固定为精确 API Resource、Flow Version 或
+Operator Version。服务端使用官方 parser 投影并验证后，仍保存同一个 canonical Reusable Flow 模型。
+
+对应媒体类型为 `application/vnd.bloge.reusable-flow-dsl+json`，完整 curl 示例见
+[Resource Gateway curl 演示剧本](./resource-gateway-curl-fixture-tool-demo-runbook.md#43-把三个-api-resource-编排为契约化-tool)。
+Fixture Case 和 unmatched/egress 策略继续属于 Simulation Command，不能写入 DSL。
+
 1. 回到 `/workbench/`，单击 `Create a tool`。
 2. 填写 Flow name、Flow ID、Kind 和 Description。
 3. 在 `Dependencies` 中选择第一个 API Resource，单击 `Add item`。

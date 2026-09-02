@@ -42,11 +42,12 @@ auth_header() {
 
 put_create() {
     local path="$1" key="$2" body="$3" response="$4" headers="$5"
+    local content_type="${6:-application/json}"
     if ! curl --fail-with-body --silent --show-error \
         --request PUT "${BASE_URL}${path}" \
         --header "$(auth_header)" \
         --header "X-Purpose: ${PURPOSE}" \
-        --header 'Content-Type: application/json' \
+        --header "Content-Type: ${content_type}" \
         --header 'If-None-Match: *' \
         --header "Idempotency-Key: ${key}" \
         --data-binary "@${body}" \
@@ -268,61 +269,73 @@ require_jq '.status == "SUCCEEDED" and .output.segment == "VIP"
     "${WORK_DIR}/profile-simulation.json" \
     'The API Resource must return the saved Fixture without external egress.'
 
-# 5. Compose the three exact API Resource revisions into one contract-defined Tool DAG.
+# 5. Compose the three exact API Resource revisions with human-readable BLOGE DSL.
+cat > "${WORK_DIR}/customer-retention.bloge" <<'BLOGE_DSL'
+graph customerRetentionOffer {
+  input {
+    customerId: String
+  }
+  output {
+    customerId: String
+    offerCode: String
+    discountPercent: Decimal
+    message: String
+  }
+
+  node profile : "resource:customer-profile" {
+    input {
+      customerId = ctx.customerId
+    }
+  }
+
+  node account : "resource:account-summary" {
+    input {
+      customerId = ctx.customerId
+    }
+  }
+
+  node offer : "resource:retention-offer" {
+    input {
+      customerId = ctx.customerId
+      segment = profile.output.segment
+      monthlySpend = account.output.monthlySpend
+    }
+  }
+}
+BLOGE_DSL
+
 jq -n \
+    --rawfile dsl "${WORK_DIR}/customer-retention.bloge" \
     --arg profileId "${PROFILE_RESOURCE}" --arg profileFp "${PROFILE_FINGERPRINT}" \
     --arg accountId "${ACCOUNT_RESOURCE}" --arg accountFp "${ACCOUNT_FINGERPRINT}" \
     --arg offerId "${OFFER_RESOURCE}" --arg offerFp "${OFFER_FINGERPRINT}" \
     --argjson profileRevision "${PROFILE_REVISION}" \
     --argjson accountRevision "${ACCOUNT_REVISION}" \
     --argjson offerRevision "${OFFER_REVISION}" '{
-  schemaVersion: "bloge.reusableFlowSaveCommand.v1",
-  flow: {
-    displayName: "Customer retention offer tool", kind: "TOOL",
-    description: "Combines CRM profile, account value and offer recommendation APIs.",
-    contract: {
-      input: {format: "json-schema", version: "2020-12", schema: {
-        type: "object", properties: {customerId: {type: "string"}},
-        required: ["customerId"], additionalProperties: false
-      }},
-      output: {format: "json-schema", version: "2020-12", schema: {
-        type: "object", properties: {
-          customerId: {type: "string"}, offerCode: {type: "string"},
-          discountPercent: {type: "number"}, message: {type: "string"}
-        }, required: ["customerId", "offerCode", "discountPercent", "message"],
-        additionalProperties: false
-      }}
+  schemaVersion: "bloge.reusableFlowDslSaveCommand.v1",
+  displayName: "Customer retention offer tool", kind: "TOOL",
+  description: "Combines CRM profile, account value and offer recommendation APIs.",
+  source: {sourceId: "customer-retention.bloge", dsl: $dsl},
+  dependencyPins: {
+    "resource:customer-profile": {
+      kind: "API_RESOURCE", resourceId: $profileId,
+      revision: $profileRevision, fingerprint: $profileFp
     },
-    graph: {
-      nodes: [
-        {nodeId: "profile", label: "Load retention profile",
-         use: {kind: "API_RESOURCE", resourceId: $profileId,
-               revision: $profileRevision, fingerprint: $profileFp},
-         inputs: [{to: "$.customerId", from: {kind: "FLOW_INPUT", path: "$.customerId"}}]},
-        {nodeId: "account", label: "Load account value",
-         use: {kind: "API_RESOURCE", resourceId: $accountId,
-               revision: $accountRevision, fingerprint: $accountFp},
-         inputs: [{to: "$.customerId", from: {kind: "FLOW_INPUT", path: "$.customerId"}}]},
-        {nodeId: "offer", label: "Recommend retention offer",
-         use: {kind: "API_RESOURCE", resourceId: $offerId,
-               revision: $offerRevision, fingerprint: $offerFp},
-         inputs: [
-           {to: "$.customerId", from: {kind: "FLOW_INPUT", path: "$.customerId"}},
-           {to: "$.segment", from: {kind: "NODE_OUTPUT", nodeId: "profile", path: "$.segment"}},
-           {to: "$.monthlySpend", from: {kind: "NODE_OUTPUT", nodeId: "account", path: "$.monthlySpend"}}
-         ]}
-      ],
-      output: {nodeId: "offer", path: "$"}
+    "resource:account-summary": {
+      kind: "API_RESOURCE", resourceId: $accountId,
+      revision: $accountRevision, fingerprint: $accountFp
     },
-    layout: {nodes: {
-      profile: {x: 100, y: 80}, account: {x: 100, y: 260}, offer: {x: 480, y: 170}
-    }}
+    "resource:retention-offer": {
+      kind: "API_RESOURCE", resourceId: $offerId,
+      revision: $offerRevision, fingerprint: $offerFp
+    }
   }
 }' > "${WORK_DIR}/flow-command.json"
 
 put_create "/api/authoring/flows/${FLOW_ID}" "${DEMO_ID}:flow:save" \
     "${WORK_DIR}/flow-command.json" "${WORK_DIR}/flow-save.json" \
-    "${WORK_DIR}/flow-save.headers"
+    "${WORK_DIR}/flow-save.headers" \
+    'application/vnd.bloge.reusable-flow-dsl+json'
 show "Tool draft receipt" "${WORK_DIR}/flow-save.json"
 
 FLOW_DRAFT_ID="$(jq -r '.draft.draftId' "${WORK_DIR}/flow-save.json")"

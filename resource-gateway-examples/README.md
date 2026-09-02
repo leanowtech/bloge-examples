@@ -16,7 +16,8 @@ For the user-facing path from OpenAPI import through Default Fixture simulation,
 multi-API Tool composition, whole-Flow Fixture authoring, and automatic simulation,
 see the [API, Fixture, and Tool authoring guide](../docs/resource-gateway-api-fixture-tool-authoring-guide.md).
 For a terminal-only, executable customer-retention scenario covering three API Resources,
-caller-selected Fixture Cases, DAG composition, Tool Fixture authoring, and immutable run evidence,
+BLOGE-DSL-first DAG composition with immutable dependency pins, caller-selected Fixture Cases,
+Tool Fixture authoring, and immutable run evidence,
 see the [curl Fixture and Tool demo runbook](../docs/resource-gateway-curl-fixture-tool-demo-runbook.md) and
 [`scripts/curl-caller-directed-fixture-demo.sh`](../scripts/curl-caller-directed-fixture-demo.sh).
 

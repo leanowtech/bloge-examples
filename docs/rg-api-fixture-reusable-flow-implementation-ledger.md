@@ -3144,3 +3144,51 @@ BUILD SUCCESS
 Site authority 尚未进入 production Operator/Flow publication，`ComponentCallSiteRuntimeV2` 尚无真实 Operator
 adapter，以及 S6/S7 可见选择器、Pin/Promote、Scenario bridge 和真实浏览器验收。下一轮先接 production Call
 Site authority/runtime，再实现最小 UI/Scenario 主链；差距仍高于 3%，不能停止。
+
+## 69. Iteration 68 — BLOGE DSL-first reusable Flow authoring
+
+日期：2026-09-02。
+
+### 已完成
+
+- 新增 `application/vnd.bloge.reusable-flow-dsl+json` 写入协议。调用方提交 BLOGE DSL、Flow 展示元数据和
+  `dependencyPins`；服务端复用官方 `DslImportService`，把源码投影为既有 canonical
+  `ReusableFlowCommand` 后再进入同一套 CAS、依赖闭包、Schema、mapping、环路和输出合同校验。
+- DSL 只描述业务图、输入输出和数据依赖；Fixture Case、mock 行为、unmatched 策略和外呼授权继续属于
+  `SimulationCommand`，不会进入 DSL 或 Flow 内容指纹。
+- `dependencyPins` 把 DSL 的逻辑 operator ref 绑定到精确且不可变的 API Resource/Flow/Operator
+  revision 与 fingerprint。未知 pin、遗漏 pin、多余 pin、投影不完整或 parser diagnostic 均 fail closed。
+- 当前写入入口只接受可无损投影的严格子集：普通 composable node、Flow input、Node output 与常量 binding。
+  Transform、branch、retry/fallback、raw expression 等尚不能无损映射的语义会明确拒绝，不静默降级。
+- curl 演示脚本和操作手册改为 DSL-first：创建三个带 Default Fixture 的 API Resource，以 DSL 组装客户挽留
+  Tool，发布后分别执行节点级 Fixture DAG 模拟和 whole-Tool Fixture 模拟。
+
+### 验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ReusableFlowDslProjectorTest,ReusableFlowAuthoringControllerTest,\
+ReusableFlowAuthoringApplicationConfigurationTest,AuthoringProtocolSchemaTest test
+
+Tests run: 30; Failures: 0; Errors: 0; Skipped: 0
+BUILD SUCCESS
+```
+
+```text
+RG_DEMO_ID=dsl-review-1788336271 RG_KEEP_DEMO_FILES=true \
+  scripts/curl-caller-directed-fixture-demo.sh
+
+exit: 0
+API Resource Fixture simulation: SUCCEEDED, egress.attempted=false
+Three-API BLOGE DSL DAG simulation: SUCCEEDED, 3/3 invocations MOCKED, egress.attempted=false
+Whole-Tool Fixture simulation: SUCCEEDED, subject execution MOCKED, egress.attempted=false
+```
+
+### 当前差距评估
+
+本轮关注目标“curl 调用方使用 BLOGE DSL 创建可复用 DAG Tool”已形成真实 HTTP 闭环：源码导入、精确依赖 pin、
+保存、发布、节点 Fixture 模拟和 whole-Tool Fixture 模拟均可执行，聚焦差距约 **2%**。剩余是扩展 DSL-first
+可无损子集和为该新入口补真实浏览器 UI 入口，不影响当前 curl 主链。
+
+这不改变 caller-directed Fixture simulation v2 的总体 **96% / 4%** 评估：production Call Site publication、
+真实 Operator adapter、S6/S7 UI/Scenario bridge 等剩余项仍必须独立闭合，不能用本轮 DSL-first curl 证据代替。

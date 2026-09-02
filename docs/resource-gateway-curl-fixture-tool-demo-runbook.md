@@ -257,7 +257,74 @@ Default Fixture 没有独立 `expect`，所以 `assertions=NOT_CHECKED` 是准�
 
 ### 4.3 把三个 API Resource 编排为契约化 Tool
 
-脚本向 `PUT /api/authoring/flows/{flowId}` 提交 `bloge.reusableFlowSaveCommand.v1`。Graph 有三个节点：
+脚本向 `PUT /api/authoring/flows/{flowId}` 提交 DSL-first 命令：
+
+```http
+Content-Type: application/vnd.bloge.reusable-flow-dsl+json
+```
+
+命令中的 `source.dsl` 是业务 DAG 的主要创作格式：
+
+```bloge
+graph customerRetentionOffer {
+  input {
+    customerId: String
+  }
+  output {
+    customerId: String
+    offerCode: String
+    discountPercent: Decimal
+    message: String
+  }
+
+  node profile : "resource:customer-profile" {
+    input { customerId = ctx.customerId }
+  }
+  node account : "resource:account-summary" {
+    input { customerId = ctx.customerId }
+  }
+  node offer : "resource:retention-offer" {
+    input {
+      customerId = ctx.customerId
+      segment = profile.output.segment
+      monthlySpend = account.output.monthlySpend
+    }
+  }
+}
+```
+
+DSL 使用逻辑 operator ref；同一个请求的 `dependencyPins` 把它们固定到精确、不可变的 Resource 坐标：
+
+```json
+{
+  "schemaVersion": "bloge.reusableFlowDslSaveCommand.v1",
+  "displayName": "Customer retention offer tool",
+  "kind": "TOOL",
+  "description": "Combines CRM profile, account value and offer recommendation APIs.",
+  "source": {
+    "sourceId": "customer-retention.bloge",
+    "dsl": "graph customerRetentionOffer { ... }"
+  },
+  "dependencyPins": {
+    "resource:customer-profile": {
+      "kind": "API_RESOURCE",
+      "resourceId": "retention-review-01.customer-profile",
+      "revision": 1,
+      "fingerprint": "sha256:..."
+    }
+  }
+}
+```
+
+可执行脚本会填充三个完整 pin。服务端复用官方 BLOGE parser/importer，把 DSL 投影为唯一 canonical
+`bloge.reusableFlowSaveCommand.v1`，再执行原有依赖指纹、Schema、mapping、环路和输出合同校验。它不会把 DSL
+文本直接当作数据库权威，也不会信任客户端自行生成的 canonical Graph。
+
+当前 DSL-first 接口故意只接受能无损表示为 reusable Flow 的严格子集：普通 composable node、Flow input、Node
+output 和常量 binding。Transform、branch、retry/fallback、raw expression、未 pin 或多余 pin 都会 fail-closed，
+不能被静默丢弃。
+
+Fixture Case 选择仍属于后续 Simulation Command，不写入 DSL，也不进入 Tool 内容指纹。Graph 有三个节点：
 
 ```text
 Tool input.customerId
@@ -266,13 +333,14 @@ Tool input.customerId
                                    └─────────────
 ```
 
-每个节点的 `use` 都携带对应 API Resource 的精确 `resourceId/revision/fingerprint`。映射为：
+每个 DSL operator ref 都由 `dependencyPins` 携带对应 API Resource 的精确
+`resourceId/revision/fingerprint`。映射为：
 
 - `profile.input.customerId <- $.customerId`；
 - `account.input.customerId <- $.customerId`；
-- `offer.input.profile <- $.profile`；
-- `offer.input.account <- $.account`；
-- Tool output 取 `$.offer`。
+- `offer.input.segment <- profile.output.segment`；
+- `offer.input.monthlySpend <- account.output.monthlySpend`；
+- Tool output 取最后一个节点 `offer` 的完整输出。
 
 保存 receipt 给出不可变 Draft coordinate。随后调用：
 
