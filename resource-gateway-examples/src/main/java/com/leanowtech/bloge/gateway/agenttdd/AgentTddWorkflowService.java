@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -99,6 +100,14 @@ public final class AgentTddWorkflowService {
         verdict.put("state", state(draft(toolRef, identity), result));
         verdict.put("evidenceRef", stored.assetRef());
         verdict.set("latest", mapper.valueToTree(result));
+        verdict.set("byLayer", mergedLayerMatrix(toolRef, result, identity));
+        verdict.set("businessBacklog", businessBacklog(result));
+        if (result.containsKey("honestVerdict")) {
+            verdict.set("honestVerdict", mapper.valueToTree(result.get("honestVerdict")));
+        }
+        if ("rg.tool.baseline".equals(operation)) {
+            verdict.set("baseline", mapper.valueToTree(result));
+        }
         states.save(scope(identity), VERDICT, toolRef, verdict);
         LinkedHashMap<String, Object> response = new LinkedHashMap<>(result);
         response.put("evidenceRef", stored.assetRef());
@@ -159,16 +168,23 @@ public final class AgentTddWorkflowService {
                     .orElseThrow(() -> gate("A green baseline is required before publication."));
             String caseSetRef = latest.path("caseSetRef").asText();
             String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
+            String currentEvidenceFingerprint = currentEvidenceFingerprint(
+                    toolRef, draft, identity, caseSetRef, "GREEN");
             if (!"GREEN".equals(latest.path("side").asText())
                     || !"GO".equals(latest.path("status").asText()) || currentGoldenSetId.isBlank()
-                    || !currentGoldenSetId.equals(latest.path("goldenSetId").asText())) {
+                    || !currentGoldenSetId.equals(latest.path("goldenSetId").asText())
+                    || draft.revision() != latest.path("draftRevision").asLong(-1)
+                    || !currentEvidenceFingerprint.equals(latest.path("evidenceFingerprint").asText())) {
                 throw gate("The latest evidence is not a stable green baseline.");
             }
             JsonNode signoff = states.find(scope(identity), SIGNOFF, signoffRef)
                     .map(AgentTddStoredAsset::data)
                     .orElseThrow(() -> gate("An approved owner signoff is required."));
             if (!"APPROVED".equals(signoff.path("status").asText())
-                    || !toolRef.equals(signoff.path("toolRef").asText())) {
+                    || !toolRef.equals(signoff.path("toolRef").asText())
+                    || draft.revision() != signoff.path("draftRevision").asLong(-1)
+                    || !currentGoldenSetId.equals(signoff.path("goldenSetId").asText())
+                    || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())) {
                 throw gate("The owner signoff does not approve this Tool.");
             }
             DslGenerationResult generation = runner.compile(draft);
@@ -227,13 +243,20 @@ public final class AgentTddWorkflowService {
                 .map(AgentTddStoredAsset::data).map(data -> data.path("latest")).orElse(null);
         String caseSetRef = latest == null ? "" : latest.path("caseSetRef").asText();
         String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
+        String currentEvidenceFingerprint = currentEvidenceFingerprint(
+                toolRef, draft, identity, caseSetRef, "GREEN");
         boolean green = latest != null && "GREEN".equals(latest.path("side").asText())
                 && "GO".equals(latest.path("status").asText())
                 && !currentGoldenSetId.isBlank()
-                && currentGoldenSetId.equals(latest.path("goldenSetId").asText());
+                && currentGoldenSetId.equals(latest.path("goldenSetId").asText())
+                && draft.revision() == latest.path("draftRevision").asLong(-1)
+                && currentEvidenceFingerprint.equals(latest.path("evidenceFingerprint").asText());
         boolean signed = states.list(scope(identity), SIGNOFF).stream().map(AgentTddStoredAsset::data)
                 .anyMatch(data -> toolRef.equals(data.path("toolRef").asText())
-                        && "APPROVED".equals(data.path("status").asText()));
+                        && "APPROVED".equals(data.path("status").asText())
+                        && draft.revision() == data.path("draftRevision").asLong(-1)
+                        && currentGoldenSetId.equals(data.path("goldenSetId").asText())
+                        && currentEvidenceFingerprint.equals(data.path("evidenceFingerprint").asText()));
         boolean design = speccing(draft);
         List<String> remaining = new ArrayList<>();
         if (design) remaining.add("SPECCING_NOT_EXECUTABLE");
@@ -297,6 +320,65 @@ public final class AgentTddWorkflowService {
                 .sorted()
                 .toList();
         return caseIds.isEmpty() ? "" : AgentTddExecutionService.goldenSetId(mapper, toolRef, draft, caseIds);
+    }
+
+    private String currentEvidenceFingerprint(String toolRef,
+                                              GraphDraft draft,
+                                              IntegrationRequestContext identity,
+                                              String caseSetRef,
+                                              String side) {
+        if (caseSetRef == null || caseSetRef.isBlank()) return "";
+        List<JsonNode> rows = states.find(scope(identity), AgentTddMutationService.CASE_SET, caseSetRef)
+                .filter(asset -> toolRef.equals(asset.data().path("toolRef").asText()))
+                .map(AgentTddStoredAsset::data)
+                .map(data -> {
+                    List<JsonNode> active = new ArrayList<>();
+                    data.path("rows").forEach(row -> {
+                        if ("ACTIVE".equals(row.path("lifecycle").asText())) active.add(row);
+                    });
+                    return List.copyOf(active);
+                }).orElse(List.of());
+        return rows.isEmpty() ? "" : AgentTddExecutionService.evidenceFingerprint(
+                mapper, toolRef, draft, rows, side);
+    }
+
+    private ObjectNode mergedLayerMatrix(String toolRef,
+                                         Map<String, Object> result,
+                                         IntegrationRequestContext identity) {
+        ObjectNode matrix = states.find(scope(identity), VERDICT, toolRef)
+                .map(AgentTddStoredAsset::data)
+                .filter(data -> data.path("byLayer").isObject())
+                .map(data -> (ObjectNode) data.path("byLayer").deepCopy())
+                .orElseGet(mapper::createObjectNode);
+        String side = Objects.toString(result.get("side"), "RED").toLowerCase(java.util.Locale.ROOT);
+        JsonNode current = mapper.valueToTree(result.getOrDefault("byLayer", Map.of()));
+        for (String layer : List.of("unit", "contract", "integration", "smoke")) {
+            ObjectNode cell = matrix.path(layer).isObject()
+                    ? (ObjectNode) matrix.path(layer)
+                    : matrix.putObject(layer);
+            cell.set(side, current.path(layer).isObject()
+                    ? current.path(layer).deepCopy()
+                    : mapper.valueToTree(Map.of("pass", 0, "fail", 0)));
+            String other = "red".equals(side) ? "green" : "red";
+            if (!cell.has(other)) cell.set(other, mapper.valueToTree(Map.of("pass", 0, "fail", 0)));
+        }
+        return matrix;
+    }
+
+    private ArrayNode businessBacklog(Map<String, Object> result) {
+        ArrayNode backlog = mapper.createArrayNode();
+        JsonNode cases = mapper.valueToTree(result.getOrDefault("cases", List.of()));
+        cases.forEach(row -> {
+            String verdict = row.path("verdict").asText();
+            if ("GOLDEN".equals(row.path("category").asText()) && !verdict.endsWith("PASS")) {
+                ObjectNode item = backlog.addObject();
+                item.put("caseId", row.path("caseId").asText());
+                item.put("layer", row.path("layer").asText());
+                item.put("reason", verdict);
+                item.put("owner", row.path("oracleOwner").asText());
+            }
+        });
+        return backlog;
     }
 
     private static boolean speccing(GraphDraft draft) {

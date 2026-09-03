@@ -263,9 +263,16 @@ public final class AgentTddDecisionScenarioEnumerator {
             return new Predicate(membership.group(1), members, members.getFirst(), false);
         }
         Matcher literalEquality = LITERAL_EQUALITY.matcher(expression);
-        if (literalEquality.matches() && "==".equals(literalEquality.group(2))) {
+        if (literalEquality.matches()) {
             JsonNode literal = literal(literalEquality.group(3));
-            return new Predicate(literalEquality.group(1), List.of(literal), literal, false);
+            if ("==".equals(literalEquality.group(2))) {
+                return new Predicate(literalEquality.group(1), List.of(literal), literal, false);
+            }
+            JsonNode other = literal.isTextual()
+                    ? mapper.valueToTree(literal.asText() + "__OTHER__")
+                    : literal.isBoolean() ? mapper.valueToTree(!literal.asBoolean())
+                    : mapper.valueToTree("__OTHER__");
+            return new Predicate(literalEquality.group(1), List.of(literal, other), other, false);
         }
         JsonNode samples = authorSamples.path(inputName);
         if (!samples.isMissingNode() && !samples.isNull()) {

@@ -14,7 +14,7 @@ integration something the business flow can see, reason about, test, and change.
 
 Resource Gateway 1.4 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
-cases, isolated zero-egress RED simulation, bound-runtime GREEN execution, content-addressed evidence history, governed Fixture
+cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board at
 `/agent-tdd.html`. See the
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,

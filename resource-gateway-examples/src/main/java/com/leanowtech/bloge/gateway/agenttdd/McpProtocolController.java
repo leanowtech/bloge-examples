@@ -56,30 +56,38 @@ public final class McpProtocolController {
     @PostMapping(value = "/mcp", consumes = "application/json", produces = "application/json")
     public ResponseEntity<JsonNode> exchange(@RequestBody JsonNode request,
                                              @RequestHeader HttpHeaders headers) {
-        requireRequest(request);
-        String method = text(request, "method");
-        validateRouting(headers, method, request.path("params"));
-        JsonNode id = request.get("id");
-        Object result = switch (method) {
-            case "server/discover" -> discover();
-            case "initialize" -> initialize(request.path("params"));
-            case "tools/list" -> listTools(authenticate(headers, McpToolImpact.READ));
-            case "tools/call" -> callTool(request.path("params"), headers);
-            default -> throw new McpProtocolException(-32601, "Unsupported MCP method");
-        };
-        ObjectNode response = mapper.createObjectNode();
-        response.put("jsonrpc", "2.0");
-        response.set("id", id == null ? mapper.nullNode() : id);
-        response.set("result", mapper.valueToTree(result));
-        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+        JsonNode id = request != null && request.isObject() ? request.get("id") : null;
+        try {
+            requireRequest(request);
+            String method = text(request, "method");
+            validateRouting(headers, method, request.path("params"));
+            Object result = switch (method) {
+                case "server/discover" -> discover();
+                case "initialize" -> initialize(request.path("params"));
+                case "tools/list" -> listTools(authenticate(headers, McpToolImpact.READ));
+                case "tools/call" -> callTool(request.path("params"), headers);
+                default -> throw new McpProtocolException(-32601, "Unsupported MCP method");
+            };
+            ObjectNode response = mapper.createObjectNode();
+            response.put("jsonrpc", "2.0");
+            response.set("id", id == null ? mapper.nullNode() : id);
+            response.set("result", mapper.valueToTree(result));
+            return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+        } catch (McpProtocolException failure) {
+            return protocolFailure(failure, id);
+        }
     }
 
     /** Maps safe protocol failures to JSON-RPC errors without exposing application payloads. */
     @ExceptionHandler(McpProtocolException.class)
     public ResponseEntity<JsonNode> protocolFailure(McpProtocolException failure) {
+        return protocolFailure(failure, null);
+    }
+
+    private ResponseEntity<JsonNode> protocolFailure(McpProtocolException failure, JsonNode id) {
         ObjectNode response = mapper.createObjectNode();
         response.put("jsonrpc", "2.0");
-        response.putNull("id");
+        response.set("id", id == null ? mapper.nullNode() : id);
         response.set("error", mapper.valueToTree(Map.of(
                 "code", failure.code(),
                 "message", failure.getMessage()
@@ -122,9 +130,12 @@ public final class McpProtocolController {
 
     private Map<String, Object> initialize(JsonNode params) {
         String requested = text(params, "protocolVersion");
+        if (!requested.isBlank() && !MODERN_PROTOCOL_VERSION.equals(requested)
+                && !LEGACY_PROTOCOL_VERSION.equals(requested)) {
+            throw new McpProtocolException(-32602, "Unsupported MCP protocol version");
+        }
         return Map.of(
-                "protocolVersion", MODERN_PROTOCOL_VERSION.equals(requested)
-                        ? LEGACY_PROTOCOL_VERSION : requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
+                "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
                 "capabilities", Map.of("tools", Map.of("listChanged", false))
         );

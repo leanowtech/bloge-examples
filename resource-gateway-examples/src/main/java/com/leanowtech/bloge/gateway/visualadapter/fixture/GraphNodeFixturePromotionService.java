@@ -230,7 +230,6 @@ public class GraphNodeFixturePromotionService {
                     "The captured node output does not satisfy its exact operator schema");
         }
         ExactSchemaRef schemaRef = operator.ports().outputs().size() == 1
-                && (outputPort == null || outputPort.isBlank())
                 ? exactOutputSchemaRef(operator, mapper)
                 : exactOutputSchemaRef(operator, selectedPort.name(), mapper);
         boolean isResource = node.operatorRef().startsWith("resource:");

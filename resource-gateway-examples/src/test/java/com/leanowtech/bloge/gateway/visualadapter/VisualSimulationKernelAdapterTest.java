@@ -76,6 +76,30 @@ class VisualSimulationKernelAdapterTest {
     }
 
     @Test
+    void sharedObservedOperatorSelectsTheDelegateByNodeIdentity() {
+        NodeFixture.DependencyBehavior first = new NodeFixture.DependencyBehavior(
+                NodeFixture.DependencyBehaviorKind.OBSERVE, Map.of("value", "first"),
+                "", "", "", null, "");
+        NodeFixture.DependencyBehavior second = new NodeFixture.DependencyBehavior(
+                NodeFixture.DependencyBehaviorKind.OBSERVE, Map.of("value", "second"),
+                "", "", "", null, "");
+        VisualDslRunResponse response = adapter.execute(plan(
+                """
+                graph shared {
+                  node first : customer.lookup
+                  node second : customer.lookup
+                }
+                """, Map.of(), "second", List.of(
+                        new VisualSimulationPlan.Standin("first", "customer.lookup", first.value(), null,
+                                NodeFixture.ResourceFidelity.OUTPUT_LEVEL, first),
+                        new VisualSimulationPlan.Standin("second", "customer.lookup", second.value(), null,
+                                NodeFixture.ResourceFidelity.OUTPUT_LEVEL, second))));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("value", "second"));
+    }
+
+    @Test
     void injectedErrorTimeoutAndMustNotCallFailClosedAtTheSelectedNode() {
         List<VisualDslRunResponse> responses = List.of(
                 adapter.execute(behaviorPlan(new NodeFixture.DependencyBehavior(

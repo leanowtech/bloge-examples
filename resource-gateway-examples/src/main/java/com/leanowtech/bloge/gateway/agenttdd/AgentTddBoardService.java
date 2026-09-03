@@ -88,7 +88,8 @@ public final class AgentTddBoardService {
             card.put("redToGreen", Map.of(
                     "side", latest.path("side").asText(),
                     "status", latest.path("status").asText(),
-                    "byLayer", latest.path("byLayer"),
+                    "byLayer", asset.data().path("byLayer"),
+                    "businessBacklog", asset.data().path("businessBacklog"),
                     "cases", cases));
         });
         long active = 0;

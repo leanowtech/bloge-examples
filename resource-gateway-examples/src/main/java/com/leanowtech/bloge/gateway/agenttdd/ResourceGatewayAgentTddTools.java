@@ -11,7 +11,6 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
-import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -65,19 +64,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, null);
     }
 
-    /** Creates the Spring facade with execution evidence and governed publication enabled. */
-    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
-                                        GraphDraftRepository drafts,
-                                        ObjectMapper mapper,
-                                        DslImportService projection,
-                                        VisualGraphSimulationService simulation,
-                                        AgentTddStateRepository states,
-                                        AuthoringPreviewService authoring,
-                                        AgentTddWorkflowService workflow) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, null);
-    }
-
-    /** Creates the Spring facade with RED isolation and authoritative GREEN runtime execution. */
+    /** Creates the Spring facade with zero-egress execution evidence and governed publication enabled. */
     @Autowired
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
@@ -86,15 +73,14 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring,
-                                        AgentTddWorkflowService workflow,
-                                        VisualGraphRunService runtime) {
+                                        AgentTddWorkflowService workflow) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(
-                        libraries, drafts, projection, simulation, mapper, states, runtime);
+                        libraries, drafts, projection, simulation, mapper, states);
         this.mutations = states == null || authoring == null || projection == null
                 ? null
                 : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);

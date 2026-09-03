@@ -32,8 +32,22 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
     @Override
     public synchronized AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
         AgentTddStoredAsset previous = assets.get(assetKey(scopeKey, kind, assetRef));
+        return saveIfRevision(scopeKey, kind, assetRef, previous == null ? 0 : previous.revision(), data);
+    }
+
+    @Override
+    public synchronized AgentTddStoredAsset saveIfRevision(String scopeKey,
+                                                           String kind,
+                                                           String assetRef,
+                                                           long expectedRevision,
+                                                           JsonNode data) {
+        AgentTddStoredAsset previous = assets.get(assetKey(scopeKey, kind, assetRef));
+        long actualRevision = previous == null ? 0 : previous.revision();
+        if (actualRevision != expectedRevision) {
+            throw new AgentTddToolException("GATE_REJECTED", "Asset changed after the reviewed revision.");
+        }
         AgentTddStoredAsset stored = new AgentTddStoredAsset(scopeKey, kind, assetRef,
-                previous == null ? 1 : previous.revision() + 1,
+                expectedRevision + 1,
                 VisualBundleFingerprint.fromCanonicalValue(new com.fasterxml.jackson.databind.ObjectMapper(),
                         data, MAX_BYTES), data, Instant.now());
         assets.put(assetKey(scopeKey, kind, assetRef), stored);

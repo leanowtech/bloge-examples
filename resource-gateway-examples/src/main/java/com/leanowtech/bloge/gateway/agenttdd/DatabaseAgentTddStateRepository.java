@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -86,21 +88,44 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     }
 
     @Override
-    public synchronized AgentTddStoredAsset save(String scopeKey,
-                                                 String kind,
-                                                 String assetRef,
-                                                 JsonNode data) {
-        long revision = find(scopeKey, kind, assetRef).map(value -> value.revision() + 1).orElse(1L);
+    @Transactional
+    public AgentTddStoredAsset save(String scopeKey,
+                                    String kind,
+                                    String assetRef,
+                                    JsonNode data) {
+        long expectedRevision = find(scopeKey, kind, assetRef).map(AgentTddStoredAsset::revision).orElse(0L);
+        return saveIfRevision(scopeKey, kind, assetRef, expectedRevision, data);
+    }
+
+    @Override
+    @Transactional
+    public AgentTddStoredAsset saveIfRevision(String scopeKey,
+                                              String kind,
+                                              String assetRef,
+                                              long expectedRevision,
+                                              JsonNode data) {
+        long revision = expectedRevision + 1;
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, data, MAX_BYTES);
         Instant now = Instant.now();
         String json = write(data);
-        jdbc.update("DELETE FROM agent_tdd_assets WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ?",
-                scopeKey, kind, assetRef);
-        jdbc.update("""
-                INSERT INTO agent_tdd_assets
-                    (scope_key, asset_kind, asset_ref, revision, fingerprint, state_json, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, scopeKey, kind, assetRef, revision, fingerprint, json, now.toString());
+        if (expectedRevision == 0) {
+            try {
+                jdbc.update("""
+                        INSERT INTO agent_tdd_assets
+                            (scope_key, asset_kind, asset_ref, revision, fingerprint, state_json, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, scopeKey, kind, assetRef, revision, fingerprint, json, now.toString());
+            } catch (DuplicateKeyException conflict) {
+                throw staleRevision();
+            }
+        } else {
+            int updated = jdbc.update("""
+                    UPDATE agent_tdd_assets
+                       SET revision = ?, fingerprint = ?, state_json = ?, updated_at = ?
+                     WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ? AND revision = ?
+                    """, revision, fingerprint, json, now.toString(), scopeKey, kind, assetRef, expectedRevision);
+            if (updated != 1) throw staleRevision();
+        }
         return new AgentTddStoredAsset(scopeKey, kind, assetRef, revision, fingerprint, data, now);
     }
 
@@ -157,4 +182,8 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     }
 
     private record Replay(String fingerprint, JsonNode response) { }
+
+    private static AgentTddToolException staleRevision() {
+        return new AgentTddToolException("GATE_REJECTED", "Asset changed after the reviewed revision.");
+    }
 }

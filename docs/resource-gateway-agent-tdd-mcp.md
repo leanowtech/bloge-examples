@@ -63,7 +63,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 1. 使用 `rg.capability.list`、`rg.library.get/list`、`rg.contract.get`、`rg.tool.getInstruction`、`rg.scenario.listCases`、`rg.verdict.get` 和 `rg.evidence.get` 查询状态。
 2. 使用 `rg.library.upsert`、`rg.feature.compose`、`rg.tool.compose`、`rg.tool.setInstruction` 和场景工具修改草稿。写操作必须带 `idempotencyKey`；同一 key 携带不同请求时返回 `IDEMPOTENCY_CONFLICT`。
 3. 使用 `rg.dsl.preview` 和 `rg.gate.check` 编译。`libraryRefs` 必须显式提供，编译器不会从全局目录猜测依赖。
-4. 使用 `rg.simulate`、`rg.feature.rehearse` 和 `rg.tool.baseline` 验证。RED 在模拟边界真实执行纯逻辑节点，并用 stand-in 替换 operator 调用，`realExternalCalls` 必须为 `0`；所有 binding 就绪后的 GREEN 走 `VisualGraphRunService` 真实运行路径，不应用 RED stub，并报告按契约分类的外部绑定调用次数。
+4. 使用 `rg.simulate`、`rg.feature.rehearse` 和 `rg.tool.baseline` 验证。RED 在模拟边界真实执行纯逻辑节点，并用 stand-in 替换 operator 调用；所有 binding 就绪后，GREEN 在同一零外呼边界验证可执行图与纯业务逻辑，依赖节点使用已批准用例行为。两侧 `realExternalCalls` 都必须为 `0`。
 5. 使用 `rg.fixture.promote`、`rg.tool.publishSpec`、`rg.readiness.get` 和 `rg.tool.publish` 完成治理与发布。
 
 GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
@@ -82,7 +82,7 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 `goldenSetId` 由 Tool 引用、Tool/算子契约指纹和排序后的 ACTIVE case ID 计算。实现绑定不参与契约指纹，因此红侧和绿侧保持同一身份；I/O 契约或用例集合变化时生成新身份。
 
-GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId` 调用真实 binding；用例中的 `stubs` 只属于 RED，GREEN 结果通过 `ignoredFixtureNodeIds` 明示其未被应用。GREEN 运行可能访问真实资源，调用方应只在受控 test/staging 环境及相应网络治理下执行；响应中的 `realExternalCalls` 是按算子契约类别和运行 attempt 计算的应用级证据，不等同于部署级 egress 监控。
+GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bindingRef` 已解析后才能运行。EXECUTE 权限不会调用这些真实 binding；外部依赖继续由用例中的受控行为替换，因此 `realExternalCalls=0` 是硬约束。GREEN 证明“绑定齐全的可执行图在受控依赖下符合业务 Oracle”，不证明真实集成健康或生产环境治理；后两项仍在诚实结论中标为未证明。
 
 `rg.fixture.promote` 必须显式指定 `outputPort`。返回的 `sourceKind` 由服务端捕获证据派生：存在与当前草稿、节点、算子和输出一致的有效模拟捕获时为 `SCENARIO`，否则为 `SAMPLE`；客户端不能自行声明该来源。
 
@@ -94,9 +94,9 @@ GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId` 调用真实 binding；�
 
 - 批准 GOLDEN Oracle：`POST /api/agent-tdd/reviews/oracles/{caseSetRef}/{caseId}/approve`。
 - 批准规格发布提议：`POST /api/agent-tdd/reviews/specs/{toolRef}/approve`。
-- 签署可执行 Tool：`POST /api/agent-tdd/reviews/tools/{toolRef}/signoffs/{signoffRef}/approve`。
+- 签署可执行 Tool：`POST /api/agent-tdd/reviews/tools/{toolRef}/signoffs/{signoffRef}/approve`，请求体必须携带 `{draftRevision, goldenSetId, evidenceFingerprint}`。
 
-Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，服务端拒绝批准；重新读取后再评审。签署记录必须属于同一个 Tool，`rg.tool.publish` 才会接受对应 `signoffRef`。
+Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，原子 revision fence 拒绝批准；重新读取后再评审。签署记录精确绑定 Tool 草稿 revision、goldenSetId 和 GREEN evidenceFingerprint，任一内容变化都会使旧签署失效。
 
 ## 6. 发布门禁
 
@@ -105,7 +105,8 @@ Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`
 - 所有库算子均有可解析、schema 相容的 `runtime.bindingRef`。
 - 最新 baseline 为 `GO`，并与当前 ACTIVE 用例计算出的 `goldenSetId` 相同。
 - 最新 baseline 明确来自 `GREEN` 侧；`RED` baseline 即使稳定通过也不能解锁发布。
-- `signoffRef` 对应已批准且属于当前 Tool 的人工签署。
+- baseline 的 `draftRevision`、`evidenceFingerprint` 必须与当前草稿、ACTIVE 用例内容、Oracle、stub 和 binding 指纹一致。
+- `signoffRef` 必须精确批准同一份 baseline；旧版本签署不能复用。
 - 既有 Visual Graph validator、lowering 和 BLOGE compiler 允许发布可执行制品。
 
 任一条件不满足时，调用返回 `PUBLISH_GATE_NOT_MET` 或更具体的稳定错误码，不创建发布物。

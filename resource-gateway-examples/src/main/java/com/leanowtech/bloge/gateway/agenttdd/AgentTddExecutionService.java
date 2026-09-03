@@ -14,13 +14,12 @@ import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.importer.DslRewriteGateResult;
 import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehavior;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehaviorKind;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationResponse;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
-import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
-import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 
 import java.util.ArrayList;
 import java.time.Duration;
@@ -37,8 +36,9 @@ import java.util.Set;
  * Library-contract-aware compile and red-to-green execution kernel for Agent TDD tools.
  *
  * <p>Every call supplies its library references explicitly. Compilation reuses the existing DSL
- * projection/importer. RED uses the visual mock-runner and deterministic stand-ins; GREEN uses the
- * authoritative visual runtime after every contract binding is executable.</p>
+ * projection/importer. RED and GREEN share the zero-egress simulation kernel; GREEN additionally
+ * requires every runtime binding to resolve, so it verifies the executable graph and pure business
+ * logic without granting an EXECUTE call authority to reach external systems.</p>
  */
 public final class AgentTddExecutionService {
     private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() { };
@@ -50,7 +50,6 @@ public final class AgentTddExecutionService {
     private final VisualGraphSimulationService simulation;
     private final ObjectMapper mapper;
     private final AgentTddStateRepository states;
-    private final VisualGraphRunService runtime;
 
     /** Creates the execution kernel from the same compiler and simulator used by the web surface. */
     public AgentTddExecutionService(OperatorLibraryRegistry libraries,
@@ -68,24 +67,12 @@ public final class AgentTddExecutionService {
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper,
                                     AgentTddStateRepository states) {
-        this(libraries, drafts, projection, simulation, mapper, states, null);
-    }
-
-    /** Creates the execution kernel with durable cases and the authoritative bound runtime. */
-    public AgentTddExecutionService(OperatorLibraryRegistry libraries,
-                                    GraphDraftRepository drafts,
-                                    DslImportService projection,
-                                    VisualGraphSimulationService simulation,
-                                    ObjectMapper mapper,
-                                    AgentTddStateRepository states,
-                                    VisualGraphRunService runtime) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.projection = Objects.requireNonNull(projection, "projection");
         this.simulation = Objects.requireNonNull(simulation, "simulation");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.states = states;
-        this.runtime = runtime;
     }
 
     /**
@@ -159,6 +146,7 @@ public final class AgentTddExecutionService {
         List<JsonNode> rows = caseRows(arguments, identity);
         List<String> caseIds = rows.stream().map(row -> requiredText(row, "caseId")).sorted().toList();
         String goldenSetId = goldenSetId(mapper, toolRef, draft, caseIds);
+        String evidenceFingerprint = evidenceFingerprint(mapper, toolRef, draft, rows, side);
         boolean greenBlocked = "GREEN".equals(side) && speccing(draft);
         List<Map<String, Object>> results = new ArrayList<>();
         int passed = 0;
@@ -174,21 +162,22 @@ public final class AgentTddExecutionService {
             else failed++;
             realExternalCalls += ((Number) result.getOrDefault("realExternalCalls", 0)).intValue();
         }
+        Map<String, Map<String, Integer>> byLayer = layerSummary(results);
         return Map.of(
                 "goldenSetId", goldenSetId,
+                "evidenceFingerprint", evidenceFingerprint,
+                "draftRevision", draft.revision(),
                 "side", side,
-                "byLayer", Map.of("contract", Map.of("pass", passed, "fail", failed)),
+                "byLayer", byLayer,
                 "cases", results,
                 "realExternalCalls", realExternalCalls,
                 "honestVerdict", Map.of("dimensions", List.of(
                         dimension("business-correctness", failed == 0 && !greenBlocked ? "PASS" : "FAIL",
                                 "Literal expected outcomes were compared with simulated graph results.",
-                                "RED uses mocked dependencies and does not prove real integrations."),
-                        dimension("dependency-isolation", "RED".equals(side) ? "PASS" : "NOT_CLAIMED",
-                                "RED".equals(side)
-                                        ? "Every operator invocation was replaced by the visual simulation boundary."
-                                        : "GREEN executed the bound runtime rather than dependency stand-ins.",
-                                "It does not attest a production egress monitor.")))
+                                "Dependency bindings are replaced and real integrations remain unproved."),
+                        dimension("dependency-isolation", "PASS",
+                                "Every external dependency invocation was replaced by the simulation boundary.",
+                                "GREEN proves resolved bindings and pure graph behavior, not live integration health.")))
         );
     }
 
@@ -206,9 +195,10 @@ public final class AgentTddExecutionService {
     /**
      * Repeats one durable approved case set and proves deterministic business fingerprints.
      *
-     * <p>RED remains on the simulation boundary. GREEN executes resolved runtime bindings and may
-     * call external resources; its response reports those classified binding attempts. Inline rows
-     * are discarded: governance baselines execute only the referenced durable ACTIVE set.</p>
+     * <p>Both sides remain on the simulation boundary and therefore make zero real calls. GREEN is
+     * available only after all bindings resolve; pure graph logic executes while dependency nodes
+     * consume the approved case behaviors. Inline rows are discarded: governance baselines execute
+     * only the referenced durable ACTIVE set.</p>
      */
     public Map<String, Object> baseline(JsonNode arguments, IntegrationRequestContext identity) {
         int rounds = arguments.path("rounds").isInt() ? arguments.path("rounds").asInt() : 3;
@@ -219,8 +209,13 @@ public final class AgentTddExecutionService {
         LinkedHashSet<String> fingerprints = new LinkedHashSet<>();
         boolean allPass = true;
         String goldenSetId = "";
+        String evidenceFingerprint = "";
+        long draftRevision = -1;
         String side = "";
         int realExternalCalls = 0;
+        Object caseResults = List.of();
+        Object byLayer = Map.of();
+        Object honestVerdict = Map.of();
         String caseSetRef = requiredText(arguments, "caseSetRef");
         ObjectNode approvedRun = arguments == null || !arguments.isObject()
                 ? mapper.createObjectNode()
@@ -229,6 +224,8 @@ public final class AgentTddExecutionService {
         for (int round = 1; round <= rounds; round++) {
             Map<String, Object> result = simulate(approvedRun, identity);
             goldenSetId = result.get("goldenSetId").toString();
+            evidenceFingerprint = result.get("evidenceFingerprint").toString();
+            draftRevision = ((Number) result.get("draftRevision")).longValue();
             side = result.get("side").toString();
             String fingerprint = VisualBundleFingerprint.fromCanonicalValue(
                     mapper, result.get("cases"), MAX_FINGERPRINT_BYTES);
@@ -238,22 +235,30 @@ public final class AgentTddExecutionService {
             boolean pass = cases.stream().allMatch(row -> row.get("verdict").toString().endsWith("PASS"));
             allPass &= pass;
             int roundExternalCalls = ((Number) result.getOrDefault("realExternalCalls", 0)).intValue();
+            caseResults = result.getOrDefault("cases", List.of());
+            byLayer = result.getOrDefault("byLayer", Map.of());
+            honestVerdict = result.getOrDefault("honestVerdict", Map.of());
             realExternalCalls += roundExternalCalls;
             runs.add(Map.of("round", round, "fingerprint", fingerprint, "pass", pass,
                     "realExternalCalls", roundExternalCalls));
         }
         boolean stable = fingerprints.size() == 1;
-        return Map.of(
-                "status", allPass && stable ? "GO" : "NO_GO",
-                "goldenSetId", goldenSetId,
-                "caseSetRef", caseSetRef,
-                "side", side,
-                "rounds", runs,
-                "businessFingerprintStable", stable,
-                "realExternalCalls", realExternalCalls,
-                "remainingLimitations", List.of("RUNTIME_ENV_NOT_ATTESTED", "EGRESS_NOT_OBSERVED",
-                        "OWNER_SIGNOFF_ABSENT")
-        );
+        LinkedHashMap<String, Object> baseline = new LinkedHashMap<>();
+        baseline.put("status", allPass && stable ? "GO" : "NO_GO");
+        baseline.put("goldenSetId", goldenSetId);
+        baseline.put("evidenceFingerprint", evidenceFingerprint);
+        baseline.put("draftRevision", draftRevision);
+        baseline.put("caseSetRef", caseSetRef);
+        baseline.put("side", side);
+        baseline.put("rounds", runs);
+        baseline.put("businessFingerprintStable", stable);
+        baseline.put("cases", caseResults);
+        baseline.put("byLayer", byLayer);
+        baseline.put("honestVerdict", honestVerdict);
+        baseline.put("realExternalCalls", realExternalCalls);
+        baseline.put("remainingLimitations", List.of("RUNTIME_ENV_NOT_ATTESTED",
+                "LIVE_INTEGRATION_NOT_ATTESTED", "OWNER_SIGNOFF_ABSENT"));
+        return Map.copyOf(baseline);
     }
 
     private DslVisualProjection project(JsonNode arguments, List<String> refs) {
@@ -369,12 +374,15 @@ public final class AgentTddExecutionService {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("caseId", requiredText(row, "caseId"));
         result.put("layer", normalizedLayer(row));
+        result.put("category", optionalText(row, "category").isBlank()
+                ? "REGRESSION" : optionalText(row, "category").toUpperCase(Locale.ROOT));
+        result.put("oracleOwner", optionalText(row, "oracleOwner"));
         result.put("verdict", verdict);
         result.put("oracle", Map.of("invariant", "expected outcome matches", "held", oracleHeld));
         result.put("schemaConformant", response.terminalOutputConforms());
         result.put("mockedNodeIds", response.mockedNodeIds());
         result.put("realNodeIds", response.realNodeIds());
-        result.put("diagnostics", response.diagnostics());
+        result.put("diagnostics", safeDiagnostics(response.diagnostics()));
         result.put("realExternalCalls", 0);
         if (!response.success()) {
             result.put("reasonCode", "SIMULATION_FAILED");
@@ -383,66 +391,72 @@ public final class AgentTddExecutionService {
     }
 
     private Map<String, Object> executeGreenCase(GraphDraft draft, JsonNode row) {
-        if (runtime == null) {
-            throw new AgentTddToolException(
-                    "GATE_REJECTED", "The authoritative bound runtime is unavailable for GREEN execution.");
-        }
         Map<String, Object> given = objectMap(row.path("given"));
-        VisualGraphRunResponse response = runtime.run(draft, given, "");
-        boolean oracleHeld = response.success()
+        Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
+        VisualGraphSimulationResponse response = simulation.simulate(draft, given, "", fixtures);
+        boolean oracleHeld = response.success() && response.terminalOutputConforms()
                 && expectedMatches(row.path("expect"), mapper.valueToTree(response.output()));
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("caseId", requiredText(row, "caseId"));
         result.put("layer", normalizedLayer(row));
+        result.put("category", optionalText(row, "category").isBlank()
+                ? "REGRESSION" : optionalText(row, "category").toUpperCase(Locale.ROOT));
+        result.put("oracleOwner", optionalText(row, "oracleOwner"));
         result.put("verdict", oracleHeld ? "GREEN_PASS" : "GREEN_FAIL");
         result.put("oracle", Map.of("invariant", "expected outcome matches", "held", oracleHeld));
-        result.put("schemaConformant", response.validated() && response.compiled());
-        result.put("mockedNodeIds", List.of());
-        result.put("realNodeIds", response.statusMap().keySet().stream().sorted().toList());
-        result.put("ignoredFixtureNodeIds", row.path("stubs").isObject()
-                ? iterableFieldNames(row.path("stubs")) : List.of());
-        result.put("diagnostics", response.diagnostics());
-        result.put("realExternalCalls", realExternalCalls(draft, response));
-        if (!response.success()) result.put("reasonCode", "BOUND_RUNTIME_FAILED");
+        result.put("schemaConformant", response.terminalOutputConforms());
+        result.put("mockedNodeIds", response.mockedNodeIds());
+        result.put("realNodeIds", response.realNodeIds());
+        result.put("diagnostics", safeDiagnostics(response.diagnostics()));
+        result.put("realExternalCalls", 0);
+        if (!response.success()) result.put("reasonCode", "GREEN_SIMULATION_FAILED");
         return result;
     }
 
-    private static int realExternalCalls(GraphDraft draft, VisualGraphRunResponse response) {
-        Set<String> externallyBound = draft.nodes().stream().filter(node -> {
-            OperatorDefinition operator = draft.operatorSnapshots().get(node.id());
-            if (operator == null) return false;
-            return operator.display().tags().stream().anyMatch(Set.of(
-                    "resource-read", "external-write", "remote-worker", "ai-tool",
-                    "event-source", "message-handler", "webhook")::contains);
-        }).map(GraphDraft.DraftNode::id).collect(java.util.stream.Collectors.toSet());
-        int count = 0;
-        for (String nodeId : externallyBound) {
-            List<?> attempts = response.nodeAttempts().getOrDefault(nodeId, List.of());
-            if (!attempts.isEmpty()) count += attempts.size();
-            else if (response.statusMap().containsKey(nodeId)) count++;
-        }
-        return count;
-    }
-
-    private static List<String> iterableFieldNames(JsonNode node) {
-        List<String> names = new ArrayList<>();
-        node.fieldNames().forEachRemaining(names::add);
-        return names.stream().sorted().toList();
+    /**
+     * Projects diagnostics into a payload-free evidence form.
+     *
+     * <p>Messages and metadata are deliberately omitted because lower layers may interpolate
+     * expected or observed business values. Stable codes and targets retain actionable context.</p>
+     */
+    static List<Map<String, Object>> safeDiagnostics(List<VisualDiagnostic> diagnostics) {
+        if (diagnostics == null) return List.of();
+        return diagnostics.stream().filter(Objects::nonNull).map(diagnostic -> Map.<String, Object>of(
+                "level", diagnostic.level(),
+                "code", diagnostic.code(),
+                "target", diagnostic.target(),
+                "line", diagnostic.line(),
+                "column", diagnostic.column())).toList();
     }
 
     private static Map<String, Object> blockedCase(JsonNode row) {
-        return Map.of(
-                "caseId", requiredText(row, "caseId"),
-                "layer", normalizedLayer(row),
-                "verdict", "GREEN_BLOCKED",
-                "reasonCode", "SPECCING_NOT_EXECUTABLE",
-                "oracle", Map.of("invariant", "not executed", "held", false),
-                "schemaConformant", false,
-                "mockedNodeIds", List.of(),
-                "realNodeIds", List.of(),
-                "diagnostics", List.of(),
-                "realExternalCalls", 0
-        );
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        result.put("caseId", requiredText(row, "caseId"));
+        result.put("layer", normalizedLayer(row));
+        result.put("category", optionalText(row, "category").isBlank()
+                ? "REGRESSION" : optionalText(row, "category").toUpperCase(Locale.ROOT));
+        result.put("oracleOwner", optionalText(row, "oracleOwner"));
+        result.put("verdict", "GREEN_BLOCKED");
+        result.put("reasonCode", "SPECCING_NOT_EXECUTABLE");
+        result.put("oracle", Map.of("invariant", "not executed", "held", false));
+        result.put("schemaConformant", false);
+        result.put("mockedNodeIds", List.of());
+        result.put("realNodeIds", List.of());
+        result.put("diagnostics", List.of());
+        result.put("realExternalCalls", 0);
+        return Map.copyOf(result);
+    }
+
+    private static Map<String, Map<String, Integer>> layerSummary(List<Map<String, Object>> results) {
+        LinkedHashMap<String, Map<String, Integer>> summary = new LinkedHashMap<>();
+        for (String layer : List.of("unit", "contract", "integration", "smoke")) {
+            long pass = results.stream().filter(row -> layer.equals(row.get("layer")))
+                    .filter(row -> Objects.toString(row.get("verdict"), "").endsWith("PASS")).count();
+            long fail = results.stream().filter(row -> layer.equals(row.get("layer")))
+                    .filter(row -> !Objects.toString(row.get("verdict"), "").endsWith("PASS")).count();
+            summary.put(layer, Map.of("pass", Math.toIntExact(pass), "fail", Math.toIntExact(fail)));
+        }
+        return Map.copyOf(summary);
     }
 
     private Map<String, NodeFixture> fixtures(JsonNode stubs) {
@@ -556,6 +570,31 @@ public final class AgentTddExecutionService {
         return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "toolRef", toolRef, "contractFingerprint", contractFingerprint, "caseIds", caseIds),
                 MAX_FINGERPRINT_BYTES);
+    }
+
+    /**
+     * Fingerprints the exact GREEN/RED evidence subject, including implementation and case content.
+     *
+     * <p>This fingerprint is intentionally stricter than {@code goldenSetId}: changing a stub,
+     * Oracle, graph revision, or resolved binding invalidates prior evidence and human signoff while
+     * preserving the contract-and-case-id line defined by Appendix C.</p>
+     */
+    static String evidenceFingerprint(ObjectMapper mapper,
+                                      String toolRef,
+                                      GraphDraft draft,
+                                      List<? extends JsonNode> rows,
+                                      String side) {
+        String implementationFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
+                "draftRevision", draft.revision(),
+                "nodes", draft.nodes(),
+                "edges", draft.edges(),
+                "operatorFingerprints", draft.operatorFingerprints()), MAX_FINGERPRINT_BYTES);
+        return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
+                "toolRef", toolRef,
+                "side", side,
+                "contractFingerprint", contractFingerprint(mapper, draft),
+                "implementationFingerprint", implementationFingerprint,
+                "cases", rows), MAX_FINGERPRINT_BYTES);
     }
 
     static String contractFingerprint(ObjectMapper mapper, GraphDraft draft) {

@@ -30,10 +30,34 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Verifies canonical mutations, proposal boundaries and exact idempotency semantics. */
 class AgentTddMutationServiceTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void bindingCompatibilityRejectsSameShapeWithDifferentArchetypeOrEffect() {
+        OperatorDefinition contract = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")
+                .operators().getFirst();
+        OperatorDefinition wrongArchetype = new OperatorDefinition(
+                contract.schemaVersion(), "runtime:write", contract.operatorVersion(), "",
+                new OperatorDefinition.Display("Write", "", List.of("external-write")),
+                contract.source(), contract.ports(), contract.configSchema(), contract.capabilities(),
+                contract.policy(), contract.lowering(), List.of());
+        OperatorDefinition wrongEffect = new OperatorDefinition(
+                contract.schemaVersion(), "runtime:effect", contract.operatorVersion(), "",
+                contract.display(), contract.source(), contract.ports(), contract.configSchema(),
+                new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "UNKNOWN", false, false, false),
+                contract.policy(), contract.lowering(), List.of());
+
+        assertThatThrownBy(() -> AgentTddMutationService.requireCompatibleBinding(contract, wrongArchetype))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+        assertThatThrownBy(() -> AgentTddMutationService.requireCompatibleBinding(contract, wrongEffect))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+    }
 
     @Test
     void compilesLibraryYamlIntoCanonicalRegistryAndReplaysExactly() {

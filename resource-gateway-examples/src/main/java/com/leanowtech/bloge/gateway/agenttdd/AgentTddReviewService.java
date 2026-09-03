@@ -65,7 +65,8 @@ public final class AgentTddReviewService {
         ArrayNode rows = data.putArray("rows");
         current.data().path("rows").forEach(row -> rows.add(
                 caseId.equals(row.path("caseId").asText()) ? approved : row.deepCopy()));
-        return states.save(scope, AgentTddMutationService.CASE_SET, caseSetRef, data);
+        return states.saveIfRevision(scope, AgentTddMutationService.CASE_SET, caseSetRef,
+                expectedRevision, data);
     }
 
     /** Approves an exact pending specification proposal without turning it into executable code. */
@@ -83,20 +84,40 @@ public final class AgentTddReviewService {
         }
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
-        return states.save(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef, data);
+        return states.saveIfRevision(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef,
+                expectedRevision, data);
     }
 
-    /** Records a separately authenticated human signoff consumed by executable publication. */
+    /**
+     * Records a separately authenticated human signoff for one exact reviewed baseline.
+     *
+     * @param toolRef exact Tool under review
+     * @param signoffRef reviewer-owned approval reference
+     * @param draftRevision exact canonical draft revision reviewed
+     * @param goldenSetId exact contract-and-case identity reviewed
+     * @param evidenceFingerprint exact GREEN evidence material reviewed
+     * @param identity governed human identity
+     * @return immutable signoff overlay revision
+     */
     public synchronized AgentTddStoredAsset approveToolSignoff(String toolRef,
                                                                String signoffRef,
+                                                               long draftRevision,
+                                                               String goldenSetId,
+                                                               String evidenceFingerprint,
                                                                IntegrationRequestContext identity) {
-        if (toolRef == null || toolRef.isBlank() || signoffRef == null || signoffRef.isBlank()) {
+        if (toolRef == null || toolRef.isBlank() || signoffRef == null || signoffRef.isBlank()
+                || draftRevision < 1 || goldenSetId == null || goldenSetId.isBlank()
+                || evidenceFingerprint == null || evidenceFingerprint.isBlank()) {
             throw new AgentTddToolException(
-                    "SCHEMA_NONCONFORMANT", "toolRef and signoffRef are required.");
+                    "SCHEMA_NONCONFORMANT",
+                    "toolRef, signoffRef, draftRevision, goldenSetId and evidenceFingerprint are required.");
         }
         ObjectNode data = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
         data.put("toolRef", toolRef.trim());
         data.put("signoffRef", signoffRef.trim());
+        data.put("draftRevision", draftRevision);
+        data.put("goldenSetId", goldenSetId.trim());
+        data.put("evidenceFingerprint", evidenceFingerprint.trim());
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
         return states.save(AgentTddMutationService.scopeKey(identity),

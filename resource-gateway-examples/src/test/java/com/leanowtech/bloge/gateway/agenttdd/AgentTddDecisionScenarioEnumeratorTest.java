@@ -82,6 +82,19 @@ class AgentTddDecisionScenarioEnumeratorTest {
     }
 
     @Test
+    void parsesStringNotEqualWithDeterministicNonMatchingRepresentative() {
+        var rows = enumerator.enumerate(draft(Map.of("rules", List.of(
+                        Map.of("id", "R1", "conditions", Map.of("tier", "tier != \"BLOCKED\""),
+                                "output", Map.of("accepted", true))))),
+                mapper.valueToTree(Map.of("decisionTableRef", "policy", "mode", "per-rule",
+                        "maxCases", 3, "oracleOwner", "policy-owner")));
+
+        assertThat(rows.getFirst().path("given").path("tier").asText()).isNotEqualTo("BLOCKED");
+        assertThat(rows).extracting(row -> row.path("given").path("tier").asText())
+                .contains("BLOCKED", "BLOCKED__OTHER__");
+    }
+
+    @Test
     void opaquePredicateWithoutAuthorSamplesProducesBlockedCase() {
         var rows = enumerator.enumerate(draft(Map.of("rules", List.of(
                         Map.of("id", "R1", "conditions", Map.of("country", "isSupported(country)"),

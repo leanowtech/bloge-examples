@@ -90,11 +90,8 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
             if (observed && standins.stream().anyMatch(standin -> !observesDelegate(standin))) {
                 return failure(outputNode, INVALID_INPUT_ERROR);
             }
-            Object observedOutput = standins.getFirst().dependencyBehavior() == null
-                    ? standins.getFirst().output()
-                    : standins.getFirst().dependencyBehavior().value();
             registry.registerRaw(entry.getKey(), observed
-                    ? localObservedOperator(observedOutput)
+                    ? localObservedOperator(observedOutputs(standins))
                     : placeholderOperator(placeholderExecutions));
         }
 
@@ -268,11 +265,14 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         };
     }
 
-    private static Operator<Object, Object> localObservedOperator(Object output) {
+    private static Operator<Object, Object> localObservedOperator(Map<String, Object> outputsByNodeId) {
         return new Operator<>() {
             @Override
             public Object execute(Object input, OperatorContext context) {
-                return output;
+                if (!outputsByNodeId.containsKey(context.nodeId())) {
+                    throw new IllegalStateException("No local OBSERVE delegate exists for this node.");
+                }
+                return outputsByNodeId.get(context.nodeId());
             }
 
             @Override
@@ -280,6 +280,13 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                 return SideEffectType.READ_ONLY;
             }
         };
+    }
+
+    private static Map<String, Object> observedOutputs(List<VisualSimulationPlan.Standin> standins) {
+        LinkedHashMap<String, Object> outputs = new LinkedHashMap<>();
+        standins.forEach(standin -> outputs.put(
+                standin.originalNodeId(), standin.dependencyBehavior().value()));
+        return outputs;
     }
 
     private static boolean observesDelegate(VisualSimulationPlan.Standin standin) {

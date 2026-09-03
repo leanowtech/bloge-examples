@@ -75,11 +75,29 @@ class McpProtocolControllerTest {
                 (name, arguments, identity) -> Map.of());
         HttpHeaders headers = modernHeaders("tools/list", null);
 
-        assertThatThrownBy(() -> controller.exchange(
+        JsonNode response = controller.exchange(
                 request(3, "tools/call", Map.of("name", "rg.capability.list", "arguments", Map.of())),
-                headers))
-                .isInstanceOf(McpProtocolException.class)
-                .hasMessageContaining("Mcp-Method");
+                headers).getBody();
+
+        assertThat(response.path("id").asInt()).isEqualTo(3);
+        assertThat(response.path("error").path("code").asInt()).isEqualTo(-32020);
+    }
+
+    @Test
+    void initializeNegotiatesOnlyKnownVersionsAndPreservesRequestIdOnFailure() {
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
+                (name, arguments, identity) -> Map.of());
+
+        JsonNode modern = controller.exchange(request(11, "initialize", Map.of(
+                "protocolVersion", McpProtocolController.MODERN_PROTOCOL_VERSION)), new HttpHeaders()).getBody();
+        JsonNode unknown = controller.exchange(request(12, "initialize", Map.of(
+                "protocolVersion", "2099-01-01")), new HttpHeaders()).getBody();
+
+        assertThat(modern.path("result").path("protocolVersion").asText())
+                .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
+        assertThat(unknown.path("id").asInt()).isEqualTo(12);
+        assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }
 
     private JsonNode request(int id, String method, Map<String, ?> params) {

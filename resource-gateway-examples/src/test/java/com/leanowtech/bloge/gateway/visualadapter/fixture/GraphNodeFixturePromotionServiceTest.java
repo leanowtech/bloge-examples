@@ -119,6 +119,24 @@ class GraphNodeFixturePromotionServiceTest {
     }
 
     @Test
+    void explicitSingleOutputPortPreservesTheLegacySchemaIdentity() {
+        OperatorDefinition operator = resourceOperator();
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(
+                Map.of("node_1", new GraphDraft.NodeFixture(Map.of("score", 760))))));
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(operator));
+        when(fixtureCatalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
+            FixtureAssetDescriptor candidate = invocation.getArgument(1);
+            return StoredFixtureAsset.verified(mapper, candidate.persistedAs(1, candidate.metadata()));
+        });
+
+        service.promote("draft-1", "node_1", "payload-0", request("explicit-port"), identity);
+
+        assertThat(materialWrites).singleElement().satisfies(write ->
+                assertThat(write.schemaRef()).isEqualTo(
+                        GraphNodeFixturePromotionService.exactOutputSchemaRef(operator, mapper)));
+    }
+
+    @Test
     void derivesScenarioSourceOnlyFromMatchingServerSimulationCapture() {
         GraphDraft unpinnedDraft = draft(Map.of());
         GraphDraft pinnedDraft = draft(Map.of("node_1", new GraphDraft.NodeFixture(

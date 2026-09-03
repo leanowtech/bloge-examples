@@ -246,7 +246,7 @@ Agent 调 `rg.scenario.upsertCases` 写 golden 表（列 schema 见附录 B；st
 Agent 调 `rg.simulate`（带 `libraryRefs=[ride-cancellation]`）跑红侧：`decision_table`/`transform` **真实执行**（纯逻辑），4 个 `resource-read` 节点**被契约合成桩/fixture 替换**，0 真实外呼。假设作者**初版决策表漏了 R4（司机责任）**：则 **g3 = RED_FAIL**——这条红色 GOLDEN 就是一条**业务待办**："司机责任应全额减免，但当前规则没覆盖"。Agent 补上 R4 → 重跑 → g3 RED_PASS。红侧全绿 = 规格自洽、工具接得通（但尚未证明真实行为）。
 
 ### 5.5 第五步：补实现（加 bindingRef）→ 图降级为可执行 → 绿侧跑
-工程方为 4 个 `resource-read` 算子补 `runtime.bindingRef`（分别指向真实资源 `ride-order-service.lookup` 等），再次 `rg.library.upsert`。设计态解除，图不再含 design-only 算子，**可降级为 §5.2 那张可执行 `.bloge`**。工具状态从 **SPECCING** 转 **IMPLEMENTING**。Agent 调 `rg.tool.baseline` 跑绿侧（同一 `goldenSetId`、同一批用例、依赖用真实绑定）。全部 GREEN_PASS 且跨轮业务指纹稳定 → 状态转 **IMPLEMENTED**。红→绿是**同一条身份连续线**（附录 C）。
+工程方为 4 个 `resource-read` 算子补 `runtime.bindingRef`（分别指向真实资源 `ride-order-service.lookup` 等），再次 `rg.library.upsert`。设计态解除，图不再含 design-only 算子，**可降级为 §5.2 那张可执行 `.bloge`**。工具状态从 **SPECCING** 转 **IMPLEMENTING**。Agent 调 `rg.tool.baseline` 跑绿侧：同一 `goldenSetId`、同一批用例、binding 已全部解析，但 EXECUTE 仍以用例行为替换外部依赖，保持 0 真实外呼；因此绿侧证明实现图与纯业务逻辑达标，不把真实集成健康冒充为已证明。全部 GREEN_PASS 且跨轮业务指纹稳定 → 状态转 **IMPLEMENTED**。红→绿是**同一条身份连续线**（附录 C）。
 
 ### 5.6 第六步：发布
 Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"未满足 → 人在看板签署 → Agent 调 `rg.tool.publish`（GOVERNED_WRITE，幂等）→ 发布为不可变可执行工具，可被 Agent 调用，也可作算子拖进更大图（集成层）。

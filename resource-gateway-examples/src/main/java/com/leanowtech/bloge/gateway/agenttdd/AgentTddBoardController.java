@@ -66,8 +66,10 @@ public final class AgentTddBoardController {
     @PostMapping("/reviews/tools/{toolRef}/signoffs/{signoffRef}/approve")
     public Map<String, Object> approveSignoff(@PathVariable String toolRef,
                                               @PathVariable String signoffRef,
+                                              @RequestBody SignoffRequest request,
                                               @RequestHeader HttpHeaders headers) {
-        var stored = reviews.approveToolSignoff(toolRef, signoffRef,
+        var stored = reviews.approveToolSignoff(toolRef, signoffRef, request.draftRevision(),
+                request.goldenSetId(), request.evidenceFingerprint(),
                 authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
         return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
     }
@@ -85,4 +87,7 @@ public final class AgentTddBoardController {
 
     /** @param expectedRevision exact revision visible to the human reviewer */
     public record RevisionRequest(long expectedRevision) { }
+
+    /** Exact baseline material the human reviewed before approving executable publication. */
+    public record SignoffRequest(long draftRevision, String goldenSetId, String evidenceFingerprint) { }
 }

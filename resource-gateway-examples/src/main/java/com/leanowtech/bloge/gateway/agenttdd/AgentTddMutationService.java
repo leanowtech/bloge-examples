@@ -411,24 +411,49 @@ public final class AgentTddMutationService {
         return draft.withOperatorSnapshotState(fingerprints, snapshots);
     }
 
-    private static void requireCompatibleBinding(OperatorDefinition contract, OperatorDefinition target) {
+    /** Rejects a runtime implementation that weakens the authored semantic contract. */
+    static void requireCompatibleBinding(OperatorDefinition contract, OperatorDefinition target) {
+        if (!bindingArchetype(contract).equals(bindingArchetype(target))) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "runtime.bindingRef archetype differs from its contract.");
+        }
+        if (!contract.capabilities().effect().equals(target.capabilities().effect())
+                || contract.capabilities().requiresSecrets() != target.capabilities().requiresSecrets()) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "runtime.bindingRef effect or secret requirement differs from its contract.");
+        }
         if (contract.ports().inputs().size() != target.ports().inputs().size()
                 || contract.ports().outputs().size() != target.ports().outputs().size()) {
             throw new AgentTddToolException(
                     "SCHEMA_NONCONFORMANT", "runtime.bindingRef port cardinality differs from its contract.");
         }
         for (int index = 0; index < contract.ports().inputs().size(); index++) {
-            if (!contract.ports().inputs().get(index).schema().equals(target.ports().inputs().get(index).schema())) {
+            OperatorDefinition.Port expected = contract.ports().inputs().get(index);
+            OperatorDefinition.Port actual = target.ports().inputs().get(index);
+            if (!expected.name().equals(actual.name()) || expected.required() != actual.required()
+                    || !expected.schema().equals(actual.schema())) {
                 throw new AgentTddToolException(
-                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef input schema differs from its contract.");
+                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef input port differs from its contract.");
             }
         }
         for (int index = 0; index < contract.ports().outputs().size(); index++) {
-            if (!contract.ports().outputs().get(index).schema().equals(target.ports().outputs().get(index).schema())) {
+            OperatorDefinition.Port expected = contract.ports().outputs().get(index);
+            OperatorDefinition.Port actual = target.ports().outputs().get(index);
+            if (!expected.name().equals(actual.name()) || expected.required() != actual.required()
+                    || !expected.schema().equals(actual.schema())) {
                 throw new AgentTddToolException(
-                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef output schema differs from its contract.");
+                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef output port differs from its contract.");
             }
         }
+    }
+
+    private static String bindingArchetype(OperatorDefinition operator) {
+        return operator.display().tags().stream()
+                .map(value -> value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT))
+                .filter(Set.of("resource-read", "external-write", "remote-worker", "ai-tool",
+                        "event-source", "message-handler", "webhook")::contains)
+                .findFirst()
+                .orElse(operator.source().kind());
     }
 
     private GraphDraft scoped(GraphDraft source,

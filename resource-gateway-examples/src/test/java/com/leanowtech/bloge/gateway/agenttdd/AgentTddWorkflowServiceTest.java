@@ -132,7 +132,8 @@ class AgentTddWorkflowServiceTest {
 
     @Test
     void executablePublishRejectsMissingGreenBaselineBeforeCallingCompiler() {
-        new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
+        new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-1", 4, "sha256:missing", "sha256:missing", identity());
 
         assertThatThrownBy(() -> service.publish(json(Map.of(
                 "toolRef", "risk-tool", "signoffRef", "signoff-1", "idempotencyKey", "publish-1")),
@@ -147,11 +148,14 @@ class AgentTddWorkflowServiceTest {
                 "toolRef", "risk-tool", "rows", List.of(Map.of(
                         "caseId", "g1", "lifecycle", "ACTIVE")))));
         String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
+        String evidenceFingerprint = currentEvidenceFingerprint("golden-1", "GREEN");
         service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
                 "status", "GO", "goldenSetId", goldenSetId, "side", "GREEN",
                 "caseSetRef", "golden-1",
+                "draftRevision", 4, "evidenceFingerprint", evidenceFingerprint,
                 "businessFingerprintStable", true, "realExternalCalls", 0), identity());
-        new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
+        new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint, identity());
         VisualValidationResult validation = mock(VisualValidationResult.class);
         VisualGraphActionReadiness actionReadiness = mock(VisualGraphActionReadiness.class);
         when(validation.valid()).thenReturn(true);
@@ -179,10 +183,13 @@ class AgentTddWorkflowServiceTest {
                 "toolRef", "risk-tool", "rows", List.of(Map.of(
                         "caseId", "g1", "lifecycle", "ACTIVE", "expect", Map.of())))));
         String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
+        String evidenceFingerprint = currentEvidenceFingerprint("golden-1", "RED");
         service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
                 "status", "GO", "goldenSetId", goldenSetId, "caseSetRef", "golden-1",
-                "side", "RED", "businessFingerprintStable", true, "realExternalCalls", 0), identity());
-        new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
+                "side", "RED", "draftRevision", 4, "evidenceFingerprint", evidenceFingerprint,
+                "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint, identity());
 
         assertThatThrownBy(() -> service.publish(json(Map.of(
                 "toolRef", "risk-tool", "signoffRef", "signoff-1",
@@ -209,6 +216,13 @@ class AgentTddWorkflowServiceTest {
 
     private JsonNode json(Object value) {
         return mapper.valueToTree(value);
+    }
+
+    private String currentEvidenceFingerprint(String caseSetRef, String side) {
+        List<JsonNode> rows = new java.util.ArrayList<>();
+        states.find(scope(), AgentTddMutationService.CASE_SET, caseSetRef).orElseThrow()
+                .data().path("rows").forEach(rows::add);
+        return AgentTddExecutionService.evidenceFingerprint(mapper, "risk-tool", draft, rows, side);
     }
 
     private static String scope() {

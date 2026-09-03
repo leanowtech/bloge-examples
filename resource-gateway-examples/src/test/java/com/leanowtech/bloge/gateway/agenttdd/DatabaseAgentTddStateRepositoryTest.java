@@ -63,4 +63,23 @@ class DatabaseAgentTddStateRepositoryTest {
                 .isInstanceOf(AgentTddToolException.class)
                 .hasMessageContaining("different request material");
     }
+
+    @Test
+    void atomicRevisionFenceRejectsAStaleHumanApprovalWithoutDeletingCurrentAsset() {
+        var reviewed = repository.save("tenant-a|test", "CASE_SET", "cases-1",
+                mapper.valueToTree(Map.of("status", "PENDING")));
+        var concurrent = repository.saveIfRevision("tenant-a|test", "CASE_SET", "cases-1",
+                reviewed.revision(), mapper.valueToTree(Map.of("status", "CHANGED")));
+
+        assertThatThrownBy(() -> repository.saveIfRevision(
+                "tenant-a|test", "CASE_SET", "cases-1", reviewed.revision(),
+                mapper.valueToTree(Map.of("status", "APPROVED"))))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
+        assertThat(repository.find("tenant-a|test", "CASE_SET", "cases-1"))
+                .hasValueSatisfying(current -> {
+                    assertThat(current.revision()).isEqualTo(concurrent.revision());
+                    assertThat(current.data().path("status").asText()).isEqualTo("CHANGED");
+                });
+    }
 }
