@@ -1,0 +1,173 @@
+package com.leanowtech.bloge.gateway.agenttdd;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Stateless Streamable-HTTP JSON-RPC boundary for the RG Agent TDD tool surface.
+ *
+ * <p>The current MCP protocol sends version, method, name and client identity on each request.
+ * Legacy {@code initialize} remains supported for clients that have not moved to the stateless
+ * lifecycle. Application identity is always derived from the existing RG integration authority.</p>
+ */
+@RestController
+public final class McpProtocolController {
+    public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
+    public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
+
+    private final ObjectMapper mapper;
+    private final McpToolCatalog catalog;
+    private final IntegrationRequestAuthenticator authenticator;
+    private final McpToolInvoker invoker;
+
+    /** Creates the authenticated MCP transport. */
+    public McpProtocolController(ObjectMapper mapper,
+                                 McpToolCatalog catalog,
+                                 IntegrationRequestAuthenticator authenticator,
+                                 McpToolInvoker invoker) {
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.catalog = Objects.requireNonNull(catalog, "catalog");
+        this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
+        this.invoker = Objects.requireNonNull(invoker, "invoker");
+    }
+
+    /**
+     * Exchanges one complete stateless MCP request.
+     *
+     * @param request JSON-RPC request object
+     * @param headers protocol routing and integration authentication headers
+     * @return JSON-RPC response with no-store policy
+     */
+    @PostMapping(value = "/mcp", consumes = "application/json", produces = "application/json")
+    public ResponseEntity<JsonNode> exchange(@RequestBody JsonNode request,
+                                             @RequestHeader HttpHeaders headers) {
+        requireRequest(request);
+        String method = text(request, "method");
+        validateRouting(headers, method, request.path("params"));
+        JsonNode id = request.get("id");
+        Object result = switch (method) {
+            case "server/discover" -> discover();
+            case "initialize" -> initialize(request.path("params"));
+            case "tools/list" -> listTools(authenticate(headers, McpToolImpact.READ));
+            case "tools/call" -> callTool(request.path("params"), headers);
+            default -> throw new McpProtocolException(-32601, "Unsupported MCP method");
+        };
+        ObjectNode response = mapper.createObjectNode();
+        response.put("jsonrpc", "2.0");
+        response.set("id", id == null ? mapper.nullNode() : id);
+        response.set("result", mapper.valueToTree(result));
+        return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+    }
+
+    /** Maps safe protocol failures to JSON-RPC errors without exposing application payloads. */
+    @ExceptionHandler(McpProtocolException.class)
+    public ResponseEntity<JsonNode> protocolFailure(McpProtocolException failure) {
+        ObjectNode response = mapper.createObjectNode();
+        response.put("jsonrpc", "2.0");
+        response.putNull("id");
+        response.set("error", mapper.valueToTree(Map.of(
+                "code", failure.code(),
+                "message", failure.getMessage()
+        )));
+        return ResponseEntity.badRequest().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+    }
+
+    private Object callTool(JsonNode params, HttpHeaders headers) {
+        String name = text(params, "name");
+        McpToolDefinition definition = catalog.require(name);
+        JsonNode arguments = params.path("arguments");
+        if (!arguments.isObject()) {
+            throw new McpProtocolException(-32602, "Tool arguments must be an object");
+        }
+        IntegrationRequestContext identity = authenticate(headers, definition.impact());
+        JsonNode structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
+        boolean isError = structured.has("ok") && !structured.path("ok").asBoolean();
+        return Map.of(
+                "content", List.of(Map.of("type", "text", "text", structured.toString())),
+                "structuredContent", structured,
+                "isError", isError
+        );
+    }
+
+    private Map<String, Object> listTools(IntegrationRequestContext ignored) {
+        return Map.of(
+                "tools", catalog.all().stream().map(McpToolDefinition::protocolView).toList(),
+                "ttlMs", 300_000,
+                "cacheScope", "user"
+        );
+    }
+
+    private Map<String, Object> discover() {
+        return Map.of(
+                "protocolVersion", MODERN_PROTOCOL_VERSION,
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
+                "capabilities", Map.of("tools", Map.of("listChanged", false))
+        );
+    }
+
+    private Map<String, Object> initialize(JsonNode params) {
+        String requested = text(params, "protocolVersion");
+        return Map.of(
+                "protocolVersion", MODERN_PROTOCOL_VERSION.equals(requested)
+                        ? LEGACY_PROTOCOL_VERSION : requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
+                "capabilities", Map.of("tools", Map.of("listChanged", false))
+        );
+    }
+
+    private IntegrationRequestContext authenticate(HttpHeaders headers, McpToolImpact impact) {
+        IntegrationOperation operation = impact.operation();
+        return authenticator.authenticate(headers, operation);
+    }
+
+    private static void requireRequest(JsonNode request) {
+        if (request == null || !request.isObject() || !"2.0".equals(text(request, "jsonrpc"))
+                || !request.has("id")) {
+            throw new McpProtocolException(-32600, "A JSON-RPC 2.0 request with id is required");
+        }
+    }
+
+    private static void validateRouting(HttpHeaders headers, String method, JsonNode params) {
+        String version = header(headers, "MCP-Protocol-Version");
+        if (version.isBlank()) {
+            return;
+        }
+        if (!MODERN_PROTOCOL_VERSION.equals(version)) {
+            throw new McpProtocolException(-32022, "Unsupported MCP protocol version");
+        }
+        if (!method.equals(header(headers, "Mcp-Method"))) {
+            throw new McpProtocolException(-32020, "Mcp-Method must match the JSON-RPC method");
+        }
+        if ("tools/call".equals(method)
+                && !text(params, "name").equals(header(headers, "Mcp-Name"))) {
+            throw new McpProtocolException(-32020, "Mcp-Name must match params.name");
+        }
+    }
+
+    private static String text(JsonNode node, String field) {
+        if (node == null || !node.path(field).isTextual()) {
+            return "";
+        }
+        return node.path(field).asText().trim();
+    }
+
+    private static String header(HttpHeaders headers, String name) {
+        String value = headers == null ? null : headers.getFirst(name);
+        return value == null ? "" : value.trim();
+    }
+}
