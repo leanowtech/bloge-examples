@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -39,6 +40,38 @@ class AgentTddAttestationServiceTest {
     private final AgentTddAttestationService service = new AgentTddAttestationService(
             states, drafts, catalog, resources, runner,
             new AgentTddEgressHostPolicy("localhost"), new ObjectMapper());
+
+    @Test
+    void projectsCoverageOnlyFactsOffAClosedRuntimeInputBoundary() {
+        GraphDraft draft = new GraphDraft(
+                GraphDraft.SCHEMA_VERSION, "risk-tool", 1, "riskTool",
+                "tenant-a", "project-a", "test", GraphDraft.STATUS_DRAFT,
+                SchemaEnvelope.object(Map.of("userId", Map.of("type", "string")), List.of("userId")),
+                SchemaEnvelope.opaque(), List.of(), List.of(), Map.of(), Map.of(),
+                new GraphDraft.OutputSelection("", ""), Map.of(), Map.of(),
+                GraphDraft.RevisionMetadata.empty());
+
+        Map<String, Object> projected = AgentTddAttestationService.projectRuntimeInputs(
+                draft, Map.of("userId", "u-100", "tier", "premium"));
+
+        assertThat(projected).containsOnly(Map.entry("userId", "u-100"));
+    }
+
+    @Test
+    void preservesAllGoldenFactsForAnOpenRuntimeInputBoundary() {
+        GraphDraft draft = new GraphDraft(
+                GraphDraft.SCHEMA_VERSION, "risk-tool", 1, "riskTool",
+                "tenant-a", "project-a", "test", GraphDraft.STATUS_DRAFT,
+                SchemaEnvelope.opaque(), SchemaEnvelope.opaque(), List.of(), List.of(),
+                Map.of(), Map.of(), new GraphDraft.OutputSelection("", ""), Map.of(), Map.of(),
+                GraphDraft.RevisionMetadata.empty());
+
+        Map<String, Object> projected = AgentTddAttestationService.projectRuntimeInputs(
+                draft, Map.of("userId", "u-100", "tier", "premium"));
+
+        assertThat(projected).containsOnly(
+                Map.entry("userId", "u-100"), Map.entry("tier", "premium"));
+    }
 
     @Test
     void rejectsAnAgentEvenWhenItClaimsTheAttestationPurpose() {
@@ -104,7 +137,7 @@ class AgentTddAttestationServiceTest {
         when(runner.runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.<String, ResourceDescriptor>anyMap()))
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap()))
                 .thenReturn(response);
 
         Map<String, Object> first = service.attest(
@@ -116,7 +149,7 @@ class AgentTddAttestationServiceTest {
         verify(runner, times(1)).runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.<String, ResourceDescriptor>anyMap());
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap());
 
         when(resources.resolve("write-service")).thenReturn(
                 descriptor("GET", "https://localhost/replaced"));
@@ -136,7 +169,7 @@ class AgentTddAttestationServiceTest {
         when(runner.runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.<String, ResourceDescriptor>anyMap()))
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap()))
                 .thenReturn(response);
 
         Map<String, Object> automatic = service.attest(
@@ -152,7 +185,7 @@ class AgentTddAttestationServiceTest {
         verify(runner, times(3)).runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.<String, ResourceDescriptor>anyMap());
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap());
     }
 
     private Map<String, Object> greenFor(OperatorDefinition operator, ResourceDescriptor descriptor) {

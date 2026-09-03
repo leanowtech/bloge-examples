@@ -60,6 +60,48 @@ class AgentTddMutationServiceTest {
     }
 
     @Test
+    void bindingCompatibilityTreatsRequiredPropertyOrderAsSchemaSemanticNoise() {
+        OperatorDefinition base = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")
+                .operators().getFirst();
+        SchemaEnvelope authored = SchemaEnvelope.object(
+                Map.of("name", Map.of("type", "string"), "tier", Map.of("type", "string")),
+                List.of("name", "tier"));
+        SchemaEnvelope runtime = SchemaEnvelope.object(
+                Map.of("tier", Map.of("type", "string"), "name", Map.of("type", "string")),
+                List.of("tier", "name"));
+
+        AgentTddMutationService.requireCompatibleBinding(
+                withOutputSchema(base, authored), withOutputSchema(base, runtime));
+    }
+
+    @Test
+    void bindingCompatibilityRejectsARealRequiredPropertyDifference() {
+        OperatorDefinition base = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")
+                .operators().getFirst();
+        SchemaEnvelope authored = SchemaEnvelope.object(
+                Map.of("name", Map.of("type", "string"), "tier", Map.of("type", "string")),
+                List.of("name", "tier"));
+        SchemaEnvelope weakerRuntime = SchemaEnvelope.object(
+                Map.of("name", Map.of("type", "string"), "tier", Map.of("type", "string")),
+                List.of("name"));
+
+        assertThatThrownBy(() -> AgentTddMutationService.requireCompatibleBinding(
+                withOutputSchema(base, authored), withOutputSchema(base, weakerRuntime)))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+    }
+
+    private static OperatorDefinition withOutputSchema(OperatorDefinition source, SchemaEnvelope schema) {
+        OperatorDefinition.Port output = source.ports().outputs().getFirst();
+        return new OperatorDefinition(
+                source.schemaVersion(), source.operatorRef(), source.operatorVersion(), "",
+                source.display(), source.source(),
+                new OperatorDefinition.Ports(source.ports().inputs(), List.of(
+                        new OperatorDefinition.Port(output.name(), schema, output.required(), output.description()))),
+                source.configSchema(), source.capabilities(), source.policy(), source.lowering(), source.diagnostics());
+    }
+
+    @Test
     void compilesLibraryYamlIntoCanonicalRegistryAndReplaysExactly() {
         Fixture fixture = fixture();
         JsonNode arguments = mapper.valueToTree(Map.of(

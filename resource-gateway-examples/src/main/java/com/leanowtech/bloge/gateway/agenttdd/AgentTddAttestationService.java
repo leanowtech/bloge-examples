@@ -16,9 +16,12 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
+import com.leanowtech.bloge.gateway.visualadapter.ResourceRegistryVisualAdapter;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -351,11 +354,13 @@ public final class AgentTddAttestationService {
         plan.dependencies().forEach(dependency -> calls.put(dependency.nodeId(), 0));
         try {
             Map<String, Object> given = mapper.convertValue(row.path("given"), OBJECT_MAP);
-            Map<String, ResourceDescriptor> admittedDescriptors = new LinkedHashMap<>();
+            Map<String, Object> runtimeInputs = projectRuntimeInputs(plan.executable(), given);
+            Map<String, VisualResourceDescriptor> admittedDescriptors = new LinkedHashMap<>();
             plan.dependencies().forEach(dependency ->
-                    admittedDescriptors.put(dependency.resourceId(), dependency.descriptor()));
+                    admittedDescriptors.put(dependency.resourceId(),
+                            ResourceRegistryVisualAdapter.toVisual(dependency.descriptor())));
             VisualGraphRunResponse response = runner.runAgainst(
-                    plan.executable(), given, "", plan.frozenCatalog(), admittedDescriptors);
+                    plan.executable(), runtimeInputs, "", plan.frozenCatalog(), admittedDescriptors);
             calls.replaceAll((nodeId, ignored) -> response.nodeAttempts()
                     .getOrDefault(nodeId, List.of()).size());
             boolean dependenciesCalled = calls.values().stream().allMatch(count -> count > 0);
@@ -375,6 +380,31 @@ public final class AgentTddAttestationService {
                     "allDependenciesCalled", false,
                     "realExternalCalls", 0));
         }
+    }
+
+    /**
+     * Projects a business golden row onto the graph's declared runtime input boundary.
+     *
+     * <p>Golden {@code given} values also carry decision-table fact columns for A4 coverage. Those
+     * columns may describe facts produced by a real dependency rather than graph inputs. Closed
+     * input schemas therefore receive only declared properties during attestation; open schemas
+     * preserve every value.</p>
+     *
+     * @param draft executable graph whose input schema owns the runtime boundary
+     * @param given approved golden facts
+     * @return immutable runtime input projection
+     */
+    static Map<String, Object> projectRuntimeInputs(GraphDraft draft, Map<String, Object> given) {
+        Map<String, Object> source = given == null ? Map.of() : given;
+        if (draft == null || !Boolean.FALSE.equals(draft.inputSchema().schema().get("additionalProperties"))) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+        }
+        Set<String> declared = draft.inputSchema().properties().keySet();
+        LinkedHashMap<String, Object> projected = new LinkedHashMap<>();
+        source.forEach((key, value) -> {
+            if (declared.contains(key)) projected.put(key, value);
+        });
+        return Collections.unmodifiableMap(projected);
     }
 
     private Map<String, Object> persist(AttestationPlan plan,

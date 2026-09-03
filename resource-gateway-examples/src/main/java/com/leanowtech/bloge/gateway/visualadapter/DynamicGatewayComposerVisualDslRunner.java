@@ -26,6 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Resource-gateway adapter from the visual runtime DSL runner port to the existing dynamic composer.
@@ -79,7 +81,10 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                 request.outputNode(),
                 new DynamicRunIntent("", request.runIntent().requestId(), request.runIntent().deadlineAt(),
                         request.runIntent().fencingToken(), request.runIntent().cancellationGraceMs()),
-                request.admittedResources()
+                request.admittedResources().entrySet().stream().collect(Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey,
+                        entry -> ResourceRegistryVisualAdapter.toGateway(entry.getValue())
+                ))
         ));
         return fromDynamic(response);
     }

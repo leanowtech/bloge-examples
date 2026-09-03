@@ -19,7 +19,9 @@ import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.importer.DslRewriteGateResult;
 import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -455,7 +457,7 @@ public final class AgentTddMutationService {
             OperatorDefinition.Port expected = contract.ports().inputs().get(index);
             OperatorDefinition.Port actual = target.ports().inputs().get(index);
             if (!expected.name().equals(actual.name()) || expected.required() != actual.required()
-                    || !expected.schema().equals(actual.schema())) {
+                    || !semanticallyEquivalent(expected.schema(), actual.schema())) {
                 throw new AgentTddToolException(
                         "SCHEMA_NONCONFORMANT", "runtime.bindingRef input port differs from its contract.");
             }
@@ -464,11 +466,22 @@ public final class AgentTddMutationService {
             OperatorDefinition.Port expected = contract.ports().outputs().get(index);
             OperatorDefinition.Port actual = target.ports().outputs().get(index);
             if (!expected.name().equals(actual.name()) || expected.required() != actual.required()
-                    || !expected.schema().equals(actual.schema())) {
+                    || !semanticallyEquivalent(expected.schema(), actual.schema())) {
                 throw new AgentTddToolException(
                         "SCHEMA_NONCONFORMANT", "runtime.bindingRef output port differs from its contract.");
             }
         }
+    }
+
+    /**
+     * Compares schema value domains in both directions so representational noise such as the order
+     * of JSON Schema {@code required} members cannot invalidate an otherwise exact binding.
+     */
+    private static boolean semanticallyEquivalent(SchemaEnvelope expected, SchemaEnvelope actual) {
+        return expected.format().equals(actual.format())
+                && expected.version().equals(actual.version())
+                && VisualSchemaCompatibility.schemasCompatible(expected.schema(), actual.schema())
+                && VisualSchemaCompatibility.schemasCompatible(actual.schema(), expected.schema());
     }
 
     private static String bindingArchetype(OperatorDefinition operator) {

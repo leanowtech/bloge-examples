@@ -1,6 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
@@ -8,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
@@ -160,7 +160,7 @@ public class VisualGraphRunService {
                                              Map<String, Object> context,
                                              String outputNode,
                                              VisualOperatorCatalog operationCatalog,
-                                             Map<String, ResourceDescriptor> admittedResources) {
+                                             Map<String, VisualResourceDescriptor> admittedResources) {
         if (operationCatalog == null) {
             throw new IllegalArgumentException("operationCatalog is required");
         }
@@ -175,7 +175,7 @@ public class VisualGraphRunService {
                                            VisualRunIntent runIntent,
                                            GraphDraftValidator operationValidator,
                                            GraphDraftDslGenerator operationGenerator,
-                                           Map<String, ResourceDescriptor> admittedResources) {
+                                           Map<String, VisualResourceDescriptor> admittedResources) {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
             return blocked(draft, false, fingerprintDiagnostics,

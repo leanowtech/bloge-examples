@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
-import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -16,14 +16,14 @@ import java.util.Map;
  * @param context initial graph context values
  * @param outputNode optional output node override
  * @param runIntent optional deadline and fenced cancellation intent
- * @param admittedResources exact resource descriptors admitted for this internal execution
+ * @param admittedResources exact visual-owned resource snapshots admitted for this internal execution
  */
 public record VisualDslRunRequest(
         String dsl,
         Map<String, Object> context,
         String outputNode,
         VisualRunIntent runIntent,
-        Map<String, ResourceDescriptor> admittedResources
+        Map<String, VisualResourceDescriptor> admittedResources
 ) {
     /**
      * Creates a normalized DSL run request.
