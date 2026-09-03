@@ -352,7 +352,7 @@ class CorrectnessWorkbookGateIntegrationTest {
     }
 
     private static IntegrationRequestContext context(String purpose, String correlationId) {
-        return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "prod", "local",
+        return new IntegrationRequestContext("tenant-a", "org-a", "knowledge", "prod", "local",
                 "WORKLOAD", "aneke", "", purpose, correlationId);
     }
 

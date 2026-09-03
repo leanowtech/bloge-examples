@@ -137,7 +137,7 @@ class GraphDraftDependencySnapshotApplicationIntegrationTest {
 
     private static IntegrationRequestContext context() {
         return new IntegrationRequestContext(
-                "tenant-a", "knowledge-governance", "tool-studio", "prod", "ap-southeast-1",
+                "tenant-a", "knowledge-governance", "knowledge", "prod", "ap-southeast-1",
                 "WORKLOAD", "aneke-sync", "", "GOVERNANCE_EVIDENCE_INGESTION", "corr-spring-snapshot");
     }
 }

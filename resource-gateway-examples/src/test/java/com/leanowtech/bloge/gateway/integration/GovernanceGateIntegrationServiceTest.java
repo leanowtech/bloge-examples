@@ -98,7 +98,7 @@ class GovernanceGateIntegrationServiceTest {
     }
 
     private static IntegrationRequestContext context(String purpose, String correlationId) {
-        return new IntegrationRequestContext("tenant-a", "knowledge-governance", "tool-studio", "prod",
+        return new IntegrationRequestContext("tenant-a", "knowledge-governance", "knowledge", "prod",
                 "ap-southeast-1", "WORKLOAD", "aneke-sync", "", purpose, correlationId);
     }
 

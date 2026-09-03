@@ -2301,7 +2301,7 @@ class ToolStudioIntegrationServiceTest {
         when(validator.validate(draft)).thenReturn(new VisualValidationResult(true, List.of()));
         ToolStudioIntegrationService service = service(repository, validator, catalog(operator), null);
         IntegrationRequestContext context = new IntegrationRequestContext(
-                "tenant-a", "knowledge-governance", "tool-studio", "prod", "ap-southeast-1",
+                "tenant-a", "knowledge-governance", "knowledge", "prod", "ap-southeast-1",
                 "WORKLOAD", "aneke-sync", "", "GOVERNANCE_EVIDENCE_INGESTION", "corr-1"
         );
 
@@ -2934,7 +2934,7 @@ class ToolStudioIntegrationServiceTest {
 
     private static IntegrationRequestContext integrationContext(String correlationId) {
         return new IntegrationRequestContext(
-                "tenant-a", "knowledge-governance", "tool-studio", "prod", "ap-southeast-1",
+                "tenant-a", "knowledge-governance", "knowledge", "prod", "ap-southeast-1",
                 "WORKLOAD", "aneke-sync", "", "GOVERNANCE_EVIDENCE_INGESTION", correlationId
         );
     }
