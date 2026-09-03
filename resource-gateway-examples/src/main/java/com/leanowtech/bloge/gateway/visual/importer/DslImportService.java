@@ -254,7 +254,7 @@ public class DslImportService {
                     "", sourceFingerprint, "", List.of());
         }
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(effectiveCatalog.asCatalog());
-        DslGenerationResult generation = generator.generate(draft);
+        DslGenerationResult generation = generator.generateForRewriteAssessment(draft);
         if (!generation.generated()) {
             return DslRoundTripSummary.partial(
                     "Generated DSL could not be produced without blocking diagnostics.",

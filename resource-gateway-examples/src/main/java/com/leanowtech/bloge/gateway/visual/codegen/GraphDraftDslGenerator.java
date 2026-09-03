@@ -80,6 +80,25 @@ public class GraphDraftDslGenerator {
      * @return generated DSL and diagnostics
      */
     public DslGenerationResult generate(GraphDraft draft) {
+        return generate(draft, false);
+    }
+
+    /**
+     * Generates canonical authoring DSL without lowering virtual resource references.
+     *
+     * <p>Rewrite assessment compares an imported draft with its regenerated authoring form. A
+     * resource descriptor is therefore kept as its schema-aware {@code resource:*} operator; the
+     * ordinary {@link #generate(GraphDraft)} path still lowers the same node to executable
+     * {@code httpResource} DSL for simulation and publication.</p>
+     *
+     * @param draft graph draft being checked for lossless visual rewriting
+     * @return canonical authoring DSL and diagnostics
+     */
+    public DslGenerationResult generateForRewriteAssessment(GraphDraft draft) {
+        return generate(draft, true);
+    }
+
+    private DslGenerationResult generate(GraphDraft draft, boolean preserveVirtualResourceRefs) {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (draft == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
@@ -128,7 +147,7 @@ public class GraphDraftDslGenerator {
             String block = nodeToDsl(node, operator.get(), nodesById,
                     dependencyEdges.getOrDefault(node.id(), List.of()),
                     routeEdges.getOrDefault(node.id(), List.of()),
-                    diagnostics);
+                    diagnostics, preserveVirtualResourceRefs);
             if (!block.isBlank()) {
                 if (emittedSection) {
                     dsl.append("\n");
@@ -255,8 +274,12 @@ public class GraphDraftDslGenerator {
                              Map<String, GraphDraft.DraftNode> nodesById,
                              List<String> dependencyEdges,
                              List<GraphDraft.DraftEdge> routeEdges,
-                             List<VisualDiagnostic> diagnostics) {
+                             List<VisualDiagnostic> diagnostics,
+                             boolean preserveVirtualResourceRefs) {
         if ("resource-descriptor".equals(operator.source().kind())) {
+            if (preserveVirtualResourceRefs) {
+                return nativeOperatorNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics, true);
+            }
             return resourceNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics);
         }
         if ("branch".equals(operator.lowering().mode())) {
@@ -270,7 +293,7 @@ public class GraphDraftDslGenerator {
         if ("native".equals(operator.lowering().mode())
                 && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
                 .contains(operator.operatorRef())) {
-            return nativeOperatorNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics);
+            return nativeOperatorNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics, false);
         }
         return switch (operator.operatorRef()) {
             case "httpResource" -> httpResourceNodeToDsl(node, nodesById, dependencyEdges, diagnostics);
@@ -295,8 +318,10 @@ public class GraphDraftDslGenerator {
                                            OperatorDefinition operator,
                                            Map<String, GraphDraft.DraftNode> nodesById,
                                            List<String> dependencyEdges,
-                                           List<VisualDiagnostic> diagnostics) {
-        String executableOperatorRef = stringValue(operator.lowering().operatorRef()).isBlank()
+                                           List<VisualDiagnostic> diagnostics,
+                                           boolean preserveDeclaredOperatorRef) {
+        String executableOperatorRef = preserveDeclaredOperatorRef
+                || stringValue(operator.lowering().operatorRef()).isBlank()
                 ? operator.operatorRef()
                 : operator.lowering().operatorRef();
         StringBuilder block = new StringBuilder();
@@ -368,7 +393,7 @@ public class GraphDraftDslGenerator {
         block.append("    input {\n")
                 .append("      resourceId = ").append(quote(resourceId)).append("\n")
                 .append("      params = ")
-                .append(renderObjectBindings(node.inputs(), nodesById,
+                .append(renderObjectBindings(resourceParameterBindings(node), nodesById,
                         "/nodes/" + node.id() + "/inputs", diagnostics))
                 .append("\n")
                 .append("    }\n");
@@ -376,6 +401,16 @@ public class GraphDraftDslGenerator {
                 diagnostics);
         block.append("  }");
         return block.toString();
+    }
+
+    /** Returns resource parameter leaves for both canonical wrapped and visual flattened bindings. */
+    private static Map<String, GraphDraft.Binding> resourceParameterBindings(GraphDraft.DraftNode node) {
+        GraphDraft.Binding wrapped = node.inputs().get("params");
+        if (node.inputs().size() == 1 && wrapped != null && "objectTemplate".equals(wrapped.kind())
+                && "params".equals(wrapped.targetPort()) && wrapped.targetPath().isBlank()) {
+            return wrapped.fields();
+        }
+        return node.inputs();
     }
 
     private String httpResourceNodeToDsl(GraphDraft.DraftNode node,

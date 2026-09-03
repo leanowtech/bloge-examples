@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.ScenarioOperatorTestSupport;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -23,6 +24,33 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests for schema-neutral BLOGE DSL import projection.
  */
 class DslImportServiceTest {
+
+    @Test
+    void acceptsResourceVirtualOperatorLoweringAsLosslessAuthoringRoundTrip() {
+        DslImportService service = service(VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1", "resource-profile", "Resource profile", "1.0.0",
+                "profile-ops", "ACTIVE", List.of(ScenarioOperatorTestSupport.resourceOperator()))));
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "resource-profile.bloge", """
+                        graph resourceProfile {
+                          input { userId: String }
+                          node profile : "resource:user-service.getProfile" {
+                            input { params = { userId: ctx.userId } }
+                          }
+                          transform response { name = profile.output.payload.name }
+                        }
+                        """, List.of(), List.of(), "preview", Map.of()));
+
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+        assertThat(projection.roundTrip().supported())
+                .as("round-trip summary: %s", projection.roundTrip())
+                .isTrue();
+        assertThat(projection.roundTrip().generatedDsl())
+                .contains("node profile : \"resource:user-service.getProfile\"")
+                .contains("params = { userId: ctx.userId }")
+                .contains("name = profile.output.payload.name");
+    }
 
     @Test
     void resolvesNamedScalarInputAndOutputPortsFromDslPaths() {
