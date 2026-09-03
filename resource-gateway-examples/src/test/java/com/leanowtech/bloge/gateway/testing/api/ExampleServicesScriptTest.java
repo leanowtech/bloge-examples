@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -54,6 +55,38 @@ class ExampleServicesScriptTest {
                         "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED default: false",
                         "RESOURCE_GATEWAY_ADDRESS default: 127.0.0.1",
                         "Set an authoring variable to false to disable that surface");
+    }
+
+    @Test
+    void reusedLocalFixtureKeyIsAlwaysRestrictedToOwnerReadWrite() throws Exception {
+        Path secretDirectory = Files.createTempDirectory("rg-fixture-secret-test-");
+        Path key = secretDirectory.resolve("resource-gateway-fixture-material.key");
+        Files.writeString(key, "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", StandardCharsets.UTF_8);
+        Files.setPosixFilePermissions(key, PosixFilePermissions.fromString("rw-r--r--"));
+        try {
+            Process process = new ProcessBuilder("bash", "-c", """
+                    source "$1"
+                    SECRET_DIR="$2"
+                    RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true
+                    RG_CORRECTNESS_AUTHORING_ENABLED=true
+                    RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING=
+                    prepare_local_fixture_material_key
+                    stat -f '%Lp' "$2/resource-gateway-fixture-material.key" 2>/dev/null \
+                      || stat -c '%a' "$2/resource-gateway-fixture-material.key"
+                    """, "fixture-key-test", SCRIPT.toString(), secretDirectory.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            process.getOutputStream().close();
+
+            assertThat(process.waitFor()).isZero();
+            assertThat(new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim())
+                    .isEqualTo("600");
+            assertThat(Files.getPosixFilePermissions(key))
+                    .isEqualTo(PosixFilePermissions.fromString("rw-------"));
+        } finally {
+            Files.deleteIfExists(key);
+            Files.deleteIfExists(secretDirectory);
+        }
     }
 
     @Test

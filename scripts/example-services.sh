@@ -74,6 +74,10 @@ prepare_local_fixture_material_key() {
     local temporary_key_file="${key_file}.tmp.$$"
     mkdir -p "${SECRET_DIR}"
     chmod 700 "${SECRET_DIR}"
+    if [ -e "${key_file}" ] && { [ ! -f "${key_file}" ] || [ -L "${key_file}" ]; }; then
+        echo "Local Fixture material key must be a regular non-symlink file." >&2
+        return 1
+    fi
     if [ ! -s "${key_file}" ]; then
         umask 077
         if ! openssl rand -base64 32 | tr -d '\r\n' > "${temporary_key_file}"; then
@@ -82,8 +86,8 @@ prepare_local_fixture_material_key() {
             return 1
         fi
         mv "${temporary_key_file}" "${key_file}"
-        chmod 600 "${key_file}"
     fi
+    chmod 600 "${key_file}"
     RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="${RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID}=$(tr -d '\r\n' < "${key_file}")"
 }
 
@@ -479,4 +483,6 @@ main() {
     esac
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi
