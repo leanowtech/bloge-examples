@@ -239,6 +239,7 @@ MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案�
 | 现象或错误码 | 原因 | 处理 |
 | --- | --- | --- |
 | `/mcp` 未连接 | 服务未启动、token 对 Codex 不可见、配置未重载 | 查 status/log，完全重启 Codex，再看 `/mcp` |
+| `/mcp` 已连接，但任务在调用工具前报告 Codex API/模型服务 404 | Codex 账户或模型后端不可用，不是 RG MCP 失败 | 先运行第 7 节协议探针；若返回 200，保留 RG 进程，更新或重新登录 Codex 后重试 |
 | `UNAUTHENTICATED` / 401 | Bearer 缺失或身份解析失败 | 核对 client/server token；不要打印 token |
 | `FORBIDDEN_PURPOSE` / 400 或 403 | purpose 缺失、非法或越权 | 使用四 server 配置并检查 allowed purposes |
 | `GATE_REJECTED` / 503 | 身份/审计基础设施不可用，或生产 admission | 查日志；本地脚本应使用 environment `local` |
