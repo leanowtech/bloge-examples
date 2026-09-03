@@ -86,6 +86,19 @@ public class DslImportService {
     }
 
     /**
+     * Resolves one operator through the same effective server catalog used by DSL import.
+     *
+     * <p>This narrow lookup lets higher-level authoring workflows materialize an explicitly named
+     * runtime binding without taking a second catalog dependency or inventing a shadow registry.</p>
+     *
+     * @param operatorRef exact catalog operator reference
+     * @return current server-owned operator definition when visible
+     */
+    public Optional<OperatorDefinition> resolveOperator(String operatorRef) {
+        return catalog.find(operatorRef);
+    }
+
+    /**
      * Builds a repository-level migration report by previewing every DSL source against the same
      * effective schema view.
      *

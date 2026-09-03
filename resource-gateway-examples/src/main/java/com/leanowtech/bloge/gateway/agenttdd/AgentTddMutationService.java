@@ -131,6 +131,7 @@ public final class AgentTddMutationService {
             GraphDraft candidate = graph.hasNonNull("dsl")
                     ? compileGraph(graph, refs)
                     : convertGraph(graph);
+            candidate = resolveRuntimeBindings(candidate);
             requireReferencedLibraries(candidate, refs);
             GraphDraft current = drafts.find(assetRef).orElse(null);
             long expectedRevision = current == null ? 0 : current.revision();
@@ -140,6 +141,10 @@ public final class AgentTddMutationService {
                     : drafts.saveIfRevision(assetRef, expectedRevision, scoped)
                             .orElseThrow(() -> new AgentTddToolException(
                                     "GATE_REJECTED", "Graph draft changed during the compose operation."));
+            if (current != null && !AgentTddExecutionService.contractFingerprint(mapper, current)
+                    .equals(AgentTddExecutionService.contractFingerprint(mapper, stored))) {
+                markCaseSetsStale(assetRef, identity);
+            }
             boolean speccing = stored.operatorSnapshots().values().stream()
                     .filter(Objects::nonNull).anyMatch(AgentTddMutationService::designOnly);
             return Map.of("assetRef", stored.draftId(), "assetKind", assetKind,
@@ -344,10 +349,10 @@ public final class AgentTddMutationService {
         String dsl = requiredText(graph, "dsl");
         DslVisualProjection projected = projection.preview(new DslImportPreviewRequest(
                 optionalText(graph, "sourceId"), dsl, refs, List.of(), "agent-tdd-compose", Map.of()));
-        boolean speccing = projected.draft().operatorSnapshots().values().stream()
-                .filter(Objects::nonNull).anyMatch(AgentTddMutationService::designOnly);
+        boolean projectionStillDesign = projected.draft().operatorSnapshots().values().stream()
+                .filter(Objects::nonNull).anyMatch(operator -> "design".equals(operator.lowering().mode()));
         if (projected.diagnostics().stream().anyMatch(diagnostic -> diagnostic.error())
-                || !speccing && !DslRewriteGateResult.from(projected).allowed()) {
+                || !projectionStillDesign && !DslRewriteGateResult.from(projected).allowed()) {
             throw new AgentTddToolException("GATE_REJECTED",
                     "Graph source did not pass compile and round-trip rewrite gates.");
         }
@@ -359,6 +364,55 @@ public final class AgentTddMutationService {
             return mapper.treeToValue(graph, GraphDraft.class);
         } catch (Exception failure) {
             throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "graph is not a valid GraphDraft projection.");
+        }
+    }
+
+    private GraphDraft resolveRuntimeBindings(GraphDraft draft) {
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>(draft.operatorSnapshots());
+        Map<String, String> fingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
+        snapshots.replaceAll((nodeId, operator) -> {
+            if (operator == null) return null;
+            Object configured = bindingRef(operator);
+            if (!(configured instanceof String binding) || binding.isBlank()) return operator;
+            OperatorDefinition target = projection.resolveOperator(binding)
+                    .or(() -> projection.resolveOperator("resource:" + binding))
+                    .orElseThrow(() -> new AgentTddToolException(
+                            "LIBRARY_NOT_FOUND", "runtime.bindingRef does not resolve in the server catalog."));
+            requireCompatibleBinding(operator, target);
+            OperatorDefinition.Source source = new OperatorDefinition.Source(
+                    target.source().kind(), target.source().resourceId(), target.source().method(),
+                    target.source().urlTemplate(), target.source().virtual(), operator.source().libraryId());
+            Map<String, Object> loweringParameters = new LinkedHashMap<>(target.lowering().parameters());
+            loweringParameters.put("bindingRef", binding);
+            OperatorDefinition.Lowering lowering = new OperatorDefinition.Lowering(
+                    target.lowering().mode(), target.lowering().operatorRef(), loweringParameters);
+            OperatorDefinition resolved = new OperatorDefinition(
+                    operator.schemaVersion(), operator.operatorRef(), operator.operatorVersion(), "",
+                    operator.display(), source, operator.ports(), operator.configSchema(), target.capabilities(),
+                    target.policy(), lowering, target.diagnostics());
+            fingerprints.put(nodeId, resolved.fingerprint());
+            return resolved;
+        });
+        return draft.withOperatorSnapshotState(fingerprints, snapshots);
+    }
+
+    private static void requireCompatibleBinding(OperatorDefinition contract, OperatorDefinition target) {
+        if (contract.ports().inputs().size() != target.ports().inputs().size()
+                || contract.ports().outputs().size() != target.ports().outputs().size()) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "runtime.bindingRef port cardinality differs from its contract.");
+        }
+        for (int index = 0; index < contract.ports().inputs().size(); index++) {
+            if (!contract.ports().inputs().get(index).schema().equals(target.ports().inputs().get(index).schema())) {
+                throw new AgentTddToolException(
+                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef input schema differs from its contract.");
+            }
+        }
+        for (int index = 0; index < contract.ports().outputs().size(); index++) {
+            if (!contract.ports().outputs().get(index).schema().equals(target.ports().outputs().get(index).schema())) {
+                throw new AgentTddToolException(
+                        "SCHEMA_NONCONFORMANT", "runtime.bindingRef output schema differs from its contract.");
+            }
         }
     }
 
@@ -462,13 +516,34 @@ public final class AgentTddMutationService {
                         "DRAFT_NOT_FOUND", "Tool draft was not found in the authorized scope."));
     }
 
+    private void markCaseSetsStale(String toolRef, IntegrationRequestContext identity) {
+        states.list(scopeKey(identity), CASE_SET).stream()
+                .filter(asset -> toolRef.equals(optionalText(asset.data(), "toolRef")))
+                .forEach(asset -> {
+                    ObjectNode data = (ObjectNode) asset.data().deepCopy();
+                    ArrayNode rows = data.putArray("rows");
+                    asset.data().path("rows").forEach(raw -> {
+                        ObjectNode row = (ObjectNode) raw.deepCopy();
+                        if ("ACTIVE".equals(row.path("lifecycle").asText())) {
+                            row.put("lifecycle", "STALE");
+                            row.put("qualityState", "STALE");
+                        }
+                        rows.add(row);
+                    });
+                    states.save(scopeKey(identity), CASE_SET, asset.assetRef(), data);
+                });
+    }
+
     static String scopeKey(IntegrationRequestContext identity) {
         return String.join("|", identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.region());
     }
 
     private static boolean designOnly(OperatorDefinition operator) {
-        return "design".equals(operator.lowering().mode()) || !operator.runtimeReadiness().executable();
+        if (operator.source().libraryId().isBlank()) {
+            return "design".equals(operator.lowering().mode()) || !operator.runtimeReadiness().executable();
+        }
+        return "".equals(bindingRef(operator));
     }
 
     private static Object bindingRef(OperatorDefinition operator) {

@@ -44,6 +44,7 @@ public final class AgentTddExecutionService {
     private final DslImportService projection;
     private final VisualGraphSimulationService simulation;
     private final ObjectMapper mapper;
+    private final AgentTddStateRepository states;
 
     /** Creates the execution kernel from the same compiler and simulator used by the web surface. */
     public AgentTddExecutionService(OperatorLibraryRegistry libraries,
@@ -51,11 +52,22 @@ public final class AgentTddExecutionService {
                                     DslImportService projection,
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper) {
+        this(libraries, drafts, projection, simulation, mapper, null);
+    }
+
+    /** Creates the execution kernel with durable case-set resolution. */
+    public AgentTddExecutionService(OperatorLibraryRegistry libraries,
+                                    GraphDraftRepository drafts,
+                                    DslImportService projection,
+                                    VisualGraphSimulationService simulation,
+                                    ObjectMapper mapper,
+                                    AgentTddStateRepository states) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.projection = Objects.requireNonNull(projection, "projection");
         this.simulation = Objects.requireNonNull(simulation, "simulation");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.states = states;
     }
 
     /**
@@ -126,9 +138,9 @@ public final class AgentTddExecutionService {
         if (!Set.of("RED", "GREEN").contains(side)) {
             throw new AgentTddToolException("GATE_REJECTED", "side must be RED or GREEN.");
         }
-        List<JsonNode> rows = caseRows(arguments.path("cases"));
+        List<JsonNode> rows = caseRows(arguments, identity);
         List<String> caseIds = rows.stream().map(row -> requiredText(row, "caseId")).sorted().toList();
-        String goldenSetId = goldenSetId(toolRef, draft, caseIds);
+        String goldenSetId = goldenSetId(mapper, toolRef, draft, caseIds);
         boolean greenBlocked = "GREEN".equals(side) && speccing(draft);
         List<Map<String, Object>> results = new ArrayList<>();
         int passed = 0;
@@ -183,8 +195,10 @@ public final class AgentTddExecutionService {
         List<Map<String, Object>> runs = new ArrayList<>();
         LinkedHashSet<String> fingerprints = new LinkedHashSet<>();
         boolean allPass = true;
+        String goldenSetId = "";
         for (int round = 1; round <= rounds; round++) {
             Map<String, Object> result = simulate(arguments, identity);
+            goldenSetId = result.get("goldenSetId").toString();
             String fingerprint = VisualBundleFingerprint.fromCanonicalValue(
                     mapper, result.get("cases"), MAX_FINGERPRINT_BYTES);
             fingerprints.add(fingerprint);
@@ -197,6 +211,7 @@ public final class AgentTddExecutionService {
         boolean stable = fingerprints.size() == 1;
         return Map.of(
                 "status", allPass && stable ? "GO" : "NO_GO",
+                "goldenSetId", goldenSetId,
                 "rounds", runs,
                 "businessFingerprintStable", stable,
                 "realExternalCalls", 0,
@@ -247,8 +262,28 @@ public final class AgentTddExecutionService {
         }
     }
 
-    private List<JsonNode> caseRows(JsonNode cases) {
+    private List<JsonNode> caseRows(JsonNode arguments, IntegrationRequestContext identity) {
+        JsonNode cases = arguments.path("cases");
         JsonNode rows = cases.path("rows");
+        if ((!rows.isArray() || rows.isEmpty()) && states != null) {
+            String caseSetRef = optionalText(arguments, "caseSetRef");
+            if (!caseSetRef.isBlank()) {
+                AgentTddStoredAsset caseSet = states.find(
+                                AgentTddMutationService.scopeKey(identity), AgentTddMutationService.CASE_SET, caseSetRef)
+                        .orElseThrow(() -> new AgentTddToolException(
+                                "DRAFT_NOT_FOUND", "Case set was not found in the authorized scope."));
+                List<JsonNode> active = new ArrayList<>();
+                caseSet.data().path("rows").forEach(row -> {
+                    if ("ACTIVE".equals(row.path("lifecycle").asText())) active.add(row);
+                });
+                if (active.isEmpty() && caseSet.data().path("rows").isArray()
+                        && !caseSet.data().path("rows").isEmpty()) {
+                    throw new AgentTddToolException(
+                            "GOLDEN_REQUIRES_APPROVAL", "The case set has no approved ACTIVE rows.");
+                }
+                return List.copyOf(active);
+            }
+        }
         if (!rows.isArray() || rows.isEmpty()) {
             throw new AgentTddToolException("DRAFT_NOT_FOUND", "At least one case row is required.");
         }
@@ -357,29 +392,48 @@ public final class AgentTddExecutionService {
         return mapper.convertValue(node, OBJECT_MAP);
     }
 
-    private String goldenSetId(String toolRef, GraphDraft draft, List<String> caseIds) {
-        List<Map<String, Object>> contracts = draft.operatorSnapshots().values().stream()
-                .filter(Objects::nonNull)
-                .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
-                .map(operator -> Map.<String, Object>of(
-                        "operatorRef", operator.operatorRef(),
-                        "archetype", operator.source().kind(),
-                        "inputs", operator.ports().inputs(),
-                        "outputs", operator.ports().outputs()))
-                .toList();
-        String contractFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
-                "input", draft.inputSchema(), "output", draft.outputSchema(), "operators", contracts),
-                MAX_FINGERPRINT_BYTES);
+    static String goldenSetId(ObjectMapper mapper, String toolRef, GraphDraft draft, List<String> caseIds) {
+        String contractFingerprint = contractFingerprint(mapper, draft);
         return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "toolRef", toolRef, "contractFingerprint", contractFingerprint, "caseIds", caseIds),
                 MAX_FINGERPRINT_BYTES);
     }
 
+    static String contractFingerprint(ObjectMapper mapper, GraphDraft draft) {
+        List<Map<String, Object>> contracts = draft.operatorSnapshots().values().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
+                .map(operator -> Map.<String, Object>of(
+                        "operatorRef", operator.operatorRef(),
+                        "archetype", contractArchetype(operator),
+                        "inputs", operator.ports().inputs(),
+                        "outputs", operator.ports().outputs()))
+                .toList();
+        return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
+                "input", draft.inputSchema(), "output", draft.outputSchema(), "operators", contracts),
+                MAX_FINGERPRINT_BYTES);
+    }
+
+    private static String contractArchetype(OperatorDefinition operator) {
+        for (String tag : operator.display().tags()) {
+            if (Set.of("pure", "decision", "resource-read", "external-write", "remote-worker",
+                    "ai-tool", "event-source", "message-handler", "webhook").contains(tag)) return tag;
+        }
+        return operator.source().kind();
+    }
+
     private static boolean speccing(GraphDraft draft) {
         return draft.operatorSnapshots().values().stream()
                 .filter(Objects::nonNull)
-                .anyMatch(operator -> "design".equals(operator.lowering().mode())
-                        || !operator.runtimeReadiness().executable());
+                .anyMatch(AgentTddExecutionService::requiresBinding);
+    }
+
+    private static boolean requiresBinding(OperatorDefinition operator) {
+        if (operator.source().libraryId().isBlank()) {
+            return "design".equals(operator.lowering().mode()) || !operator.runtimeReadiness().executable();
+        }
+        Object binding = operator.lowering().parameters().get("bindingRef");
+        return !(binding instanceof String value) || value.isBlank();
     }
 
     private static boolean sameScope(GraphDraft draft, IntegrationRequestContext identity) {

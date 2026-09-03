@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 
@@ -14,6 +15,7 @@ import java.util.Objects;
  * separate governed-write purpose and supply the exact revision it reviewed, preventing a stale
  * approval from silently accepting later Agent edits.</p>
  */
+@Service
 public final class AgentTddReviewService {
     private final AgentTddStateRepository states;
 
@@ -64,5 +66,46 @@ public final class AgentTddReviewService {
         current.data().path("rows").forEach(row -> rows.add(
                 caseId.equals(row.path("caseId").asText()) ? approved : row.deepCopy()));
         return states.save(scope, AgentTddMutationService.CASE_SET, caseSetRef, data);
+    }
+
+    /** Approves an exact pending specification proposal without turning it into executable code. */
+    public synchronized AgentTddStoredAsset approvePublishSpec(String toolRef,
+                                                               long expectedRevision,
+                                                               IntegrationRequestContext identity) {
+        String scope = AgentTddMutationService.scopeKey(identity);
+        AgentTddStoredAsset current = states.find(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "DRAFT_NOT_FOUND", "Specification proposal was not found."));
+        requireRevision(current, expectedRevision, "Specification proposal");
+        ObjectNode data = (ObjectNode) current.data().deepCopy();
+        if (!"PENDING".equals(data.path("status").asText())) {
+            throw new AgentTddToolException("GATE_REJECTED", "Specification proposal is not pending.");
+        }
+        data.put("status", "APPROVED");
+        data.put("approvedBy", identity.actorId());
+        return states.save(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef, data);
+    }
+
+    /** Records a separately authenticated human signoff consumed by executable publication. */
+    public synchronized AgentTddStoredAsset approveToolSignoff(String toolRef,
+                                                               String signoffRef,
+                                                               IntegrationRequestContext identity) {
+        if (toolRef == null || toolRef.isBlank() || signoffRef == null || signoffRef.isBlank()) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "toolRef and signoffRef are required.");
+        }
+        ObjectNode data = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        data.put("toolRef", toolRef.trim());
+        data.put("signoffRef", signoffRef.trim());
+        data.put("status", "APPROVED");
+        data.put("approvedBy", identity.actorId());
+        return states.save(AgentTddMutationService.scopeKey(identity),
+                AgentTddWorkflowService.SIGNOFF, signoffRef.trim(), data);
+    }
+
+    private static void requireRevision(AgentTddStoredAsset current, long expectedRevision, String label) {
+        if (current.revision() != expectedRevision) {
+            throw new AgentTddToolException("GATE_REJECTED", label + " changed after the reviewer opened it.");
+        }
     }
 }

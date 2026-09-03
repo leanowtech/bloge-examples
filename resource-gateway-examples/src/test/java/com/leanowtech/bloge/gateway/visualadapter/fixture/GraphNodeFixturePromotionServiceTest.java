@@ -288,6 +288,43 @@ class GraphNodeFixturePromotionServiceTest {
     }
 
     @Test
+    void promotesOnlyTheExplicitOutputPortFromAMultiOutputCapture() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(Map.of(
+                "node_1", new GraphDraft.NodeFixture(Map.of(
+                        "payload-0", Map.of("score", 760),
+                        "payload-1", Map.of("score", 810)))))));
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperatorWithOutputs(2)));
+        when(fixtureCatalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
+            FixtureAssetDescriptor candidate = invocation.getArgument(1);
+            return StoredFixtureAsset.verified(mapper, candidate.persistedAs(1, candidate.metadata()));
+        });
+
+        service.promote("draft-1", "node_1", "payload-1", request("selected-port"), identity);
+
+        assertThat(materialWrites).singleElement().satisfies(write -> {
+            assertThat(write.payload()).isEqualTo(Map.of("score", 810));
+            assertThat(write.schemaRef().id()).endsWith(":payload-1");
+        });
+    }
+
+    @Test
+    void rejectsUnknownOrMissingMultiOutputPortBeforeMaterialWrite() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(Map.of(
+                "node_1", new GraphDraft.NodeFixture(Map.of("payload-0", Map.of("score", 760)))))));
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperatorWithOutputs(2)));
+
+        assertThatThrownBy(() -> service.promote(
+                "draft-1", "node_1", "unknown", request("fixture"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.OUTPUT_PORT_NOT_FOUND"));
+        assertThatThrownBy(() -> service.promote(
+                "draft-1", "node_1", "payload-1", request("fixture"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.OUTPUT_PORT_VALUE_MISSING"));
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
     void rejectsOpaqueOutputSchemaAndIncompleteIdentity() {
         when(drafts.find("draft-1")).thenReturn(Optional.of(draft(
                 Map.of("node_1", new GraphDraft.NodeFixture(Map.of("score", 760))))));

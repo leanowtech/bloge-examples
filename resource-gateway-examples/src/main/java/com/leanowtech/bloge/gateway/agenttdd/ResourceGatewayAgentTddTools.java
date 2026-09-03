@@ -35,12 +35,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final ObjectMapper mapper;
     private final AgentTddExecutionService execution;
     private final AgentTddMutationService mutations;
+    private final AgentTddWorkflowService workflow;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
-        this(libraries, drafts, mapper, null, null, null, null);
+        this(libraries, drafts, mapper, null, null, null, null, null);
     }
 
     /** Creates a focused facade with contract-aware DSL and simulation services. */
@@ -49,11 +50,10 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectMapper mapper,
                                         DslImportService projection,
                                         VisualGraphSimulationService simulation) {
-        this(libraries, drafts, mapper, projection, simulation, null, null);
+        this(libraries, drafts, mapper, projection, simulation, null, null, null);
     }
 
     /** Creates the fully wired facade including canonical mutations and durable Agent overlays. */
-    @Autowired
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper,
@@ -61,15 +61,29 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, null);
+    }
+
+    /** Creates the Spring facade with execution evidence and governed publication enabled. */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.execution = projection == null || simulation == null
                 ? null
-                : new AgentTddExecutionService(libraries, drafts, projection, simulation, mapper);
+                : new AgentTddExecutionService(libraries, drafts, projection, simulation, mapper, states);
         this.mutations = states == null || authoring == null || projection == null
                 ? null
                 : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);
+        this.workflow = workflow;
     }
 
     /**
@@ -92,11 +106,15 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.contract.get" -> contract(safeArguments, identity);
             case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
             case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
-            case "rg.verdict.get" -> failure(
-                    "DRAFT_NOT_FOUND", "No red-to-green verdict exists for the requested tool.");
-            case "rg.evidence.get" -> failure(
-                    "DRAFT_NOT_FOUND", "No evidence exists for the requested reference.");
-            case "rg.readiness.get" -> readiness(safeArguments, identity);
+            case "rg.verdict.get" -> workflow == null
+                    ? failure("DRAFT_NOT_FOUND", "No red-to-green verdict exists for the requested tool.")
+                    : executionSuccess(workflow.verdict(safeArguments, identity));
+            case "rg.evidence.get" -> workflow == null
+                    ? failure("DRAFT_NOT_FOUND", "No evidence exists for the requested reference.")
+                    : executionSuccess(workflow.evidence(safeArguments, identity));
+            case "rg.readiness.get" -> workflow == null
+                    ? readiness(safeArguments, identity)
+                    : executionSuccess(workflow.readiness(safeArguments, identity));
             case "rg.library.upsert" -> executionSuccess(mutations().upsertLibrary(safeArguments, identity));
             case "rg.feature.compose" -> executionSuccess(
                     mutations().compose(safeArguments, "featureRef", "FEATURE", identity));
@@ -109,9 +127,21 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     mutations().setDependencyBehavior(safeArguments, identity));
             case "rg.dsl.preview" -> executionSuccess(execution().preview(safeArguments));
             case "rg.gate.check" -> executionSuccess(execution().gate(safeArguments));
-            case "rg.simulate" -> executionSuccess(execution().simulate(safeArguments, identity));
-            case "rg.feature.rehearse" -> executionSuccess(execution().rehearse(safeArguments, identity));
-            case "rg.tool.baseline" -> executionSuccess(execution().baseline(safeArguments, identity));
+            case "rg.simulate" -> executionSuccess(workflow == null
+                    ? execution().simulate(safeArguments, identity)
+                    : workflow.recordEvidence("rg.simulate", safeArguments,
+                            execution().simulate(safeArguments, identity), identity));
+            case "rg.feature.rehearse" -> executionSuccess(workflow == null
+                    ? execution().rehearse(safeArguments, identity)
+                    : workflow.recordEvidence("rg.feature.rehearse", featureArguments(safeArguments),
+                            execution().rehearse(safeArguments, identity), identity));
+            case "rg.tool.baseline" -> executionSuccess(workflow == null
+                    ? execution().baseline(safeArguments, identity)
+                    : workflow.recordEvidence("rg.tool.baseline", safeArguments,
+                            execution().baseline(safeArguments, identity), identity));
+            case "rg.fixture.promote" -> executionSuccess(workflow().promoteFixture(safeArguments, identity));
+            case "rg.tool.publishSpec" -> executionSuccess(workflow().publishSpec(safeArguments, identity));
+            case "rg.tool.publish" -> executionSuccess(workflow().publish(safeArguments, identity));
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");
             };
         } catch (AgentTddToolException failure) {
@@ -280,7 +310,11 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     }
 
     private static boolean designOnly(OperatorDefinition operator) {
-        return "design".equals(operator.lowering().mode()) || !operator.runtimeReadiness().executable();
+        if (operator.source().libraryId().isBlank()) {
+            return "design".equals(operator.lowering().mode()) || !operator.runtimeReadiness().executable();
+        }
+        Object binding = operator.lowering().parameters().get("bindingRef");
+        return !(binding instanceof String value) || value.isBlank();
     }
 
     private static boolean sameScope(GraphDraft draft, IntegrationRequestContext identity) {
@@ -321,6 +355,20 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             throw new AgentTddToolException("GATE_REJECTED", "Agent mutation services are unavailable.");
         }
         return mutations;
+    }
+
+    private AgentTddWorkflowService workflow() {
+        if (workflow == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "Agent governance services are unavailable.");
+        }
+        return workflow;
+    }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode featureArguments(JsonNode arguments) {
+        com.fasterxml.jackson.databind.node.ObjectNode adapted = ((com.fasterxml.jackson.databind.node.ObjectNode)
+                arguments).deepCopy();
+        adapted.put("toolRef", requiredText(arguments, "featureRef"));
+        return adapted;
     }
 
     private static Map<String, Object> failure(String code, String message) {

@@ -8,9 +8,12 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPrevie
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -135,6 +139,76 @@ class AgentTddMutationServiceTest {
                 .path("fromGoldenCaseId").asText()).isEqualTo("g1");
     }
 
+    @Test
+    void contractChangeMarksPreviouslyActiveGoldenRowsStale() {
+        Fixture fixture = fixtureWithTool();
+        JsonNode proposed = invoke(fixture, "rg.scenario.upsertCases", mapper.valueToTree(Map.of(
+                "caseSetRef", "shipping-golden", "toolRef", "shipping-tool",
+                "rows", List.of(Map.of("caseId", "g1", "category", "GOLDEN",
+                        "given", Map.of("orderId", "O1"), "stubs", Map.of(),
+                        "expect", Map.of("fee", 8), "oracleOwner", "logistics")),
+                "idempotencyKey", "cases-drift-1")));
+        new AgentTddReviewService(fixture.states()).approveOracle(
+                "shipping-golden", "g1", proposed.path("data").path("revision").asLong(), identity());
+
+        invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "graph", Map.of("dsl", shippingDslWithRegion()),
+                "libraryRefs", List.of("shipping"), "idempotencyKey", "compose-drift-2")));
+        JsonNode cases = invoke(fixture, "rg.scenario.listCases",
+                mapper.valueToTree(Map.of("caseSetRef", "shipping-golden")));
+
+        assertThat(cases.path("data").path("rows").get(0).path("lifecycle").asText()).isEqualTo("STALE");
+        assertThat(cases.path("data").path("rows").get(0).path("qualityState").asText()).isEqualTo("STALE");
+    }
+
+    @Test
+    void composeMaterializesAnExplicitCompatibleRuntimeBinding() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        VisualOperatorCatalog catalog = new VisualOperatorCatalog() {
+            @Override
+            public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                java.util.ArrayList<OperatorDefinition> values = new java.util.ArrayList<>();
+                libraries.all().forEach(library -> values.addAll(library.operators()));
+                boundOperator().ifPresent(values::add);
+                return values;
+            }
+
+            @Override
+            public Optional<OperatorDefinition> find(String operatorRef) {
+                return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
+                        .filter(operator -> operatorRef.equals(operator.operatorRef())).findFirst();
+            }
+
+            private Optional<OperatorDefinition> boundOperator() {
+                return libraries.find("shipping").flatMap(library -> library.operators().stream().findFirst())
+                        .map(contract -> new OperatorDefinition(
+                                "", "resource:shipping-service.quote", "1.0.0", "",
+                                contract.display(), new OperatorDefinition.Source(
+                                        "resource-descriptor", "shipping-service.quote", "GET", "/quotes", true),
+                                contract.ports(), contract.configSchema(), contract.capabilities(), contract.policy(),
+                                new OperatorDefinition.Lowering("resource-descriptor", "httpResource", Map.of()),
+                                List.of()));
+            }
+        };
+        DslImportService projection = new DslImportService(catalog, new OperatorLibraryValidator());
+        AgentTddMutationService service = new AgentTddMutationService(libraries, drafts,
+                new InMemoryAgentTddStateRepository(), new AuthoringPreviewService(
+                        new AuthoringCompiler(mapper, new OperatorLibraryValidator()), libraries, mapper),
+                projection, mapper);
+        service.upsertLibrary(mapper.valueToTree(Map.of(
+                "libraryYaml", boundLibraryYaml(), "idempotencyKey", "bound-lib-1")), identity());
+
+        Map<String, Object> composed = service.compose(mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "graph", Map.of("dsl", shippingDsl()),
+                "libraryRefs", List.of("shipping"), "idempotencyKey", "bound-compose-1")),
+                "toolRef", "TOOL", identity());
+
+        assertThat(composed).containsEntry("speccing", false).containsEntry("executable", true);
+        assertThat(drafts.find("shipping-tool").orElseThrow().operatorSnapshots().get("quote")
+                .lowering().mode()).isEqualTo("resource-descriptor");
+    }
+
     private Fixture fixtureWithTool() {
         Fixture fixture = fixture();
         invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
@@ -185,10 +259,39 @@ class AgentTddMutationServiceTest {
                 """;
     }
 
+    private static String boundLibraryYaml() {
+        return """
+                schemaVersion: bloge.visualLibraryAuthoring.v1
+                library: { id: shipping, name: Shipping, version: 0.1.0, owner: logistics }
+                defaults: { operatorVersion: 0.1.0, namespace: shipping }
+                operators:
+                  shipping:quote:
+                    name: Quote
+                    archetype: resource-read
+                    requiresSecrets: false
+                    input: { orderId: string }
+                    output: { fee: number }
+                    runtime: { bindingRef: "resource:shipping-service.quote" }
+                """;
+    }
+
     private static String shippingDsl() {
         return """
                 graph shippingQuote {
                   input { orderId: String }
+                  output { fee: Decimal }
+                  node quote : "shipping:quote" {
+                    input { orderId = ctx.orderId }
+                  }
+                  transform response { fee = quote.output.fee }
+                }
+                """;
+    }
+
+    private static String shippingDslWithRegion() {
+        return """
+                graph shippingQuote {
+                  input { orderId: String region: String }
                   output { fee: Decimal }
                   node quote : "shipping:quote" {
                     input { orderId = ctx.orderId }

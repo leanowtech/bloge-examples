@@ -123,9 +123,29 @@ public class GraphNodeFixturePromotionService {
             String nodeId,
             GraphNodeFixturePromotionRequest request,
             IntegrationRequestContext identity) {
+        return promote(draftId, nodeId, "", request, identity);
+    }
+
+    /**
+     * Promotes one explicit output port, removing ambiguity for multi-output operators.
+     *
+     * @param draftId authoritative graph draft id
+     * @param nodeId exact graph node id
+     * @param outputPort explicit output port; optional only for single-output operators
+     * @param request bounded author-controlled request
+     * @param identity authenticated integration context
+     * @return payload-free governed Fixture receipt
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public PromotionResult promote(
+            String draftId,
+            String nodeId,
+            String outputPort,
+            GraphNodeFixturePromotionRequest request,
+            IntegrationRequestContext identity) {
         try {
             requireIdentity(identity);
-            return promote(draftId, nodeId, request, actor(identity), identity);
+            return promote(draftId, nodeId, outputPort, request, actor(identity), identity);
         } catch (IllegalArgumentException invalidRequest) {
             throw invalid("REQUEST_INVALID", invalidRequest.getMessage());
         }
@@ -149,6 +169,18 @@ public class GraphNodeFixturePromotionService {
     public PromotionResult promote(
             String draftId,
             String nodeId,
+            GraphNodeFixturePromotionRequest request,
+            PrincipalRef owner,
+            IntegrationRequestContext identityForMaterialWrite) {
+        return promote(draftId, nodeId, "", request, owner, identityForMaterialWrite);
+    }
+
+    /** Direct-call overload with an explicit multi-output port selection. */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public PromotionResult promote(
+            String draftId,
+            String nodeId,
+            String outputPort,
             GraphNodeFixturePromotionRequest request,
             PrincipalRef owner,
             IntegrationRequestContext identityForMaterialWrite) {
@@ -182,25 +214,25 @@ public class GraphNodeFixturePromotionService {
         OperatorDefinition operator = operators.find(node.operatorRef())
                 .orElseThrow(() -> unprocessable(
                         "OPERATOR_NOT_FOUND", "The selected node operator is unavailable"));
-        SchemaEnvelope outputSchema = operatorPorts(operator);
-        if (operator.ports().outputs().size() > 1) {
-            throw unprocessable(
-                    "OUTPUT_SCHEMA_NON_UNIQUE",
-                    "Governed Fixture promotion requires one unambiguous operator output schema");
-        }
+        OperatorDefinition.Port selectedPort = operatorPort(operator, outputPort);
+        SchemaEnvelope outputSchema = selectedPort == null ? null : selectedPort.schema();
         if (outputSchema == null || outputSchema.equals(SchemaEnvelope.opaque())) {
             throw unprocessable(
                     "OUTPUT_SCHEMA_OPAQUE",
                     "Governed Fixture promotion requires an exact operator output schema");
         }
+        Object selectedOutput = selectedOutput(fixture.output(), operator, selectedPort);
         List<com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic> schemaDiagnostics =
-                VisualSchemaValidator.validateValue(outputSchema, fixture.output(), "/nodeFixture");
+                VisualSchemaValidator.validateValue(outputSchema, selectedOutput, "/nodeFixture");
         if (!schemaDiagnostics.isEmpty()) {
             throw unprocessable(
                     "OUTPUT_SCHEMA_INVALID",
                     "The captured node output does not satisfy its exact operator schema");
         }
-        ExactSchemaRef schemaRef = exactOutputSchemaRef(operator, mapper);
+        ExactSchemaRef schemaRef = operator.ports().outputs().size() == 1
+                && (outputPort == null || outputPort.isBlank())
+                ? exactOutputSchemaRef(operator, mapper)
+                : exactOutputSchemaRef(operator, selectedPort.name(), mapper);
         boolean isResource = node.operatorRef().startsWith("resource:");
         String sourceValue = isResource ? nodeIdOperatorResource(node.operatorRef()) : node.operatorRef();
         ExactAssetRef sourceRef = new ExactAssetRef(
@@ -242,7 +274,7 @@ public class GraphNodeFixturePromotionService {
                 request.classification(),
                 retention,
                 redaction,
-                fixture.output()),
+                selectedOutput),
                 identityForMaterialWrite);
         AuditMetadata auditMetadata = new AuditMetadata(now, now, owner, owner);
         var candidate = new com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor(
@@ -275,6 +307,33 @@ public class GraphNodeFixturePromotionService {
                 : operator.ports().outputs().getFirst().schema();
     }
 
+    private static OperatorDefinition.Port operatorPort(OperatorDefinition operator, String outputPort) {
+        String requested = outputPort == null ? "" : outputPort.trim();
+        if (operator.ports().outputs().size() == 1 && requested.isBlank()) {
+            return operator.ports().outputs().getFirst();
+        }
+        if (requested.isBlank()) {
+            throw unprocessable("OUTPUT_SCHEMA_NON_UNIQUE",
+                    "Governed Fixture promotion requires an explicit outputPort for multi-output operators");
+        }
+        return operator.ports().outputs().stream()
+                .filter(port -> port != null && requested.equals(port.name()))
+                .findFirst()
+                .orElseThrow(() -> unprocessable("OUTPUT_PORT_NOT_FOUND",
+                        "The selected operator outputPort does not exist"));
+    }
+
+    private static Object selectedOutput(Object captured,
+                                         OperatorDefinition operator,
+                                         OperatorDefinition.Port selectedPort) {
+        if (operator.ports().outputs().size() <= 1) return captured;
+        if (captured instanceof Map<?, ?> values && values.containsKey(selectedPort.name())) {
+            return values.get(selectedPort.name());
+        }
+        throw unprocessable("OUTPUT_PORT_VALUE_MISSING",
+                "The captured node output does not contain the selected outputPort");
+    }
+
     /** Derives the canonical schema reference shared by promotion and governed simulation. */
     public static ExactSchemaRef exactOutputSchemaRef(OperatorDefinition operator, ObjectMapper mapper) {
         Objects.requireNonNull(operator, "operator");
@@ -288,6 +347,25 @@ public class GraphNodeFixturePromotionService {
                 com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint
                         .derivedFingerprint(mapper, Map.of(
                                 "operatorFingerprint", operator.fingerprint(), "schema", schema.schema())));
+    }
+
+    /** Derives an exact schema reference for one explicitly selected output port. */
+    public static ExactSchemaRef exactOutputSchemaRef(OperatorDefinition operator,
+                                                      String outputPort,
+                                                      ObjectMapper mapper) {
+        Objects.requireNonNull(operator, "operator");
+        Objects.requireNonNull(mapper, "mapper");
+        OperatorDefinition.Port port = operatorPort(operator, outputPort);
+        SchemaEnvelope schema = port.schema();
+        if (schema.equals(SchemaEnvelope.opaque())) {
+            throw unprocessable("OUTPUT_SCHEMA_OPAQUE", "An exact output schema is required");
+        }
+        return new ExactSchemaRef(
+                sourceId(operator.operatorRef()) + ":" + port.name(), 1,
+                com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint
+                        .derivedFingerprint(mapper, Map.of(
+                                "operatorFingerprint", operator.fingerprint(),
+                                "outputPort", port.name(), "schema", schema.schema())));
     }
 
     /**

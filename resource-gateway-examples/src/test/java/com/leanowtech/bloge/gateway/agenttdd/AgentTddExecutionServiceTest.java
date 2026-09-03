@@ -151,6 +151,30 @@ class AgentTddExecutionServiceTest {
         assertThat(response.path("data").path("rounds")).hasSize(3);
     }
 
+    @Test
+    void baselineLoadsOnlyApprovedActiveRowsFromDurableCaseSet() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
+                mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(
+                        Map.of("caseId", "g1", "lifecycle", "ACTIVE", "given", Map.of("score", 720, "amount", 100),
+                                "stubs", Map.of("eligibility", Map.of("eligible", true, "ruleId", "R1")),
+                                "expect", Map.of("eligible", true, "ruleId", "R1")),
+                        Map.of("caseId", "g2", "lifecycle", "DRAFT", "given", Map.of(),
+                                "stubs", Map.of(), "expect", Map.of())))));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper, states);
+
+        Map<String, Object> result = service.baseline(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"),
+                "caseSetRef", "golden-1", "side", "RED", "rounds", 2)), identity());
+
+        assertThat(result).containsEntry("status", "GO").containsKey("goldenSetId");
+    }
+
     private Fixture fixture() {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         OperatorLibrary risk = new OperatorLibrary(library.schemaVersion(), "risk", library.displayName(),
@@ -165,7 +189,7 @@ class AgentTddExecutionServiceTest {
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
                 libraries, drafts, mapper, projection, simulation);
-        return new Fixture(tools, drafts, projection);
+        return new Fixture(tools, drafts, projection, libraries, simulation);
     }
 
     private static String eligibilityDsl() {
@@ -201,5 +225,7 @@ class AgentTddExecutionServiceTest {
 
     private record Fixture(ResourceGatewayAgentTddTools tools,
                            InMemoryGraphDraftRepository drafts,
-                           DslImportService projection) { }
+                           DslImportService projection,
+                           InMemoryOperatorLibraryRegistry libraries,
+                           VisualGraphSimulationService simulation) { }
 }
