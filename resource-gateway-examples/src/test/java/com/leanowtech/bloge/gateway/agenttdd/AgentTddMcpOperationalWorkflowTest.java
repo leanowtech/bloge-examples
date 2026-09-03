@@ -59,6 +59,8 @@ class AgentTddMcpOperationalWorkflowTest {
 
     @Test
     void composesApprovesRunsZeroEgressBaselineSignsAndPublishes() {
+        negotiateCodexLifecycle();
+
         JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
         JsonNode wallet = java.util.stream.StreamSupport.stream(
                         capabilities.at("/data/capabilities").spliterator(), false)
@@ -138,6 +140,47 @@ class AgentTddMcpOperationalWorkflowTest {
                 "signoffRef", "ops-review-test",
                 "idempotencyKey", "publish-wallet-ops-test"), "AGENT_TDD_GOVERNANCE");
         assertThat(published.at("/data/artifactKind").asText()).isEqualTo("EXECUTABLE");
+    }
+
+    /**
+     * Exercises the same initialize, initialized notification and tool discovery sequence emitted
+     * by a current Codex Streamable-HTTP client before it can call an Agent TDD tool.
+     */
+    private void negotiateCodexLifecycle() {
+        HttpHeaders initializeHeaders = headers("bloge-aneke-demo-token", "AGENT_TDD_READ");
+        JsonNode initializeRequest = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0",
+                "id", ++requestId,
+                "method", "initialize",
+                "params", Map.of(
+                        "protocolVersion", McpProtocolController.CODEX_PROTOCOL_VERSION,
+                        "capabilities", Map.of(),
+                        "clientInfo", Map.of("name", "codex", "version", "0.150.0"))));
+        ResponseEntity<JsonNode> initialized = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(initializeRequest, initializeHeaders), JsonNode.class);
+        assertThat(initialized.getStatusCode().value()).isEqualTo(200);
+        assertThat(initialized.getBody().at("/result/protocolVersion").asText())
+                .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
+        assertThat(initialized.getBody().at("/result/serverInfo/name").asText())
+                .isEqualTo("bloge-resource-gateway");
+
+        initializeHeaders.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
+        JsonNode notification = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0", "method", "notifications/initialized", "params", Map.of()));
+        ResponseEntity<JsonNode> acknowledged = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(notification, initializeHeaders), JsonNode.class);
+        assertThat(acknowledged.getStatusCode().value()).isEqualTo(202);
+        assertThat(acknowledged.getBody()).isNull();
+
+        JsonNode listRequest = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0", "id", ++requestId, "method", "tools/list", "params", Map.of()));
+        ResponseEntity<JsonNode> listed = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(listRequest, initializeHeaders), JsonNode.class);
+        assertThat(listed.getStatusCode().value()).isEqualTo(200);
+        assertThat(listed.getBody().at("/result/tools")).anySatisfy(tool ->
+                assertThat(tool.path("name").asText()).isEqualTo("rg.capability.list"));
+        assertThat(listed.getBody().at("/result/tools")).anySatisfy(tool ->
+                assertThat(tool.path("name").asText()).isEqualTo("rg.tool.publish"));
     }
 
     private JsonNode invoke(String name, Object arguments) {
