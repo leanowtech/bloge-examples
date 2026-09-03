@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
@@ -14,7 +16,6 @@ import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationServi
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +34,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final OperatorLibraryRegistry libraries;
     private final GraphDraftRepository drafts;
     private final ObjectMapper mapper;
+    private final VisualOperatorCatalog catalog;
     private final AgentTddExecutionService execution;
     private final AgentTddMutationService mutations;
     private final AgentTddWorkflowService workflow;
@@ -41,7 +43,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
-        this(libraries, drafts, mapper, null, null, null, null, null);
+        this(libraries, drafts, mapper, null, null, null, null, null, null);
     }
 
     /** Creates a focused facade with contract-aware DSL and simulation services. */
@@ -50,7 +52,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectMapper mapper,
                                         DslImportService projection,
                                         VisualGraphSimulationService simulation) {
-        this(libraries, drafts, mapper, projection, simulation, null, null, null);
+        this(libraries, drafts, mapper, projection, simulation, null, null, null, null);
     }
 
     /** Creates the fully wired facade including canonical mutations and durable Agent overlays. */
@@ -61,11 +63,15 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, null);
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, null, null);
     }
 
-    /** Creates the Spring facade with zero-egress execution evidence and governed publication enabled. */
-    @Autowired
+    /**
+     * Creates a facade with zero-egress execution evidence and governed publication enabled.
+     *
+     * <p>This overload is retained for focused tests and embedders that do not need discovery of
+     * Resource Gateway runtime descriptors.</p>
+     */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper,
@@ -74,9 +80,30 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring,
                                         AgentTddWorkflowService workflow) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, null);
+    }
+
+    /**
+     * Creates the Spring facade over both authored libraries and the live visual operator catalog.
+     *
+     * <p>The catalog is required in production so an Agent can discover the exact runtime
+     * {@code bindingRef}, port contract, effect, and readiness of descriptor-backed APIs instead
+     * of guessing identifiers that are not present in authored operator libraries.</p>
+     */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow,
+                                        VisualOperatorCatalog catalog) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.catalog = catalog;
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(
@@ -152,7 +179,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {
         String requestedKind = optionalText(arguments, "kind").toUpperCase(java.util.Locale.ROOT);
-        List<Map<String, Object>> values = new ArrayList<>();
+        Map<String, Map<String, Object>> byRef = new LinkedHashMap<>();
         libraries.all().stream()
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(OperatorLibrary::libraryId))
@@ -160,14 +187,21 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                         .filter(Objects::nonNull)
                         .map(operator -> operatorCapability(library, operator)))
                 .filter(value -> requestedKind.isBlank() || requestedKind.equals(value.get("kind")))
-                .forEach(values::add);
+                .forEach(value -> byRef.put(value.get("ref").toString(), value));
+        runtimeOperators(identity).stream()
+                .map(this::runtimeOperatorCapability)
+                .filter(value -> requestedKind.isBlank() || requestedKind.equals(value.get("kind")))
+                .forEach(value -> byRef.put(value.get("ref").toString(), value));
         drafts.all().stream()
                 .filter(Objects::nonNull)
                 .filter(draft -> sameScope(draft, identity))
                 .sorted(Comparator.comparing(GraphDraft::draftId))
                 .map(this::graphCapability)
                 .filter(value -> requestedKind.isBlank() || requestedKind.equals(value.get("kind")))
-                .forEach(values::add);
+                .forEach(value -> byRef.put(value.get("ref").toString(), value));
+        List<Map<String, Object>> values = byRef.values().stream()
+                .sorted(Comparator.comparing(value -> value.get("ref").toString()))
+                .toList();
         return Map.of("capabilities", values, "nextCursor", "");
     }
 
@@ -229,6 +263,23 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 }
             }
         }
+        OperatorDefinition runtimeOperator = runtimeOperators(identity).stream()
+                .filter(operator -> assetRef.equals(operator.operatorRef()))
+                .findFirst()
+                .orElse(null);
+        if (runtimeOperator != null) {
+            return success(Map.of(
+                    "assetRef", assetRef,
+                    "kind", operatorKind(runtimeOperator),
+                    "inputs", runtimeOperator.ports().inputs(),
+                    "outputs", runtimeOperator.ports().outputs(),
+                    "effect", runtimeOperator.capabilities().effect(),
+                    "sourceKind", runtimeOperator.source().kind(),
+                    "bindingRef", runtimeOperator.operatorRef(),
+                    "runtimeState", runtimeOperator.runtimeReadiness().state(),
+                    "speccing", false
+            ));
+        }
         GraphDraft draft = drafts.find(assetRef).filter(value -> sameScope(value, identity)).orElse(null);
         if (draft == null) {
             return failure("DRAFT_NOT_FOUND", "Business contract was not found.");
@@ -272,6 +323,33 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 "speccing", designOnly(operator),
                 "runtimeState", operator.runtimeReadiness().state()
         );
+    }
+
+    private Map<String, Object> runtimeOperatorCapability(OperatorDefinition operator) {
+        Map<String, Object> capability = new LinkedHashMap<>();
+        capability.put("ref", operator.operatorRef());
+        capability.put("kind", operatorKind(operator));
+        capability.put("name", operator.display().name());
+        capability.put("version", operator.operatorVersion());
+        capability.put("bindingRef", operator.operatorRef());
+        capability.put("inputPorts", operator.ports().inputs().stream().map(OperatorDefinition.Port::name).toList());
+        capability.put("outputPorts", operator.ports().outputs().stream().map(OperatorDefinition.Port::name).toList());
+        capability.put("effect", operator.capabilities().effect());
+        capability.put("requiresSecrets", operator.capabilities().requiresSecrets());
+        capability.put("sourceKind", operator.source().kind());
+        capability.put("speccing", false);
+        capability.put("runtimeState", operator.runtimeReadiness().state());
+        return Map.copyOf(capability);
+    }
+
+    /** Returns resource-backed runtime APIs visible in the authenticated authoring scope. */
+    private List<OperatorDefinition> runtimeOperators(IntegrationRequestContext identity) {
+        if (catalog == null) {
+            return List.of();
+        }
+        return catalog.list(new OperatorCatalogQuery(
+                "", List.of(), true, false,
+                identity.tenantId(), identity.projectId(), identity.environmentId()));
     }
 
     private Map<String, Object> graphCapability(GraphDraft draft) {
