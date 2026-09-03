@@ -48,8 +48,8 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.datasource.url=jdbc:h2:mem:agent-tdd-mcp-ops;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })
 class AgentTddMcpOperationalWorkflowTest {
-    private static final String TOOL_REF = "codex-wallet-ops-test";
-    private static final String CASE_SET_REF = "codex-wallet-cases-test";
+    private static final String TOOL_REF = "codex-profile-ops-test";
+    private static final String CASE_SET_REF = "codex-profile-cases-test";
 
     @Autowired
     private WritableResourceRegistry resources;
@@ -73,15 +73,15 @@ class AgentTddMcpOperationalWorkflowTest {
     }
 
     @Test
-    void composesApprovesRunsZeroEgressBaselineSignsAndPublishes() {
+    void composesApprovesRunsLogicalGreenAutomaticallyAttestsSignsAndPublishes() {
         negotiateCodexLifecycle();
 
         JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
-        JsonNode wallet = java.util.stream.StreamSupport.stream(
+        JsonNode profile = java.util.stream.StreamSupport.stream(
                         capabilities.at("/data/capabilities").spliterator(), false)
-                .filter(value -> value.path("ref").asText().contains("wallet-service.getBalance"))
+                .filter(value -> value.path("ref").asText().contains("user-service.getProfile"))
                 .findFirst().orElseThrow();
-        String bindingRef = wallet.path("ref").asText();
+        String bindingRef = profile.path("ref").asText();
         JsonNode contract = invoke("rg.contract.get", Map.of("assetRef", bindingRef), "AGENT_TDD_READ");
         assertThat(contract.at("/data/bindingRef").asText()).isEqualTo(bindingRef);
 
@@ -95,36 +95,36 @@ class AgentTddMcpOperationalWorkflowTest {
         invoke("rg.tool.setInstruction", Map.of(
                 "toolRef", TOOL_REF,
                 "instruction", Map.of(
-                        "name", "codexWalletOps",
-                        "title", "Wallet balance lookup",
-                        "description", "Reads a governed wallet balance.",
-                        "whenToUse", "Use for an operator-requested wallet balance.",
+                        "name", "codexProfileOps",
+                        "title", "Customer profile lookup",
+                        "description", "Reads a governed customer profile.",
+                        "whenToUse", "Use for an operator-requested customer profile.",
                         "inputs", List.of(Map.of("name", "userId", "type", "string", "required", true)),
-                        "outputs", Map.of("amount", "number", "currency", "string"),
-                        "errors", List.of(Map.of("code", "WALLET_UNAVAILABLE"))),
-                "idempotencyKey", "instruction-wallet-ops-test"), "AGENT_TDD_AUTHORING");
+                        "outputs", Map.of("name", "string", "tier", "string"),
+                        "errors", List.of(Map.of("code", "PROFILE_UNAVAILABLE"))),
+                "idempotencyKey", "instruction-profile-ops-test"), "AGENT_TDD_AUTHORING");
         JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
                 "caseSetRef", CASE_SET_REF,
                 "toolRef", TOOL_REF,
                 "rows", List.of(Map.of(
-                        "caseId", "wallet-usd",
+                        "caseId", "profile-premium",
                         "category", "GOLDEN",
                         "layer", "contract",
                         "given", Map.of("userId", "u-100"),
-                        "stubs", Map.of("wallet", Map.of(
-                                "payload", Map.of("amount", 100, "currency", "USD"))),
-                        "expect", Map.of("amount", 100, "currency", "USD"),
-                        "intent", "Return the exact governed wallet balance",
-                        "oracleOwner", "wallet-ops")),
-                "idempotencyKey", "cases-wallet-ops-test"), "AGENT_TDD_AUTHORING");
+                        "stubs", Map.of("profile", Map.of(
+                                "payload", Map.of("userId", "u-100", "name", "Alice", "tier", "premium"))),
+                        "expect", Map.of("name", "Alice", "tier", "premium"),
+                        "intent", "Return the exact governed customer profile",
+                        "oracleOwner", "profile-ops")),
+                "idempotencyKey", "cases-profile-ops-test"), "AGENT_TDD_AUTHORING");
         JsonNode oracleReview = reviewGet("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
-                + "/wallet-usd?expectedRevision=" + cases.at("/data/revision").asLong());
-        assertThat(oracleReview.path("intent").asText()).contains("governed wallet balance");
+                + "/profile-premium?expectedRevision=" + cases.at("/data/revision").asLong());
+        assertThat(oracleReview.path("intent").asText()).contains("governed customer profile");
         assertAgentCannotApprove("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
-                + "/wallet-usd/approve", Map.of(
+                + "/profile-premium/approve", Map.of(
                 "expectedRevision", cases.at("/data/revision").asLong(),
                 "proposalFingerprint", oracleReview.path("proposalFingerprint").asText()));
-        reviewPost("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF + "/wallet-usd/approve", Map.of(
+        reviewPost("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF + "/profile-premium/approve", Map.of(
                 "expectedRevision", cases.at("/data/revision").asLong(),
                 "proposalFingerprint", oracleReview.path("proposalFingerprint").asText()));
 
@@ -141,20 +141,89 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(green.at("/data/status").asText()).isEqualTo("GO");
         assertThat(green.at("/data/businessFingerprintStable").asBoolean()).isTrue();
         assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
+        assertThat(green.at("/data/attestation/status").asText())
+                .as(green.toPrettyString()).isEqualTo("ATTESTED");
+        assertThat(green.at("/data/attestation/realExternalCalls").asInt()).isEqualTo(1);
+        assertThat(green.at("/data/attestation/cases/0/oracleHeld").asBoolean()).isTrue();
+        assertThat(green.at("/data/attestation/dependencies/0/realCallCount").asInt()).isEqualTo(1);
+        assertThat(green.at("/data/attestation").toString())
+                .doesNotContain("u-100", "100.5", "USD", "payload", "output");
 
         reviewPost("/api/agent-tdd/reviews/tools/" + TOOL_REF
                 + "/signoffs/ops-review-test/approve", Map.of(
                 "draftRevision", green.at("/data/draftRevision").asLong(),
                 "goldenSetId", green.at("/data/goldenSetId").asText(),
-                "evidenceFingerprint", green.at("/data/evidenceFingerprint").asText()));
+                "evidenceFingerprint", green.at("/data/evidenceFingerprint").asText(),
+                "implementationFingerprint",
+                green.at("/data/attestation/implementationFingerprint").asText()));
         assertThat(invoke("rg.readiness.get", Map.of("toolRef", TOOL_REF))
                 .at("/data/publishable").asBoolean()).isTrue();
 
         JsonNode published = invoke("rg.tool.publish", Map.of(
                 "toolRef", TOOL_REF,
                 "signoffRef", "ops-review-test",
-                "idempotencyKey", "publish-wallet-ops-test"), "AGENT_TDD_GOVERNANCE");
+                "idempotencyKey", "publish-profile-ops-test"), "AGENT_TDD_GOVERNANCE");
         assertThat(published.at("/data/artifactKind").asText()).isEqualTo("EXECUTABLE");
+    }
+
+    @Test
+    void realResponseThatViolatesTheApprovedOracleKeepsPublicationClosed() {
+        String toolRef = "codex-profile-attestation-failure-test";
+        String caseSetRef = "codex-profile-attestation-failure-cases";
+        JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
+        String bindingRef = java.util.stream.StreamSupport.stream(
+                        capabilities.at("/data/capabilities").spliterator(), false)
+                .map(value -> value.path("ref").asText())
+                .filter(value -> value.contains("user-service.getProfile"))
+                .findFirst().orElseThrow();
+        invoke("rg.tool.compose", Map.of(
+                "toolRef", toolRef,
+                "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", graph(bindingRef)),
+                "libraryRefs", List.of(), "idempotencyKey", "compose-attestation-failure"),
+                "AGENT_TDD_AUTHORING");
+        JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
+                "caseSetRef", caseSetRef, "toolRef", toolRef,
+                "rows", List.of(Map.of(
+                        "caseId", "profile-mismatch", "category", "GOLDEN", "layer", "contract",
+                        "given", Map.of("userId", "u-mismatch"),
+                        "stubs", Map.of("profile", Map.of("payload", Map.of(
+                                "userId", "u-mismatch", "name", "Bob", "tier", "premium"))),
+                        "expect", Map.of("name", "Bob", "tier", "premium"),
+                        "intent", "Reject a sandbox response that contradicts the approved Oracle",
+                        "oracleOwner", "profile-ops")),
+                "idempotencyKey", "cases-attestation-failure"), "AGENT_TDD_AUTHORING");
+        JsonNode review = reviewGet("/api/agent-tdd/reviews/oracles/" + caseSetRef
+                + "/profile-mismatch?expectedRevision=" + cases.at("/data/revision").asLong());
+        reviewPost("/api/agent-tdd/reviews/oracles/" + caseSetRef + "/profile-mismatch/approve", Map.of(
+                "expectedRevision", cases.at("/data/revision").asLong(),
+                "proposalFingerprint", review.path("proposalFingerprint").asText()));
+
+        JsonNode baseline = invoke("rg.tool.baseline", Map.of(
+                "toolRef", toolRef, "libraryRefs", List.of(), "caseSetRef", caseSetRef,
+                "side", "GREEN", "rounds", 1), "AGENT_TDD_EXECUTION");
+
+        assertThat(baseline.at("/data/status").asText()).isEqualTo("GO");
+        assertThat(baseline.at("/data/attestation/status").asText()).isEqualTo("FAILED");
+        assertThat(baseline.at("/data/attestation/reasonCode").asText())
+                .isEqualTo("ATTESTATION_ORACLE_MISMATCH");
+        assertThat(baseline.at("/data/attestation/realExternalCalls").asInt()).isEqualTo(1);
+        assertThat(baseline.at("/data/remainingLimitations").toString())
+                .contains("RUNTIME_ENV_NOT_ATTESTED", "LIVE_INTEGRATION_NOT_ATTESTED");
+        JsonNode readiness = invoke("rg.readiness.get", Map.of("toolRef", toolRef), "AGENT_TDD_READ");
+        assertThat(readiness.at("/data/publishable").asBoolean()).isFalse();
+        assertThat(readiness.at("/data/gates/runtimeAttestation").asBoolean()).isFalse();
+
+        String rerunPath = "/api/agent-tdd/attestations/" + toolRef + "/rerun";
+        ResponseEntity<JsonNode> rejected = postAs(
+                rerunPath, null, "bloge-aneke-demo-token", "AGENT_TDD_GOVERNANCE");
+        assertThat(rejected.getStatusCode().value()).isEqualTo(409);
+        assertThat(rejected.getBody().at("/error/code").asText()).isEqualTo("FORBIDDEN_PURPOSE");
+
+        JsonNode rerun = reviewAction(rerunPath, null);
+        assertThat(rerun.path("status").asText()).isEqualTo("FAILED");
+        assertThat(rerun.path("reasonCode").asText()).isEqualTo("ATTESTATION_ORACLE_MISMATCH");
+        assertThat(rerun.path("realExternalCalls").asInt()).isEqualTo(1);
+        assertThat(rerun.toString()).doesNotContain("u-mismatch", "Alice", "Bob", "payload", "output");
     }
 
     @Test
@@ -314,11 +383,23 @@ class AgentTddMcpOperationalWorkflowTest {
     }
 
     private void reviewPost(String path, Object body) {
-        ResponseEntity<JsonNode> response = http.exchange(path, HttpMethod.POST,
-                new HttpEntity<>(mapper.valueToTree(body),
-                        headers("bloge-reviewer-demo-token", "AGENT_TDD_GOVERNANCE")), JsonNode.class);
+        assertThat(reviewAction(path, body).path("status").asText()).isEqualTo("APPROVED");
+    }
+
+    private JsonNode reviewAction(String path, Object body) {
+        ResponseEntity<JsonNode> response = postAs(
+                path, body, "bloge-reviewer-demo-token", "AGENT_TDD_GOVERNANCE");
         assertThat(response.getStatusCode().is2xxSuccessful()).as(response.toString()).isTrue();
-        assertThat(response.getBody().path("status").asText()).isEqualTo("APPROVED");
+        return response.getBody();
+    }
+
+    private ResponseEntity<JsonNode> postAs(String path,
+                                            Object body,
+                                            String token,
+                                            String purpose) {
+        return http.exchange(path, HttpMethod.POST,
+                new HttpEntity<>(body == null ? null : mapper.valueToTree(body), headers(token, purpose)),
+                JsonNode.class);
     }
 
     private void assertAgentCannotApprove(String path, Object body) {
@@ -369,14 +450,14 @@ class AgentTddMcpOperationalWorkflowTest {
 
     private static String graph(String bindingRef) {
         return """
-                graph codexWalletOps {
+                graph codexProfileOps {
                   input { userId: String }
-                  node wallet : "%s" {
+                  node profile : "%s" {
                     input { params = { userId: ctx.userId } }
                   }
                   transform response {
-                    amount = wallet.output.payload.amount
-                    currency = wallet.output.payload.currency
+                    name = profile.output.payload.name
+                    tier = profile.output.payload.tier
                   }
                 }
                 """.formatted(bindingRef);

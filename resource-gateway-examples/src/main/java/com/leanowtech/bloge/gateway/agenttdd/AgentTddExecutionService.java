@@ -645,7 +645,8 @@ public final class AgentTddExecutionService {
                 NodeFixture.ResourceFidelity.OUTPUT_LEVEL, behavior);
     }
 
-    private boolean expectedMatches(JsonNode expected, JsonNode actual) {
+    /** Compares a business Oracle as an exact scalar/array or recursive object subset. */
+    static boolean expectedMatches(JsonNode expected, JsonNode actual) {
         if (expected == null || expected.isMissingNode() || expected.isNull()) return true;
         if (expected.isObject()) {
             if (actual == null || !actual.isObject()) return false;
@@ -705,18 +706,30 @@ public final class AgentTddExecutionService {
                                       List<? extends JsonNode> rows,
                                       String side,
                                       List<Map<String, String>> runtimeBindings) {
-        String implementationFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
-                "draftRevision", draft.revision(),
-                "nodes", draft.nodes(),
-                "edges", draft.edges(),
-                "operatorFingerprints", draft.operatorFingerprints(),
-                "runtimeBindings", runtimeBindings), MAX_FINGERPRINT_BYTES);
+        String implementationFingerprint = implementationFingerprint(mapper, draft, runtimeBindings);
         return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "toolRef", toolRef,
                 "side", side,
                 "contractFingerprint", contractFingerprint(mapper, draft),
                 "implementationFingerprint", implementationFingerprint,
                 "cases", semanticCases(rows)), MAX_FINGERPRINT_BYTES);
+    }
+
+    /**
+     * Fingerprints the exact graph implementation and materialized runtime targets.
+     *
+     * <p>Attestation persists this identity separately from the enclosing evidence fingerprint so
+     * operators can distinguish contract drift from implementation drift without storing payloads.</p>
+     */
+    static String implementationFingerprint(ObjectMapper mapper,
+                                            GraphDraft draft,
+                                            List<Map<String, String>> runtimeBindings) {
+        return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
+                "draftRevision", draft.revision(),
+                "nodes", draft.nodes(),
+                "edges", draft.edges(),
+                "operatorFingerprints", draft.operatorFingerprints(),
+                "runtimeBindings", runtimeBindings), MAX_FINGERPRINT_BYTES);
     }
 
     private static List<JsonNode> semanticCases(List<? extends JsonNode> rows) {

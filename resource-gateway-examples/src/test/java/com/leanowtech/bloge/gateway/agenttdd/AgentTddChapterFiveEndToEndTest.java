@@ -143,10 +143,19 @@ class AgentTddChapterFiveEndToEndTest {
         assertThat(green.path("data").path("status").asText())
                 .as(green.toPrettyString()).isEqualTo("GO");
         assertThat(green.path("data").path("realExternalCalls").asInt()).isZero();
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddAttestationService.ATTESTATION,
+                "cancel-tool", mapper.valueToTree(Map.of(
+                        "toolRef", "cancel-tool", "status", "ATTESTED", "environment", "test",
+                        "goldenSetId", green.at("/data/goldenSetId").asText(),
+                        "evidenceFingerprint", green.at("/data/evidenceFingerprint").asText(),
+                        "draftRevision", green.at("/data/draftRevision").asLong(),
+                        "implementationFingerprint", "sha256:chapter-five-v1",
+                        "cases", List.of(), "dependencies", List.of(), "realExternalCalls", 0)));
         new AgentTddReviewService(states).approveToolSignoff(
                 "cancel-tool", "owner-signoff", green.path("data").path("draftRevision").asLong(),
                 green.path("data").path("goldenSetId").asText(),
-                green.path("data").path("evidenceFingerprint").asText(), reviewerIdentity());
+                green.path("data").path("evidenceFingerprint").asText(),
+                "sha256:chapter-five-v1", reviewerIdentity());
 
         JsonNode ready = invoke(tools, "rg.readiness.get", Map.of("toolRef", "cancel-tool"));
         assertThat(ready.at("/data/publishable").asBoolean()).as(ready.toPrettyString()).isTrue();
@@ -163,10 +172,19 @@ class AgentTddChapterFiveEndToEndTest {
         green = invoke(tools, "rg.tool.baseline", Map.of(
                 "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"),
                 "caseSetRef", "cancel-golden", "side", "GREEN", "rounds", 2));
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddAttestationService.ATTESTATION,
+                "cancel-tool", mapper.valueToTree(Map.of(
+                        "toolRef", "cancel-tool", "status", "ATTESTED", "environment", "test",
+                        "goldenSetId", green.at("/data/goldenSetId").asText(),
+                        "evidenceFingerprint", green.at("/data/evidenceFingerprint").asText(),
+                        "draftRevision", green.at("/data/draftRevision").asLong(),
+                        "implementationFingerprint", "sha256:chapter-five-v2",
+                        "cases", List.of(), "dependencies", List.of(), "realExternalCalls", 0)));
         new AgentTddReviewService(states).approveToolSignoff(
                 "cancel-tool", "owner-signoff-v2", green.at("/data/draftRevision").asLong(),
                 green.at("/data/goldenSetId").asText(),
-                green.at("/data/evidenceFingerprint").asText(), reviewerIdentity());
+                green.at("/data/evidenceFingerprint").asText(),
+                "sha256:chapter-five-v2", reviewerIdentity());
 
         JsonNode published = invoke(tools, "rg.tool.publish", Map.of(
                 "toolRef", "cancel-tool", "signoffRef", "owner-signoff-v2",

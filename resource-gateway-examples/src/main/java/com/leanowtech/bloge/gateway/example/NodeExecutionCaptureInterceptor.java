@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.leanowtech.bloge.gateway.resource.ResourceExecutionAdmissionRegistry;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.exception.NonRetryableException;
@@ -40,7 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, ExecutionListener {
 
-    static final String CAPTURE_ID_CONTEXT_KEY = "_blogeEvidenceCaptureId";
+    static final String CAPTURE_ID_CONTEXT_KEY =
+            ResourceExecutionAdmissionRegistry.EXECUTION_CAPTURE_ID_CONTEXT_KEY;
 
     private final ConcurrentHashMap<String, CaptureState> captures = new ConcurrentHashMap<>();
     private final ThreadLocal<InvocationScope> invocationScope = new ThreadLocal<>();

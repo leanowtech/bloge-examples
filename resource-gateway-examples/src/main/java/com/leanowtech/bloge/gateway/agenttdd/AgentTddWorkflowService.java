@@ -53,6 +53,7 @@ public final class AgentTddWorkflowService {
     private final VisualGraphRunService runner;
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publications;
+    private final AgentTddAttestationService attestations;
     private final ObjectMapper mapper;
 
     /** Creates the workflow boundary over existing authoritative RG services. */
@@ -63,12 +64,25 @@ public final class AgentTddWorkflowService {
                                    VisualOperatorCatalog catalog,
                                    VisualGraphPublicationRepository publications,
                                    ObjectMapper mapper) {
+        this(states, drafts, fixtures, runner, catalog, publications, null, mapper);
+    }
+
+    /** Creates a directly assembled workflow with current-descriptor attestation verification. */
+    public AgentTddWorkflowService(AgentTddStateRepository states,
+                                   GraphDraftRepository drafts,
+                                   GraphNodeFixturePromotionService fixtures,
+                                   VisualGraphRunService runner,
+                                   VisualOperatorCatalog catalog,
+                                   VisualGraphPublicationRepository publications,
+                                   AgentTddAttestationService attestations,
+                                   ObjectMapper mapper) {
         this.states = Objects.requireNonNull(states, "states");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.fixtures = fixtures;
         this.runner = Objects.requireNonNull(runner, "runner");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.publications = Objects.requireNonNull(publications, "publications");
+        this.attestations = attestations;
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -80,8 +94,10 @@ public final class AgentTddWorkflowService {
                                    VisualGraphRunService runner,
                                    VisualOperatorCatalog catalog,
                                    VisualGraphPublicationRepository publications,
+                                   ObjectProvider<AgentTddAttestationService> attestationProvider,
                                    ObjectMapper mapper) {
-        this(states, drafts, fixtureProvider.getIfAvailable(), runner, catalog, publications, mapper);
+        this(states, drafts, fixtureProvider.getIfAvailable(), runner, catalog, publications,
+                attestationProvider.getIfAvailable(), mapper);
     }
 
     /** Persists a payload-free execution result and advances the current red-to-green verdict. */
@@ -125,6 +141,7 @@ public final class AgentTddWorkflowService {
             states.save(scope(identity), VERDICT_LINE, verdictLineRef(toolRef, goldenSetId), verdict);
         }
         LinkedHashMap<String, Object> response = new LinkedHashMap<>(result);
+        response.put("toolRef", toolRef);
         response.put("evidenceRef", stored.assetRef());
         return Map.copyOf(response);
     }
@@ -173,7 +190,7 @@ public final class AgentTddWorkflowService {
     }
 
     /**
-     * Publishes an immutable executable Tool after compile, green baseline, and signoff gates pass.
+     * Publishes an immutable executable Tool after compile, GREEN, live attestation, and signoff.
      */
     public Map<String, Object> publish(JsonNode arguments, IntegrationRequestContext identity) {
         return idempotent("rg.tool.publish", arguments, identity, () -> {
@@ -201,6 +218,9 @@ public final class AgentTddWorkflowService {
                     || !currentEvidenceFingerprint.equals(latest.path("evidenceFingerprint").asText())) {
                 throw gate("The latest evidence is not a stable green baseline.");
             }
+            JsonNode attestation = currentAttestation(toolRef, draft.revision(), currentGoldenSetId,
+                    currentEvidenceFingerprint, identity)
+                    .orElseThrow(() -> gate("A current sandbox integration attestation is required."));
             JsonNode signoff = states.find(scope(identity), SIGNOFF, signoffRef)
                     .map(AgentTddStoredAsset::data)
                     .orElseThrow(() -> gate("An approved owner signoff is required."));
@@ -208,7 +228,9 @@ public final class AgentTddWorkflowService {
                     || !toolRef.equals(signoff.path("toolRef").asText())
                     || draft.revision() != signoff.path("draftRevision").asLong(-1)
                     || !currentGoldenSetId.equals(signoff.path("goldenSetId").asText())
-                    || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())) {
+                    || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())
+                    || !attestation.path("implementationFingerprint").asText()
+                            .equals(signoff.path("implementationFingerprint").asText())) {
                 throw gate("The owner signoff does not approve this Tool.");
             }
             DslGenerationResult generation = runner.compileAgainst(executable, frozen.catalog());
@@ -222,7 +244,7 @@ public final class AgentTddWorkflowService {
                     GraphDraftDependencyReport.from(executable, frozen.catalog()),
                     VisualGraphPublication.PublicationMetadata.of(
                             identity.actorId(), "MCP_AGENT_TDD",
-                            "Published after stable green baseline and owner signoff.", signoffRef));
+                            "Published after stable green, sandbox attestation, and owner signoff.", signoffRef));
             VisualGraphPublication stored = publications.create(candidate);
             return Map.of("toolRef", toolRef, "publicationId", stored.publicationId(),
                     "artifactKind", stored.artifactKind(), "goldenSetId", latest.path("goldenSetId").asText(),
@@ -319,23 +341,58 @@ public final class AgentTddWorkflowService {
                 && currentGoldenSetId.equals(latest.path("goldenSetId").asText())
                 && draft.revision() == latest.path("draftRevision").asLong(-1)
                 && currentEvidenceFingerprint.equals(latest.path("evidenceFingerprint").asText());
+        java.util.Optional<JsonNode> currentAttestation = green
+                ? currentAttestation(toolRef, draft.revision(), currentGoldenSetId,
+                        currentEvidenceFingerprint, identity)
+                : java.util.Optional.empty();
+        boolean attested = currentAttestation.isPresent();
+        String attestedImplementation = currentAttestation
+                .map(data -> data.path("implementationFingerprint").asText()).orElse("");
         boolean signed = states.list(scope(identity), SIGNOFF).stream().map(AgentTddStoredAsset::data)
                 .anyMatch(data -> toolRef.equals(data.path("toolRef").asText())
                         && "APPROVED".equals(data.path("status").asText())
                         && draft.revision() == data.path("draftRevision").asLong(-1)
                         && currentGoldenSetId.equals(data.path("goldenSetId").asText())
-                        && currentEvidenceFingerprint.equals(data.path("evidenceFingerprint").asText()));
+                        && currentEvidenceFingerprint.equals(data.path("evidenceFingerprint").asText())
+                        && attestedImplementation.equals(
+                                data.path("implementationFingerprint").asText()));
         boolean design = speccing(draft);
         List<String> remaining = new ArrayList<>();
         if (design) remaining.add("SPECCING_NOT_EXECUTABLE");
         if (!green) remaining.add("GREEN_BASELINE_ABSENT");
+        if (!attested) {
+            remaining.add("RUNTIME_ENV_NOT_ATTESTED");
+            remaining.add("LIVE_INTEGRATION_NOT_ATTESTED");
+        }
         if (!signed) remaining.add("OWNER_SIGNOFF_ABSENT");
-        return Map.of("toolRef", toolRef,
-                "state", design ? "SPECCING" : green ? "IMPLEMENTED" : "IMPLEMENTING",
-                "publishable", remaining.isEmpty(),
-                "goldenSetId", currentGoldenSetId,
-                "gates", Map.of("bindingsComplete", !design, "greenBaseline", green, "ownerSignoff", signed),
-                "remainingLimitations", remaining);
+        LinkedHashMap<String, Object> readiness = new LinkedHashMap<>();
+        readiness.put("toolRef", toolRef);
+        readiness.put("state", design ? "SPECCING" : green ? "IMPLEMENTED" : "IMPLEMENTING");
+        readiness.put("publishable", remaining.isEmpty());
+        readiness.put("goldenSetId", currentGoldenSetId);
+        readiness.put("gates", Map.of("bindingsComplete", !design, "greenBaseline", green,
+                "runtimeAttestation", attested, "ownerSignoff", signed));
+        readiness.put("attestation", currentAttestation
+                .map(value -> mapper.convertValue(value, OBJECT_MAP))
+                .orElse(Map.of("status", "ABSENT", "environment", draft.environment(),
+                        "realExternalCalls", 0, "cases", List.of(), "dependencies", List.of())));
+        readiness.put("remainingLimitations", List.copyOf(remaining));
+        return Map.copyOf(readiness);
+    }
+
+    /** Returns only an attestation bound to the exact current publish subject. */
+    private java.util.Optional<JsonNode> currentAttestation(String toolRef,
+                                                            long draftRevision,
+                                                            String goldenSetId,
+                                                            String evidenceFingerprint,
+                                                            IntegrationRequestContext identity) {
+        return states.find(scope(identity), AgentTddAttestationService.ATTESTATION, toolRef)
+                .map(AgentTddStoredAsset::data)
+                .filter(data -> "ATTESTED".equals(data.path("status").asText()))
+                .filter(data -> draftRevision == data.path("draftRevision").asLong(-1))
+                .filter(data -> goldenSetId.equals(data.path("goldenSetId").asText()))
+                .filter(data -> evidenceFingerprint.equals(data.path("evidenceFingerprint").asText()))
+                .filter(data -> attestations == null || attestations.isCurrent(data, identity));
     }
 
     private Map<String, Object> idempotent(String operation,

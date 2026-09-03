@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -14,12 +16,14 @@ import java.util.Map;
  * @param context initial graph context values
  * @param outputNode optional output node override
  * @param runIntent optional deadline and fenced cancellation intent
+ * @param admittedResources exact resource descriptors admitted for this internal execution
  */
 public record VisualDslRunRequest(
         String dsl,
         Map<String, Object> context,
         String outputNode,
-        VisualRunIntent runIntent
+        VisualRunIntent runIntent,
+        Map<String, ResourceDescriptor> admittedResources
 ) {
     /**
      * Creates a normalized DSL run request.
@@ -29,10 +33,19 @@ public record VisualDslRunRequest(
         context = context == null ? Map.of() : new LinkedHashMap<>(context);
         outputNode = outputNode == null ? "" : outputNode;
         runIntent = runIntent == null ? VisualRunIntent.unmanaged() : runIntent;
+        admittedResources = admittedResources == null ? Map.of() : Map.copyOf(admittedResources);
+    }
+
+    /** Backward-compatible request without resource admission. */
+    public VisualDslRunRequest(String dsl,
+                               Map<String, Object> context,
+                               String outputNode,
+                               VisualRunIntent runIntent) {
+        this(dsl, context, outputNode, runIntent, Map.of());
     }
 
     /** Backward-compatible unmanaged request. */
     public VisualDslRunRequest(String dsl, Map<String, Object> context, String outputNode) {
-        this(dsl, context, outputNode, VisualRunIntent.unmanaged());
+        this(dsl, context, outputNode, VisualRunIntent.unmanaged(), Map.of());
     }
 }

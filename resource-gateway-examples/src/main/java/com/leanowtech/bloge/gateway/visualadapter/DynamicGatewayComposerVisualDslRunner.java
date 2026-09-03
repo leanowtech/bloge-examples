@@ -78,7 +78,8 @@ public class DynamicGatewayComposerVisualDslRunner implements VisualDslRunner, V
                 request.context(),
                 request.outputNode(),
                 new DynamicRunIntent("", request.runIntent().requestId(), request.runIntent().deadlineAt(),
-                        request.runIntent().fencingToken(), request.runIntent().cancellationGraceMs())
+                        request.runIntent().fencingToken(), request.runIntent().cancellationGraceMs()),
+                request.admittedResources()
         ));
         return fromDynamic(response);
     }

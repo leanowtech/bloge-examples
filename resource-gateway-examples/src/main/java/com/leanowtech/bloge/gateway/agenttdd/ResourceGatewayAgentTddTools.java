@@ -39,12 +39,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final AgentTddMutationService mutations;
     private final AgentTddWorkflowService workflow;
     private final AgentTddResourceDeclarationService declarations;
+    private final AgentTddAttestationService attestations;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
-        this(libraries, drafts, mapper, null, null, null, null, null, null, null);
+        this(libraries, drafts, mapper, null, null, null, null, null, null, null, null);
     }
 
     /** Creates a focused facade with contract-aware DSL and simulation services. */
@@ -53,7 +54,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectMapper mapper,
                                         DslImportService projection,
                                         VisualGraphSimulationService simulation) {
-        this(libraries, drafts, mapper, projection, simulation, null, null, null, null, null);
+        this(libraries, drafts, mapper, projection, simulation, null, null, null, null, null, null);
     }
 
     /** Creates the fully wired facade including canonical mutations and durable Agent overlays. */
@@ -64,7 +65,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, null, null, null);
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, null, null, null, null);
     }
 
     /**
@@ -81,7 +82,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring,
                                         AgentTddWorkflowService workflow) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, null, null);
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, null, null, null);
     }
 
     /** Creates the catalog-aware facade retained for existing embedders and focused tests. */
@@ -94,7 +95,22 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AuthoringPreviewService authoring,
                                         AgentTddWorkflowService workflow,
                                         VisualOperatorCatalog catalog) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, catalog, null);
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow, catalog, null, null);
+    }
+
+    /** Creates the resource-declaration facade retained for focused tests and embedders. */
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow,
+                                        VisualOperatorCatalog catalog,
+                                        AgentTddResourceDeclarationService declarations) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
+                catalog, declarations, null);
     }
 
     /**
@@ -114,7 +130,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AuthoringPreviewService authoring,
                                         AgentTddWorkflowService workflow,
                                         VisualOperatorCatalog catalog,
-                                        AgentTddResourceDeclarationService declarations) {
+                                        AgentTddResourceDeclarationService declarations,
+                                        AgentTddAttestationService attestations) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -128,6 +145,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);
         this.workflow = workflow;
         this.declarations = declarations;
+        this.attestations = attestations;
     }
 
     /**
@@ -180,10 +198,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     ? execution().rehearse(safeArguments, identity)
                     : workflow.recordEvidence("rg.feature.rehearse", featureArguments(safeArguments),
                             execution().rehearse(safeArguments, identity), identity));
-            case "rg.tool.baseline" -> executionSuccess(workflow == null
-                    ? execution().baseline(safeArguments, identity)
-                    : workflow.recordEvidence("rg.tool.baseline", safeArguments,
-                            execution().baseline(safeArguments, identity), identity));
+            case "rg.tool.baseline" -> executionSuccess(baseline(safeArguments, identity));
             case "rg.fixture.promote" -> executionSuccess(workflow().promoteFixture(safeArguments, identity));
             case "rg.fixture.provide" -> executionSuccess(workflow().provideFixture(safeArguments, identity));
             case "rg.tool.publishSpec" -> executionSuccess(workflow().publishSpec(safeArguments, identity));
@@ -461,6 +476,26 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             throw new AgentTddToolException("GATE_REJECTED", "Agent resource declaration is unavailable.");
         }
         return declarations;
+    }
+
+    /** Records logical GREEN first, then lets the platform-only runner attach real-call evidence. */
+    private Map<String, Object> baseline(JsonNode arguments, IntegrationRequestContext identity) {
+        Map<String, Object> logical = execution().baseline(arguments, identity);
+        if (workflow == null) return logical;
+        Map<String, Object> recorded = workflow.recordEvidence(
+                "rg.tool.baseline", arguments, logical, identity);
+        if (attestations == null || !"GO".equals(Objects.toString(recorded.get("status"), ""))
+                || !"GREEN".equals(Objects.toString(recorded.get("side"), ""))) {
+            return recorded;
+        }
+        LinkedHashMap<String, Object> response = new LinkedHashMap<>(recorded);
+        Map<String, Object> attestation = attestations.attestAfterGreen(recorded, identity);
+        response.put("attestation", attestation);
+        response.put("remainingLimitations", "ATTESTED".equals(attestation.get("status"))
+                ? List.of("OWNER_SIGNOFF_ABSENT")
+                : List.of("RUNTIME_ENV_NOT_ATTESTED", "LIVE_INTEGRATION_NOT_ATTESTED",
+                        "OWNER_SIGNOFF_ABSENT"));
+        return Map.copyOf(response);
     }
 
     private com.fasterxml.jackson.databind.node.ObjectNode featureArguments(JsonNode arguments) {

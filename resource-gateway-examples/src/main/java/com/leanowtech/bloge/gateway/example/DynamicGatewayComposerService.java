@@ -19,6 +19,7 @@ import com.leanowtech.bloge.dsl.compiler.CompilationDiagnostic;
 import com.leanowtech.bloge.dsl.compiler.CompilationResult;
 import com.leanowtech.bloge.dsl.compiler.GraphLoader;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
+import com.leanowtech.bloge.gateway.resource.ResourceExecutionAdmissionRegistry;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,6 +52,7 @@ public class DynamicGatewayComposerService {
     private final GraphLoader graphLoader;
     private final NodeExecutionCaptureInterceptor executionCapture;
     private final DynamicRunControlManager runControls;
+    private final ResourceExecutionAdmissionRegistry executionAdmissions;
 
     /**
      * Creates the dynamic composer service with the runtime operator registry.
@@ -66,19 +68,32 @@ public class DynamicGatewayComposerService {
     public DynamicGatewayComposerService(OperatorRegistry registry,
                                          ObjectMapper objectMapper,
                                          DynamicRunControlRepository runControlRepository) {
-        this(registry, objectMapper, runControlRepository, 100);
+        this(registry, objectMapper, runControlRepository, 100,
+                new ResourceExecutionAdmissionRegistry());
     }
 
-    /** Creates the Spring service with durable control and a configurable finalization reserve. */
-    @Autowired
+    /** Creates a directly assembled service with an isolated resource-admission registry. */
     public DynamicGatewayComposerService(OperatorRegistry registry,
                                          ObjectMapper objectMapper,
                                          DynamicRunControlRepository runControlRepository,
                                          @Value("${resource-gateway.run-control.finalization-reserve-ms:100}")
                                          long finalizationReserveMs) {
+        this(registry, objectMapper, runControlRepository, finalizationReserveMs,
+                new ResourceExecutionAdmissionRegistry());
+    }
+
+    /** Creates the Spring service with shared resource admission and durable run control. */
+    @Autowired
+    public DynamicGatewayComposerService(OperatorRegistry registry,
+                                         ObjectMapper objectMapper,
+                                         DynamicRunControlRepository runControlRepository,
+                                         @Value("${resource-gateway.run-control.finalization-reserve-ms:100}")
+                                         long finalizationReserveMs,
+                                         ResourceExecutionAdmissionRegistry executionAdmissions) {
         this.executionCapture = new NodeExecutionCaptureInterceptor();
         this.runControls = new DynamicRunControlManager(runControlRepository,
                 Duration.ofMillis(finalizationReserveMs));
+        this.executionAdmissions = executionAdmissions;
         this.graphEngine = GraphEngine.builder()
                 .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
                 .interceptors(List.of(runControls, executionCapture))
@@ -159,7 +174,14 @@ public class DynamicGatewayComposerService {
         String captureId = UUID.randomUUID().toString();
         executionCapture.begin(captureId, graph);
         GraphContext context = contextFrom(request.context(), captureId);
-        ExecutionOutcome outcome = execute(graph, context, registration);
+        ResourceExecutionAdmissionRegistry.AdmissionLease admission = request.admittedResources().isEmpty()
+                ? null : executionAdmissions.register(captureId, request.admittedResources());
+        ExecutionOutcome outcome;
+        try {
+            outcome = execute(graph, context, registration);
+        } finally {
+            if (admission != null) admission.close();
+        }
         GraphResult result = outcome.result();
         NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(captureId, result, context);
         DynamicRunControlView control = runControls.view(registration);

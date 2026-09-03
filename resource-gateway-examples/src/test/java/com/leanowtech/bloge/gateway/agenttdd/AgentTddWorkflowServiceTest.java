@@ -291,7 +291,7 @@ class AgentTddWorkflowServiceTest {
 
         assertThatThrownBy(() -> review.approveToolSignoff(
                 "risk-tool", "workload-signoff", 4, "sha256:golden", "sha256:evidence",
-                authorIdentity()))
+                "sha256:implementation", authorIdentity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
         assertThatThrownBy(() -> review.approvePublishSpec(
@@ -303,8 +303,11 @@ class AgentTddWorkflowServiceTest {
 
     @Test
     void executablePublishRejectsMissingGreenBaselineBeforeCallingCompiler() {
-        new AgentTddReviewService(states).approveToolSignoff(
-                "risk-tool", "signoff-1", 4, "sha256:missing", "sha256:missing", identity());
+        assertThatThrownBy(() -> new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-1", 4, "sha256:missing", "sha256:missing",
+                "sha256:implementation", identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
 
         assertThatThrownBy(() -> service.publish(json(Map.of(
                 "toolRef", "risk-tool", "signoffRef", "signoff-1", "idempotencyKey", "publish-1")),
@@ -325,8 +328,20 @@ class AgentTddWorkflowServiceTest {
                 "caseSetRef", "golden-1", "caseSetRevision", currentCaseSetRevision("golden-1"),
                 "draftRevision", 4, "evidenceFingerprint", evidenceFingerprint,
                 "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        assertThatThrownBy(() -> service.publish(json(Map.of(
+                "toolRef", "risk-tool", "signoffRef", "signoff-1",
+                "idempotencyKey", "publish-without-attestation")), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("PUBLISH_GATE_NOT_MET"));
+        storeAttestation(goldenSetId, evidenceFingerprint);
+        assertThatThrownBy(() -> new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-wrong-implementation", 4, goldenSetId,
+                evidenceFingerprint, "sha256:other-implementation", identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
         new AgentTddReviewService(states).approveToolSignoff(
-                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint, identity());
+                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint,
+                "sha256:implementation", identity());
         VisualValidationResult validation = mock(VisualValidationResult.class);
         VisualGraphActionReadiness actionReadiness = mock(VisualGraphActionReadiness.class);
         when(validation.valid()).thenReturn(true);
@@ -361,8 +376,11 @@ class AgentTddWorkflowServiceTest {
                 "caseSetRevision", currentCaseSetRevision("golden-1"),
                 "side", "RED", "draftRevision", 4, "evidenceFingerprint", evidenceFingerprint,
                 "businessFingerprintStable", true, "realExternalCalls", 0), identity());
-        new AgentTddReviewService(states).approveToolSignoff(
-                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint, identity());
+        assertThatThrownBy(() -> new AgentTddReviewService(states).approveToolSignoff(
+                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint,
+                "sha256:implementation", identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
 
         assertThatThrownBy(() -> service.publish(json(Map.of(
                 "toolRef", "risk-tool", "signoffRef", "signoff-1",
@@ -385,8 +403,10 @@ class AgentTddWorkflowServiceTest {
                 "draftRevision", 4,
                 "evidenceFingerprint", evidenceFingerprint,
                 "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        storeAttestation(goldenSetId, evidenceFingerprint);
         new AgentTddReviewService(states).approveToolSignoff(
-                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint, identity());
+                "risk-tool", "signoff-1", 4, goldenSetId, evidenceFingerprint,
+                "sha256:implementation", identity());
         states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", json(Map.of(
                 "toolRef", "risk-tool", "rows", List.of(Map.of(
                         "caseId", "g1", "lifecycle", "ACTIVE", "expect", Map.of("decision", "DENY"),
@@ -472,11 +492,14 @@ class AgentTddWorkflowServiceTest {
     @Test
     void ownerSignoffReferenceIsImmutable() {
         AgentTddReviewService review = new AgentTddReviewService(states);
+        storeReviewSubject(4, "sha256:golden", "sha256:evidence", "sha256:implementation");
         AgentTddStoredAsset first = review.approveToolSignoff(
-                "risk-tool", "signoff-1", 4, "sha256:golden", "sha256:evidence", identity());
+                "risk-tool", "signoff-1", 4, "sha256:golden", "sha256:evidence",
+                "sha256:implementation", identity());
 
         assertThatThrownBy(() -> review.approveToolSignoff(
-                "risk-tool", "signoff-1", 5, "sha256:other", "sha256:other", identity()))
+                "risk-tool", "signoff-1", 4, "sha256:golden", "sha256:evidence",
+                "sha256:implementation", identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
         assertThat(states.find(scope(), AgentTddWorkflowService.SIGNOFF, "signoff-1")
@@ -497,6 +520,36 @@ class AgentTddWorkflowServiceTest {
     private long currentCaseSetRevision(String caseSetRef) {
         return states.find(scope(), AgentTddMutationService.CASE_SET, caseSetRef)
                 .orElseThrow().revision();
+    }
+
+    private void storeAttestation(String goldenSetId, String evidenceFingerprint) {
+        Map<String, Object> evidence = new java.util.LinkedHashMap<>();
+        evidence.put("toolRef", "risk-tool");
+        evidence.put("status", "ATTESTED");
+        evidence.put("environment", "test");
+        evidence.put("goldenSetId", goldenSetId);
+        evidence.put("evidenceFingerprint", evidenceFingerprint);
+        evidence.put("draftRevision", 4);
+        evidence.put("caseSetRef", "golden-1");
+        evidence.put("implementationFingerprint", "sha256:implementation");
+        evidence.put("cases", List.of());
+        evidence.put("dependencies", List.of());
+        evidence.put("realExternalCalls", 0);
+        states.save(scope(), AgentTddAttestationService.ATTESTATION, "risk-tool", json(evidence));
+    }
+
+    private void storeReviewSubject(long draftRevision,
+                                    String goldenSetId,
+                                    String evidenceFingerprint,
+                                    String implementationFingerprint) {
+        states.save(scope(), AgentTddWorkflowService.VERDICT, "risk-tool", json(Map.of(
+                "latest", Map.of("side", "GREEN", "status", "GO",
+                        "draftRevision", draftRevision, "goldenSetId", goldenSetId,
+                        "evidenceFingerprint", evidenceFingerprint))));
+        states.save(scope(), AgentTddAttestationService.ATTESTATION, "risk-tool", json(Map.of(
+                "toolRef", "risk-tool", "status", "ATTESTED", "draftRevision", draftRevision,
+                "goldenSetId", goldenSetId, "evidenceFingerprint", evidenceFingerprint,
+                "implementationFingerprint", implementationFingerprint)));
     }
 
     private static String scope() {

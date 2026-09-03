@@ -40,6 +40,16 @@ closed until a sandbox substitute and reconciliation contract exist.
 Agent TDD resource declaration and sandbox attestation share an exact-host egress policy configured by
 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`. It rejects wildcard/suffix matching, user-info, authority templates,
 non-HTTP schemes and an empty allowlist; the local default admits only `localhost` and `127.0.0.1`.
+After a durable logical GREEN, the platform-only `AGENT_TDD_ATTEST` boundary automatically runs the same
+approved ACTIVE cases against frozen, descriptor-backed `READ_EXTERNAL` dependencies. It is not an MCP tool:
+WORKLOAD callers cannot choose real inputs, bindings, URLs, or execution mode. Production environments and
+external writes fail closed. Each real run binds immutable operator snapshots and exact resource descriptors;
+the HTTP operator checks the descriptor again immediately before request construction, closing registry-replace
+races. The resulting `ATTESTATION` stores only per-case Oracle booleans, dependency call counts, environment,
+and contract/implementation/evidence fingerprints. Exact automatic retries replay one reservation without
+repeating the read. Failed runs can be retried only by a HUMAN/USER confirmation on the board. Publication and
+readiness require current logical GREEN, current `ATTESTED` evidence, and an independently approved owner
+signoff; graph, case-set, binding, implementation, or descriptor drift invalidates the prior attestation.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened
@@ -1138,7 +1148,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `http://localhost:8080/capabilities/?lang=zh-CN&task=quality` | Inspect GP-09 quality coverage, admission blockers, the payload boundary, and each Case's exact impact closure |
 | `http://localhost:8080/business-mirror/` | Open the legacy Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
-| `http://localhost:8080/agent-tdd.html` | With the separate HUMAN reviewer token, inspect Agent TDD readiness, open exact no-store review details, approve Oracle proposals, and sign GREEN baselines |
+| `http://localhost:8080/agent-tdd.html` | With the separate HUMAN reviewer token, inspect Agent TDD readiness, open exact no-store review details, approve Oracle proposals, review payload-free real-integration attestation, confirm a failed sandbox retry, and sign the exact GREEN + implementation fingerprint |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
 | `http://localhost:8080/correctness/` | Inspect the exact, payload-free Correctness Workspace enabled by default; use the printed deep link rather than omitting its target coordinate |

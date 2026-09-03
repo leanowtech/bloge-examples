@@ -320,6 +320,28 @@ public final class McpToolCatalog {
                 List.of("caseId", "layer", "category", "verdict", "realExternalCalls"));
     }
 
+    /** Strict payload-free schema for platform-owned real-integration evidence. */
+    private static Map<String, Object> attestation() {
+        Map<String, Object> observedCase = structuredObject(props(
+                "caseId", string(), "executionSucceeded", bool(), "oracleHeld", bool(),
+                "allDependenciesCalled", bool(), "realExternalCalls", integer()),
+                List.of("caseId", "executionSucceeded", "oracleHeld",
+                        "allDependenciesCalled", "realExternalCalls"));
+        Map<String, Object> dependency = structuredObject(props(
+                "nodeId", string(), "operatorRef", string(), "resourceId", string(),
+                "realCalled", bool(), "realCallCount", integer()),
+                List.of("nodeId", "operatorRef", "resourceId", "realCalled", "realCallCount"));
+        return structuredObject(props(
+                "toolRef", string(), "status", enumString("ABSENT", "ATTESTED", "FAILED"),
+                "reasonCode", string(), "environment", string(), "goldenSetId", string(),
+                "evidenceFingerprint", string(), "contractFingerprint", string(),
+                "implementationFingerprint", string(), "draftRevision", integer(),
+                "caseSetRef", string(), "caseSetRevision", integer(),
+                "cases", arrayOf(observedCase), "dependencies", arrayOf(dependency),
+                "realExternalCalls", integer()),
+                List.of("status", "environment", "cases", "dependencies", "realExternalCalls"));
+    }
+
     private static Map<String, Object> error() {
         return structuredObject(props("code", string(), "message", string(), "retryable", bool(),
                 "details", businessObject()), List.of("code", "message"));
@@ -384,13 +406,14 @@ public final class McpToolCatalog {
                     "executable", bool(), "libraryRefs", stringArray(), "projection", businessObject(),
                     "honestVerdict", honestVerdict()), List.of("libraryRefs"));
             case "rg.feature.rehearse", "rg.simulate", "rg.tool.baseline" -> structuredObject(props(
-                    "goldenSetId", string(), "evidenceFingerprint", string(), "draftRevision", integer(),
+                    "toolRef", string(), "goldenSetId", string(), "evidenceFingerprint", string(), "draftRevision", integer(),
                     "caseSetRevision", integer(),
                     "side", enumString("RED", "GREEN"), "byLayer", executionLayerSummary(),
                     "cases", arrayOf(executionCase()), "realExternalCalls", integer(),
                     "honestVerdict", honestVerdict(), "evidenceRef", string(), "status", string(),
                     "caseSetRef", string(), "rounds", arrayOf(businessObject()),
-                    "businessFingerprintStable", bool(), "remainingLimitations", stringArray()),
+                    "businessFingerprintStable", bool(), "remainingLimitations", stringArray(),
+                    "attestation", attestation()),
                     List.of("goldenSetId", "side", "realExternalCalls"));
             case "rg.fixture.promote", "rg.fixture.provide" -> structuredObject(props(
                     "fixtureId", string(), "revision", integer(),
@@ -404,7 +427,8 @@ public final class McpToolCatalog {
                     List.of("toolRef", "publicationId", "artifactKind"));
             case "rg.readiness.get" -> structuredObject(props("toolRef", string(), "state", string(),
                     "publishable", bool(), "goldenSetId", string(), "gates", businessObject(),
-                    "remainingLimitations", stringArray()), List.of("toolRef", "state", "publishable"));
+                    "attestation", attestation(), "remainingLimitations", stringArray()),
+                    List.of("toolRef", "state", "publishable", "attestation"));
             default -> businessObject();
         };
     }

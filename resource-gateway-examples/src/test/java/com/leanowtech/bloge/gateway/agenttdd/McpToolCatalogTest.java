@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.List;
 
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,6 +26,8 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.resource.declare").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
+        assertThat(catalog.all()).extracting(definition -> definition.impact().operation())
+                .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST);
     }
 
     @Test
@@ -66,7 +69,7 @@ class McpToolCatalogTest {
         Map<?, ?> baseline = dataProperties(catalog.require("rg.tool.baseline"));
         assertThat(stringKeys(baseline)).contains(
                 "status", "caseSetRef", "rounds", "businessFingerprintStable",
-                "remainingLimitations", "evidenceRef", "honestVerdict");
+                "remainingLimitations", "evidenceRef", "honestVerdict", "attestation");
         assertThat(((Map<?, ?>) baseline.get("rounds")).get("type")).isEqualTo("array");
 
         Map<?, ?> behavior = dataProperties(catalog.require("rg.scenario.setDependencyBehavior"));

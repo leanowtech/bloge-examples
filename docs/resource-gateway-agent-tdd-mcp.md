@@ -13,7 +13,9 @@
 | EXECUTION | Codex Agent | 做 RED、GREEN、baseline；真实外呼必须为 0 |
 | GOVERNANCE | 人与 Agent 分权 | 人工 reviewer 批 Oracle、签署证据；Agent 只能在门禁通过后提交发布 |
 
-这不是 Agent 直接调用生产 API 的入口。`rg.simulate` 和 `rg.tool.baseline` 即使使用已绑定的 API，依赖节点仍由用例 stub 替代；`realExternalCalls` 必须为 `0`。
+这四条是 Codex 可见的权限边界。平台另有一个不进入 MCP 工具目录、也不发给 Codex 的内部用途 `AGENT_TDD_ATTEST`：逻辑 GREEN 持久化成功后，平台才用它自动运行只读沙箱实景验证。
+
+这不是 Agent 直接调用生产 API 的入口。`rg.simulate` 和 `rg.tool.baseline` 的逻辑执行即使使用已绑定 API，也会以用例 stub 替代依赖；其 `realExternalCalls` 必须为 `0`。baseline 响应中的 `attestation.realExternalCalls` 属于随后由平台触发的独立实景运行，不能由 Agent 选择输入、资源或执行模式。
 
 ## 2. 启动本地服务
 
@@ -50,6 +52,8 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 看板顶部的「第 1 幕 · 你的世界观与可用积木」并列显示平台基础积木和当前作用域内已导入的业务操作。业务操作标记为「仅契约」或「已接入」；业务类型只从已声明的输出 Schema 派生。该视图不读取 Fixture 或真实响应，HTTP 响应使用 `no-store`。
 
 每个 Tool 卡片优先显示固定模板生成的业务流程摘要和决策规则表。规则表从决策节点的 `hitPolicy`、条件列、输出列、规则行与兜底行投影，不要求业务评审人阅读 DSL；算子引用和连线保留在「展开查看技术结构」中。卡片的覆盖区使用与场景枚举相同的谓词代表值算法，显示 ACTIVE GOLDEN 已覆盖组合、事实空间总数和最多 20 条盲区。没有可枚举决策维度时，计数为 `0 / 0`，不会猜测不透明谓词的业务值。
+
+Tool 卡片还显示实景验证状态、环境和真实调用总数。逻辑 GREEN 后平台自动验证；失败时只有 HUMAN/USER reviewer 能在看板确认“将访问已批准的只读沙箱资源”后重跑。该 HTTP 恢复入口不是 MCP 工具，WORKLOAD 身份即使知道地址也会被拒绝。
 
 停止服务：
 
@@ -146,9 +150,9 @@ test -n "${RG_MCP_TOKEN:-}" && echo 'RG_MCP_TOKEN is visible'
 tail -80 target/example-logs/resource-gateway.log
 ```
 
-## 4. 完整示例：编排余额查询 Tool
+## 4. 完整示例：编排用户资料查询 Tool
 
-示例使用内置 `wallet-service.getBalance` API。闭环分三段提示词，中间由人完成两次评审。不要把三段合成“全自动发布”。
+示例使用内置 `user-service.getProfile` API。它与本地 demo upstream 的真实响应结构一致，因此可直接完成逻辑验证和实景验证。闭环分三段提示词，中间由人完成两次评审。不要把三段合成“全自动发布”。
 
 ### 4.1 第一段：发现、编排、提出 GOLDEN
 
@@ -157,24 +161,24 @@ tail -80 target/example-logs/resource-gateway.log
 ```text
 请使用 rg_read 和 rg_author MCP 完成下面工作，所有事实以 MCP 返回为准，不要猜测：
 
-1. 调用 rg.capability.list，选择 runtimeState 可用于治理评审、effect=READ_EXTERNAL 的余额查询 API。
+1. 调用 rg.capability.list，选择 runtimeState 可用于治理评审、effect=READ_EXTERNAL 的用户资料查询 API `user-service.getProfile`。
 2. 调用 rg.contract.get 读取它的真实输入输出端口和 schema。
-3. 创建 Tool `codex-wallet-ops-v1`。DSL 必须引用发现到的 bindingRef，不要直接写 httpResource：
+3. 创建 Tool `codex-profile-ops-v1`。DSL 必须引用发现到的 bindingRef，不要直接写 httpResource：
 
-graph codexWalletOps {
+graph codexProfileOps {
   input { userId: String }
-  node wallet : "resource:wallet-service.getBalance" {
+  node profile : "resource:user-service.getProfile" {
     input { params = { userId: ctx.userId } }
   }
   transform response {
-    amount = wallet.output.payload.amount
-    currency = wallet.output.payload.currency
+    name = profile.output.payload.name
+    tier = profile.output.payload.tier
   }
 }
 
 4. libraryRefs 显式传空数组。每个写操作使用独立、可读且本轮稳定的 idempotencyKey。
 5. 设置完整 Instruction：name/title/description/whenToUse/inputs/outputs/errors 都不能缺失。
-6. 创建 caseSet `codex-wallet-cases-v1`，提出 GOLDEN 行 `wallet-usd`：given.userId=u-100；wallet stub 返回 payload.amount=100、payload.currency=USD；expect 为 amount=100、currency=USD；oracleOwner=wallet-ops。
+6. 创建 caseSet `codex-profile-cases-v1`，提出 GOLDEN 行 `profile-premium`：given.userId=u-100；profile stub 返回 payload.userId=u-100、payload.name=Alice、payload.tier=premium；expect 为 name=Alice、tier=premium；oracleOwner=profile-ops。
 7. 调用 rg.scenario.listCases 确认该行等待人工 Oracle 审批，然后停止。不要执行 RED/GREEN，不要替人批准。
 
 最后只汇报 toolRef、draft revision、caseSetRef、case revision、待办人工动作和稳定错误码，不展示业务 payload。
@@ -184,7 +188,7 @@ graph codexWalletOps {
 
 ### 4.2 人工停点一：批准 Oracle
 
-打开 `http://localhost:8081/agent-tdd.html`，输入只由人工保管的 **reviewer token**，找到 `codex-wallet-cases-v1 / wallet-usd`，点击“查看详情并批准”。浏览器会先用 HUMAN 身份读取精确 revision 的 `intent/given/stubs/expect/owner/proposedBy`，显示确认框；逐项核对后再批准。
+打开 `http://localhost:8081/agent-tdd.html`，输入只由人工保管的 **reviewer token**，找到 `codex-profile-cases-v1 / profile-premium`，点击“查看详情并批准”。浏览器会先用 HUMAN 身份读取精确 revision 的 `intent/given/stubs/expect/owner/proposedBy`，显示确认框；逐项核对后再批准。
 
 看板列表仍是 `STRUCTURE_ONLY`；payload-bearing 详情只在人工治理端点按需读取，响应带 `no-store`，不会进入 MCP。批准同时绑定 `expectedRevision` 和详情的 `proposalFingerprint`；如果 Agent 在评审期间修改了用例，服务端会拒绝，必须刷新后重审。提议者与 reviewer 是同一 actor 时也会拒绝。
 
@@ -195,38 +199,41 @@ graph codexWalletOps {
 继续在同一任务中粘贴：
 
 ```text
-继续 `codex-wallet-ops-v1` 的 Agent TDD 流程：
+继续 `codex-profile-ops-v1` 的 Agent TDD 流程：
 
-1. 读取 `codex-wallet-cases-v1`，确认 `wallet-usd` 已 ACTIVE；否则停止。
-2. 用 side=RED、cases.caseSetRef=codex-wallet-cases-v1 调用 rg.simulate。要求 verdict=RED_PASS 且 realExternalCalls=0。
+1. 读取 `codex-profile-cases-v1`，确认 `profile-premium` 已 ACTIVE；否则停止。
+2. 用 side=RED、cases.caseSetRef=codex-profile-cases-v1 调用 rg.simulate。要求 verdict=RED_PASS 且 realExternalCalls=0。
 3. RED 不满足时，只根据 diagnostics.code/target/line/column 修复草稿或用例，然后重跑；不要猜测隐藏 payload。
-4. RED 通过后，用 side=GREEN、caseSetRef=codex-wallet-cases-v1、rounds=3 调用 rg.tool.baseline。要求 status=GO、businessFingerprintStable=true、realExternalCalls=0。
-5. 调用 rg.verdict.get 和 rg.readiness.get。若还有非人工缺口，按 remainingLimitations 修复并重跑；若只剩 PUBLISH_SIGNOFF，停止等待人工签署。
+4. RED 通过后，用 side=GREEN、caseSetRef=codex-profile-cases-v1、rounds=3 调用 rg.tool.baseline。要求 status=GO、businessFingerprintStable=true、realExternalCalls=0；平台会紧接着自动实景验证。
+5. 检查 baseline.attestation：必须为 status=ATTESTED，environment 必须是 local/test/sandbox，所有 cases 的 oracleHeld/allDependenciesCalled 为 true。只汇报结构化计数和指纹，不索取或展示真实响应。
+6. 调用 rg.verdict.get 和 rg.readiness.get。要求 gates.runtimeAttestation=true；若还有非人工缺口，按 remainingLimitations 修复逻辑 GREEN。实景验证为 FAILED 时停止，并请人工 reviewer 在看板确认后重跑；Codex 不调用恢复端点。若只剩 OWNER_SIGNOFF_ABSENT，停止等待人工签署。
 
-最后只汇报 draftRevision、goldenSetId、evidenceFingerprint、baseline status、realExternalCalls 和下一项人工动作。不要调用 rg.tool.publish。
+最后只汇报 draftRevision、goldenSetId、evidenceFingerprint、baseline status、逻辑 realExternalCalls、attestation status/environment/realExternalCalls 和下一项人工动作。不要调用 rg.tool.publish。
 ```
 
-GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，不表示真实上游健康，也不产生真实外部请求。
+GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，自身不产生真实外部请求。`ATTESTED` 是另一份证据：平台把同一批 ACTIVE GOLDEN 的依赖换成当前冻结的真实只读 descriptor，在精确 host 白名单内执行，并再次核对 Oracle。证据绑定 tool、draft revision、goldenSetId、case-set revision、契约、实现和 GREEN evidence fingerprint；任一项漂移都会使它失效。
+
+实景证据只保存每个依赖是否调用及次数、每条用例是否成功/满足 Oracle、环境和稳定指纹。它不保存 URL、请求、响应、given、expect、异常消息或认证材料。相同 GREEN 的自动请求采用持久幂等 reservation，只执行一次真实读取；人工每次确认后的失败重跑形成一个新受控 attempt。
 
 ### 4.4 人工停点二：签署发布证据
 
-仍使用人工保管的 **reviewer token** 回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
+仍使用人工保管的 **reviewer token** 回到看板，先确认实景验证为 `ATTESTED`，再找到 `codex-profile-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint`、`implementationFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `profile-ops-signoff-20260904-01`，再批准。实景验证缺失、失败或过期时，看板不会提供发布签署待办。
 
-签署不可变；同一个 `signoffRef` 不能覆盖使用。草稿、ACTIVE 用例、Oracle、stub、binding 或目标实现任何一项变化，旧 GREEN 和旧签署都会失效。
+签署不可变；同一个 `signoffRef` 不能覆盖使用。草稿、ACTIVE 用例、Oracle、stub、binding、目标实现或 resource descriptor 任何一项变化，旧 GREEN、实景证明或旧签署会在相应门禁失效。重新实景验证得到新的 `implementationFingerprint` 后，必须重新人工签署。
 
 ### 4.5 第三段：最终发布
 
 继续粘贴：
 
 ```text
-请完成 `codex-wallet-ops-v1` 的受治理发布：
+请完成 `codex-profile-ops-v1` 的受治理发布：
 
-1. 调用 rg.readiness.get，确认 publishable=true，且当前 draftRevision、goldenSetId、evidenceFingerprint 与人工签署一致。
+1. 调用 rg.readiness.get，确认 publishable=true，且当前 draftRevision、goldenSetId、evidenceFingerprint、attestation.implementationFingerprint 与人工签署一致。
 2. 若不一致或仍有 remainingLimitations，停止并列出稳定原因码。
-3. 一致时调用 rg.tool.publish，signoffRef=`wallet-ops-signoff-20260903-01`，使用新的 idempotencyKey。
+3. 一致时调用 rg.tool.publish，signoffRef=`profile-ops-signoff-20260904-01`，使用新的 idempotencyKey。
 4. 再读取 readiness/verdict，汇报 publicationId、artifactKind、冻结 revision 和最终状态。
 
-不得绕过门禁，不得调用真实业务 API，不得输出 token 或业务 payload。
+不得绕过门禁，不得自行调用真实业务 API 或实景恢复 HTTP 端点，不得输出 token 或业务 payload。
 ```
 
 预期 `artifactKind=EXECUTABLE`。发布物冻结通过门禁的 operator snapshot，不会在发布后静默跟随 catalog 漂移。
@@ -236,7 +243,7 @@ GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足�
 ### 5.1 DSL 与契约
 
 - 先 `rg.capability.list`，再 `rg.contract.get`，最后写 DSL。
-- API 节点使用发现到的 `bindingRef`，例如 `resource:wallet-service.getBalance`；不要绕过契约直接写 `httpResource`。
+- API 节点使用发现到的 `bindingRef`，例如 `resource:user-service.getProfile`；不要绕过契约直接写 `httpResource`。
 - `libraryRefs` 必须显式传入，空依赖也是 `[]`。
 - BLOGE DSL 字段按换行分隔，不要仿 JSON 在字段末尾加逗号。
 - Resource payload 使用 `node.output.payload.field`；命名端口会按目录解析。
@@ -263,6 +270,14 @@ GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足�
 
 MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案、metadata、generated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
 
+### 5.5 实景验证边界
+
+- 只接受 `local`、`test`、`sandbox` 环境；`prod` 失败关闭。
+- 只执行 descriptor-backed 的 `READ_EXTERNAL`。HTTP `GET`、`HEAD`、`OPTIONS` 可进入验证；外部写一律返回 `WRITE_EFFECT_NOT_ALLOWED`。
+- host 必须精确命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`。不支持通配符、后缀匹配、URL user-info、非 HTTP(S) 或 host 模板。
+- catalog operator snapshot、resource descriptor 和 GREEN 身份分别冻结；HTTP 算子在发送前复核执行期 descriptor，注册表并发替换会让本次运行失败，不能把旧批准用于新地址。
+- 自动验证不在 MCP `tools/list` 中。异常重跑只能由 HUMAN/USER 在看板确认，服务端重新读取当前 GREEN，调用方不能提交 rows、binding 或 URL。
+
 ## 6. 常见失败
 
 | 现象或错误码 | 原因 | 处理 |
@@ -277,7 +292,11 @@ MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案�
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
 | `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |
-| `PUBLISH_GATE_NOT_MET` | GREEN、稳定性、签署或 fingerprint 过期 | 按 readiness.remainingLimitations 补证据 |
+| `ATTESTATION_ENVIRONMENT_NOT_ALLOWED` | 环境不是 local/test/sandbox | 切换到受控沙箱；不能放宽到 prod |
+| `WRITE_EFFECT_NOT_ALLOWED` / `EGRESS_NOT_ALLOWED` | 依赖是写操作、未登记或 host 未精确放行 | 建只读沙箱资源或修正精确白名单；不要让 Agent 绕过 |
+| `ATTESTATION_EXECUTION_FAILED` / `ATTESTATION_ORACLE_MISMATCH` | 真实依赖执行失败，或真实结论违背已批准 Oracle | 人工查沙箱与契约；确认后从看板重跑 |
+| `ATTESTATION_STALE` | GREEN、draft、case set、binding 或 descriptor 在执行期间变化 | 重新运行逻辑 GREEN，生成当前证据 |
+| `PUBLISH_GATE_NOT_MET` | GREEN、实景验证、签署或 fingerprint 缺失/过期 | 按 readiness.remainingLimitations 补证据 |
 | JSON-RPC `-32602` | 参数不符合当前 inputSchema | 以最新 tools/list 修正 |
 | JSON-RPC `-32603` | MCP 边界内未预期失败 | 查服务日志和 correlation ID |
 
@@ -308,7 +327,7 @@ mvn -f resource-gateway-examples/pom.xml \
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、baseline 和发布服务贯穿余额查询。`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。两者都不会访问真实业务上游，也不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、人工失败重跑和发布服务，贯穿用户资料查询。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单和 exact replay；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求。`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 
@@ -317,8 +336,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 3. GOLDEN Oracle 经不同 HUMAN actor 打开详情并批准；Codex 使用 WORKLOAD token，执行的是 ACTIVE 持久用例。
 4. RED 通过；GREEN baseline 为 `GO` 且业务指纹稳定。
 5. RED/GREEN 的 `realExternalCalls` 都是 `0`。
-6. 人工签署精确绑定当前 revision、goldenSetId、evidenceFingerprint。
-7. readiness 为 `publishable=true` 后才创建 `EXECUTABLE` 发布物。
-8. 内容或 catalog 漂移会使旧证据/旧签署失效。
+6. 平台自动实景验证为 `ATTESTED`；证据只含结构化调用计数、Oracle 布尔值、环境和指纹，不含业务载荷。
+7. 人工签署精确绑定当前 revision、goldenSetId、evidenceFingerprint、implementationFingerprint。
+8. readiness 的 `greenBaseline/runtimeAttestation/ownerSignoff` 全为 true 后，才创建 `EXECUTABLE` 发布物。
+9. 内容、case set、catalog binding、实现或 descriptor 漂移会使旧实景证据/旧签署失效，或在发送前失败关闭。
 
 Codex 的 MCP 配置与管理方式以 [OpenAI Codex MCP 官方文档](https://learn.chatgpt.com/docs/extend/mcp) 为准；本文聚焦本仓库的工具、用途和治理顺序。

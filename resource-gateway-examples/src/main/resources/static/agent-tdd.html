@@ -66,7 +66,7 @@
   function renderTool(tool) {
     const gates = Object.entries(tool.gates || {}).map(([name,ok])=>`<span class="gate ${ok?'ok':''}">${esc(name)} ${ok?'✓':'·'}</span>`).join('');
     const coverage=tool.caseCoverage||{}; const line=tool.redToGreen||{};
-    const journey=tool.journey||{}; const stageIndex=Number.isInteger(journey.stageIndex)?journey.stageIndex:-1;
+    const journey=tool.journey||{}; const attestation=tool.attestation||{}; const stageIndex=Number.isInteger(journey.stageIndex)?journey.stageIndex:-1;
     const journeyDots=JOURNEY_STAGES.map((label,index)=>`<span class="journey-dot ${index<=stageIndex?'active':''}">${index+1} · ${esc(label)}</span>`).join('');
     const fields=[...(tool.contract?.inputFields||[]).map(f=>`入 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`),...(tool.contract?.outputFields||[]).map(f=>`出 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`)].map(v=>`<li>${v}</li>`).join('')||'<li class="meta">未声明字段</li>';
     const nodes=(tool.structure?.nodes||[]).map(n=>`<li>${esc(n.label)} <code>${esc(n.operatorRef)}</code></li>`).join('')||'<li class="meta">无节点</li>';
@@ -74,7 +74,9 @@
     const matrices=(tool.ruleMatrices||[]).map(renderRuleMatrix).join('');
     const facts=tool.factCoverage||{}; const blind=facts.blindSpots||[];
     const blindHtml=blind.length?blind.map(item=>`<li>${Object.entries(item).map(([key,value])=>`${esc(key)}=${esc(value)}`).join(' · ')}</li>`).join(''):'<li>事实组合已覆盖周全</li>';
-    return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="journey-progress">${journeyDots}</div><div class="journey-next">${esc(NEXT_ACTION_LABELS[journey.nextAction]||journey.nextAction||'')}</div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="meta">覆盖 · 已覆盖 ${esc(facts.coveredCount||0)} / 共 ${esc(facts.totalCount||0)}</div><details class="coverage-detail"><summary>查看事实组合盲区</summary><ul>${blindHtml}</ul></details><div class="gates">${gates}</div><div class="business-flow">${esc(tool.flowSummary||'')}</div>${matrices}<details class="technical"><summary>展开查看技术结构 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</summary><ul>${nodes}</ul></details><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
+    const retry=attestation.status==='FAILED'?`<button data-attestation-rerun="${esc(tool.toolRef)}">确认并重跑实景验证</button>`:'';
+    const attestReason=attestation.reasonCode?`<div class="meta">原因码 · ${esc(attestation.reasonCode)}</div>`:'';
+    return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="journey-progress">${journeyDots}</div><div class="journey-next">${esc(NEXT_ACTION_LABELS[journey.nextAction]||journey.nextAction||'')}</div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="meta">实景验证 · ${esc(attestation.status||'ABSENT')}　环境 · ${esc(attestation.environment||'未运行')}　真实调用 · ${esc(attestation.realExternalCalls||0)}</div>${attestReason}${retry}<div class="meta">覆盖 · 已覆盖 ${esc(facts.coveredCount||0)} / 共 ${esc(facts.totalCount||0)}</div><details class="coverage-detail"><summary>查看事实组合盲区</summary><ul>${blindHtml}</ul></details><div class="gates">${gates}</div><div class="business-flow">${esc(tool.flowSummary||'')}</div>${matrices}<details class="technical"><summary>展开查看技术结构 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</summary><ul>${nodes}</ul></details><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
   }
   function renderRuleMatrix(matrix) {
     const conditions=matrix.conditionColumns||[]; const outputs=matrix.outputColumns||[];
@@ -110,15 +112,22 @@
       const signoffRef=window.prompt('输入外部评审单或变更单编号（signoffRef）');
       if (!signoffRef?.trim()) return;
       url=`/api/agent-tdd/reviews/tools/${encodeURIComponent(review.assetRef)}/signoffs/${encodeURIComponent(signoffRef.trim())}/approve`;
-      body={draftRevision:review.draftRevision,goldenSetId:review.goldenSetId,evidenceFingerprint:review.evidenceFingerprint};
+      body={draftRevision:review.draftRevision,goldenSetId:review.goldenSetId,evidenceFingerprint:review.evidenceFingerprint,implementationFingerprint:review.implementationFingerprint};
     } else { throw new Error(`不支持的评审类型：${review.kind}`); }
     await request(url,{method:'POST',headers:headers('AGENT_TDD_GOVERNANCE'),body:JSON.stringify(body)}); await load();
   }
   function renderReview(review,index) {
     const revision=review.revision ?? review.draftRevision ?? '—';
-    const baseline=review.kind==='PUBLISH_SIGNOFF'?`<div class="meta">golden ${esc(review.goldenSetId)} · evidence ${esc(review.evidenceFingerprint)}</div>`:'';
+    const baseline=review.kind==='PUBLISH_SIGNOFF'?`<div class="meta">golden ${esc(review.goldenSetId)} · evidence ${esc(review.evidenceFingerprint)} · implementation ${esc(review.implementationFingerprint)}</div>`:'';
     const action=review.kind==='PUBLISH_SIGNOFF'?'核对基线并签署':'查看详情并批准';
     return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(revision)} · owner ${esc(review.owner)}</div>${baseline}<button data-review="${index}">${action}</button></div>`;
+  }
+  async function rerunAttestation(toolRef) {
+    if (!window.confirm('实景验证会使用当前已批准的 GOLDEN，在受控沙箱访问只读真实依赖。确认重跑？')) return;
+    await request(`/api/agent-tdd/attestations/${encodeURIComponent(toolRef)}/rerun`,{
+      method:'POST',headers:headers('AGENT_TDD_GOVERNANCE')
+    });
+    await load();
   }
   async function load() {
     $('error').textContent='';
@@ -132,6 +141,7 @@
       $('tools').innerHTML=data.tools.length?data.tools.map(renderTool).join(''):'<div class="empty">当前作用域没有 Tool。</div>';
       $('reviews').innerHTML=data.pendingReviews.length?data.pendingReviews.map(renderReview).join(''):'<div class="empty">没有待处理评审。</div>';
       document.querySelectorAll('[data-review]').forEach(button=>button.onclick=()=>approve(data.pendingReviews[Number(button.dataset.review)]).catch(e=>$('error').textContent=e.message));
+      document.querySelectorAll('[data-attestation-rerun]').forEach(button=>button.onclick=()=>rerunAttestation(button.dataset.attestationRerun).catch(e=>$('error').textContent=e.message));
     } catch(error) {$('error').textContent=error.message;}
   }
   $('load').onclick=load;

@@ -1,8 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
-import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -123,13 +124,65 @@ public class VisualGraphRunService {
                                       Map<String, Object> context,
                                       String outputNode,
                                       VisualRunIntent runIntent) {
+        return runWith(draft, context, outputNode, runIntent, validator, generator, Map.of());
+    }
+
+    /**
+     * Runs a materialized draft against one immutable operation catalog.
+     *
+     * <p>Pre-publication attestations use this boundary so target identity, validation, DSL
+     * generation, and the executed program all observe the same frozen operator snapshots. The
+     * method performs a real runtime execution; callers remain responsible for egress admission.</p>
+     *
+     * @param draft materialized graph draft
+     * @param context initial graph context
+     * @param outputNode optional output node override
+     * @param operationCatalog immutable operator definitions captured for this run
+     * @return real run response
+     */
+    public VisualGraphRunResponse runAgainst(GraphDraft draft,
+                                             Map<String, Object> context,
+                                             String outputNode,
+                                             VisualOperatorCatalog operationCatalog) {
+        if (operationCatalog == null) {
+            throw new IllegalArgumentException("operationCatalog is required");
+        }
+        return runWith(draft, context, outputNode, VisualRunIntent.unmanaged(),
+                new GraphDraftValidator(operationCatalog), new GraphDraftDslGenerator(operationCatalog), Map.of());
+    }
+
+    /**
+     * Runs against frozen operators and an exact set of resource descriptors admitted by a
+     * governance boundary. The descriptors travel outside business context and are consumed only
+     * by the internal runtime adapter.
+     */
+    public VisualGraphRunResponse runAgainst(GraphDraft draft,
+                                             Map<String, Object> context,
+                                             String outputNode,
+                                             VisualOperatorCatalog operationCatalog,
+                                             Map<String, ResourceDescriptor> admittedResources) {
+        if (operationCatalog == null) {
+            throw new IllegalArgumentException("operationCatalog is required");
+        }
+        return runWith(draft, context, outputNode, VisualRunIntent.unmanaged(),
+                new GraphDraftValidator(operationCatalog), new GraphDraftDslGenerator(operationCatalog),
+                admittedResources == null ? Map.of() : Map.copyOf(admittedResources));
+    }
+
+    private VisualGraphRunResponse runWith(GraphDraft draft,
+                                           Map<String, Object> context,
+                                           String outputNode,
+                                           VisualRunIntent runIntent,
+                                           GraphDraftValidator operationValidator,
+                                           GraphDraftDslGenerator operationGenerator,
+                                           Map<String, ResourceDescriptor> admittedResources) {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
             return blocked(draft, false, fingerprintDiagnostics,
                     List.of("Operator fingerprint snapshot is required."), "",
                     repairValidation(draft, fingerprintDiagnostics));
         }
-        VisualValidationResult validation = validator.validate(draft);
+        VisualValidationResult validation = operationValidator.validate(draft);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
         if (!validation.valid()) {
             return blocked(draft, false, diagnostics, List.of("Visual validation failed."), "", validation);
@@ -146,7 +199,7 @@ public class VisualGraphRunService {
                     validation);
         }
 
-        DslGenerationResult generated = generator.generate(draft);
+        DslGenerationResult generated = operationGenerator.generate(draft);
         diagnostics.addAll(generated.diagnostics());
         if (!generated.generated()) {
             return blocked(draft, true, diagnostics, List.of("Visual DSL generation failed."), generated.dsl(),
@@ -170,7 +223,8 @@ public class VisualGraphRunService {
                 generated.dsl(),
                 effectiveContext,
                 selectedOutputNode,
-                runIntent
+                runIntent,
+                admittedResources
         ));
         diagnostics.addAll(dynamic.diagnostics().stream()
                 .map(VisualGraphRunService::fromCompilerDiagnostic)

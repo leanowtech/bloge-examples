@@ -106,6 +106,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResourceExecutionAdmissionRegistry;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
@@ -396,6 +397,7 @@ public class GatewayConfiguration {
      * @param renderer            URL template renderer
      * @param extractor           payload extractor
      * @param validator           response validator
+     * @param executionAdmissions controlled-run descriptor admission registry
      * @return the configured resource operator
      */
     @Bean
@@ -405,8 +407,10 @@ public class GatewayConfiguration {
                                                      BlgeExpressionEvaluator evaluator,
                                                      UrlTemplateRenderer renderer,
                                                      PayloadExtractor extractor,
-                                                     ResponseValidator validator) {
-        return new HttpResourceOperator(httpRequestOperator, registry, evaluator, renderer, extractor, validator);
+                                                     ResponseValidator validator,
+                                                     ResourceExecutionAdmissionRegistry executionAdmissions) {
+        return new HttpResourceOperator(httpRequestOperator, registry, evaluator, renderer, extractor,
+                validator, executionAdmissions);
     }
 
     /**

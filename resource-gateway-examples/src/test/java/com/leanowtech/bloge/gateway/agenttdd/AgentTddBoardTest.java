@@ -82,7 +82,9 @@ class AgentTddBoardTest {
         when(workflow.readiness(any(), eq(identity()))).thenReturn(Map.of(
                 "toolRef", "risk-tool", "state", "IMPLEMENTED", "goldenSetId", "sha256:golden",
                 "publishable", false,
-                "gates", Map.of("bindingsComplete", true, "greenBaseline", true, "ownerSignoff", false),
+                "gates", Map.of("bindingsComplete", true, "greenBaseline", true,
+                        "runtimeAttestation", true, "ownerSignoff", false),
+                "attestation", Map.of("implementationFingerprint", "sha256:implementation"),
                 "remainingLimitations", List.of("OWNER_SIGNOFF_ABSENT")));
 
         Map<String, Object> board = new AgentTddBoardService(drafts, states, workflow, mapper).board(identity());
@@ -111,6 +113,7 @@ class AgentTddBoardTest {
         assertThat(signoff.get("draftRevision")).isEqualTo(7L);
         assertThat(signoff.get("goldenSetId")).isEqualTo("sha256:golden");
         assertThat(signoff.get("evidenceFingerprint")).isEqualTo("sha256:evidence");
+        assertThat(signoff.get("implementationFingerprint")).isEqualTo("sha256:implementation");
         assertThat(board).containsEntry("payloadPolicy", "STRUCTURE_ONLY");
     }
 
@@ -240,7 +243,7 @@ class AgentTddBoardTest {
                 new AgentTddStoredAsset(scope(), AgentTddMutationService.CASE_SET, "golden-1", 5,
                         "sha256:test", mapper.createObjectNode(), java.time.Instant.EPOCH));
         when(reviews.approveToolSignoff("risk-tool", "ops-42", 7, "sha256:golden",
-                "sha256:evidence", identity())).thenReturn(
+                "sha256:evidence", "sha256:implementation", identity())).thenReturn(
                 new AgentTddStoredAsset(scope(), AgentTddWorkflowService.SIGNOFF, "ops-42", 1,
                         "sha256:signoff", mapper.createObjectNode(), java.time.Instant.EPOCH));
         AgentTddBoardController controller = new AgentTddBoardController(
@@ -253,7 +256,7 @@ class AgentTddBoardTest {
                         4, "sha256:proposal"), headers);
         Map<String, Object> signed = controller.approveSignoff(
                 "risk-tool", "ops-42", new AgentTddBoardController.SignoffRequest(
-                        7, "sha256:golden", "sha256:evidence"), headers);
+                        7, "sha256:golden", "sha256:evidence", "sha256:implementation"), headers);
 
         assertThat(approved).containsEntry("revision", 5L).containsEntry("status", "APPROVED");
         assertThat(signed).containsEntry("revision", 1L).containsEntry("status", "APPROVED");
@@ -320,7 +323,8 @@ class AgentTddBoardTest {
                             "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
                             "renderRuleMatrix", "覆盖 · 已覆盖", "查看事实组合盲区",
                             "展开查看技术结构", "场景表", "PUBLISH_SIGNOFF",
-                            "/reviews/tools/", "signoffRef")
+                            "/reviews/tools/", "signoffRef", "实景验证",
+                            "data-attestation-rerun", "/attestations/")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
     }

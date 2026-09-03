@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,16 +28,28 @@ public final class AgentTddBoardController {
     private final AgentTddBoardService board;
     private final AgentTddLibraryOverviewService libraryOverview;
     private final AgentTddReviewService reviews;
+    private final AgentTddAttestationService attestations;
 
     /** Creates the board boundary with existing integration authentication and audit. */
     public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
                                    AgentTddBoardService board,
                                    AgentTddLibraryOverviewService libraryOverview,
                                    AgentTddReviewService reviews) {
+        this(authenticator, board, libraryOverview, reviews, null);
+    }
+
+    /** Creates the production board including the human-only attestation recovery entry. */
+    @Autowired
+    public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
+                                   AgentTddBoardService board,
+                                   AgentTddLibraryOverviewService libraryOverview,
+                                   AgentTddReviewService reviews,
+                                   AgentTddAttestationService attestations) {
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.board = Objects.requireNonNull(board, "board");
         this.libraryOverview = Objects.requireNonNull(libraryOverview, "libraryOverview");
         this.reviews = Objects.requireNonNull(reviews, "reviews");
+        this.attestations = attestations;
     }
 
     /** Returns the structure-only scoped board. */
@@ -107,9 +120,20 @@ public final class AgentTddBoardController {
                                               @RequestBody SignoffRequest request,
                                               @RequestHeader HttpHeaders headers) {
         var stored = reviews.approveToolSignoff(toolRef, signoffRef, request.draftRevision(),
-                request.goldenSetId(), request.evidenceFingerprint(),
+                request.goldenSetId(), request.evidenceFingerprint(), request.implementationFingerprint(),
                 authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
         return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
+    }
+
+    /** Re-runs the current payload-free sandbox attestation after explicit human confirmation. */
+    @PostMapping("/attestations/{toolRef}/rerun")
+    public Map<String, Object> rerunAttestation(@PathVariable String toolRef,
+                                                @RequestHeader HttpHeaders headers) {
+        if (attestations == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "Attestation service is unavailable.");
+        }
+        return attestations.rerun(toolRef,
+                authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
     }
 
     /** Maps stale or invalid reviews to a payload-free, stable conflict response. */
@@ -126,6 +150,9 @@ public final class AgentTddBoardController {
     /** @param expectedRevision exact revision visible to the human reviewer */
     public record RevisionRequest(long expectedRevision, String proposalFingerprint) { }
 
-    /** Exact baseline material the human reviewed before approving executable publication. */
-    public record SignoffRequest(long draftRevision, String goldenSetId, String evidenceFingerprint) { }
+    /** Exact GREEN and real-implementation material reviewed before executable publication. */
+    public record SignoffRequest(long draftRevision,
+                                 String goldenSetId,
+                                 String evidenceFingerprint,
+                                 String implementationFingerprint) { }
 }

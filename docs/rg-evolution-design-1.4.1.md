@@ -305,3 +305,18 @@ P4  端到端旅程用例贯穿                  ── 依赖全部
 3. **沙箱与生产差异**：实景验证证明"沙箱能对接"，与生产仍有一致性差距——预计解法：发布后金丝雀/周期性重跑实景验证，证据标注环境、不冒充生产。
 4. **资源桥接的权责**：让业务流程能补建外部接口，涉及谁有权登记外部依赖——预计解法：把外部接口登记纳入角色与审批，业务侧只发起、由授权角色确认。
 5. **"用例质量就绪"与"工具可发布"两个词易混**：一个用例"跑通即达标"的质量标记，与工具"可发布"的就绪是两回事——预计解法：在旅程主面与看板明确区分二者。
+
+## 9. 实现与验收映射（2026-09-04）
+
+| 适配 | 当前实现 | 主要验收证据 |
+|---|---|---|
+| A0 五幕旅程 | `AgentTddBoardService` 从现有状态派生 `journey`；`agent-tdd.html` 显示幕次与下一动作 | `AgentTddBoardTest` |
+| A1 积木与世界观 | `AgentTddLibraryOverviewService` 提供 payload-free、`no-store` 业务投影 | `AgentTddLibraryOverviewServiceTest`、运营工作流 HTTP 测试 |
+| A2 样例与资源桥接 | `rg.fixture.provide` 校验后派生 Fixture；`rg.resource.declare` 只登记 allowlisted 只读 HTTP 资源 | `AgentTddWorkflowServiceTest`、`AgentTddResourceDeclarationServiceTest` |
+| A3 规则矩阵 | 看板把决策表投影为条件、结论、规则和兜底；技术结构折叠保留 | `AgentTddBoardTest`、真实浏览器渲染测试 |
+| A4 事实覆盖 | 看板与场景枚举共用谓词代表值，显示确定性覆盖计数和最多 20 个盲区 | `AgentTddDecisionScenarioEnumeratorTest`、`AgentTddBoardTest` |
+| A5 实景验证 | 逻辑 GREEN 后由平台内部 `AGENT_TDD_ATTEST` 自动执行；仅限沙箱、精确 host、只读 descriptor；证据 payload-free，并绑定当前 graph/case/binding/descriptor；发布需要 GREEN、ATTESTED、signoff | `AgentTddAttestationServiceTest`、`HttpResourceOperatorTest`、`AgentTddMcpOperationalWorkflowTest`、`AgentTddWorkflowServiceTest` |
+
+A5 的自动执行使用持久幂等 reservation：同一 GREEN 的并发或重复触发只执行一次真实读取并回放同一结构化结果。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在发包前按内部 execution capture 再核对 descriptor；注册表替换不能越过白名单校验。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
+
+完整启动、Codex MCP 配置、三段式操作、两个人工停点、实景失败恢复、停止命令和回归命令见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。

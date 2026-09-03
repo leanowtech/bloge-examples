@@ -103,6 +103,7 @@ public final class AgentTddReviewService {
      * @param draftRevision exact canonical draft revision reviewed
      * @param goldenSetId exact contract-and-case identity reviewed
      * @param evidenceFingerprint exact GREEN evidence material reviewed
+     * @param implementationFingerprint exact attested binding and resource implementation reviewed
      * @param identity governed human identity
      * @return immutable signoff overlay revision
      */
@@ -111,14 +112,39 @@ public final class AgentTddReviewService {
                                                                long draftRevision,
                                                                String goldenSetId,
                                                                String evidenceFingerprint,
+                                                               String implementationFingerprint,
                                                                IntegrationRequestContext identity) {
         requireHuman(identity);
         if (toolRef == null || toolRef.isBlank() || signoffRef == null || signoffRef.isBlank()
                 || draftRevision < 1 || goldenSetId == null || goldenSetId.isBlank()
-                || evidenceFingerprint == null || evidenceFingerprint.isBlank()) {
+                || evidenceFingerprint == null || evidenceFingerprint.isBlank()
+                || implementationFingerprint == null || implementationFingerprint.isBlank()) {
             throw new AgentTddToolException(
                     "SCHEMA_NONCONFORMANT",
-                    "toolRef, signoffRef, draftRevision, goldenSetId and evidenceFingerprint are required.");
+                    "The complete GREEN and attestation identity is required for signoff.");
+        }
+        String scope = AgentTddMutationService.scopeKey(identity);
+        JsonNode latest = states.find(scope, AgentTddWorkflowService.VERDICT, toolRef.trim())
+                .map(AgentTddStoredAsset::data).map(data -> data.path("latest"))
+                .orElseThrow(() -> new AgentTddToolException(
+                        "GATE_REJECTED", "A current logical GREEN baseline is required."));
+        JsonNode attestation = states.find(scope, AgentTddAttestationService.ATTESTATION, toolRef.trim())
+                .map(AgentTddStoredAsset::data)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "GATE_REJECTED", "A current sandbox attestation is required."));
+        if (!"GREEN".equals(latest.path("side").asText())
+                || !"GO".equals(latest.path("status").asText())
+                || draftRevision != latest.path("draftRevision").asLong(-1)
+                || !goldenSetId.trim().equals(latest.path("goldenSetId").asText())
+                || !evidenceFingerprint.trim().equals(latest.path("evidenceFingerprint").asText())
+                || !"ATTESTED".equals(attestation.path("status").asText())
+                || draftRevision != attestation.path("draftRevision").asLong(-1)
+                || !goldenSetId.trim().equals(attestation.path("goldenSetId").asText())
+                || !evidenceFingerprint.trim().equals(attestation.path("evidenceFingerprint").asText())
+                || !implementationFingerprint.trim().equals(
+                        attestation.path("implementationFingerprint").asText())) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The reviewed GREEN or attestation identity is no longer current.");
         }
         ObjectNode data = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
         data.put("toolRef", toolRef.trim());
@@ -126,9 +152,10 @@ public final class AgentTddReviewService {
         data.put("draftRevision", draftRevision);
         data.put("goldenSetId", goldenSetId.trim());
         data.put("evidenceFingerprint", evidenceFingerprint.trim());
+        data.put("implementationFingerprint", implementationFingerprint.trim());
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
-        return states.saveIfRevision(AgentTddMutationService.scopeKey(identity),
+        return states.saveIfRevision(scope,
                 AgentTddWorkflowService.SIGNOFF, signoffRef.trim(), 0, data);
     }
 

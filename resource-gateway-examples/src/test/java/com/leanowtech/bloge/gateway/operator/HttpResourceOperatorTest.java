@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.exception.ResourceCallException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.resource.ParameterMapping;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceExecutionAdmissionRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
@@ -520,6 +521,32 @@ class HttpResourceOperatorTest {
                 "orders.create", Map.of("idempotencyKey", "order-42")), operatorContext()))
                 .isInstanceOf(NonRetryableException.class)
                 .hasMessageContaining("externalWriteContract");
+        assertThat(httpStub.wasInvoked()).isFalse();
+    }
+
+    @Test
+    void controlledAdmissionRejectsDescriptorReplacementBeforeSendingRequest() {
+        ResourceDescriptor approved = simpleDescriptor("profile.read");
+        ResourceDescriptor replaced = new ResourceDescriptor(
+                "profile.read", "https://other.example.test/profile", "GET",
+                Map.of(), null, Duration.ofSeconds(5), null,
+                new ResponseProtocol.HttpStatus(), null);
+        ResourceExecutionAdmissionRegistry admissions = new ResourceExecutionAdmissionRegistry();
+        operator = new HttpResourceOperator(httpStub, registry, evaluator,
+                new UrlTemplateRenderer(), new PayloadExtractor(), new ResponseValidator(evaluator), admissions);
+        OperatorContext context = operatorContext();
+        context.graphContext().put(
+                ResourceExecutionAdmissionRegistry.EXECUTION_CAPTURE_ID_CONTEXT_KEY, "run-1");
+        registry.put(replaced);
+
+        try (ResourceExecutionAdmissionRegistry.AdmissionLease ignored =
+                     admissions.register("run-1", Map.of("profile.read", approved))) {
+            assertThatThrownBy(() -> operator.execute(
+                    new HttpResourceInput("profile.read", Map.of()), context))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Resource descriptor changed after governed admission.");
+        }
+
         assertThat(httpStub.wasInvoked()).isFalse();
     }
 

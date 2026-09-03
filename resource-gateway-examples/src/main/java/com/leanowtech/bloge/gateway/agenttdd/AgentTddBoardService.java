@@ -62,7 +62,8 @@ public final class AgentTddBoardService {
                         "revision", asset.revision(), "owner", "tool-owner",
                         "proposalFingerprint", asset.data().path("proposalFingerprint").asText())));
         tools.stream()
-                .filter(tool -> gate(tool, "greenBaseline") && !gate(tool, "ownerSignoff"))
+                .filter(tool -> gate(tool, "greenBaseline") && gate(tool, "runtimeAttestation")
+                        && !gate(tool, "ownerSignoff"))
                 .forEach(tool -> pendingSignoff(scope, tool).ifPresent(reviews::add));
         reviews.sort(Comparator.comparing(row -> row.get("kind") + ":" + row.get("assetRef")));
         return Map.of("tools", tools, "pendingReviews", reviews,
@@ -80,6 +81,9 @@ public final class AgentTddBoardService {
     private java.util.Optional<Map<String, Object>> pendingSignoff(String scope,
                                                                    Map<String, Object> tool) {
         String toolRef = Objects.toString(tool.get("toolRef"), "");
+        String implementationFingerprint = tool.get("attestation") instanceof Map<?, ?> attestation
+                ? Objects.toString(attestation.get("implementationFingerprint"), "") : "";
+        if (implementationFingerprint.isBlank()) return java.util.Optional.empty();
         return states.find(scope, AgentTddWorkflowService.VERDICT, toolRef)
                 .map(AgentTddStoredAsset::data)
                 .map(data -> data.path("latest"))
@@ -94,6 +98,7 @@ public final class AgentTddBoardService {
                         "draftRevision", latest.path("draftRevision").asLong(),
                         "goldenSetId", latest.path("goldenSetId").asText(),
                         "evidenceFingerprint", latest.path("evidenceFingerprint").asText(),
+                        "implementationFingerprint", implementationFingerprint,
                         "owner", "tool-owner"));
     }
 

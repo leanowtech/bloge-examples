@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.exception.ResourceCallException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.resource.ParameterMapping;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceExecutionAdmissionRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
@@ -66,6 +67,7 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
     private final UrlTemplateRenderer renderer;
     private final PayloadExtractor extractor;
     private final ResponseValidator validator;
+    private final ResourceExecutionAdmissionRegistry executionAdmissions;
 
     /**
      * @param httpRequestOperator the underlying HTTP client operator
@@ -82,9 +84,22 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
             BlgeExpressionEvaluator evaluator,
             UrlTemplateRenderer renderer,
             PayloadExtractor extractor,
+            ResponseValidator validator,
+            ResourceExecutionAdmissionRegistry executionAdmissions) {
+        this((input, context) -> httpRequestOperator.execute(input, context), registry, evaluator,
+                renderer, extractor, validator, executionAdmissions);
+    }
+
+    /** Backward-compatible constructor for explicitly assembled resource operators. */
+    public HttpResourceOperator(
+            HttpRequestOperator httpRequestOperator,
+            ResourceRegistry registry,
+            BlgeExpressionEvaluator evaluator,
+            UrlTemplateRenderer renderer,
+            PayloadExtractor extractor,
             ResponseValidator validator) {
         this((input, context) -> httpRequestOperator.execute(input, context), registry, evaluator,
-                renderer, extractor, validator);
+                renderer, extractor, validator, null);
     }
 
     /**
@@ -100,12 +115,25 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
             UrlTemplateRenderer renderer,
             PayloadExtractor extractor,
             ResponseValidator validator) {
+        this(httpRequestOperator, registry, evaluator, renderer, extractor, validator, null);
+    }
+
+    /** Creates a resource operator that also enforces controlled-run descriptor admission. */
+    public HttpResourceOperator(
+            HttpRequestTransport httpRequestOperator,
+            ResourceRegistry registry,
+            BlgeExpressionEvaluator evaluator,
+            UrlTemplateRenderer renderer,
+            PayloadExtractor extractor,
+            ResponseValidator validator,
+            ResourceExecutionAdmissionRegistry executionAdmissions) {
         this.httpRequestOperator = httpRequestOperator;
         this.registry = registry;
         this.evaluator = evaluator;
         this.renderer = renderer;
         this.extractor = extractor;
         this.validator = validator;
+        this.executionAdmissions = executionAdmissions;
     }
 
     @Override
@@ -134,6 +162,9 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
     public HttpResourceOutput execute(HttpResourceInput input, OperatorContext ctx) throws Exception {
         // 1. Resolve descriptor
         ResourceDescriptor descriptor = registry.resolve(input.resourceId());
+        if (executionAdmissions != null) {
+            executionAdmissions.requireCurrent(ctx, descriptor);
+        }
 
         // 2. Evaluate parameter mapping expressions
         Map<String, Object> exprContext = Map.of(
