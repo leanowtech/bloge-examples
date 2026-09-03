@@ -99,7 +99,7 @@ tool_timeout_sec = 120
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_GOVERNANCE" }
-enabled_tools = ["rg.fixture.promote", "rg.tool.publish"]
+enabled_tools = ["rg.fixture.promote", "rg.fixture.provide", "rg.tool.publish"]
 required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 120
@@ -118,7 +118,7 @@ codex
 
 Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_TOKEN`，然后完全退出并重新打开。不要从终端 A 启动 Desktop、CLI 或 IDE；也不要把 reviewer token 存进能被 Codex 进程继承的全局 Shell 配置。
 
-**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
+**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。Codex 的 governance server 只暴露 Fixture 治理和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
 
 检查配置：
 
@@ -128,6 +128,8 @@ codex mcp get rg_read
 ```
 
 在 Codex 会话中输入 `/mcp`，应看到四个 server 均已连接。Resource Gateway 会与当前 Codex 协商 `2025-06-18` 生命周期；也兼容仓库定义的无状态 `2026-07-28` 请求和旧 `2025-11-25` initialize。Codex 会自动完成 `initialize` 和 `notifications/initialized`。
+
+业务方直接给出典型数据时，使用 `rg.fixture.provide`，传入 `operatorRef`、精确 `outputPort`、`sampleValue`、分类、保留天数和幂等键。服务端先按该输出端口的 Schema 校验样本，再派生 Fixture ID、作用域、Schema 引用和 SAMPLE 来源。响应不返回 `sampleValue`。同一幂等键携带不同样本时，请求返回 `IDEMPOTENCY_CONFLICT`。
 
 连接失败时先检查：
 

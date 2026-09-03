@@ -42,7 +42,8 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(24);
+        assertThat(response.path("result").path("tools")).hasSize(25);
+        assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").fieldNames()).toIterable().containsExactly("tools");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
@@ -62,7 +63,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(24);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(25);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 

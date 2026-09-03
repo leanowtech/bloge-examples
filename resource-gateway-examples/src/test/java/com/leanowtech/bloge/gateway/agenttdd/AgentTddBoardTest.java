@@ -247,6 +247,7 @@ class AgentTddBoardTest {
                             "五幕业务旅程", "业务主线 · 各工具进行到哪一幕",
                             "第1幕 · 你的世界观与可用积木", "buildingBlocks", "worldModel",
                             "/api/agent-tdd/library-overview", "仅契约", "已接入",
+                            "第2幕 · 已提供样例", "providedFixtures", "sourceKind",
                             "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
                             "步骤", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef")

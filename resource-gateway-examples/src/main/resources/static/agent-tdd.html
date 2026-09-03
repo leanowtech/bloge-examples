@@ -41,6 +41,10 @@
       <section><h2>你已声明的世界观</h2><div id="worldModel" class="world-list"><div class="empty">尚未加载。</div></div></section>
     </div>
   </details>
+  <section class="panel world-overview">
+    <h2>第2幕 · 已提供样例</h2>
+    <div id="providedFixtures" class="world-list"><div class="empty">尚未加载。</div></div>
+  </section>
   <div id="error" class="error"></div>
   <section class="grid">
     <div class="panel"><h2>业务主线 · 各工具进行到哪一幕</h2><div id="tools" class="tools"><div class="empty">输入凭据后加载。</div></div></div>
@@ -75,6 +79,8 @@
     const typeHtml=types.map(type=>`<div class="world-item"><strong>${esc(type.name)}</strong><div class="meta">字段 · ${(type.fields||[]).map(esc).join('、')||'未声明'}</div></div>`).join('');
     const operationHtml=operations.map(operation=>`<div class="world-item"><strong>${esc(operation.title)}</strong><span class="badge ${operation.bound?'bound':''}">${operation.bound?'已接入':'仅契约'}</span><div class="meta">${esc(operation.ref)} · 输入 ${(operation.inputs||[]).map(esc).join('、')||'无'} · 输出 ${(operation.outputs||[]).map(esc).join('、')||'无'}</div></div>`).join('');
     $('worldModel').innerHTML=typeHtml+operationHtml||'<div class="empty">尚未声明业务类型或操作。</div>';
+    const samples=overview.samples||[];
+    $('providedFixtures').innerHTML=samples.length?samples.map(sample=>`<div class="world-item"><strong>${esc(sample.fixtureId)}</strong><span class="badge">${esc(sample.lifecycle)}</span><div class="meta">${esc(sample.sourceKind)} · 输出 ${esc(sample.outputPort)}</div></div>`).join(''):'<div class="empty">尚未提供受治理样例。</div>';
   }
   async function approve(review) {
     let url, body;

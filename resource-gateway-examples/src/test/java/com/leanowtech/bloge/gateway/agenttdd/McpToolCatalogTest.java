@@ -16,12 +16,13 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(24);
+        assertThat(catalog.all()).hasSize(25);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.oracle.propose").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.simulate").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.tool.publish").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
+        assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
     }
 
@@ -78,6 +79,13 @@ class McpToolCatalogTest {
                 "enumerationMode", "enumerationRule", "boundaryInput", "reason");
         assertThat(stringKeys(dataProperties(catalog.require("rg.contract.get")))).contains(
                 "bindingRef", "sourceKind", "runtimeState");
+        Map<?, ?> provideInput = (Map<?, ?>) catalog.require("rg.fixture.provide")
+                .inputSchema().get("properties");
+        assertThat(stringKeys(provideInput)).containsExactlyInAnyOrder(
+                "operatorRef", "outputPort", "sampleValue", "category", "retentionDays",
+                "redactPaths", "idempotencyKey");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.fixture.provide")))).contains(
+                "fixtureId", "scope", "schemaRef", "sourceKind", "lineageRef");
     }
 
     @Test

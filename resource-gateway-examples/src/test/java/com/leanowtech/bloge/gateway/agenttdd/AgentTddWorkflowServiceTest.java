@@ -26,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
@@ -418,6 +419,54 @@ class AgentTddWorkflowServiceTest {
                 "redactPaths", List.of("$.payload.secret"), "idempotencyKey", "fixture-1")), identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("AMBIGUOUS_OUTPUT_PORT"));
+    }
+
+    @Test
+    void directSampleWrapperDerivesFixtureIdentityAndMapsSchemaFailures() {
+        when(fixtures.provide(eq("resource:applicant"), eq("payload"), eq(Map.of("score", 760)),
+                any(com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionRequest.class),
+                eq(identity()))).thenAnswer(invocation -> {
+                    var request = (com.leanowtech.bloge.gateway.visualadapter.fixture
+                            .GraphNodeFixturePromotionRequest) invocation.getArgument(3);
+                    return new GraphNodeFixturePromotionService.PromotionResult(
+                            request.fixtureAssetId(), 1, "DRAFT",
+                            new com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol
+                                    .ExactAssetRef("RESOURCE", "applicant", 1, "sha256:" + "a".repeat(64)),
+                            new com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol
+                                    .ExactSchemaRef("applicant", 1, "sha256:" + "b".repeat(64)),
+                            "governed", "SAMPLE");
+                });
+        JsonNode request = json(Map.of(
+                "operatorRef", "resource:applicant", "outputPort", "payload",
+                "sampleValue", Map.of("score", 760), "category", "INTERNAL",
+                "retentionDays", 3, "redactPaths", List.of("/secret"),
+                "idempotencyKey", "provide-1"));
+
+        Map<String, Object> provided = service.provideFixture(request, identity());
+
+        assertThat(provided).containsEntry("sourceKind", "SAMPLE").containsEntry("scope", scope());
+        assertThat(provided.get("fixtureId")).asString().startsWith("provided-");
+        assertThat(provided).doesNotContainKeys("sampleValue", "payload");
+
+        assertThatThrownBy(() -> service.provideFixture(json(Map.of(
+                "operatorRef", "resource:applicant", "outputPort", "payload",
+                "sampleValue", Map.of("score", 761), "category", "INTERNAL",
+                "retentionDays", 3, "redactPaths", List.of("/secret"),
+                "idempotencyKey", "provide-1")), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("IDEMPOTENCY_CONFLICT"));
+
+        when(fixtures.provide(eq("resource:applicant"), eq("payload"), eq(Map.of("score", "bad")),
+                any(com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionRequest.class),
+                eq(identity()))).thenThrow(new GraphNodeFixturePromotionException(
+                        422, "RG.VISUAL.PROMOTION.OUTPUT_SCHEMA_INVALID", "Schema mismatch"));
+        assertThatThrownBy(() -> service.provideFixture(json(Map.of(
+                "operatorRef", "resource:applicant", "outputPort", "payload",
+                "sampleValue", Map.of("score", "bad"), "category", "INTERNAL",
+                "retentionDays", 3, "redactPaths", List.of(),
+                "idempotencyKey", "provide-bad")), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
     }
 
     @Test

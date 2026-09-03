@@ -168,6 +168,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     : workflow.recordEvidence("rg.tool.baseline", safeArguments,
                             execution().baseline(safeArguments, identity), identity));
             case "rg.fixture.promote" -> executionSuccess(workflow().promoteFixture(safeArguments, identity));
+            case "rg.fixture.provide" -> executionSuccess(workflow().provideFixture(safeArguments, identity));
             case "rg.tool.publishSpec" -> executionSuccess(workflow().publishSpec(safeArguments, identity));
             case "rg.tool.publish" -> executionSuccess(workflow().publish(safeArguments, identity));
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");

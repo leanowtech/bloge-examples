@@ -152,6 +152,100 @@ public class GraphNodeFixturePromotionService {
     }
 
     /**
+     * Validates and persists a caller-provided sample against one exact operator output contract.
+     *
+     * <p>Unlike graph capture promotion, this entry point does not require a draft or a prior
+     * simulation. The server still derives the enterprise scope, exact source, target, schema,
+     * retention, redaction, ownership, and SAMPLE lineage. Callers supply only the sample value
+     * and the bounded governance request.</p>
+     *
+     * @param operatorRef exact catalog operator reference
+     * @param outputPort explicit output port; optional only for a single-output operator
+     * @param sampleValue business sample validated against the selected output schema
+     * @param request bounded Fixture governance fields with a server-selected fixture id
+     * @param identity authenticated identity that closes the enterprise scope
+     * @return payload-free governed Fixture receipt
+     */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public PromotionResult provide(String operatorRef,
+                                   String outputPort,
+                                   Object sampleValue,
+                                   GraphNodeFixturePromotionRequest request,
+                                   IntegrationRequestContext identity) {
+        requireIdentity(identity);
+        if (identity.projectId().isBlank()) {
+            throw invalid("IDENTITY_REQUIRED", "Project id is required for direct sample provision");
+        }
+        if (request == null) throw invalid("REQUEST_INVALID", "A promotion request is required");
+        try {
+            request.requireValid();
+        } catch (IllegalArgumentException invalidRequest) {
+            throw invalid("REQUEST_INVALID", invalidRequest.getMessage());
+        }
+        String exactOperatorRef = requiredText(operatorRef, "operatorRef");
+        OperatorDefinition operator = operators.find(exactOperatorRef)
+                .orElseThrow(() -> notFound("OPERATOR_NOT_FOUND", "The selected operator is unavailable"));
+        OperatorDefinition.Port selectedPort = operatorPort(operator, outputPort);
+        if (selectedPort.schema().equals(SchemaEnvelope.opaque())) {
+            throw unprocessable("OUTPUT_SCHEMA_OPAQUE",
+                    "Governed Fixture provision requires an exact operator output schema");
+        }
+        if (!VisualSchemaValidator.validateValue(
+                selectedPort.schema(), sampleValue, "/sampleValue").isEmpty()) {
+            throw unprocessable("OUTPUT_SCHEMA_INVALID",
+                    "The provided sample does not satisfy its exact operator schema");
+        }
+        ExactSchemaRef schemaRef = operator.ports().outputs().size() == 1
+                ? exactOutputSchemaRef(operator, mapper)
+                : exactOutputSchemaRef(operator, selectedPort.name(), mapper);
+        String sourceId = sourceId(exactOperatorRef);
+        ExactAssetRef sourceRef = new ExactAssetRef(
+                exactOperatorRef.startsWith("resource:") ? "RESOURCE" : "OPERATOR",
+                sourceId, 1, operator.fingerprint());
+        EnterpriseScope scope = new EnterpriseScope(
+                requiredText(identity.tenantId(), "tenantId"),
+                requiredText(identity.organizationId(), "organizationId"),
+                requiredText(identity.projectId(), "projectId"),
+                requiredText(identity.environmentId(), "environment"),
+                requiredText(identity.region(), "region"));
+        Instant now = clock.instant();
+        RetentionDescriptor retention = new RetentionDescriptor(
+                "direct-sample-fixture-retention-v1", request.retentionDays(),
+                now.plus(Duration.ofDays(request.retentionDays())));
+        RedactionDescriptor redaction = new RedactionDescriptor(
+                "direct-sample-fixture-redaction-v1", request.redactionPaths(), false);
+        FixtureSource source = new FixtureSource(SourceKind.SAMPLE, sourceRef);
+        Receipt materialReceipt = materials.write(new WriteRequest(
+                "", request.fixtureAssetId(), 0, source, FixtureSubject.OPERATOR,
+                new ExactTargetRef(TargetKind.OPERATOR, sourceId, 1, operator.fingerprint()),
+                schemaRef, request.classification(), retention, redaction, sampleValue), identity);
+        PrincipalRef owner = actor(identity);
+        AuditMetadata audit = new AuditMetadata(now, now, owner, owner);
+        String name = operator.display().name().isBlank()
+                ? exactOperatorRef + " supplied sample"
+                : operator.display().name() + " supplied sample";
+        var candidate = new com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor(
+                "", request.fixtureAssetId(), 0, scope, name, source, materialReceipt.materialRef(),
+                schemaRef, selectedPort.name(),
+                com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor
+                        .FixtureLifecycle.DRAFT,
+                request.classification(), owner, redaction, retention,
+                new QualityProfile(true, false, 0, 0), List.of("direct-sample"), audit);
+        try {
+            var stored = fixtures.saveDraft(0, candidate, owner);
+            return new PromotionResult(
+                    stored.descriptor().fixtureAssetId(), stored.descriptor().revision(),
+                    stored.descriptor().lifecycle().name(), stored.exactRef(), schemaRef,
+                    "governed", SourceKind.SAMPLE.name());
+        } catch (FixtureCatalogCommandException exception) {
+            if ("RG.CORRECTNESS.REVISION_CONFLICT".equals(exception.code())) {
+                throw new GraphNodeFixturePromotionException(409, exception.code(), exception.getMessage());
+            }
+            throw unprocessable("FIXTURE_CATALOG_REJECTED", exception.getMessage());
+        }
+    }
+
+    /**
      * Direct-call overload used by non-Spring clients and focused service tests.
      *
      * <p>When invoked through the Spring bean proxy this overload has the same atomic boundary as

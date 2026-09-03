@@ -1,6 +1,9 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -12,6 +15,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Verifies the payload-free business projection of native and library operator contracts. */
 class AgentTddLibraryOverviewServiceTest {
@@ -41,6 +48,27 @@ class AgentTddLibraryOverviewServiceTest {
                 .contains("bound=false", "bound=true");
         assertThat(worldModel.get("types").toString())
                 .contains("ride:order-lookup.order", "orderId", "feeCharged");
+    }
+
+    @Test
+    void projectsPayloadFreeProvidedSampleMetadataForTheSecondAct() {
+        FixtureAssetRepository fixtures = mock(FixtureAssetRepository.class);
+        StoredFixtureAsset stored = mock(StoredFixtureAsset.class);
+        FixtureAssetDescriptor descriptor = mock(FixtureAssetDescriptor.class);
+        when(stored.descriptor()).thenReturn(descriptor);
+        when(descriptor.fixtureAssetId()).thenReturn("provided-ride-order");
+        when(descriptor.lifecycle()).thenReturn(FixtureAssetDescriptor.FixtureLifecycle.DRAFT);
+        when(descriptor.source()).thenReturn(new FixtureAssetDescriptor.FixtureSource(
+                FixtureAssetDescriptor.SourceKind.SAMPLE, null));
+        when(descriptor.variantKey()).thenReturn("order");
+        when(fixtures.listHeads(any(), eq(false), eq(100), eq(0))).thenReturn(List.of(stored));
+
+        Map<String, Object> overview = new AgentTddLibraryOverviewService(
+                new FixedCatalog(List.of()), fixtures).overview(identity());
+
+        assertThat(overview.get("samples")).asList().singleElement().asString()
+                .contains("provided-ride-order", "DRAFT", "SAMPLE", "order")
+                .doesNotContain("payload", "sampleValue");
     }
 
     private static OperatorDefinition base(String ref, String effect) {

@@ -1,9 +1,13 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,10 +25,24 @@ public final class AgentTddLibraryOverviewService {
             "bloge:decisionTable", "按规则表判定",
             "bloge:transform", "整理并输出数据");
     private final VisualOperatorCatalog catalog;
+    private final FixtureAssetRepository fixtures;
 
-    /** Creates the projection over the authoritative, scope-aware operator catalog. */
+    /** Creates the projection over the authoritative operator catalog without a Fixture listing. */
     public AgentTddLibraryOverviewService(VisualOperatorCatalog catalog) {
+        this(catalog, (FixtureAssetRepository) null);
+    }
+
+    /** Creates the Spring projection with the optional payload-free Fixture catalog. */
+    @Autowired
+    public AgentTddLibraryOverviewService(VisualOperatorCatalog catalog,
+                                          ObjectProvider<FixtureAssetRepository> fixtureProvider) {
+        this(catalog, fixtureProvider.getIfAvailable());
+    }
+
+    /** Package-visible constructor used to verify an exact persistence boundary. */
+    AgentTddLibraryOverviewService(VisualOperatorCatalog catalog, FixtureAssetRepository fixtures) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
+        this.fixtures = fixtures;
     }
 
     /**
@@ -66,9 +84,28 @@ public final class AgentTddLibraryOverviewService {
                 });
         return Map.of(
                 "buildingBlocks", List.copyOf(buildingBlocks),
+                "samples", samples(identity),
                 "worldModel", Map.of(
                         "types", List.copyOf(types.values()),
                         "operations", List.copyOf(operations)));
+    }
+
+    private List<Map<String, Object>> samples(IntegrationRequestContext identity) {
+        if (fixtures == null) return List.of();
+        EnterpriseScope scope = new EnterpriseScope(
+                identity.tenantId(), identity.organizationId(), identity.projectId(),
+                identity.environmentId(), identity.region());
+        return fixtures.listHeads(scope, false, 100, 0).stream()
+                .filter(Objects::nonNull)
+                .map(stored -> stored.descriptor())
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(descriptor -> descriptor.fixtureAssetId()))
+                .map(descriptor -> Map.<String, Object>of(
+                        "fixtureId", descriptor.fixtureAssetId(),
+                        "lifecycle", descriptor.lifecycle().name(),
+                        "sourceKind", descriptor.source().kind().name(),
+                        "outputPort", descriptor.variantKey()))
+                .toList();
     }
 
     private static Map<String, Object> baseBlock(OperatorDefinition operator) {

@@ -92,6 +92,14 @@ public final class McpToolCatalog {
                         "category", string(), "retentionDays", integer(), "redactPaths", stringArray(),
                         "idempotencyKey", string()),
                 List.of("draftId", "nodeId", "outputPort", "fixtureId", "category", "retentionDays", "idempotencyKey")));
+        values.add(tool("rg.fixture.provide", "Provide sample fixture",
+                "Validate one supplied sample against an operator output contract and persist it as a governed fixture.",
+                McpToolImpact.GOVERNED_WRITE,
+                props("operatorRef", string(), "outputPort", string(), "sampleValue", anyJson(),
+                        "category", string(), "retentionDays", integer(), "redactPaths", stringArray(),
+                        "idempotencyKey", string()),
+                List.of("operatorRef", "outputPort", "sampleValue", "category", "retentionDays",
+                        "idempotencyKey")));
         values.add(tool("rg.tool.publishSpec", "Publish specification", "Propose an immutable speccing artifact for review.",
                 McpToolImpact.PROPOSE,
                 props("toolRef", string(), "idempotencyKey", string()), List.of("toolRef", "idempotencyKey")));
@@ -374,7 +382,8 @@ public final class McpToolCatalog {
                     "caseSetRef", string(), "rounds", arrayOf(businessObject()),
                     "businessFingerprintStable", bool(), "remainingLimitations", stringArray()),
                     List.of("goldenSetId", "side", "realExternalCalls"));
-            case "rg.fixture.promote" -> structuredObject(props("fixtureId", string(), "revision", integer(),
+            case "rg.fixture.promote", "rg.fixture.provide" -> structuredObject(props(
+                    "fixtureId", string(), "revision", integer(),
                     "lifecycle", string(), "scope", string(), "schemaRef", businessObject(),
                     "lineageRef", businessObject(),
                     "sourceKind", string()), List.of("fixtureId", "revision", "scope"));

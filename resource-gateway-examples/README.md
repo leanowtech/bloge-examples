@@ -25,7 +25,10 @@ existing readiness and case-set facts; it does not create a second workflow stat
 Its authenticated `GET /api/agent-tdd/library-overview` projection places business-readable platform
 building blocks beside the current scope's declared world model. Imported operations are marked `仅契约`
 or `已接入`, while business types are derived only from declared output schemas; the projection is
-payload-free and returned with `no-store` rather than sampling fixtures or provider responses.
+payload-free and returned with `no-store` rather than sampling fixtures or provider responses. Its second-act
+sample list reads only governed Fixture descriptors. `rg.fixture.provide` validates a supplied sample against
+one exact operator output port, then server-derives its Fixture id, scope, schema reference, retention and
+SAMPLE lineage; the MCP response never echoes the sample value.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened

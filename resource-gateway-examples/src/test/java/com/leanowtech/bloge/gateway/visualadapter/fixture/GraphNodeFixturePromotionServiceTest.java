@@ -119,6 +119,50 @@ class GraphNodeFixturePromotionServiceTest {
     }
 
     @Test
+    void providesAValidatedSampleDirectlyAgainstAnOperatorOutputContract() {
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperator()));
+        var descriptor = new java.util.concurrent.atomic.AtomicReference<FixtureAssetDescriptor>();
+        when(fixtureCatalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
+            FixtureAssetDescriptor persisted = ((FixtureAssetDescriptor) invocation.getArgument(1))
+                    .persistedAs(1, ((FixtureAssetDescriptor) invocation.getArgument(1)).metadata());
+            descriptor.set(persisted);
+            return StoredFixtureAsset.verified(mapper, persisted);
+        });
+
+        var result = service.provide(
+                "resource:applicant", "payload-0", Map.of("score", 760),
+                request("direct-sample"), identity);
+
+        assertThat(result.fixtureAssetId()).isEqualTo("direct-sample");
+        assertThat(result.sourceKind()).isEqualTo("SAMPLE");
+        assertThat(materialWrites).singleElement().satisfies(write -> {
+            assertThat(write.subject()).isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
+                    .FixtureMaterialProtocolV2.FixtureSubject.OPERATOR);
+            assertThat(write.target().kind()).isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
+                    .CorrectnessProtocol.TargetKind.OPERATOR);
+            assertThat(write.target().id()).isEqualTo("applicant");
+            assertThat(write.payload()).isEqualTo(Map.of("score", 760));
+        });
+        assertThat(descriptor.get().scope().projectId()).isEqualTo("project-a");
+        assertThat(descriptor.get().variantKey()).isEqualTo("payload-0");
+    }
+
+    @Test
+    void rejectsANonconformantDirectSampleBeforeWritingMaterial() {
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperator()));
+
+        assertThatThrownBy(() -> service.provide(
+                "resource:applicant", "payload-0", Map.of("score", "not-an-integer"),
+                request("invalid-sample"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(422);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.OUTPUT_SCHEMA_INVALID");
+                });
+        assertThat(materialWrites).isEmpty();
+        verifyNoInteractions(fixtureCatalog);
+    }
+
+    @Test
     void explicitSingleOutputPortPreservesTheLegacySchemaIdentity() {
         OperatorDefinition operator = resourceOperator();
         when(drafts.find("draft-1")).thenReturn(Optional.of(draft(

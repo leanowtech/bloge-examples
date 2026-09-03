@@ -259,6 +259,49 @@ public final class AgentTddWorkflowService {
         });
     }
 
+    /**
+     * Persists a direct business sample as a governed Fixture after exact output-schema validation.
+     *
+     * <p>The Fixture id is content-addressed from the canonical request. Scope, schema and lineage
+     * are always derived by the server; the MCP response never returns the supplied value.</p>
+     */
+    public Map<String, Object> provideFixture(JsonNode arguments, IntegrationRequestContext identity) {
+        return idempotent("rg.fixture.provide", arguments, identity, () -> {
+            if (fixtures == null) {
+                throw new AgentTddToolException(
+                        "GATE_REJECTED", "Governed Fixture material infrastructure is unavailable.");
+            }
+            List<String> redactions = new ArrayList<>();
+            arguments.path("redactPaths").forEach(path -> redactions.add(jsonPointer(path.asText())));
+            String requestFingerprint = com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
+                    .fromCanonicalValue(mapper, arguments, MAX_BYTES);
+            String fixtureId = "provided-" + requestFingerprint.substring("sha256:".length(), 30);
+            try {
+                var result = fixtures.provide(
+                        requiredText(arguments, "operatorRef"), requiredText(arguments, "outputPort"),
+                        mapper.convertValue(arguments.get("sampleValue"), Object.class),
+                        new GraphNodeFixturePromotionRequest(
+                                GraphNodeFixturePromotionRequest.SCHEMA_VERSION, fixtureId,
+                                requiredText(arguments, "category"),
+                                arguments.path("retentionDays").asInt(), redactions), identity);
+                return Map.of("fixtureId", result.fixtureAssetId(), "revision", result.revision(),
+                        "lifecycle", result.lifecycle(), "scope", scope(identity),
+                        "schemaRef", result.schemaRef(), "lineageRef", result.assetRef(),
+                        "sourceKind", result.sourceKind());
+            } catch (GraphNodeFixturePromotionException failure) {
+                String code = failure.code().substring(failure.code().lastIndexOf('.') + 1);
+                if ("OUTPUT_SCHEMA_INVALID".equals(code) || "REQUEST_INVALID".equals(code)) {
+                    code = "SCHEMA_NONCONFORMANT";
+                } else if ("OPERATOR_NOT_FOUND".equals(code)) {
+                    code = "LIBRARY_NOT_FOUND";
+                } else if ("OUTPUT_SCHEMA_NON_UNIQUE".equals(code)) {
+                    code = "AMBIGUOUS_OUTPUT_PORT";
+                }
+                throw new AgentTddToolException(code, failure.getMessage());
+            }
+        });
+    }
+
     /** Derives all current publication gates and unresolved limitations. */
     public Map<String, Object> readiness(JsonNode arguments, IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
