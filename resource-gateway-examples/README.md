@@ -53,7 +53,8 @@ approved ACTIVE cases against frozen, descriptor-backed `READ_EXTERNAL` dependen
 WORKLOAD callers cannot choose real inputs, bindings, URLs, or execution mode. Production environments and
 external writes fail closed. Each real run binds immutable operator snapshots and exact resource descriptors;
 the HTTP operator checks the descriptor during admission and again when the rendered request enters the HTTP
-transport, closing registry-replace races. The resulting `ATTESTATION` stores only per-case Oracle booleans,
+transport, closing registry-replace races. The production HTTP client never follows redirects, so an approved
+descriptor cannot transfer a request or credential to a second, unapproved host. The resulting `ATTESTATION` stores only per-case Oracle booleans,
 HTTP-transport dispatch counts by dependency, environment,
 and contract/implementation/evidence fingerprints. The platform commits the reservation before leaving the
 database transaction for the real read, then completes it in a separate transaction. Exact completed retries
@@ -62,6 +63,8 @@ recovery. Each HUMAN/USER board confirmation commits a new attempt revision befo
 a lost recovery process does not permanently reuse its unfinished reservation. Publication and
 readiness require current logical GREEN, current `ATTESTED` evidence, and an independently approved owner
 signoff; graph, case-set, binding, implementation, or descriptor drift invalidates the prior attestation.
+For opaque decision predicates, ACTIVE GOLDEN input values are the author-owned representative samples used by
+the board's fact-coverage projection; without those approved values the dimension remains explicitly unknown.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened

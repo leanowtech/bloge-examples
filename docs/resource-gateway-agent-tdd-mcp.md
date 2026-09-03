@@ -57,7 +57,7 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 
 每个 Tool 卡片优先显示固定模板生成的业务流程摘要和决策规则表。规则表从决策节点的 `hitPolicy`、条件列、输出列、规则行与兜底行投影，不要求业务评审人阅读 DSL；算子引用和连线保留在「展开查看技术结构」中。卡片的覆盖区使用与场景枚举相同的谓词代表值算法，显示 ACTIVE GOLDEN 已覆盖组合、事实空间总数和最多 20 条盲区。
 
-不透明谓词没有业务方代表值时，看板把对应列标为“代表值待补充”，`coverageComplete=false`，不会显示“覆盖周全”或用 `0 / 0` 冒充完整事实空间。没有决策表时则明确显示“当前无决策表事实空间”。Tool 卡片还显示实景验证状态、环境和真实调用总数。逻辑 GREEN 后平台自动验证；失败时只有 HUMAN/USER reviewer 能在看板确认“将访问已批准的只读沙箱资源”后重跑。该 HTTP 恢复入口不是 MCP 工具，WORKLOAD 身份即使知道地址也会被拒绝。
+不透明谓词没有业务方代表值时，看板把对应列标为“代表值待补充”，`coverageComplete=false`，不会显示“覆盖周全”或用 `0 / 0` 冒充完整事实空间。业务方批准为 ACTIVE GOLDEN 的输入值会成为该列的 author sample，并立即进入同一套事实空间与盲区计算。没有决策表时则明确显示“当前无决策表事实空间”。Tool 卡片还显示实景验证状态、环境和真实调用总数。逻辑 GREEN 后平台自动验证；失败时只有 HUMAN/USER reviewer 能在看板确认“将访问已批准的只读沙箱资源”后重跑。该 HTTP 恢复入口不是 MCP 工具，WORKLOAD 身份即使知道地址也会被拒绝。
 
 停止服务：
 
@@ -217,7 +217,7 @@ graph codexProfileOps {
 最后只汇报 draftRevision、goldenSetId、evidenceFingerprint、baseline status、逻辑 realExternalCalls、attestation status/environment/realExternalCalls 和下一项人工动作。不要调用 rg.tool.publish。
 ```
 
-GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，自身不产生真实外部请求。`ATTESTED` 是另一份证据：平台把同一批 ACTIVE GOLDEN 的依赖换成当前冻结的真实只读 descriptor，在精确 host 白名单内执行，并再次核对 Oracle。证据绑定 tool、draft revision、goldenSetId、case-set revision、契约、实现和 GREEN evidence fingerprint；任一项漂移都会使它失效。
+GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，自身不产生真实外部请求。`ATTESTED` 是另一份证据：平台把同一批 ACTIVE GOLDEN 的依赖换成当前冻结的真实只读 descriptor，在精确 host 白名单内执行，并再次核对 Oracle。生产 HTTP client 不跟随 3xx 重定向；重定向响应交给图逻辑处理，不会把已批准请求或认证头转发到第二个未批准主机。证据绑定 tool、draft revision、goldenSetId、case-set revision、契约、实现和 GREEN evidence fingerprint；任一项漂移都会使它失效。
 
 实景证据只保存每个依赖进入 HTTP transport 的次数、每条用例是否成功/满足 Oracle、环境和稳定指纹。普通节点 attempt 不算真实调用；只有 descriptor 已通过执行期复核、渲染完成且请求交给 HTTP transport 时，才记录 `HTTP_TRANSPORT_DISPATCHED`。它不保存 URL、请求、响应、given、expect、异常消息或认证材料。相同 GREEN 的自动请求会先在独立数据库事务中提交持久 reservation，再离开事务执行真实读取，完成后用另一事务写入精确回放结果。并发重复请求不会再次外呼；首个请求完成后可精确回放。进程若在外呼期间退出，未完成 reservation 会保留，readiness 和看板投影 `RECOVERY_REQUIRED`，原因码为 `ATTESTATION_RECOVERY_REQUIRED`；系统绝不自动猜测重试。人工核对沙箱状态并在看板确认后，服务端先提交新的 attempt revision，再开始新的受控读取。即使上一次人工恢复进程退出，下一次人工确认也会获得新的 reservation key。
 
@@ -335,7 +335,7 @@ mvn -f resource-gateway-examples/pom.xml \
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务，贯穿用户资料查询。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务，贯穿用户资料查询。浏览器步骤在本机同时具备 Chrome 和兼容 Chromedriver 时执行；正式验收必须确认该测试 `skipped=0`，否则只能算后端覆盖。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 

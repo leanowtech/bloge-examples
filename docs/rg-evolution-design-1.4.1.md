@@ -264,7 +264,7 @@ private static Map<String,Object> journey(Map<String,Object> card){
 ```
 
 **后端改动**（`AgentTddBoardService`，复用枚举器的代表值逻辑）：
-- 事实空间 `dimensions`：对该工具决策表的每个条件列，用**与既有确定性枚举器同一套**代表值推导（枚举/阈值邻域/成员集）得出该列取值集合。抽 `AgentTddDecisionScenarioEnumerator` 里的"谓词→代表值"为可复用方法供此处调用（避免两套逻辑）。不透明谓词没有 author sample 时必须投影为 `status=UNKNOWN`、`coverageComplete=false` 和 `unknownDimensions[].reasonCode=REPRESENTATIVE_VALUES_REQUIRED`；此时不得以 `0 / 0` 或空盲区宣称覆盖完整。
+- 事实空间 `dimensions`：对该工具决策表的每个条件列，用**与既有确定性枚举器同一套**代表值推导（枚举/阈值邻域/成员集）得出该列取值集合。抽 `AgentTddDecisionScenarioEnumerator` 里的"谓词→代表值"为可复用方法供此处调用（避免两套逻辑）。不透明谓词没有 author sample 时必须投影为 `status=UNKNOWN`、`coverageComplete=false` 和 `unknownDimensions[].reasonCode=REPRESENTATIVE_VALUES_REQUIRED`；此时不得以 `0 / 0` 或空盲区宣称覆盖完整。ACTIVE GOLDEN 的输入值是业务方已经批准的 author sample，必须解除对应不透明维度的 UNKNOWN 并进入同一套覆盖计算。
 - 已覆盖组合：把该工具 `CASE_SET` 中 `lifecycle=ACTIVE` 的 golden 行的 `given` 投影到这些条件列，得已覆盖组合集合。
 - `blindSpots = 笛卡尔积(dimensions) − 已覆盖`，按确定性顺序截断到上限（如 20），并给 `coveredCount/totalCount`。
 
@@ -317,6 +317,6 @@ P4  端到端旅程用例贯穿                  ── 依赖全部
 | A4 事实覆盖 | 看板与场景枚举共用谓词代表值，显示确定性覆盖计数和最多 20 个盲区 | `AgentTddDecisionScenarioEnumeratorTest`、`AgentTddBoardTest` |
 | A5 实景验证 | 逻辑 GREEN 后由平台内部 `AGENT_TDD_ATTEST` 自动执行；仅限沙箱、精确 host、只读 descriptor；证据 payload-free，并绑定当前 graph/case/binding/descriptor；发布需要 GREEN、ATTESTED、signoff | `AgentTddAttestationServiceTest`、`HttpResourceOperatorTest`、`AgentTddMcpOperationalWorkflowTest`、`AgentTddWorkflowServiceTest` |
 
-A5 的自动执行使用持久幂等 reservation：先在独立事务提交 reservation，再在事务外执行真实读取，最后以独立事务写入回放；同一 GREEN 的并发或重复触发不会重复外呼。进程退出留下的未完成 reservation 不会被自动认领；readiness 和看板投影 `RECOVERY_REQUIRED`，原因码为 `ATTESTATION_RECOVERY_REQUIRED`。人工核对后，每次确认都先持久化新的 attempt revision，再执行新的受控读取，因此人工恢复进程再次退出也不会永久卡在旧 key。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在请求进入 transport 前再次核对 descriptor；注册表替换、参数渲染失败、节点 attempt 或 fallback 都不能伪装成真实调用。`realExternalCalls` 只统计 `HTTP_TRANSPORT_DISPATCHED` 事件。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
+A5 的自动执行使用持久幂等 reservation：先在独立事务提交 reservation，再在事务外执行真实读取，最后以独立事务写入回放；同一 GREEN 的并发或重复触发不会重复外呼。进程退出留下的未完成 reservation 不会被自动认领；readiness 和看板投影 `RECOVERY_REQUIRED`，原因码为 `ATTESTATION_RECOVERY_REQUIRED`，且该状态属于 MCP 严格输出 schema。人工核对后，每次确认都先持久化新的 attempt revision，再执行新的受控读取，因此人工恢复进程再次退出也不会永久卡在旧 key。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在请求进入 transport 前再次核对 descriptor；生产 HTTP client 禁止自动跟随重定向，注册表替换、3xx 跨主机、参数渲染失败、节点 attempt 或 fallback 都不能绕过 host 白名单或伪装成真实调用。`realExternalCalls` 只统计 `HTTP_TRANSPORT_DISPATCHED` 事件。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
 
 完整启动、Codex MCP 配置、三段式操作、两个人工停点、实景失败恢复、停止命令和回归命令见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。
