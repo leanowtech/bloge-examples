@@ -87,6 +87,11 @@ embedded H2 database, recording checksums in `rg_local_authoring_schema_migratio
 The application configuration itself remains fail-closed when the JAR is started
 directly, and PostgreSQL deployments still apply migrations externally.
 
+To run the complete Resource Gateway Agent TDD workflow from Codex through MCP,
+including least-privilege Codex configuration, copy-ready prompts, human Oracle
+approval, zero-egress RED/GREEN evidence, signoff, and publication, follow the
+[Codex Agent TDD MCP operating guide](docs/resource-gateway-agent-tdd-mcp.md).
+
 PID files are written to `target/example-pids/`, and logs are written to
 `target/example-logs/`. The start script runs Graph Engine through its Maven
 `spring-boot:run` target and runs Resource Gateway from its repackaged Spring

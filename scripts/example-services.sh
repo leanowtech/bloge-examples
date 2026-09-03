@@ -13,6 +13,7 @@ JAVA_BIN="${JAVA_BIN:-java}"
 RG_API_RESOURCE_AUTHORING_ENABLED="${RG_API_RESOURCE_AUTHORING_ENABLED:-true}"
 RG_REUSABLE_FLOW_AUTHORING_ENABLED="${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}"
 RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED="${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:-true}"
+RG_INTEGRATION_ENVIRONMENT_ID="${RG_INTEGRATION_ENVIRONMENT_ID:-local}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -38,6 +39,7 @@ Environment:
   RG_API_RESOURCE_AUTHORING_ENABLED default: true
   RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true
   RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED default: true for the embedded H2 database
+  RG_INTEGRATION_ENVIRONMENT_ID default: local for zero-egress Agent TDD execution
   Set either variable to false to disable that authoring surface.
 EOF
 }
@@ -325,6 +327,7 @@ start_service() {
                 export RG_API_RESOURCE_AUTHORING_ENABLED
                 export RG_REUSABLE_FLOW_AUTHORING_ENABLED
                 export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED
+                export RG_INTEGRATION_ENVIRONMENT_ID
                 nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"
             )

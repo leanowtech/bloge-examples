@@ -1,20 +1,39 @@
-# Resource Gateway Agent TDD MCP 使用说明
+# 在 Codex 中使用 Resource Gateway Agent TDD MCP
 
-本文说明 Resource Gateway 1.4 的 Agent TDD 接口、身份用途、红绿验证、人工评审和发布门禁。适用于本地验证、MCP 客户端接入和故障排查。
+本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成能力发现、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-## 1. 启动服务
+完整流程有两个人工停点。Agent 不能批准自己提出的业务 Oracle，也不能替人签署发布；这两步必须在 Resource Gateway 看板中完成。
 
-前置条件：Java 25、Maven 3.9，以及本机 Maven 仓库中已安装的 BLOGE 依赖。
+## 1. 四条权限边界
+
+| 边界 | 谁执行 | 能做什么 |
+| --- | --- | --- |
+| READ | Codex Agent | 查能力、契约、用例、证据和 readiness |
+| AUTHORING | Codex Agent | 写草稿、Instruction、场景和依赖行为 |
+| EXECUTION | Codex Agent | 做 RED、GREEN、baseline；真实外呼必须为 0 |
+| GOVERNANCE | 人工为主，Agent 只提交发布 | 人工批 Oracle、签署证据；Agent 在门禁通过后发布 |
+
+这不是 Agent 直接调用生产 API 的入口。`rg.simulate` 和 `rg.tool.baseline` 即使使用已绑定的 API，依赖节点仍由用例 stub 替代；`realExternalCalls` 必须为 `0`。
+
+## 2. 启动本地服务
+
+前置条件：Java 25、Maven 3.9，以及本机 Maven 仓库中已安装的 BLOGE 依赖。在仓库根目录执行：
 
 ```bash
+export RG_MCP_TOKEN='replace-with-a-local-token'
 export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true
-export RG_INTEGRATION_DEMO_TOKEN='replace-with-a-local-token'
+export RG_INTEGRATION_DEMO_TOKEN="$RG_MCP_TOKEN"
 export RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,CORRECTNESS_FIXTURE_MATERIAL_WRITE'
+
 RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
 ./scripts/example-services.sh status resource-gateway
 ```
 
-`scripts/start-examples.sh` 管理 PID、日志、端口和 readiness。Agent TDD overlay 表由应用在同一数据源中幂等创建；PostgreSQL 外部环境仍须由发布方按数据库变更流程审查和部署 schema。不要在生产环境启用 demo identity。
+启动脚本会管理 PID、日志、端口和 readiness，并默认设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。
+
+- MCP：`http://localhost:8081/mcp`
+- 人工看板：`http://localhost:8081/agent-tdd.html`
+- 日志：`target/example-logs/resource-gateway.log`
 
 停止服务：
 
@@ -22,133 +41,249 @@ RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
 ./scripts/stop-examples.sh resource-gateway
 ```
 
-## 2. MCP 传输与认证
+Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器；外部 PostgreSQL 的 schema 也应走正式数据库变更流程。
 
-MCP 入口为 `POST /mcp`。现代无状态请求使用协议版本 `2026-07-28`，并在每次请求中发送以下字段：
+## 3. 把 MCP 配进 Codex
 
-| Header | 要求 | 说明 |
+Codex Desktop、CLI 和 IDE 插件共用 MCP 配置。项目级配置放在仓库的 `.codex/config.toml`；个人级配置放在 `~/.codex/config.toml`。下例把同一个入口拆成四个最小权限 server，避免一个连接天然持有全部用途。
+
+```toml
+[mcp_servers.rg_read]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_READ" }
+enabled_tools = [
+  "rg.capability.list", "rg.library.get", "rg.library.list",
+  "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
+  "rg.verdict.get", "rg.evidence.get", "rg.dsl.preview",
+  "rg.gate.check", "rg.readiness.get"
+]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.rg_author]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING" }
+enabled_tools = [
+  "rg.library.upsert", "rg.feature.compose", "rg.tool.compose",
+  "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
+  "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec"
+]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.rg_execute]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION" }
+enabled_tools = ["rg.simulate", "rg.feature.rehearse", "rg.tool.baseline"]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 120
+
+[mcp_servers.rg_govern]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_GOVERNANCE" }
+enabled_tools = ["rg.fixture.promote", "rg.tool.publish"]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 120
+```
+
+不要把 Bearer token 直接写进 TOML。确保启动 Codex 的进程能读取 `RG_MCP_TOKEN`，然后完全退出并重新打开 Codex。CLI 可从已经导出该变量的 Shell 启动；Desktop 应通过系统的安全环境注入方式把同名变量传给应用进程。
+
+检查配置：
+
+```bash
+codex mcp list
+codex mcp get rg_read
+```
+
+在 Codex 会话中输入 `/mcp`，应看到四个 server 均已连接。Resource Gateway 会与当前 Codex 协商 `2025-06-18` 生命周期；也兼容仓库定义的无状态 `2026-07-28` 请求和旧 `2025-11-25` initialize。Codex 会自动完成 `initialize` 和 `notifications/initialized`。
+
+连接失败时先检查：
+
+```bash
+curl --fail http://localhost:8081/examples/gateway >/dev/null
+test -n "${RG_MCP_TOKEN:-}" && echo 'RG_MCP_TOKEN is visible'
+tail -80 target/example-logs/resource-gateway.log
+```
+
+## 4. 完整示例：编排余额查询 Tool
+
+示例使用内置 `wallet-service.getBalance` API。闭环分三段提示词，中间由人完成两次评审。不要把三段合成“全自动发布”。
+
+### 4.1 第一段：发现、编排、提出 GOLDEN
+
+在新的 Codex 任务中粘贴：
+
+```text
+请使用 rg_read 和 rg_author MCP 完成下面工作，所有事实以 MCP 返回为准，不要猜测：
+
+1. 调用 rg.capability.list，选择 runtimeState 可用于治理评审、effect=READ_EXTERNAL 的余额查询 API。
+2. 调用 rg.contract.get 读取它的真实输入输出端口和 schema。
+3. 创建 Tool `codex-wallet-ops-v1`。DSL 必须引用发现到的 bindingRef，不要直接写 httpResource：
+
+graph codexWalletOps {
+  input { userId: String }
+  node wallet : "resource:wallet-service.getBalance" {
+    input { params = { userId: ctx.userId } }
+  }
+  transform response {
+    amount = wallet.output.payload.amount
+    currency = wallet.output.payload.currency
+  }
+}
+
+4. libraryRefs 显式传空数组。每个写操作使用独立、可读且本轮稳定的 idempotencyKey。
+5. 设置完整 Instruction：name/title/description/whenToUse/inputs/outputs/errors 都不能缺失。
+6. 创建 caseSet `codex-wallet-cases-v1`，提出 GOLDEN 行 `wallet-usd`：given.userId=u-100；wallet stub 返回 payload.amount=100、payload.currency=USD；expect 为 amount=100、currency=USD；oracleOwner=wallet-ops。
+7. 调用 rg.scenario.listCases 确认该行等待人工 Oracle 审批，然后停止。不要执行 RED/GREEN，不要替人批准。
+
+最后只汇报 toolRef、draft revision、caseSetRef、case revision、待办人工动作和稳定错误码，不展示业务 payload。
+```
+
+预期：Tool 草稿已保存；`honestVerdict` 只证明契约语法，业务正确性仍是 `NOT_PROVEN`；GOLDEN 尚不能进入 baseline。同一 idempotencyKey 携带不同内容会返回 `IDEMPOTENCY_CONFLICT`。
+
+### 4.2 人工停点一：批准 Oracle
+
+打开 `http://localhost:8081/agent-tdd.html`，输入本地 token，找到 `codex-wallet-cases-v1 / wallet-usd`。确认业务意图、输入结构、期望结构和 owner 后点击批准。
+
+看板只展示 `STRUCTURE_ONLY` 投影，不展示 `given`、`expect`、fixture 或运行输出值。批准绑定你看到的 `expectedRevision`；如果 Agent 在评审期间修改了用例，服务端会拒绝旧 revision，必须刷新后重审。
+
+批准后，让 Agent 调用 `rg.scenario.listCases`，确认该行是 `ACTIVE`。
+
+### 4.3 第二段：RED、GREEN 和发布前检查
+
+继续在同一任务中粘贴：
+
+```text
+继续 `codex-wallet-ops-v1` 的 Agent TDD 流程：
+
+1. 读取 `codex-wallet-cases-v1`，确认 `wallet-usd` 已 ACTIVE；否则停止。
+2. 用 side=RED、cases.caseSetRef=codex-wallet-cases-v1 调用 rg.simulate。要求 verdict=RED_PASS 且 realExternalCalls=0。
+3. RED 不满足时，只根据 diagnostics.code/target/line/column 修复草稿或用例，然后重跑；不要猜测隐藏 payload。
+4. RED 通过后，用 side=GREEN、caseSetRef=codex-wallet-cases-v1、rounds=3 调用 rg.tool.baseline。要求 status=GO、businessFingerprintStable=true、realExternalCalls=0。
+5. 调用 rg.verdict.get 和 rg.readiness.get。若还有非人工缺口，按 remainingLimitations 修复并重跑；若只剩 PUBLISH_SIGNOFF，停止等待人工签署。
+
+最后只汇报 draftRevision、goldenSetId、evidenceFingerprint、baseline status、realExternalCalls 和下一项人工动作。不要调用 rg.tool.publish。
+```
+
+GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，不表示真实上游健康，也不产生真实外部请求。
+
+### 4.4 人工停点二：签署发布证据
+
+回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
+
+签署不可变；同一个 `signoffRef` 不能覆盖使用。草稿、ACTIVE 用例、Oracle、stub、binding 或目标实现任何一项变化，旧 GREEN 和旧签署都会失效。
+
+### 4.5 第三段：最终发布
+
+继续粘贴：
+
+```text
+请完成 `codex-wallet-ops-v1` 的受治理发布：
+
+1. 调用 rg.readiness.get，确认 publishable=true，且当前 draftRevision、goldenSetId、evidenceFingerprint 与人工签署一致。
+2. 若不一致或仍有 remainingLimitations，停止并列出稳定原因码。
+3. 一致时调用 rg.tool.publish，signoffRef=`wallet-ops-signoff-20260903-01`，使用新的 idempotencyKey。
+4. 再读取 readiness/verdict，汇报 publicationId、artifactKind、冻结 revision 和最终状态。
+
+不得绕过门禁，不得调用真实业务 API，不得输出 token 或业务 payload。
+```
+
+预期 `artifactKind=EXECUTABLE`。发布物冻结通过门禁的 operator snapshot，不会在发布后静默跟随 catalog 漂移。
+
+## 5. Agent 操作约束
+
+### 5.1 DSL 与契约
+
+- 先 `rg.capability.list`，再 `rg.contract.get`，最后写 DSL。
+- API 节点使用发现到的 `bindingRef`，例如 `resource:wallet-service.getBalance`；不要绕过契约直接写 `httpResource`。
+- `libraryRefs` 必须显式传入，空依赖也是 `[]`。
+- BLOGE DSL 字段按换行分隔，不要仿 JSON 在字段末尾加逗号。
+- Resource payload 使用 `node.output.payload.field`；命名端口会按目录解析。
+
+### 5.2 用例与 Oracle
+
+- `rg.simulate.cases` 必须二选一：只传 `caseSetRef`，或只传临时 `rows`。
+- 只有持久 `caseSetRef` 中的 `ACTIVE` 行能推进 READY 并形成发布证据。
+- 每个执行行必须有显式 `expect`。实现不能反过来修改 Oracle 以迎合结果。
+- 执行后的并发用例修改会让 READY、evidence、verdict 和 line 一起回滚。
+
+### 5.3 依赖行为
+
+支持 `RETURN`、`ERROR`、`DELAY`、`TIMEOUT`、`REPLAY`、`OBSERVE`、`MUST_NOT_CALL`：
+
+- `DELAY/TIMEOUT.afterMillis` 为 1–60000，使用逻辑时钟。
+- `REPLAY` 要求精确 `bloge-replay:<id>@<revision>#sha256:<fingerprint>` 和冻结 `value`。
+- `OBSERVE` 只允许本地确定性 delegate，并必须提供 `value`。
+- `MUST_NOT_CALL` 节点一旦执行，整例失败。
+
+决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`；不可解析谓词没有 `authorSamples` 时生成 `qualityState=BLOCKED`，不会猜样本。
+
+### 5.4 证据和隐私
+
+MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案、metadata、generated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
+
+## 6. 常见失败
+
+| 现象或错误码 | 原因 | 处理 |
 | --- | --- | --- |
-| `Authorization` | 必填 | `Bearer <credential>`；身份、租户和环境由服务端解析 |
-| `X-Purpose` | 必填 | 必须与工具影响级别匹配 |
-| `MCP-Protocol-Version` | 建议 | `2026-07-28` |
-| `Mcp-Method` | 使用现代路由时必填 | 与 JSON-RPC `method` 完全一致 |
-| `Mcp-Name` | 调用工具时必填 | 与 `params.name` 完全一致 |
-| `X-Correlation-Id` | 可选 | 调用方提供的有界关联 ID；缺省时由服务端生成 |
+| `/mcp` 未连接 | 服务未启动、token 对 Codex 不可见、配置未重载 | 查 status/log，完全重启 Codex，再看 `/mcp` |
+| `UNAUTHENTICATED` / 401 | Bearer 缺失或身份解析失败 | 核对 client/server token；不要打印 token |
+| `FORBIDDEN_PURPOSE` / 400 或 403 | purpose 缺失、非法或越权 | 使用四 server 配置并检查 allowed purposes |
+| `GATE_REJECTED` / 503 | 身份/审计基础设施不可用，或生产 admission | 查日志；本地脚本应使用 environment `local` |
+| `GOLDEN_REQUIRES_APPROVAL` | GOLDEN 未人工批准 | 看板批准精确 revision，再读 case set |
+| `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
+| `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
+| `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |
+| `PUBLISH_GATE_NOT_MET` | GREEN、稳定性、签署或 fingerprint 过期 | 按 readiness.remainingLimitations 补证据 |
+| JSON-RPC `-32602` | 参数不符合当前 inputSchema | 以最新 tools/list 修正 |
+| JSON-RPC `-32603` | MCP 边界内未预期失败 | 查服务日志和 correlation ID |
 
-用途映射：
+鉴权发生在工具分派前：身份失败保留 401；purpose 缺失/非法/越权保留 400/403；身份提供方或审计不可用保留 503。响应只含稳定码和固定说明。
 
-| 工具影响 | `X-Purpose` |
-| --- | --- |
-| READ | `AGENT_TDD_READ` |
-| DRAFT_WRITE、PROPOSE | `AGENT_TDD_AUTHORING` |
-| EXECUTE | `AGENT_TDD_EXECUTION` |
-| GOVERNED_WRITE、Web 人工批准 | `AGENT_TDD_GOVERNANCE` |
+## 7. 协议探针
 
-鉴权在 JSON-RPC 分派之前失败时，MCP 边界保留集成鉴权的 HTTP 状态：身份缺失/失败为 `401`，用途缺失/非法/越权为 `400/403`，身份提供方或审计不可用为 `503`。响应只返回固定协议文案及 `error.data.code=UNAUTHENTICATED|FORBIDDEN_PURPOSE|GATE_REJECTED`；身份提供方原始文案、关联 ID 和鉴权详情不会进入响应。`401` 同时返回 `WWW-Authenticate`。
-
-发现工具：
+以下只用于诊断 server，不是日常 Agent 流程：
 
 ```bash
 curl --fail-with-body http://localhost:8081/mcp \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer replace-with-a-local-token' \
+  -H "Authorization: Bearer ${RG_MCP_TOKEN}" \
   -H 'X-Purpose: AGENT_TDD_READ' \
-  -H 'MCP-Protocol-Version: 2026-07-28' \
-  -H 'Mcp-Method: tools/list' \
+  -H 'MCP-Protocol-Version: 2025-06-18' \
   --data '{"jsonrpc":"2.0","id":"list-1","method":"tools/list","params":{}}'
 ```
 
-响应同时提供 MCP `content` 和机器可读的 `structuredContent`。服务端在调用前按 `tools/list` 公布的 `inputSchema` 校验参数，在返回前按同一工具的 `outputSchema` 校验 `structuredContent`；任一不匹配均失败关闭，且不回显被拒绝的数据。成功信封必须同时含 `ok:true`、`data`、`diagnostics`，失败信封必须同时含 `ok:false`、`error`、`diagnostics`。应用错误只返回目录内稳定码和固定说明；未预期异常折叠为固定 `-32603`，不包含底层异常、上游响应体或 fixture 载荷。
+成功响应同时提供 MCP `content` 和 `structuredContent`。服务端按公布的 `inputSchema` 校验参数、按 `outputSchema` 校验结果；不匹配时失败关闭且不回显被拒绝的数据。
 
-## 3. 五阶段工具
-
-1. 使用 `rg.capability.list`、`rg.library.get/list`、`rg.contract.get`、`rg.tool.getInstruction`、`rg.scenario.listCases`、`rg.verdict.get` 和 `rg.evidence.get` 查询状态。
-2. 使用 `rg.library.upsert`、`rg.feature.compose`、`rg.tool.compose`、`rg.tool.setInstruction` 和场景工具修改草稿。写操作必须带 `idempotencyKey`；同一 key 携带不同请求时返回 `IDEMPOTENCY_CONFLICT`。
-3. 使用 `rg.dsl.preview` 和 `rg.gate.check` 编译。`libraryRefs` 必须显式提供，编译器不会从全局目录猜测依赖。
-4. 使用 `rg.simulate`、`rg.feature.rehearse` 和 `rg.tool.baseline` 验证。RED 在模拟边界真实执行纯逻辑节点，并用 stand-in 替换 operator 调用；所有 binding 就绪后，GREEN 在同一零外呼边界验证可执行图与纯业务逻辑，依赖节点使用已批准用例行为。两侧 `realExternalCalls` 都必须为 `0`。
-5. 使用 `rg.fixture.promote`、`rg.tool.publishSpec`、`rg.readiness.get` 和 `rg.tool.publish` 完成治理与发布。
-
-GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
-
-每个成功的 `DRAFT_WRITE`/Oracle 提议响应都带四维 `honestVerdict`。它只把服务端已接受并保存规范化材料记为 `contract-syntax=PASS`；业务正确性、依赖隔离和运行时治理保持 `NOT_PROVEN`，直到相应执行证据和人工门禁实际完成。
-
-依赖桩行为统一编译到现有测试执行内核，不会回退到真实依赖：`RETURN` 返回固定值；`ERROR` 注入稳定错误；`DELAY` 和 `TIMEOUT` 使用 `afterMillis`（1–60000）及逻辑时钟；`REPLAY` 要求精确的 `bloge-replay:<id>@<revision>#sha256:<fingerprint>` 和本轮冻结的 `value`；`OBSERVE` 只观察本地确定性 delegate，必须提供 `value`；`MUST_NOT_CALL` 在节点被调用时失败。REPLAY 的内联值只用于零外呼模拟，证据保持非认证状态。
-
-决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。生成行的 `enumeration` provenance 采用严格 schema：必含 `enumerationMode`，可含 `enumerationRule`、`boundaryInput` 和固定原因 `AUTHOR_SAMPLES_REQUIRED`；写入与读取响应都按同一结构验证。
-
-`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；`cases` 的 JSON Schema 使用 `oneOf` 强制两种证据源恰选其一，禁止空对象或并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
-
-持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化先以 `SELECT ... FOR UPDATE` 锁定该 revision，再把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；即使没有 PASS 或行已经 READY，revision lock 也不会省略。READY CAS、evidence、current verdict 和归档 line 在同一数据库事务提交，任一步失败都会全部回滚。执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
-
-## 4. bindingRef 与 goldenSetId
-
-外部算子没有 `runtime.bindingRef` 时，Tool 状态为 `SPECCING`。此状态允许红侧模拟和 `rg.tool.publishSpec`，禁止绿侧发布。
-
-`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端通过一次批量目录投影物化临时可执行图，并从 `operatorSnapshots` 构造本次操作专属的只读 catalog。证据指纹、validator、simulation、DSL generator、dependency report 和发布冻结均使用这一实例，不再回读可变目录，避免检查与使用之间的目标替换竞态。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
-
-DSL 中的 `node.output.field` 会按目录声明解析到真实输出端口；单字段输入同样绑定到真实命名端口，而不是固定写入 `inputs/output` 占位端口。这样，第 5 章这类标量命名端口契约能通过同一套导入、校验、模拟和发布链路。
-
-`goldenSetId` 由 Tool 引用、Tool/算子契约指纹和排序后的 ACTIVE case ID 计算。实现绑定不参与契约指纹，因此红侧和绿侧保持同一身份；I/O 契约或用例集合变化时生成新身份。
-
-`rg.verdict.get` 默认返回当前线；传入 `{toolRef, goldenSetId}` 可读取已归档的旧线。新 `goldenSetId` 从空的 red/green 分层矩阵开始，不能继承上一组用例的通过数。
-
-GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bindingRef` 已解析后才能运行。EXECUTE 权限不会调用这些真实 binding；外部依赖继续由用例中的受控行为替换，因此 `realExternalCalls=0` 是硬约束。执行层还会独立检查 simulator 报告的 `realNodeIds`：出现任一非 `PURE` 节点即以 `SIM_REAL_CALL_DETECTED` 失败关闭。GREEN 证明“绑定齐全的可执行图在受控依赖下符合业务 Oracle”，不证明真实集成健康或生产环境治理；后两项仍在诚实结论中标为未证明。
-
-`rg.fixture.promote` 必须显式指定 `outputPort`。返回的 `sourceKind` 由服务端捕获证据派生：存在与当前草稿、节点、算子和输出一致的有效模拟捕获时为 `SCENARIO`，否则为 `SAMPLE`；客户端不能自行声明该来源。
-
-## 5. 人工评审看板
-
-打开 `http://localhost:8081/agent-tdd.html`。页面只读取 `STRUCTURE_ONLY` 投影，以输入输出字段、节点步骤、连线计数和场景生命周期表呈现 DSL 与用例结构；不显示 `given`、`expect`、fixture 或运行输出值。访问凭据只保存在当前页面的 JavaScript 内存中。
-
-看板提供以下受治理操作：
-
-- 批准 GOLDEN Oracle：`POST /api/agent-tdd/reviews/oracles/{caseSetRef}/{caseId}/approve`。
-- 批准规格发布提议：`POST /api/agent-tdd/reviews/specs/{toolRef}/approve`。
-- 签署可执行 Tool：`POST /api/agent-tdd/reviews/tools/{toolRef}/signoffs/{signoffRef}/approve`，请求体必须携带 `{draftRevision, goldenSetId, evidenceFingerprint}`。
-
-Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，原子 revision fence 拒绝批准；重新读取后再评审。签署记录精确绑定 Tool 草稿 revision、goldenSetId 和 GREEN evidenceFingerprint，任一内容变化都会使旧签署失效；同一 `signoffRef` 只允许创建一次，不能被后续批准覆盖。
-
-所有 MCP 写工具通过状态库的 `executeOnce` 边界执行：服务端先原子占用 `{scope, operation, idempotencyKey}`，业务写与成功响应在同一事务内完成，再开放精确重放。相同键与相同请求只执行一次；不同请求材料或进行中的冲突失败关闭。内存实现也以同一临界区覆盖业务动作与响应记录。
-
-## 6. 发布门禁
-
-`rg.tool.publish` 只在以下条件全部满足时创建既有 `VisualGraphPublication` 不可变发布物：
-
-- 所有库算子均有可解析、schema 相容的 `runtime.bindingRef`。
-- 最新 baseline 为 `GO`，并与当前 ACTIVE 用例计算出的 `goldenSetId` 相同。
-- 最新 baseline 明确来自 `GREEN` 侧；`RED` baseline 即使稳定通过也不能解锁发布。
-- baseline 的 `draftRevision`、`evidenceFingerprint` 必须与当前草稿、ACTIVE 用例内容、Oracle、stub、bindingRef 和当前目标实现指纹一致。
-- `signoffRef` 必须精确批准同一份 baseline；旧版本签署不能复用。
-- 既有 Visual Graph validator、lowering 和 BLOGE compiler 允许发布可执行制品。
-
-任一条件不满足时，调用返回 `PUBLISH_GATE_NOT_MET` 或更具体的稳定错误码，不创建发布物。
-
-Feature/Tool 草稿按租户和环境闭合。若其他作用域已经占用同一个草稿引用，compose 返回 `DRAFT_NOT_FOUND`，不会读取或覆盖该草稿。
-
-## 7. 验证与排查
-
-定向测试：
+## 8. 回归验证
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='com.leanowtech.bloge.gateway.agenttdd.*Test,DslImportServiceTest,GraphNodeFixturePromotionServiceTest' test
-```
+  -Dtest='AgentTddMcpOperationalWorkflowTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
+  test
 
-最终验证：
-
-```bash
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-排查顺序：
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务图、H2 持久化、资源目录、人工批准服务、零外呼模拟、baseline 和发布服务贯穿余额查询。它不会访问真实上游，也不能替代生产身份提供方、真实 PostgreSQL 迁移和发布责任人的验收证据。
 
-1. 检查响应的稳定错误码和 `X-Correlation-Id`。
-2. 检查 Bearer credential 是否由当前 identity provider 接受。
-3. 检查 `X-Purpose` 是否与工具影响级别匹配，并包含在 `RG_INTEGRATION_ALLOWED_PURPOSES` 中。
-4. 对 `LIBRARY_NOT_FOUND`，检查显式 `libraryRefs` 和 `runtime.bindingRef` 是否存在于当前 catalog。
-5. 对 `GOLDEN_REQUIRES_APPROVAL`，在看板批准目标 revision 后重新读取 case set。
-6. 对 `PUBLISH_GATE_NOT_MET`，调用 `rg.readiness.get`，按 `remainingLimitations` 逐项处理。
-7. 对依赖行为的 `SCHEMA_NONCONFORMANT`，检查 `afterMillis`、精确 `replayRef`、REPLAY/OBSERVE 的冻结 `value`。
-8. 对 JSON-RPC `-32602`，以最新 `tools/list` 的 `inputSchema` 修正参数；`-32603` 表示 schema、鉴权基础设施或工具执行在治理边界内发生未预期失败。该错误只含固定文案，应按服务端实现/基础设施缺陷处理。
+## 9. 完成判据
 
-排查期间不要记录 Bearer credential、fixture material 或业务响应体。`rg.dsl.preview` 与 `rg.gate.check` 只返回诊断的稳定码和源码坐标；底层 `message`、`metadata`、仅供执行冻结使用的 `operatorSnapshots`，以及用于内部校验的 regenerated DSL 不进入 MCP 响应。投影仍返回图结构、源码映射和 operator fingerprint，足以定位及验证所读 revision。
+1. Codex `/mcp` 显示四个最小权限 server 已连接。
+2. API binding 来自 capability discovery 和 contract，而非 Agent 猜测。
+3. GOLDEN Oracle 经人工批准，执行的是 ACTIVE 持久用例。
+4. RED 通过；GREEN baseline 为 `GO` 且业务指纹稳定。
+5. RED/GREEN 的 `realExternalCalls` 都是 `0`。
+6. 人工签署精确绑定当前 revision、goldenSetId、evidenceFingerprint。
+7. readiness 为 `publishable=true` 后才创建 `EXECUTABLE` 发布物。
+8. 内容或 catalog 漂移会使旧证据/旧签署失效。
+
+Codex 的 MCP 配置与管理方式以 [OpenAI Codex MCP 官方文档](https://learn.chatgpt.com/docs/extend/mcp) 为准；本文聚焦本仓库的工具、用途和治理顺序。
