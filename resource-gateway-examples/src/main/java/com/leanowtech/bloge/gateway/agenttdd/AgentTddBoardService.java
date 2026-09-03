@@ -55,10 +55,45 @@ public final class AgentTddBoardService {
                 .filter(asset -> "PENDING".equals(asset.data().path("status").asText()))
                 .forEach(asset -> reviews.add(Map.of("kind", "PUBLISH_SPEC", "assetRef", asset.assetRef(),
                         "revision", asset.revision(), "owner", "tool-owner")));
+        tools.stream()
+                .filter(tool -> gate(tool, "greenBaseline") && !gate(tool, "ownerSignoff"))
+                .forEach(tool -> pendingSignoff(scope, tool).ifPresent(reviews::add));
         reviews.sort(Comparator.comparing(row -> row.get("kind") + ":" + row.get("assetRef")));
         return Map.of("tools", tools, "pendingReviews", reviews,
                 "evidenceCount", states.list(scope, AgentTddWorkflowService.EVIDENCE).size(),
                 "payloadPolicy", "STRUCTURE_ONLY");
+    }
+
+    /**
+     * Projects the immutable GREEN baseline identity needed by the separate human signoff endpoint.
+     *
+     * <p>The projection contains no fixture input, expected output, provider response, or diagnostic
+     * message. It lets the browser submit the exact revision and fingerprints already visible in
+     * the governed board without letting an Agent manufacture an approval.</p>
+     */
+    private java.util.Optional<Map<String, Object>> pendingSignoff(String scope,
+                                                                   Map<String, Object> tool) {
+        String toolRef = Objects.toString(tool.get("toolRef"), "");
+        return states.find(scope, AgentTddWorkflowService.VERDICT, toolRef)
+                .map(AgentTddStoredAsset::data)
+                .map(data -> data.path("latest"))
+                .filter(latest -> "GREEN".equals(latest.path("side").asText()))
+                .filter(latest -> "GO".equals(latest.path("status").asText()))
+                .filter(latest -> latest.path("draftRevision").asLong() > 0)
+                .filter(latest -> !latest.path("goldenSetId").asText().isBlank())
+                .filter(latest -> !latest.path("evidenceFingerprint").asText().isBlank())
+                .map(latest -> Map.of(
+                        "kind", (Object) "PUBLISH_SIGNOFF",
+                        "assetRef", toolRef,
+                        "draftRevision", latest.path("draftRevision").asLong(),
+                        "goldenSetId", latest.path("goldenSetId").asText(),
+                        "evidenceFingerprint", latest.path("evidenceFingerprint").asText(),
+                        "owner", "tool-owner"));
+    }
+
+    private static boolean gate(Map<String, Object> tool, String name) {
+        Object gates = tool.get("gates");
+        return gates instanceof Map<?, ?> values && Boolean.TRUE.equals(values.get(name));
     }
 
     private Map<String, Object> toolCard(GraphDraft draft,

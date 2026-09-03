@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -56,9 +57,20 @@ class AgentTddBoardTest {
         row.putObject("proposedOracle").put("status", "PENDING").put("oracleOwner", "cx-ops")
                 .putObject("expect").put("decision", "WAIVE");
         states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", caseSet);
+        ObjectNode verdict = mapper.createObjectNode();
+        verdict.putObject("latest")
+                .put("side", "GREEN")
+                .put("status", "GO")
+                .put("draftRevision", 7)
+                .put("goldenSetId", "sha256:golden")
+                .put("evidenceFingerprint", "sha256:evidence");
+        states.save(scope(), AgentTddWorkflowService.VERDICT, "risk-tool", verdict);
         AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
         when(workflow.readiness(any(), eq(identity()))).thenReturn(Map.of(
-                "toolRef", "risk-tool", "state", "SPECCING", "gates", Map.of()));
+                "toolRef", "risk-tool", "state", "IMPLEMENTED", "goldenSetId", "sha256:golden",
+                "publishable", false,
+                "gates", Map.of("bindingsComplete", true, "greenBaseline", true, "ownerSignoff", false),
+                "remainingLimitations", List.of("OWNER_SIGNOFF_ABSENT")));
 
         Map<String, Object> board = new AgentTddBoardService(drafts, states, workflow, mapper).board(identity());
 
@@ -69,13 +81,23 @@ class AgentTddBoardTest {
             assertThat(tool.get("caseTable").toString()).contains("g1", "GOLDEN", "DRAFT")
                     .doesNotContain("expect", "given", "stubs", "WAIVE");
         });
-        assertThat((List<?>) board.get("pendingReviews")).singleElement().satisfies(value -> {
+        List<?> pendingReviews = (List<?>) board.get("pendingReviews");
+        assertThat(pendingReviews.stream()
+                .map(value -> ((Map<?, ?>) value).get("kind").toString()).toList())
+                .containsExactly("ORACLE", "PUBLISH_SIGNOFF");
+        assertThat(pendingReviews).allSatisfy(value -> {
             Map<?, ?> review = (Map<?, ?>) value;
-            assertThat(review.get("kind")).isEqualTo("ORACLE");
             assertThat(review.containsKey("expect")).isFalse();
             assertThat(review.containsKey("given")).isFalse();
             assertThat(review.containsKey("stubs")).isFalse();
         });
+        Map<?, ?> signoff = pendingReviews.stream()
+                .map(value -> (Map<?, ?>) value)
+                .filter(value -> "PUBLISH_SIGNOFF".equals(value.get("kind")))
+                .findFirst().orElseThrow();
+        assertThat(signoff.get("draftRevision")).isEqualTo(7L);
+        assertThat(signoff.get("goldenSetId")).isEqualTo("sha256:golden");
+        assertThat(signoff.get("evidenceFingerprint")).isEqualTo("sha256:evidence");
         assertThat(board).containsEntry("payloadPolicy", "STRUCTURE_ONLY");
     }
 
@@ -91,15 +113,23 @@ class AgentTddBoardTest {
         when(reviews.approveOracle("golden-1", "g1", 4, identity())).thenReturn(
                 new AgentTddStoredAsset(scope(), AgentTddMutationService.CASE_SET, "golden-1", 5,
                         "sha256:test", mapper.createObjectNode(), java.time.Instant.EPOCH));
+        when(reviews.approveToolSignoff("risk-tool", "ops-42", 7, "sha256:golden",
+                "sha256:evidence", identity())).thenReturn(
+                new AgentTddStoredAsset(scope(), AgentTddWorkflowService.SIGNOFF, "ops-42", 1,
+                        "sha256:signoff", mapper.createObjectNode(), java.time.Instant.EPOCH));
         AgentTddBoardController controller = new AgentTddBoardController(authenticator, board, reviews);
 
         controller.board(headers);
         Map<String, Object> approved = controller.approveOracle(
                 "golden-1", "g1", new AgentTddBoardController.RevisionRequest(4), headers);
+        Map<String, Object> signed = controller.approveSignoff(
+                "risk-tool", "ops-42", new AgentTddBoardController.SignoffRequest(
+                        7, "sha256:golden", "sha256:evidence"), headers);
 
         assertThat(approved).containsEntry("revision", 5L).containsEntry("status", "APPROVED");
+        assertThat(signed).containsEntry("revision", 1L).containsEntry("status", "APPROVED");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
-        verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+        verify(authenticator, times(2)).authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
     }
 
     @Test
@@ -108,7 +138,8 @@ class AgentTddBoardTest {
             assertThat(input).isNotNull();
             String html = new String(input.readAllBytes(), StandardCharsets.UTF_8);
             assertThat(html).contains("Agent TDD 看板", "STRUCTURE_ONLY", "expectedRevision",
-                            "输入 / 输出契约", "步骤", "场景表")
+                            "输入 / 输出契约", "步骤", "场景表", "PUBLISH_SIGNOFF",
+                            "/reviews/tools/", "signoffRef")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
     }

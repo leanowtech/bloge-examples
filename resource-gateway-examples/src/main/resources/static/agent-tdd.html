@@ -34,7 +34,7 @@
     <div class="panel"><h2>实现与发布门禁</h2><div id="tools" class="tools"><div class="empty">输入凭据后加载。</div></div></div>
     <div class="panel"><h2>待业务决策</h2><div id="reviews"><div class="empty">尚未加载。</div></div></div>
   </section>
-  <div class="note">看板只请求 STRUCTURE_ONLY 视图，不展示 fixture 或业务响应载荷。批准操作要求 AGENT_TDD_GOVERNANCE purpose，并携带人实际查看的精确 revision。</div>
+  <div class="note">看板只请求 STRUCTURE_ONLY 视图，不展示 fixture 或业务响应载荷。请先在授权的业务来源核对完整内容，再记录批准；操作要求 AGENT_TDD_GOVERNANCE purpose，并携带人实际查看的精确 revision 或 GREEN 基线指纹。</div>
 </main>
 <script>
   const $ = id => document.getElementById(id);
@@ -53,12 +53,25 @@
     return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="gates">${gates}</div><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>步骤 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</h3><ul>${nodes}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
   }
   async function approve(review) {
-    const oracle = review.kind === 'ORACLE';
-    const url = oracle ? `/api/agent-tdd/reviews/oracles/${encodeURIComponent(review.assetRef)}/${encodeURIComponent(review.caseId)}/approve` : `/api/agent-tdd/reviews/specs/${encodeURIComponent(review.assetRef)}/approve`;
-    await request(url,{method:'POST',headers:headers('AGENT_TDD_GOVERNANCE'),body:JSON.stringify({expectedRevision:review.revision})}); await load();
+    let url, body;
+    if (review.kind === 'ORACLE') {
+      url=`/api/agent-tdd/reviews/oracles/${encodeURIComponent(review.assetRef)}/${encodeURIComponent(review.caseId)}/approve`;
+      body={expectedRevision:review.revision};
+    } else if (review.kind === 'PUBLISH_SPEC') {
+      url=`/api/agent-tdd/reviews/specs/${encodeURIComponent(review.assetRef)}/approve`;
+      body={expectedRevision:review.revision};
+    } else if (review.kind === 'PUBLISH_SIGNOFF') {
+      const signoffRef=window.prompt('输入外部评审单或变更单编号（signoffRef）');
+      if (!signoffRef?.trim()) return;
+      url=`/api/agent-tdd/reviews/tools/${encodeURIComponent(review.assetRef)}/signoffs/${encodeURIComponent(signoffRef.trim())}/approve`;
+      body={draftRevision:review.draftRevision,goldenSetId:review.goldenSetId,evidenceFingerprint:review.evidenceFingerprint};
+    } else { throw new Error(`不支持的评审类型：${review.kind}`); }
+    await request(url,{method:'POST',headers:headers('AGENT_TDD_GOVERNANCE'),body:JSON.stringify(body)}); await load();
   }
   function renderReview(review,index) {
-    return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(review.revision)} · owner ${esc(review.owner)}</div><button data-review="${index}">批准</button></div>`;
+    const revision=review.revision ?? review.draftRevision ?? '—';
+    const baseline=review.kind==='PUBLISH_SIGNOFF'?`<div class="meta">golden ${esc(review.goldenSetId)} · evidence ${esc(review.evidenceFingerprint)}</div>`:'';
+    return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(revision)} · owner ${esc(review.owner)}</div>${baseline}<button data-review="${index}">记录已批准</button></div>`;
   }
   async function load() {
     $('error').textContent='';
