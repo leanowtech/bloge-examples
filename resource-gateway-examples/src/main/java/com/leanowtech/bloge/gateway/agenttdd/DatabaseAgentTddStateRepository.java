@@ -82,7 +82,7 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         jdbc.queryForObject("""
                 SELECT COUNT(*) FROM agent_tdd_idempotency
                  WHERE scope_key = ? AND operation = ? AND idempotency_key = ? AND completed = FALSE
-                """, Long.class, "", "");
+                """, Long.class, "", "", "");
     }
 
     @Override

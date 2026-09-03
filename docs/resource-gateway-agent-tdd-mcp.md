@@ -280,13 +280,13 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='AgentTddMcpOperationalWorkflowTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
+  -Dtest='AgentTddMcpOperationalWorkflowTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
   test
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、baseline 和发布服务贯穿余额查询。它不会访问真实上游，也不能替代生产身份提供方、真实 PostgreSQL 和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、baseline 和发布服务贯穿余额查询。`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。两者都不会访问真实业务上游，也不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 
