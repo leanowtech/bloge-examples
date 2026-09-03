@@ -8,6 +8,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -29,14 +32,28 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final OperatorLibraryRegistry libraries;
     private final GraphDraftRepository drafts;
     private final ObjectMapper mapper;
+    private final AgentTddExecutionService execution;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
+        this(libraries, drafts, mapper, null, null);
+    }
+
+    /** Creates the fully wired facade with contract-aware DSL and simulation services. */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.execution = projection == null || simulation == null
+                ? null
+                : new AgentTddExecutionService(libraries, drafts, projection, simulation, mapper);
     }
 
     /**
@@ -51,7 +68,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     public Object invoke(String name, JsonNode arguments, IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity");
         JsonNode safeArguments = arguments == null ? mapper.createObjectNode() : arguments;
-        return switch (name) {
+        try {
+            return switch (name) {
             case "rg.capability.list" -> success(capabilities(safeArguments, identity));
             case "rg.library.get" -> library(safeArguments);
             case "rg.library.list" -> success(Map.of("libraries", librarySummaries()));
@@ -65,8 +83,16 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.evidence.get" -> failure(
                     "DRAFT_NOT_FOUND", "No evidence exists for the requested reference.");
             case "rg.readiness.get" -> readiness(safeArguments, identity);
+            case "rg.dsl.preview" -> executionSuccess(execution().preview(safeArguments));
+            case "rg.gate.check" -> executionSuccess(execution().gate(safeArguments));
+            case "rg.simulate" -> executionSuccess(execution().simulate(safeArguments, identity));
+            case "rg.feature.rehearse" -> executionSuccess(execution().rehearse(safeArguments, identity));
+            case "rg.tool.baseline" -> executionSuccess(execution().baseline(safeArguments, identity));
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");
-        };
+            };
+        } catch (AgentTddToolException failure) {
+            return failure(failure.code(), failure.getMessage());
+        }
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {
@@ -253,6 +279,17 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
 
     private static Map<String, Object> success(Object data) {
         return Map.of("ok", true, "data", data, "diagnostics", List.of());
+    }
+
+    private static Map<String, Object> executionSuccess(Object data) {
+        return success(data);
+    }
+
+    private AgentTddExecutionService execution() {
+        if (execution == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "Agent execution services are unavailable.");
+        }
+        return execution;
     }
 
     private static Map<String, Object> failure(String code, String message) {

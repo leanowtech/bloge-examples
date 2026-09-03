@@ -76,7 +76,8 @@ public final class McpToolCatalog {
                 List.of("featureRef", "libraryRefs", "cases")));
         values.add(tool("rg.tool.baseline", "Baseline tool", "Run multi-case, multi-round business baseline.",
                 McpToolImpact.EXECUTE,
-                props("toolRef", string(), "libraryRefs", stringArray(), "caseSetRef", string(), "rounds", integer()),
+                props("toolRef", string(), "libraryRefs", stringArray(), "caseSetRef", string(), "cases", object(),
+                        "rounds", integer(), "side", string()),
                 List.of("toolRef", "libraryRefs", "caseSetRef")));
         values.add(tool("rg.simulate", "Simulate", "Run one side of the red-to-green line with honest evidence.",
                 McpToolImpact.EXECUTE,
@@ -139,7 +140,7 @@ public final class McpToolCatalog {
     }
 
     private static Map<String, Object> previewProperties() {
-        return props("source", object(), "libraryRefs", stringArray());
+        return props("source", Map.of("oneOf", List.of(string(), object())), "libraryRefs", stringArray());
     }
 
     private static Map<String, Object> schema(Map<String, Object> properties, List<String> required) {
