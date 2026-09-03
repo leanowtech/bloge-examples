@@ -224,7 +224,18 @@ public final class McpToolCatalog {
                 "intent", string(), "oracleOwner", string(), "sourceRunRef", string(),
                 "lifecycle", enumString("DRAFT", "ACTIVE", "STALE", "RETIRED"),
                 "qualityState", enumString("DESIGNED_NOT_RUN", "READY", "STALE", "BLOCKED"),
-                "proposedOracle", businessObject()), List.of("caseId", "given", "stubs"));
+                "proposedOracle", businessObject(), "enumeration", enumerationProvenance()),
+                List.of("caseId", "given", "stubs"));
+    }
+
+    /** Describes only the server-owned provenance emitted by decision-table enumeration. */
+    private static Map<String, Object> enumerationProvenance() {
+        return structuredObject(props(
+                "enumerationMode", enumString("per-rule", "combinatorial", "opaque"),
+                "enumerationRule", string(),
+                "boundaryInput", string(),
+                "reason", enumString("AUTHOR_SAMPLES_REQUIRED")),
+                List.of("enumerationMode"));
     }
 
     private static Map<String, Object> caseRows() { return arrayOf(caseRow()); }

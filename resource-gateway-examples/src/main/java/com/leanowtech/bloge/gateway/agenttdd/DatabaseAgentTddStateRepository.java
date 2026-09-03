@@ -132,6 +132,13 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         return new AgentTddStoredAsset(scopeKey, kind, assetRef, revision, fingerprint, data, now);
     }
 
+    /** Runs a multi-asset state transition in the caller-visible database transaction. */
+    @Override
+    @Transactional
+    public <T> T executeAtomically(Supplier<T> action) {
+        return action.get();
+    }
+
     @Override
     public Optional<JsonNode> replay(String scopeKey,
                                      String operation,

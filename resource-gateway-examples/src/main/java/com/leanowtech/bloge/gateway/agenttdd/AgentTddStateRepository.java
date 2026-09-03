@@ -35,6 +35,16 @@ public interface AgentTddStateRepository {
                                        JsonNode data);
 
     /**
+     * Executes a group of related state mutations as one atomic unit.
+     *
+     * <p>Durable implementations must roll back every mutation when the action fails. This fence is
+     * used when one case-set CAS and its evidence/verdict projections must commit together.</p>
+     */
+    default <T> T executeAtomically(Supplier<T> action) {
+        return action.get();
+    }
+
+    /**
      * Replays the exact response for a matching idempotency request.
      *
      * @throws AgentTddToolException when the key was already used for different request material

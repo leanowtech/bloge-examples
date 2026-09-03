@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,6 +54,22 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
                         data, MAX_BYTES), data, Instant.now());
         assets.put(assetKey(scopeKey, kind, assetRef), stored);
         return stored;
+    }
+
+    /** Preserves production rollback semantics for local composition and focused tests. */
+    @Override
+    public synchronized <T> T executeAtomically(Supplier<T> action) {
+        Map<String, AgentTddStoredAsset> assetSnapshot = new LinkedHashMap<>(assets);
+        Map<String, IdempotencyEntry> idempotencySnapshot = new LinkedHashMap<>(idempotency);
+        try {
+            return action.get();
+        } catch (RuntimeException | Error failure) {
+            assets.clear();
+            assets.putAll(assetSnapshot);
+            idempotency.clear();
+            idempotency.putAll(idempotencySnapshot);
+            throw failure;
+        }
     }
 
     @Override

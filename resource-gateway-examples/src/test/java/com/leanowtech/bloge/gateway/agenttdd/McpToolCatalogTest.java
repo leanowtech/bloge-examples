@@ -72,7 +72,10 @@ class McpToolCatalogTest {
         Map<?, ?> row = (Map<?, ?>) ((Map<?, ?>) dataProperties(
                 catalog.require("rg.scenario.listCases")).get("rows")).get("items");
         assertThat(stringKeys((Map<?, ?>) row.get("properties"))).contains(
-                "lifecycle", "qualityState", "sourceRunRef");
+                "lifecycle", "qualityState", "sourceRunRef", "enumeration");
+        Map<?, ?> enumeration = (Map<?, ?>) ((Map<?, ?>) row.get("properties")).get("enumeration");
+        assertThat(stringKeys((Map<?, ?>) enumeration.get("properties"))).containsExactlyInAnyOrder(
+                "enumerationMode", "enumerationRule", "boundaryInput", "reason");
     }
 
     @Test

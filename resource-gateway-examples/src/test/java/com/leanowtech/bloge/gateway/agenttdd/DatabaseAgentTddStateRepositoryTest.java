@@ -8,6 +8,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 
 import java.util.Map;
 
@@ -92,5 +96,27 @@ class DatabaseAgentTddStateRepositoryTest {
 
         assertThat(first).isEqualTo(replay);
         assertThat(replay.path("publicationId").asText()).isEqualTo("pub-1");
+    }
+
+    @Test
+    void executeAtomicallyRollsBackEveryAssetWriteWhenTheUnitFails() {
+        ProxyFactory factory = new ProxyFactory();
+        factory.setInterfaces(AgentTddStateRepository.class);
+        factory.setTarget(repository);
+        factory.addAdvice(new TransactionInterceptor(
+                new DataSourceTransactionManager(database),
+                new AnnotationTransactionAttributeSource()));
+        AgentTddStateRepository transactional = (AgentTddStateRepository) factory.getProxy();
+
+        assertThatThrownBy(() -> transactional.executeAtomically(() -> {
+            transactional.save("tenant-a|test", "CASE_SET", "cases-rollback",
+                    mapper.valueToTree(Map.of("qualityState", "READY")));
+            transactional.save("tenant-a|test", "EVIDENCE", "evidence-rollback",
+                    mapper.valueToTree(Map.of("side", "GREEN")));
+            throw new IllegalStateException("commit fence failed");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(repository.find("tenant-a|test", "CASE_SET", "cases-rollback")).isEmpty();
+        assertThat(repository.find("tenant-a|test", "EVIDENCE", "evidence-rollback")).isEmpty();
     }
 }

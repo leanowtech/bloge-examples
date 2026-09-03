@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
+import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
 import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
@@ -175,6 +176,34 @@ class AgentTddExecutionServiceTest {
         assertThat(preview).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
         assertThat(gate).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
         assertThat(preview).contains("visual.dslImport.parseFailed", "sourceMap");
+    }
+
+    @Test
+    void previewRemovesDiagnosticsNestedInsideOperatorSnapshots() {
+        OperatorDefinition original = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")
+                .operators().getFirst();
+        OperatorDefinition leaky = new OperatorDefinition(
+                original.schemaVersion(), original.operatorRef(), original.operatorVersion(), original.display(),
+                original.source(), original.ports(), original.configSchema(), original.capabilities(),
+                original.policy(), original.lowering(), List.of(VisualDiagnostic.error(
+                "visual.operator.secret", "customer-secret", "/operator",
+                Map.of("actual", "provider-secret"))));
+        GraphDraft draft = new GraphDraft(GraphDraft.SCHEMA_VERSION, "secret-tool", 1, "secretTool",
+                "demo-tenant", "project-a", "local", GraphDraft.STATUS_DRAFT,
+                com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope.opaque(),
+                com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope.opaque(),
+                List.of(), List.of(), Map.of(), Map.of(), GraphDraft.OutputSelection.empty(),
+                Map.of("node", leaky.fingerprint()), Map.of("node", leaky),
+                GraphDraft.RevisionMetadata.empty());
+        DslVisualProjection projection = new DslVisualProjection("", "secret.bloge", draft,
+                null, null, null, List.of());
+
+        JsonNode safe = mapper.valueToTree(AgentTddExecutionService.safeProjection(projection));
+
+        assertThat(safe.at("/draft/operatorSnapshots").isEmpty()).isTrue();
+        assertThat(safe.toString()).doesNotContain(
+                "customer-secret", "provider-secret", "message", "metadata");
+        assertThat(safe.at("/draft/operatorFingerprints/node").asText()).isEqualTo(leaky.fingerprint());
     }
 
     @Test

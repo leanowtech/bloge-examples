@@ -467,11 +467,11 @@ public final class AgentTddExecutionService {
      * messages can interpolate parser fragments or runtime values, so only stable codes and
      * coordinates cross the Agent protocol boundary.</p>
      */
-    private static Map<String, Object> safeProjection(DslVisualProjection projection) {
+    static Map<String, Object> safeProjection(DslVisualProjection projection) {
         return Map.of(
                 "schemaVersion", projection.schemaVersion(),
                 "sourceId", projection.sourceId(),
-                "draft", projection.draft(),
+                "draft", projection.draft().withOperatorSnapshots(Map.of()),
                 "sourceMap", projection.sourceMap(),
                 "coverage", projection.coverage(),
                 "roundTrip", safeRoundTrip(projection.roundTrip()),

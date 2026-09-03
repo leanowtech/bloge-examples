@@ -44,6 +44,8 @@ MCP 入口为 `POST /mcp`。现代无状态请求使用协议版本 `2026-07-28`
 | EXECUTE | `AGENT_TDD_EXECUTION` |
 | GOVERNED_WRITE、Web 人工批准 | `AGENT_TDD_GOVERNANCE` |
 
+鉴权在 JSON-RPC 分派之前失败时，MCP 边界保留 HTTP `401/403`，并只返回固定协议文案及 `error.data.code=UNAUTHENTICATED|FORBIDDEN_PURPOSE`；身份提供方原始文案、关联 ID 和鉴权详情不会进入响应。`401` 同时返回 `WWW-Authenticate`。
+
 发现工具：
 
 ```bash
@@ -72,11 +74,11 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 依赖桩行为统一编译到现有测试执行内核，不会回退到真实依赖：`RETURN` 返回固定值；`ERROR` 注入稳定错误；`DELAY` 和 `TIMEOUT` 使用 `afterMillis`（1–60000）及逻辑时钟；`REPLAY` 要求精确的 `bloge-replay:<id>@<revision>#sha256:<fingerprint>` 和本轮冻结的 `value`；`OBSERVE` 只观察本地确定性 delegate，必须提供 `value`；`MUST_NOT_CALL` 在节点被调用时失败。REPLAY 的内联值只用于零外呼模拟，证据保持非认证状态。
 
-决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。
+决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。生成行的 `enumeration` provenance 采用严格 schema：必含 `enumerationMode`，可含 `enumerationRule`、`boundaryInput` 和固定原因 `AUTHOR_SAMPLES_REQUIRED`；写入与读取响应都按同一结构验证。
 
 `rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；`cases` 的 JSON Schema 使用 `oneOf` 强制两种证据源恰选其一，禁止空对象或并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
-持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化只允许以该 revision 做 CAS，把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
+持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化只允许以该 revision 做 CAS，把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；READY CAS、evidence、current verdict 和归档 line 在同一数据库事务提交，任一步失败都会全部回滚。执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
 
 ## 4. bindingRef 与 goldenSetId
 
@@ -149,4 +151,4 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 7. 对依赖行为的 `SCHEMA_NONCONFORMANT`，检查 `afterMillis`、精确 `replayRef`、REPLAY/OBSERVE 的冻结 `value`。
 8. 对 JSON-RPC `-32602`，以最新 `tools/list` 的 `inputSchema` 修正参数；`-32603` 表示服务端结果与其公布的 `outputSchema` 不一致，应作为实现缺陷处理。
 
-排查期间不要记录 Bearer credential、fixture material 或业务响应体。`rg.dsl.preview` 与 `rg.gate.check` 只返回诊断的稳定码和源码坐标；底层 `message`、`metadata` 以及用于内部校验的 regenerated DSL 不进入 MCP 响应。
+排查期间不要记录 Bearer credential、fixture material 或业务响应体。`rg.dsl.preview` 与 `rg.gate.check` 只返回诊断的稳定码和源码坐标；底层 `message`、`metadata`、仅供执行冻结使用的 `operatorSnapshots`，以及用于内部校验的 regenerated DSL 不进入 MCP 响应。投影仍返回图结构、源码映射和 operator fingerprint，足以定位及验证所读 revision。

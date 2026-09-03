@@ -89,6 +89,14 @@ public final class AgentTddWorkflowService {
                                               JsonNode arguments,
                                               Map<String, Object> result,
                                               IntegrationRequestContext identity) {
+        return states.executeAtomically(() -> recordEvidenceAtomically(operation, arguments, result, identity));
+    }
+
+    /** Performs the case revision fence and all derived evidence writes inside one store transaction. */
+    private Map<String, Object> recordEvidenceAtomically(String operation,
+                                                         JsonNode arguments,
+                                                         Map<String, Object> result,
+                                                         IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
         markPassingCasesReady(result, identity);
         ObjectNode evidence = mapper.createObjectNode();

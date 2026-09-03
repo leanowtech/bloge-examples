@@ -3,12 +3,18 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -134,6 +140,65 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void acceptsRowsProducedByTheRealDecisionScenarioEnumerator() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))
+                .thenReturn(identity());
+        GraphDraft draft = decisionDraft();
+        List<com.fasterxml.jackson.databind.node.ObjectNode> rows =
+                new AgentTddDecisionScenarioEnumerator(mapper).enumerate(draft, mapper.valueToTree(Map.of(
+                        "decisionTableRef", "policy", "mode", "combinatorial", "maxCases", 3)));
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of(
+                        "ok", true,
+                        "data", Map.of("caseSetRef", "cancel-boundaries", "revision", 1,
+                                "rows", rows, "enumeratedCount", rows.size()),
+                        "diagnostics", List.of()));
+
+        JsonNode response = controller.exchange(request(17, "tools/call", Map.of(
+                        "name", "rg.scenario.upsertCases", "arguments", Map.of(
+                                "caseSetRef", "cancel-boundaries", "toolRef", "cancel-tool",
+                                "rows", List.of(), "enumerateFrom", Map.of(
+                                        "decisionTableRef", "policy", "mode", "combinatorial", "maxCases", 3),
+                                "idempotencyKey", "enum-1"))),
+                modernHeaders("tools/call", "rg.scenario.upsertCases")).getBody();
+
+        assertThat(response.path("result").path("isError").asBoolean()).isFalse();
+        assertThat(response.at("/result/structuredContent/data/rows/0/enumeration/enumerationMode").asText())
+                .isEqualTo("combinatorial");
+    }
+
+    @Test
+    void mapsAuthenticationAndPurposeFailuresToStablePayloadFreeRpcErrors() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenThrow(new IntegrationProblemException(IntegrationProblem.unauthorized(
+                        "RG.INTEGRATION.AUTHENTICATION_FAILED", "credential customer-secret rejected",
+                        "corr-secret", Map.of("token", "customer-secret"))))
+                .thenThrow(new IntegrationProblemException(IntegrationProblem.forbidden(
+                        "RG.INTEGRATION.PURPOSE_FORBIDDEN", "purpose provider-secret rejected",
+                        "corr-secret", Map.of("operation", "provider-secret"))));
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of());
+
+        ResponseEntity<JsonNode> unauthenticated = controller.exchange(
+                request(18, "tools/list", Map.of()), modernHeaders("tools/list", null));
+        ResponseEntity<JsonNode> forbidden = controller.exchange(
+                request(19, "tools/list", Map.of()), modernHeaders("tools/list", null));
+
+        assertThat(unauthenticated.getStatusCode().value()).isEqualTo(401);
+        assertThat(unauthenticated.getHeaders().getFirst(HttpHeaders.WWW_AUTHENTICATE)).isNotBlank();
+        assertThat(unauthenticated.getBody().at("/error/data/code").asText()).isEqualTo("UNAUTHENTICATED");
+        assertThat(forbidden.getStatusCode().value()).isEqualTo(403);
+        assertThat(forbidden.getBody().at("/error/data/code").asText()).isEqualTo("FORBIDDEN_PURPOSE");
+        assertThat(unauthenticated.getBody().toString()).doesNotContain("customer-secret", "corr-secret", "token");
+        assertThat(forbidden.getBody().toString()).doesNotContain(
+                "provider-secret", "corr-secret", "\"operation\":");
+    }
+
+    @Test
     void rejectsModernRequestWhenRoutingHeadersDisagreeWithBody() {
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
@@ -183,6 +248,17 @@ class McpProtocolControllerTest {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_EXECUTE", "corr-1");
+    }
+
+    private static GraphDraft decisionDraft() {
+        return new GraphDraft(GraphDraft.SCHEMA_VERSION, "cancel-tool", 1, "cancelTool",
+                "tenant-a", "project-a", "test", GraphDraft.STATUS_DRAFT,
+                SchemaEnvelope.opaque(), SchemaEnvelope.opaque(), List.of(new GraphDraft.DraftNode(
+                "policy", "bloge:decisionTable", "Policy", Map.of(), Map.of(
+                "rules", List.of(Map.of("id", "R4", "conditions", Map.of(
+                        "seconds", "seconds <= 120"), "output", Map.of("decision", "WAIVE_FULL")))), null)),
+                List.of(), Map.of(), Map.of(), new GraphDraft.OutputSelection("policy", ""),
+                Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty());
     }
 
     private static final class McpToolControllerProbe implements McpToolInvoker {

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -77,6 +79,8 @@ public final class McpProtocolController {
             return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
         } catch (McpProtocolException failure) {
             return protocolFailure(failure, id);
+        } catch (IntegrationProblemException failure) {
+            return authenticationFailure(failure.problem(), id);
         }
     }
 
@@ -95,6 +99,46 @@ public final class McpProtocolController {
                 "message", failure.getMessage()
         )));
         return ResponseEntity.badRequest().header(HttpHeaders.CACHE_CONTROL, "no-store").body(response);
+    }
+
+    /**
+     * Maps integration authentication failures to a payload-free JSON-RPC boundary.
+     *
+     * <p>The integration authority retains its HTTP status and audit record, while callers see only
+     * the Agent TDD stable code. Provider messages, correlation material and authorization details
+     * never cross the MCP response boundary.</p>
+     */
+    private ResponseEntity<JsonNode> authenticationFailure(IntegrationProblem problem, JsonNode id) {
+        String stableCode = stableAuthenticationCode(problem);
+        String safeMessage = switch (stableCode) {
+            case "UNAUTHENTICATED" -> "Authentication is required.";
+            case "FORBIDDEN_PURPOSE" -> "The authenticated purpose does not authorize this operation.";
+            default -> "Authentication could not be completed inside the governed boundary.";
+        };
+        int rpcCode = switch (stableCode) {
+            case "UNAUTHENTICATED" -> -32001;
+            case "FORBIDDEN_PURPOSE" -> -32003;
+            default -> -32603;
+        };
+        ObjectNode response = mapper.createObjectNode();
+        response.put("jsonrpc", "2.0");
+        response.set("id", id == null ? mapper.nullNode() : id);
+        response.set("error", mapper.valueToTree(Map.of(
+                "code", rpcCode,
+                "message", safeMessage,
+                "data", Map.of("code", stableCode, "retryable", problem.retryable()))));
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(problem.status())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store");
+        if (problem.status() == 401) {
+            builder.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"resource-gateway-integration\"");
+        }
+        return builder.body(response);
+    }
+
+    private static String stableAuthenticationCode(IntegrationProblem problem) {
+        if (problem.status() == 401) return "UNAUTHENTICATED";
+        if (problem.status() == 403 || problem.code().contains("PURPOSE")) return "FORBIDDEN_PURPOSE";
+        return "GATE_REJECTED";
     }
 
     private Object callTool(JsonNode params, HttpHeaders headers) {

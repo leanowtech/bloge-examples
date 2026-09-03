@@ -27,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 /** Proves durable evidence identity and fail-closed publication governance. */
@@ -203,6 +205,36 @@ class AgentTddWorkflowServiceTest {
         assertThat(states.find(scope(), AgentTddMutationService.CASE_SET, "golden-1")
                 .orElseThrow().data().at("/rows/0/qualityState").asText())
                 .isEqualTo("DESIGNED_NOT_RUN");
+    }
+
+    @Test
+    void rollsBackReadyTransitionWhenAFollowingEvidenceWriteFails() {
+        states = spy(new InMemoryAgentTddStateRepository());
+        doAnswer(invocation -> {
+            if (AgentTddWorkflowService.EVIDENCE.equals(invocation.getArgument(1))) {
+                throw new IllegalStateException("simulated durable evidence failure");
+            }
+            return invocation.callRealMethod();
+        }).when(states).save(any(), any(), any(), any());
+        service = new AgentTddWorkflowService(states, drafts, fixtures,
+                runner, mock(VisualOperatorCatalog.class), publications, mapper);
+        AgentTddStoredAsset cases = states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1",
+                json(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE",
+                        "qualityState", "DESIGNED_NOT_RUN")))));
+
+        assertThatThrownBy(() -> service.recordEvidence(
+                "rg.simulate", json(Map.of("toolRef", "risk-tool")), Map.of(
+                        "goldenSetId", "sha256:rollback", "caseSetRef", "golden-1",
+                        "caseSetRevision", cases.revision(), "side", "GREEN",
+                        "cases", List.of(Map.of("caseId", "g1", "verdict", "GREEN_PASS")),
+                        "realExternalCalls", 0), identity()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("evidence failure");
+        assertThat(states.find(scope(), AgentTddMutationService.CASE_SET, "golden-1")
+                .orElseThrow().data().at("/rows/0/qualityState").asText())
+                .isEqualTo("DESIGNED_NOT_RUN");
+        assertThat(states.list(scope(), AgentTddWorkflowService.EVIDENCE)).isEmpty();
     }
 
     @Test
