@@ -199,6 +199,24 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void foldsUnexpectedPreDispatchFailuresWithoutReflectingTheirMaterial() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenThrow(new IllegalStateException("identity-provider customer-secret"));
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of());
+
+        JsonNode response = controller.exchange(
+                request(20, "tools/list", Map.of()), modernHeaders("tools/list", null)).getBody();
+
+        assertThat(response.at("/error/code").asInt()).isEqualTo(-32603);
+        assertThat(response.at("/error/message").asText())
+                .isEqualTo("MCP request failed inside the governed boundary");
+        assertThat(response.toString()).doesNotContain("identity-provider", "customer-secret");
+    }
+
+    @Test
     void rejectsModernRequestWhenRoutingHeadersDisagreeWithBody() {
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),

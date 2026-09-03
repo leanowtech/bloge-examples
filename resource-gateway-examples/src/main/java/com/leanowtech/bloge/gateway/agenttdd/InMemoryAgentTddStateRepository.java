@@ -72,6 +72,16 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
         }
     }
 
+    /** Reads the revision while the enclosing synchronized atomic unit excludes concurrent writes. */
+    @Override
+    public synchronized AgentTddStoredAsset lockRevision(String scopeKey,
+                                                         String kind,
+                                                         String assetRef,
+                                                         long expectedRevision) {
+        return AgentTddStateRepository.super.lockRevision(
+                scopeKey, kind, assetRef, expectedRevision);
+    }
+
     @Override
     public Optional<JsonNode> replay(String scopeKey,
                                      String operation,

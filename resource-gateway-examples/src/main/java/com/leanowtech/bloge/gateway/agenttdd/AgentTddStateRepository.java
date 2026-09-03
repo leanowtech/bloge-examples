@@ -45,6 +45,24 @@ public interface AgentTddStateRepository {
     }
 
     /**
+     * Reads and locks one exact asset revision until the surrounding atomic unit completes.
+     *
+     * <p>The lock is required even when the caller has no state change to make: a failed or already
+     * READY execution still must not persist evidence for a case set edited concurrently.</p>
+     *
+     * @throws AgentTddToolException when the asset is absent or its revision differs
+     */
+    default AgentTddStoredAsset lockRevision(String scopeKey,
+                                             String kind,
+                                             String assetRef,
+                                             long expectedRevision) {
+        return find(scopeKey, kind, assetRef)
+                .filter(asset -> asset.revision() == expectedRevision)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "GATE_REJECTED", "Asset changed after the executed revision."));
+    }
+
+    /**
      * Replays the exact response for a matching idempotency request.
      *
      * @throws AgentTddToolException when the key was already used for different request material

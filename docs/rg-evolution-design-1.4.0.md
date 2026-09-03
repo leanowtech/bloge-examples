@@ -353,7 +353,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 { "ok": true,  "data": {}, "diagnostics": [ {"level":"ERROR|WARNING|INFO","code":"","target":"","line":0,"column":0} ] }
 { "ok": false, "error": { "code":"", "message":"(无外部响应体/业务载荷)", "retryable": false, "details": {} } }
 ```
-诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。`tools/call` 在调用前、返回前分别强制执行其公布的 input/output schema；成功必须含 data，失败必须含 error，未预期异常统一折叠为固定协议错误，不回显校验或异常材料。决策表生成行的 `enumeration` provenance 也纳入严格 case-row schema。鉴权失败在分派前折叠为 `401/403` JSON-RPC 错误，只暴露 `UNAUTHENTICATED/FORBIDDEN_PURPOSE`，不回显身份提供方材料。`dsl.preview`/`gate.check` 的投影同样移除底层 message、metadata、内部 regenerated DSL 和可能嵌套原始诊断的 operatorSnapshots，只保留 operator fingerprint。
+诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。`tools/call` 在调用前、返回前分别强制执行其公布的 input/output schema；成功必须含 data，失败必须含 error。MCP exchange 最外层覆盖路由、鉴权、schema 校验、工具调用与响应组装，未预期异常统一折叠为固定 `-32603`，不回显校验或异常材料。决策表生成行的 `enumeration` provenance 也纳入严格 case-row schema。身份或用途拒绝在分派前保留集成鉴权的 `400/401/403`，只暴露 `UNAUTHENTICATED/FORBIDDEN_PURPOSE`；身份提供方/审计不可用保留 `503` 并折叠为 `GATE_REJECTED`，均不回显下层材料。`dsl.preview`/`gate.check` 的投影同样移除底层 message、metadata、内部 regenerated DSL 和可能嵌套原始诊断的 operatorSnapshots，只保留 operator fingerprint。
 **稳定错误码目录**：`UNAUTHENTICATED` / `FORBIDDEN_PURPOSE` / `DRAFT_NOT_FOUND` / `LIBRARY_NOT_FOUND` / `COMPILE_ERROR` / `GATE_REJECTED` / `SPECCING_NOT_EXECUTABLE`（设计态不可真跑/发布）/ `GOLDEN_REQUIRES_APPROVAL` / `IDEMPOTENCY_CONFLICT` / `SCHEMA_NONCONFORMANT` / `AMBIGUOUS_OUTPUT_PORT` / `RETENTION_POLICY_VIOLATION` / `EGRESS_NOT_ALLOWED` / `PUBLISH_GATE_NOT_MET` / `SIM_REAL_CALL_DETECTED`（模拟中检测到真实外呼，失败关闭）/ `COMBINATORIAL_CAP_EXCEEDED`。
 
 **代表性工具完整 in/out**（其余同信封，I/O 见 4.5）：
@@ -425,7 +425,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 contractFingerprint = stableHash( 工具 I/O 契约 + 所有被引算子契约(archetype/input/output) )   // 不含 bindingRef 指向的实现
 goldenSetId         = stableHash( toolRef + contractFingerprint + sortedSet(caseIds) )
 ```
-实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线，但旧 GREEN 证据与人工签署失效；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线按 `{toolRef,goldenSetId}` 归档可查，矩阵不继承）。证据指纹另含草稿 revision、Oracle/stub 语义和每个 bindingRef 当前解析出的目标实现指纹。GREEN/发布先批量解析 binding，再由物化图的 `operatorSnapshots` 建立本次操作的不可变 catalog；指纹、校验、模拟、DSL 生成、依赖报告和冻结发布物共享该视图。通过的 ACTIVE 行只在执行所得 `caseSetRevision` 仍匹配时以 CAS 推进为 `qualityState=READY`；READY CAS、evidence、current verdict 和归档 line 必须在同一事务提交，失败整体回滚。该运营状态不参与证据语义指纹。
+实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线，但旧 GREEN 证据与人工签署失效；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线按 `{toolRef,goldenSetId}` 归档可查，矩阵不继承）。证据指纹另含草稿 revision、Oracle/stub 语义和每个 bindingRef 当前解析出的目标实现指纹。GREEN/发布先批量解析 binding，再由物化图的 `operatorSnapshots` 建立本次操作的不可变 catalog；指纹、校验、模拟、DSL 生成、依赖报告和冻结发布物共享该视图。证据事务必须先以 `SELECT ... FOR UPDATE` 锁定执行所得 `caseSetRevision`，无 PASS 或已 READY 时也不跳过；随后才把通过的 ACTIVE 行以 CAS 推进为 `qualityState=READY`，并连同 evidence、current verdict 和归档 line 一次提交，失败整体回滚。该运营状态不参与证据语义指纹。
 
 **工具实现就绪状态机**：
 ```

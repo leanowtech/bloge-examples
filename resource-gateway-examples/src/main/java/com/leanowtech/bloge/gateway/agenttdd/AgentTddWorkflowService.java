@@ -413,12 +413,9 @@ public final class AgentTddWorkflowService {
                 passing.add(row.path("caseId").asText());
             }
         });
-        AgentTddStoredAsset current = states.find(
-                scope(identity), AgentTddMutationService.CASE_SET, resolvedCaseSetRef).orElse(null);
-        if (current == null || current.revision() != executedRevision) {
-            throw new AgentTddToolException(
-                    "GATE_REJECTED", "Case set changed after execution and before evidence persistence.");
-        }
+        AgentTddStoredAsset current = states.lockRevision(
+                scope(identity), AgentTddMutationService.CASE_SET,
+                resolvedCaseSetRef, executedRevision);
         if (passing.isEmpty()) return;
         ObjectNode data = (ObjectNode) current.data().deepCopy();
         boolean[] changed = {false};

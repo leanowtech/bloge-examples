@@ -30,6 +30,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /** Proves durable evidence identity and fail-closed publication governance. */
 class AgentTddWorkflowServiceTest {
@@ -235,6 +236,27 @@ class AgentTddWorkflowServiceTest {
                 .orElseThrow().data().at("/rows/0/qualityState").asText())
                 .isEqualTo("DESIGNED_NOT_RUN");
         assertThat(states.list(scope(), AgentTddWorkflowService.EVIDENCE)).isEmpty();
+    }
+
+    @Test
+    void locksExecutedRevisionEvenWhenNoReadyMutationIsNeeded() {
+        states = spy(new InMemoryAgentTddStateRepository());
+        AgentTddStoredAsset cases = states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1",
+                json(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE", "qualityState", "READY")))));
+        service = new AgentTddWorkflowService(states, drafts, fixtures,
+                runner, mock(VisualOperatorCatalog.class), publications, mapper);
+
+        service.recordEvidence("rg.simulate", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "goldenSetId", "sha256:locked", "caseSetRef", "golden-1",
+                "caseSetRevision", cases.revision(), "side", "GREEN",
+                "cases", List.of(Map.of("caseId", "g1", "verdict", "GREEN_FAIL")),
+                "realExternalCalls", 0), identity());
+
+        verify(states).lockRevision(scope(), AgentTddMutationService.CASE_SET,
+                "golden-1", cases.revision());
+        assertThat(states.find(scope(), AgentTddMutationService.CASE_SET, "golden-1")
+                .orElseThrow().revision()).isEqualTo(cases.revision());
     }
 
     @Test

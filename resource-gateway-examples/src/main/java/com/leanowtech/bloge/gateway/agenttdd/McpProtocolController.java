@@ -81,6 +81,9 @@ public final class McpProtocolController {
             return protocolFailure(failure, id);
         } catch (IntegrationProblemException failure) {
             return authenticationFailure(failure.problem(), id);
+        } catch (RuntimeException failure) {
+            return protocolFailure(new McpProtocolException(
+                    -32603, "MCP request failed inside the governed boundary"), id);
         }
     }
 

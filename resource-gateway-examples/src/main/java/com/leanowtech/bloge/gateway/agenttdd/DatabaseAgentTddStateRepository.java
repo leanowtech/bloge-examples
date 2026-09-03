@@ -139,6 +139,26 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         return action.get();
     }
 
+    /** Locks one exact state row so a concurrent revision cannot commit before the evidence unit. */
+    @Override
+    @Transactional
+    public AgentTddStoredAsset lockRevision(String scopeKey,
+                                            String kind,
+                                            String assetRef,
+                                            long expectedRevision) {
+        List<AgentTddStoredAsset> rows = jdbc.query("""
+                        SELECT revision, fingerprint, state_json, updated_at
+                          FROM agent_tdd_assets
+                         WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ?
+                         FOR UPDATE
+                        """, (rs, row) -> new AgentTddStoredAsset(scopeKey, kind, assetRef,
+                        rs.getLong("revision"), rs.getString("fingerprint"),
+                        read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
+                scopeKey, kind, assetRef);
+        return rows.stream().filter(asset -> asset.revision() == expectedRevision).findFirst()
+                .orElseThrow(DatabaseAgentTddStateRepository::staleRevision);
+    }
+
     @Override
     public Optional<JsonNode> replay(String scopeKey,
                                      String operation,

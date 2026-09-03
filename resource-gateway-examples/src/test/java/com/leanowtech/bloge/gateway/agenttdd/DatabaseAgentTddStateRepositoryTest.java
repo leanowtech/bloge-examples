@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,10 @@ import org.springframework.transaction.annotation.AnnotationTransactionAttribute
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -100,13 +105,7 @@ class DatabaseAgentTddStateRepositoryTest {
 
     @Test
     void executeAtomicallyRollsBackEveryAssetWriteWhenTheUnitFails() {
-        ProxyFactory factory = new ProxyFactory();
-        factory.setInterfaces(AgentTddStateRepository.class);
-        factory.setTarget(repository);
-        factory.addAdvice(new TransactionInterceptor(
-                new DataSourceTransactionManager(database),
-                new AnnotationTransactionAttributeSource()));
-        AgentTddStateRepository transactional = (AgentTddStateRepository) factory.getProxy();
+        AgentTddStateRepository transactional = transactionalRepository();
 
         assertThatThrownBy(() -> transactional.executeAtomically(() -> {
             transactional.save("tenant-a|test", "CASE_SET", "cases-rollback",
@@ -118,5 +117,56 @@ class DatabaseAgentTddStateRepositoryTest {
 
         assertThat(repository.find("tenant-a|test", "CASE_SET", "cases-rollback")).isEmpty();
         assertThat(repository.find("tenant-a|test", "EVIDENCE", "evidence-rollback")).isEmpty();
+    }
+
+    @Test
+    void revisionLockBlocksConcurrentCaseEditUntilEvidenceUnitCompletes() throws Exception {
+        AgentTddStateRepository transactional = transactionalRepository();
+        AgentTddStoredAsset cases = transactional.save("tenant-a|test", "CASE_SET", "cases-locked",
+                mapper.valueToTree(Map.of("qualityState", "READY")));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<JsonNode> evidence = executor.submit(
+                    () -> transactional.executeAtomically(() -> {
+                        transactional.lockRevision(
+                                "tenant-a|test", "CASE_SET", "cases-locked", cases.revision());
+                        locked.countDown();
+                        try {
+                            if (!release.await(2, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("test did not release revision lock");
+                            }
+                        } catch (InterruptedException failure) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(failure);
+                        }
+                        return mapper.valueToTree(Map.of("evidence", "committed"));
+                    }));
+            assertThat(locked.await(2, TimeUnit.SECONDS)).isTrue();
+            var concurrentEdit = executor.submit(() -> transactional.saveIfRevision(
+                    "tenant-a|test", "CASE_SET", "cases-locked", cases.revision(),
+                    mapper.valueToTree(Map.of("qualityState", "STALE"))));
+
+            assertThatThrownBy(() -> concurrentEdit.get(150, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+            release.countDown();
+            assertThat(evidence.get(2, TimeUnit.SECONDS).path("evidence").asText()).isEqualTo("committed");
+            assertThat(concurrentEdit.get(2, TimeUnit.SECONDS).data().path("qualityState").asText())
+                    .isEqualTo("STALE");
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private AgentTddStateRepository transactionalRepository() {
+        ProxyFactory factory = new ProxyFactory();
+        factory.setInterfaces(AgentTddStateRepository.class);
+        factory.setTarget(repository);
+        factory.addAdvice(new TransactionInterceptor(
+                new DataSourceTransactionManager(database),
+                new AnnotationTransactionAttributeSource()));
+        return (AgentTddStateRepository) factory.getProxy();
     }
 }

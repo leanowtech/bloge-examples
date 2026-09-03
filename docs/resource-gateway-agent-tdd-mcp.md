@@ -44,7 +44,7 @@ MCP 入口为 `POST /mcp`。现代无状态请求使用协议版本 `2026-07-28`
 | EXECUTE | `AGENT_TDD_EXECUTION` |
 | GOVERNED_WRITE、Web 人工批准 | `AGENT_TDD_GOVERNANCE` |
 
-鉴权在 JSON-RPC 分派之前失败时，MCP 边界保留 HTTP `401/403`，并只返回固定协议文案及 `error.data.code=UNAUTHENTICATED|FORBIDDEN_PURPOSE`；身份提供方原始文案、关联 ID 和鉴权详情不会进入响应。`401` 同时返回 `WWW-Authenticate`。
+鉴权在 JSON-RPC 分派之前失败时，MCP 边界保留集成鉴权的 HTTP 状态：身份缺失/失败为 `401`，用途缺失/非法/越权为 `400/403`，身份提供方或审计不可用为 `503`。响应只返回固定协议文案及 `error.data.code=UNAUTHENTICATED|FORBIDDEN_PURPOSE|GATE_REJECTED`；身份提供方原始文案、关联 ID 和鉴权详情不会进入响应。`401` 同时返回 `WWW-Authenticate`。
 
 发现工具：
 
@@ -78,7 +78,7 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 `rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；`cases` 的 JSON Schema 使用 `oneOf` 强制两种证据源恰选其一，禁止空对象或并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
-持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化只允许以该 revision 做 CAS，把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；READY CAS、evidence、current verdict 和归档 line 在同一数据库事务提交，任一步失败都会全部回滚。执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
+持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化先以 `SELECT ... FOR UPDATE` 锁定该 revision，再把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；即使没有 PASS 或行已经 READY，revision lock 也不会省略。READY CAS、evidence、current verdict 和归档 line 在同一数据库事务提交，任一步失败都会全部回滚。执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
 
 ## 4. bindingRef 与 goldenSetId
 
@@ -149,6 +149,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 5. 对 `GOLDEN_REQUIRES_APPROVAL`，在看板批准目标 revision 后重新读取 case set。
 6. 对 `PUBLISH_GATE_NOT_MET`，调用 `rg.readiness.get`，按 `remainingLimitations` 逐项处理。
 7. 对依赖行为的 `SCHEMA_NONCONFORMANT`，检查 `afterMillis`、精确 `replayRef`、REPLAY/OBSERVE 的冻结 `value`。
-8. 对 JSON-RPC `-32602`，以最新 `tools/list` 的 `inputSchema` 修正参数；`-32603` 表示服务端结果与其公布的 `outputSchema` 不一致，应作为实现缺陷处理。
+8. 对 JSON-RPC `-32602`，以最新 `tools/list` 的 `inputSchema` 修正参数；`-32603` 表示 schema、鉴权基础设施或工具执行在治理边界内发生未预期失败。该错误只含固定文案，应按服务端实现/基础设施缺陷处理。
 
 排查期间不要记录 Bearer credential、fixture material 或业务响应体。`rg.dsl.preview` 与 `rg.gate.check` 只返回诊断的稳定码和源码坐标；底层 `message`、`metadata`、仅供执行冻结使用的 `operatorSnapshots`，以及用于内部校验的 regenerated DSL 不进入 MCP 响应。投影仍返回图结构、源码映射和 operator fingerprint，足以定位及验证所读 revision。
