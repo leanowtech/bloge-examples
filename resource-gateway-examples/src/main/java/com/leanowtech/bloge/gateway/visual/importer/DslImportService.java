@@ -381,8 +381,8 @@ public class DslImportService {
     }
 
     private void projectNode(AstNode.NodeDef node, ProjectionState state, EffectiveCatalog effectiveCatalog) {
-        Map<String, GraphDraft.Binding> inputs = bindingsFromInputBlock(node.id(), node.input(), state,
-                effectiveCatalog);
+        Map<String, GraphDraft.Binding> inputs = bindingsFromInputBlock(
+                node.id(), node.operatorRef(), node.input(), state, effectiveCatalog);
         Map<String, Object> config = new LinkedHashMap<>();
         if (node.timeout() != null) {
             config.put("timeout", duration(node.timeout()));
@@ -426,7 +426,7 @@ public class DslImportService {
         for (AstNode.TransformField field : transform.fields()) {
             collectFunctionReferences(field.value(), state, effectiveCatalog.functions);
             assignments.put(field.name(), renderExpression(field.value(), Set.of()));
-            addDataEdgesFromExpression(state, field.value(), transform.id(), field.name());
+            addDataEdgesFromExpression(state, field.value(), transform.id(), field.name(), effectiveCatalog);
         }
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("assignments", assignments);
@@ -435,7 +435,8 @@ public class DslImportService {
             for (AstNode.LetBinding let : transform.letBindings()) {
                 lets.put(let.name(), renderExpression(let.value(), Set.of()));
                 collectFunctionReferences(let.value(), state, effectiveCatalog.functions);
-                addDataEdgesFromExpression(state, let.value(), transform.id(), "let." + let.name());
+                addDataEdgesFromExpression(
+                        state, let.value(), transform.id(), "let." + let.name(), effectiveCatalog);
             }
             config.put("letBindings", lets);
             state.expressionOutputTargets.add("/nodes/" + transform.id() + "/config/letBindings");
@@ -455,11 +456,12 @@ public class DslImportService {
         }
         for (AstNode.DecisionParam param : table.params()) {
             collectFunctionReferences(param.binding(), state, effectiveCatalog.functions);
-            inputs.put(param.name(), bindingFromExpression(param.binding(), param.name()));
+            inputs.put(param.name(), bindingFromExpression(
+                    param.binding(), "inputs", param.name(), state, effectiveCatalog));
             inputConfig.put(param.name(), renderExpression(param.binding(), Set.of()));
             state.bindingSpans.put("/nodes/" + table.id() + "/inputs/" + param.name(),
                     DslSourceSpan.point(state.request.sourceId(), param.line(), param.column(), "DecisionParam"));
-            addDataEdgesFromExpression(state, param.binding(), table.id(), param.name());
+            addDataEdgesFromExpression(state, param.binding(), table.id(), param.name(), effectiveCatalog);
         }
 
         List<Object> rules = new ArrayList<>();
@@ -547,6 +549,7 @@ public class DslImportService {
     }
 
     private Map<String, GraphDraft.Binding> bindingsFromInputBlock(String nodeId,
+                                                                   String operatorRef,
                                                                    AstNode.InputBlock input,
                                                                    ProjectionState state,
                                                                    EffectiveCatalog effectiveCatalog) {
@@ -554,50 +557,104 @@ public class DslImportService {
             return Map.of();
         }
         Map<String, GraphDraft.Binding> bindings = new LinkedHashMap<>();
+        OperatorDefinition operator = effectiveCatalog.operators.get(operatorRef);
         for (Map.Entry<String, Expression> entry : input.bindings().entrySet()) {
             collectFunctionReferences(entry.getValue(), state, effectiveCatalog.functions);
-            bindings.put(entry.getKey(), bindingFromExpression(entry.getValue(), entry.getKey()));
+            String targetPort = "inputs";
+            String targetPath = entry.getKey();
+            if (operator != null) {
+                Optional<OperatorDefinition.Port> exactPort = operator.ports().inputs().stream()
+                        .filter(port -> entry.getKey().equals(port.name())).findFirst();
+                if (exactPort.isPresent()) {
+                    targetPort = exactPort.get().name();
+                    targetPath = "";
+                } else if (operator.ports().inputs().size() == 1) {
+                    targetPort = operator.ports().inputs().getFirst().name();
+                }
+            }
+            bindings.put(entry.getKey(), bindingFromExpression(
+                    entry.getValue(), targetPort, targetPath, state, effectiveCatalog));
             state.bindingSpans.put("/nodes/" + nodeId + "/inputs/" + entry.getKey(),
                     DslSourceSpan.point(state.request.sourceId(), entry.getValue().line(),
                             entry.getValue().column(), "InputBinding"));
-            addDataEdgesFromExpression(state, entry.getValue(), nodeId, entry.getKey());
+            addDataEdgesFromExpression(state, entry.getValue(), nodeId, entry.getKey(), effectiveCatalog);
         }
         return bindings;
     }
 
-    private GraphDraft.Binding bindingFromExpression(Expression expression, String targetPath) {
+    private GraphDraft.Binding bindingFromExpression(Expression expression,
+                                                     String targetPort,
+                                                     String targetPath,
+                                                     ProjectionState state,
+                                                     EffectiveCatalog effectiveCatalog) {
         if (expression instanceof Expression.ContextPath contextPath) {
-            return GraphDraft.Binding.contextPath(dottedPath(contextPath.segments()), "inputs", targetPath);
+            return GraphDraft.Binding.contextPath(dottedPath(contextPath.segments()), targetPort, targetPath);
         }
         if (expression instanceof Expression.NodeOutputPath nodeOutputPath) {
-            return GraphDraft.Binding.nodePath(nodeOutputPath.nodeId(), "output",
-                    dottedPath(nodeOutputPath.segments()), "inputs", targetPath);
+            GraphDraft.Endpoint source = sourceEndpoint(nodeOutputPath.nodeId(),
+                    dottedPath(nodeOutputPath.segments()), state, effectiveCatalog);
+            return GraphDraft.Binding.nodePath(nodeOutputPath.nodeId(), source.port(),
+                    source.path(), targetPort, targetPath);
         }
         Optional<Object> literal = literalValue(expression);
         if (literal.isPresent()) {
-            return new GraphDraft.Binding("constant", literal.get(), "", "", "", "inputs",
+            return new GraphDraft.Binding("constant", literal.get(), "", "", "", targetPort,
                     targetPath, "", Map.of());
         }
         if (expression instanceof Expression.ObjectLiteral objectLiteral) {
             Map<String, GraphDraft.Binding> fields = new LinkedHashMap<>();
-            objectLiteral.fields().forEach((key, value) -> fields.put(key, bindingFromExpression(value, key)));
-            return new GraphDraft.Binding("objectTemplate", null, "", "", "", "inputs",
+            objectLiteral.fields().forEach((key, value) -> fields.put(
+                    key, bindingFromExpression(value, targetPort, key, state, effectiveCatalog)));
+            return new GraphDraft.Binding("objectTemplate", null, "", "", "", targetPort,
                     targetPath, "", fields);
         }
-        return new GraphDraft.Binding("expression", null, "", "", "", "inputs",
+        return new GraphDraft.Binding("expression", null, "", "", "", targetPort,
                 targetPath, renderExpression(expression, Set.of()), Map.of());
     }
 
     private void addDataEdgesFromExpression(ProjectionState state,
                                             Expression expression,
                                             String targetNodeId,
-                                            String targetPath) {
+                                            String targetPath,
+                                            EffectiveCatalog effectiveCatalog) {
         for (String sourceNodeId : collectNodeReferences(expression)) {
             String sourcePath = sourcePath(expression, sourceNodeId).orElse("");
-            addEdge(state, "data", sourceNodeId, "output", sourcePath, targetNodeId, "inputs",
+            GraphDraft.Endpoint source = sourceEndpoint(
+                    sourceNodeId, sourcePath, state, effectiveCatalog);
+            addEdge(state, "data", sourceNodeId, source.port(), source.path(), targetNodeId, "inputs",
                     targetPath, "", DslSourceSpan.point(state.request.sourceId(), expression.line(),
                             expression.column(), expression.getClass().getSimpleName()));
         }
+    }
+
+    /** Resolves legacy {@code node.output.path} syntax onto the operator's declared output port. */
+    private GraphDraft.Endpoint sourceEndpoint(String nodeId,
+                                               String path,
+                                               ProjectionState state,
+                                               EffectiveCatalog effectiveCatalog) {
+        OperatorDefinition operator = state.nodes.stream()
+                .filter(node -> nodeId.equals(node.id()))
+                .findFirst()
+                .map(GraphDraft.DraftNode::operatorRef)
+                .map(effectiveCatalog.operators::get)
+                .orElse(null);
+        if (operator == null || operator.ports().outputs().isEmpty()) {
+            return new GraphDraft.Endpoint(nodeId, "output", path);
+        }
+        List<OperatorDefinition.Port> outputs = operator.ports().outputs();
+        String firstSegment = path == null ? "" : path.split("\\.", 2)[0];
+        Optional<OperatorDefinition.Port> exact = outputs.stream()
+                .filter(port -> port.name().equals(firstSegment))
+                .findFirst();
+        if (exact.isPresent()) {
+            String remaining = path.length() == firstSegment.length()
+                    ? "" : path.substring(firstSegment.length() + 1);
+            return new GraphDraft.Endpoint(nodeId, exact.get().name(), remaining);
+        }
+        if (outputs.size() == 1) {
+            return new GraphDraft.Endpoint(nodeId, outputs.getFirst().name(), path);
+        }
+        return new GraphDraft.Endpoint(nodeId, "output", path);
     }
 
     private void addNode(ProjectionState state,

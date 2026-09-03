@@ -56,7 +56,7 @@ public final class McpToolCatalog {
                 List.of("caseSetRef", "rows", "idempotencyKey")));
         values.add(tool("rg.oracle.propose", "Propose oracle", "Propose a business-owned expected outcome.",
                 McpToolImpact.PROPOSE,
-                props("caseSetRef", string(), "caseId", string(), "expect", businessObject(), "oracleOwner", string(),
+                props("caseSetRef", string(), "caseId", string(), "expect", anyJson(), "oracleOwner", string(),
                         "idempotencyKey", string()),
                 List.of("caseSetRef", "caseId", "expect", "oracleOwner", "idempotencyKey")));
         values.add(tool("rg.scenario.setDependencyBehavior", "Set dependency behavior",
@@ -174,6 +174,9 @@ public final class McpToolCatalog {
         return Map.of("type", "object", "additionalProperties", true,
                 "description", "Business JSON constrained by the referenced runtime contract.");
     }
+    private static Map<String, Object> anyJson() {
+        return Map.of("description", "Any JSON value constrained by the referenced runtime contract.");
+    }
     private static Map<String, Object> structuredObject(Map<String, Object> properties, List<String> required) {
         return schema(properties, required);
     }
@@ -202,7 +205,7 @@ public final class McpToolCatalog {
         return structuredObject(props("caseId", string(), "category", enumString(
                         "GOLDEN", "REGRESSION", "NEGATIVE", "BOUNDARY", "FAULT", "SECURITY"),
                 "layer", enumString("unit", "contract", "integration", "smoke"),
-                "given", businessObject(), "stubs", businessObject(), "expect", businessObject(),
+                "given", businessObject(), "stubs", businessObject(), "expect", anyJson(),
                 "intent", string(), "oracleOwner", string()), List.of("caseId", "given", "stubs"));
     }
 
@@ -221,13 +224,13 @@ public final class McpToolCatalog {
     private static Map<String, Object> behavior() {
         return structuredObject(props("behavior", enumString(
                         "RETURN", "ERROR", "DELAY", "TIMEOUT", "REPLAY", "OBSERVE", "MUST_NOT_CALL"),
-                "value", businessObject(), "expectedInput", businessObject(), "afterMillis", integer(),
+                "value", anyJson(), "expectedInput", anyJson(), "afterMillis", integer(),
                 "errorCode", string(), "errorType", string(), "errorMessage", string(), "replayRef", string()),
                 List.of("behavior"));
     }
 
     private static Map<String, Object> fixtureOverrides() {
-        return arrayOf(structuredObject(props("nodeId", string(), "value", businessObject()),
+        return arrayOf(structuredObject(props("nodeId", string(), "value", anyJson()),
                 List.of("nodeId", "value")));
     }
 
@@ -262,7 +265,7 @@ public final class McpToolCatalog {
             case "rg.evidence.get" -> structuredObject(props("toolRef", string(), "operation", string(),
                     "result", businessObject()), List.of("toolRef", "operation", "result"));
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
-                    "operators", arrayOf(businessObject()), "functions", arrayOf(string()),
+                    "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string()), List.of("libraryId", "version"));
             case "rg.feature.compose", "rg.tool.compose" -> structuredObject(props("assetRef", string(),
                     "revision", integer(), "speccing", bool(), "executable", bool(), "libraryRefs", stringArray()),

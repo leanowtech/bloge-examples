@@ -393,7 +393,8 @@ public final class AgentTddExecutionService {
     private Map<String, Object> executeGreenCase(GraphDraft draft, JsonNode row) {
         Map<String, Object> given = objectMap(row.path("given"));
         Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
-        VisualGraphSimulationResponse response = simulation.simulate(draft, given, "", fixtures);
+        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, projection::resolveOperator);
+        VisualGraphSimulationResponse response = simulation.simulate(executable, given, "", fixtures);
         boolean oracleHeld = response.success() && response.terminalOutputConforms()
                 && expectedMatches(row.path("expect"), mapper.valueToTree(response.output()));
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();

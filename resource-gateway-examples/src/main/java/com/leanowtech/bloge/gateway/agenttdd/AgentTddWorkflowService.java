@@ -187,7 +187,8 @@ public final class AgentTddWorkflowService {
                     || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())) {
                 throw gate("The owner signoff does not approve this Tool.");
             }
-            DslGenerationResult generation = runner.compile(draft);
+            GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
+            DslGenerationResult generation = runner.compile(executable);
             if (!generation.generated() || !generation.validation().valid()
                     || !generation.validation().actionReadiness().publishExecutableNow()) {
                 throw gate("The authoritative visual compiler did not accept executable publication.");

@@ -34,5 +34,21 @@ class McpToolCatalogTest {
         assertThat(properties.containsKey("libraryRefs")).isTrue();
         assertThat(properties.containsKey("cases")).isTrue();
         assertThat(simulate.outputSchema()).containsKey("properties");
+
+        Map<?, ?> behaviorProperties = properties(catalog.require(
+                "rg.scenario.setDependencyBehavior").inputSchema(), "behavior");
+        assertThat(((Map<?, ?>) behaviorProperties.get("value")).containsKey("type"))
+                .as("dependency values may be scalar, array, object or null")
+                .isFalse();
+        Map<?, ?> libraryData = properties(catalog.require("rg.library.upsert").outputSchema(), "data");
+        Map<?, ?> functions = (Map<?, ?>) libraryData.get("functions");
+        assertThat(((Map<?, ?>) functions.get("items")).get("type")).isEqualTo("object");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<?, ?> properties(Map<String, Object> schema, String property) {
+        Map<String, Object> values = (Map<String, Object>) schema.get("properties");
+        Map<String, Object> selected = (Map<String, Object>) values.get(property);
+        return (Map<?, ?>) selected.get("properties");
     }
 }

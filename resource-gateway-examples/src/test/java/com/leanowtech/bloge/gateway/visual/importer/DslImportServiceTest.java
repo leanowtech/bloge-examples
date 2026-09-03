@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.importer;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -22,6 +23,47 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests for schema-neutral BLOGE DSL import projection.
  */
 class DslImportServiceTest {
+
+    @Test
+    void resolvesNamedScalarInputAndOutputPortsFromDslPaths() {
+        OperatorDefinition lookup = new OperatorDefinition(
+                "bloge.visualOperator.v1", "cancel:lookup", "1.0.0",
+                new OperatorDefinition.Display("Lookup", "Looks up a cancellation.", List.of("resource-read")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("orderId",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                        Map.of("type", "string")), true, "Order id.")),
+                        List.of(new OperatorDefinition.Port("decision",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                                        Map.of("type", "string")), true, "Decision."))),
+                SchemaEnvelope.opaque(), OperatorDefinition.Capabilities.pure(),
+                OperatorDefinition.Policy.unrestricted(),
+                new OperatorDefinition.Lowering("design", "", Map.of()), List.of());
+        DslImportService service = service(VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1", "cancel", "Cancellation", "1.0.0", "cx-ops",
+                "ACTIVE", List.of(lookup))));
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "cancel.bloge", """
+                        graph cancellation {
+                          input { orderId: String }
+                          node lookup : "cancel:lookup" { input { orderId = ctx.orderId } }
+                          transform response { decision = lookup.output.decision }
+                        }
+                        """, List.of("cancel"), List.of(), "preview", Map.of()));
+
+        GraphDraft.DraftNode node = projection.draft().nodes().getFirst();
+        assertThat(node.inputs().get("orderId").targetPort()).isEqualTo("orderId");
+        assertThat(node.inputs().get("orderId").targetPath()).isEmpty();
+        assertThat(projection.draft().edges()).anySatisfy(edge -> {
+            assertThat(edge.source().nodeId()).isEqualTo("lookup");
+            assertThat(edge.source().port()).isEqualTo("decision");
+            assertThat(edge.source().path()).isEmpty();
+            assertThat(edge.target().nodeId()).isEqualTo("response");
+        });
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+    }
 
     @Test
     void projectsDslWithInlineOperatorLibraryWithoutDependingOnSchemaOrigin() {
