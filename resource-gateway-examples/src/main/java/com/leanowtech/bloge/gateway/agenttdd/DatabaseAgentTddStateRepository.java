@@ -1,0 +1,160 @@
+package com.leanowtech.bloge.gateway.agenttdd;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import jakarta.annotation.PostConstruct;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * JDBC-backed Agent TDD overlay and idempotency repository.
+ *
+ * <p>The tables are additive and self-bootstrapping, matching the example server's existing H2
+ * repositories. Exact response JSON is retained so a retried write cannot observe a later asset
+ * revision and mistake it for the original result.</p>
+ */
+@Repository
+public class DatabaseAgentTddStateRepository implements AgentTddStateRepository {
+    private static final int MAX_BYTES = 16 * 1024 * 1024;
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper;
+
+    /** Creates the repository from the application JDBC boundary. */
+    public DatabaseAgentTddStateRepository(JdbcTemplate jdbc, ObjectMapper mapper) {
+        this.jdbc = jdbc;
+        this.mapper = mapper;
+    }
+
+    /** Creates additive local tables when the application starts. */
+    @PostConstruct
+    void init() {
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS agent_tdd_assets (
+                    scope_key VARCHAR(1024) NOT NULL,
+                    asset_kind VARCHAR(64) NOT NULL,
+                    asset_ref VARCHAR(255) NOT NULL,
+                    revision BIGINT NOT NULL,
+                    fingerprint VARCHAR(255) NOT NULL,
+                    state_json CLOB NOT NULL,
+                    updated_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (scope_key, asset_kind, asset_ref)
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE IF NOT EXISTS agent_tdd_idempotency (
+                    scope_key VARCHAR(1024) NOT NULL,
+                    operation VARCHAR(128) NOT NULL,
+                    idempotency_key VARCHAR(255) NOT NULL,
+                    request_fingerprint VARCHAR(255) NOT NULL,
+                    response_json CLOB NOT NULL,
+                    created_at VARCHAR(64) NOT NULL,
+                    PRIMARY KEY (scope_key, operation, idempotency_key)
+                )
+                """);
+    }
+
+    @Override
+    public Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef) {
+        List<AgentTddStoredAsset> rows = jdbc.query("""
+                        SELECT revision, fingerprint, state_json, updated_at
+                          FROM agent_tdd_assets
+                         WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ?
+                        """, (rs, row) -> new AgentTddStoredAsset(scopeKey, kind, assetRef,
+                        rs.getLong("revision"), rs.getString("fingerprint"),
+                        read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
+                scopeKey, kind, assetRef);
+        return rows.stream().findFirst();
+    }
+
+    @Override
+    public List<AgentTddStoredAsset> list(String scopeKey, String kind) {
+        return jdbc.query("""
+                        SELECT asset_ref, revision, fingerprint, state_json, updated_at
+                          FROM agent_tdd_assets
+                         WHERE scope_key = ? AND asset_kind = ?
+                         ORDER BY asset_ref
+                        """, (rs, row) -> new AgentTddStoredAsset(scopeKey, kind,
+                        rs.getString("asset_ref"), rs.getLong("revision"), rs.getString("fingerprint"),
+                        read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
+                scopeKey, kind);
+    }
+
+    @Override
+    public synchronized AgentTddStoredAsset save(String scopeKey,
+                                                 String kind,
+                                                 String assetRef,
+                                                 JsonNode data) {
+        long revision = find(scopeKey, kind, assetRef).map(value -> value.revision() + 1).orElse(1L);
+        String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, data, MAX_BYTES);
+        Instant now = Instant.now();
+        String json = write(data);
+        jdbc.update("DELETE FROM agent_tdd_assets WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ?",
+                scopeKey, kind, assetRef);
+        jdbc.update("""
+                INSERT INTO agent_tdd_assets
+                    (scope_key, asset_kind, asset_ref, revision, fingerprint, state_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, scopeKey, kind, assetRef, revision, fingerprint, json, now.toString());
+        return new AgentTddStoredAsset(scopeKey, kind, assetRef, revision, fingerprint, data, now);
+    }
+
+    @Override
+    public Optional<JsonNode> replay(String scopeKey,
+                                     String operation,
+                                     String idempotencyKey,
+                                     String requestFingerprint) {
+        List<Replay> rows = jdbc.query("""
+                        SELECT request_fingerprint, response_json
+                          FROM agent_tdd_idempotency
+                         WHERE scope_key = ? AND operation = ? AND idempotency_key = ?
+                        """, (rs, row) -> new Replay(rs.getString("request_fingerprint"),
+                        read(rs.getString("response_json"))), scopeKey, operation, idempotencyKey);
+        if (rows.isEmpty()) return Optional.empty();
+        Replay replay = rows.getFirst();
+        if (!replay.fingerprint().equals(requestFingerprint)) {
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The idempotency key was already used for different request material.");
+        }
+        return Optional.of(replay.response());
+    }
+
+    @Override
+    public synchronized void record(String scopeKey,
+                                    String operation,
+                                    String idempotencyKey,
+                                    String requestFingerprint,
+                                    JsonNode response) {
+        Optional<JsonNode> existing = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (existing.isPresent()) return;
+        jdbc.update("""
+                INSERT INTO agent_tdd_idempotency
+                    (scope_key, operation, idempotency_key, request_fingerprint, response_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, scopeKey, operation, idempotencyKey, requestFingerprint,
+                write(response), Instant.now().toString());
+    }
+
+    private JsonNode read(String value) {
+        try {
+            return mapper.readTree(value);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException("Stored Agent TDD JSON is corrupt.", failure);
+        }
+    }
+
+    private String write(JsonNode value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException("Agent TDD JSON could not be stored.", failure);
+        }
+    }
+
+    private record Replay(String fingerprint, JsonNode response) { }
+}

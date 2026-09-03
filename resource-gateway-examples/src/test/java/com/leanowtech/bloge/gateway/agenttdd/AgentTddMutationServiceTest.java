@@ -1,0 +1,211 @@
+package com.leanowtech.bloge.gateway.agenttdd;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
+import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
+import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
+import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
+import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
+import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Verifies canonical mutations, proposal boundaries and exact idempotency semantics. */
+class AgentTddMutationServiceTest {
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void compilesLibraryYamlIntoCanonicalRegistryAndReplaysExactly() {
+        Fixture fixture = fixture();
+        JsonNode arguments = mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "lib-1"));
+
+        JsonNode first = invoke(fixture, "rg.library.upsert", arguments);
+        JsonNode replay = invoke(fixture, "rg.library.upsert", arguments);
+
+        assertThat(first.path("ok").asBoolean()).as(first.toPrettyString()).isTrue();
+        assertThat(replay).isEqualTo(first);
+        assertThat(fixture.libraries().find("shipping")).isPresent();
+        assertThat(fixture.libraries().revisions("shipping")).hasSize(1);
+        assertThat(first.path("data").path("operators").get(0).path("speccing").asBoolean()).isTrue();
+    }
+
+    @Test
+    void composesToolThroughCompileGateAndRejectsIdempotencyKeyReuse() {
+        Fixture fixture = fixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "lib-1")));
+        JsonNode compose = mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "idempotencyKey", "compose-1"));
+
+        JsonNode first = invoke(fixture, "rg.tool.compose", compose);
+        JsonNode conflict = invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "other-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "idempotencyKey", "compose-1")));
+
+        assertThat(first.path("ok").asBoolean()).as(first.toPrettyString()).isTrue();
+        assertThat(first.path("data").path("speccing").asBoolean()).isTrue();
+        assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
+                assertThat(draft.visualLayout()).containsKey("agentTdd"));
+        assertThat(conflict.path("error").path("code").asText()).isEqualTo("IDEMPOTENCY_CONFLICT");
+    }
+
+    @Test
+    void goldenExpectationRemainsPendingAndDependencyBehaviorIsBounded() {
+        Fixture fixture = fixtureWithTool();
+        JsonNode upsert = mapper.valueToTree(Map.of(
+                "caseSetRef", "shipping-cases", "toolRef", "shipping-tool", "idempotencyKey", "cases-1",
+                "rows", List.of(Map.of(
+                        "caseId", "g1", "category", "GOLDEN", "lifecycle", "ACTIVE",
+                        "given", Map.of("orderId", "o1"), "stubs", Map.of(),
+                        "expect", Map.of("fee", 0), "oracleOwner", "cx-ops"))));
+
+        JsonNode stored = invoke(fixture, "rg.scenario.upsertCases", upsert);
+        JsonNode behavior = invoke(fixture, "rg.scenario.setDependencyBehavior", mapper.valueToTree(Map.of(
+                "caseSetRef", "shipping-cases", "caseId", "g1", "nodeId", "quote",
+                "behavior", Map.of("behavior", "RETURN", "value", Map.of("fee", 0)),
+                "idempotencyKey", "behavior-1")));
+        JsonNode listed = invoke(fixture, "rg.scenario.listCases",
+                mapper.valueToTree(Map.of("caseSetRef", "shipping-cases")));
+
+        assertThat(stored.path("data").path("proposed")).hasSize(1);
+        JsonNode row = listed.path("data").path("rows").get(0);
+        assertThat(row.path("lifecycle").asText()).isEqualTo("DRAFT");
+        assertThat(row.has("expect")).isFalse();
+        assertThat(row.path("proposedOracle").path("status").asText()).isEqualTo("PENDING");
+        assertThat(behavior.path("data").path("behavior").path("behavior").asText()).isEqualTo("RETURN");
+    }
+
+    @Test
+    void toolExamplesCannotBeAuthoredOutsideApprovedGoldenCases() {
+        Fixture fixture = fixtureWithTool();
+        JsonNode response = invoke(fixture, "rg.tool.setInstruction", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "idempotencyKey", "instruction-1",
+                "instruction", Map.of(
+                        "name", "shippingQuote", "title", "Shipping quote",
+                        "description", "Gets a quote", "whenToUse", "Before checkout",
+                        "inputs", List.of(), "outputs", Map.of("kind", "object"), "errors", List.of(),
+                        "examples", List.of(Map.of("input", Map.of(), "output", Map.of()))))));
+
+        assertThat(response.path("ok").asBoolean()).isFalse();
+        assertThat(response.path("error").path("code").asText()).isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
+    void approvedGoldenBecomesTheOnlySourceOfToolExamples() {
+        Fixture fixture = fixtureWithTool();
+        invoke(fixture, "rg.scenario.upsertCases", mapper.valueToTree(Map.of(
+                "caseSetRef", "shipping-cases", "toolRef", "shipping-tool", "idempotencyKey", "cases-1",
+                "rows", List.of(Map.of(
+                        "caseId", "g1", "category", "GOLDEN", "given", Map.of("orderId", "o1"),
+                        "stubs", Map.of(), "expect", Map.of("fee", 0), "oracleOwner", "cx-ops")))));
+        invoke(fixture, "rg.tool.setInstruction", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "idempotencyKey", "instruction-1",
+                "instruction", Map.of(
+                        "name", "shippingQuote", "title", "Shipping quote",
+                        "description", "Gets a quote", "whenToUse", "Before checkout",
+                        "inputs", List.of(), "outputs", Map.of("kind", "object"), "errors", List.of()))));
+        new AgentTddReviewService(fixture.states()).approveOracle(
+                "shipping-cases", "g1", 1, identity());
+
+        JsonNode instruction = invoke(fixture, "rg.tool.getInstruction",
+                mapper.valueToTree(Map.of("toolRef", "shipping-tool")));
+
+        assertThat(instruction.path("ok").asBoolean()).isTrue();
+        assertThat(instruction.path("data").path("examples")).hasSize(1);
+        assertThat(instruction.path("data").path("examples").get(0)
+                .path("fromGoldenCaseId").asText()).isEqualTo("g1");
+    }
+
+    private Fixture fixtureWithTool() {
+        Fixture fixture = fixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "lib-1")));
+        invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "idempotencyKey", "compose-1")));
+        return fixture;
+    }
+
+    private Fixture fixture() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        var catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(), libraries, null);
+        DslImportService projection = new DslImportService(catalog, new OperatorLibraryValidator());
+        VisualGraphSimulationService simulation = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
+                new DynamicGatewayComposerVisualDslRunner(new DefaultOperatorRegistry()));
+        AuthoringPreviewService authoring = new AuthoringPreviewService(
+                new AuthoringCompiler(mapper, new OperatorLibraryValidator()), libraries, mapper);
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                libraries, drafts, mapper, projection, simulation,
+                states, authoring);
+        return new Fixture(tools, libraries, drafts, states);
+    }
+
+    private JsonNode invoke(Fixture fixture, String name, JsonNode arguments) {
+        return mapper.valueToTree(fixture.tools().invoke(name, arguments, identity()));
+    }
+
+    private static String minimalLibraryYaml() {
+        return """
+                schemaVersion: bloge.visualLibraryAuthoring.v1
+                library: { id: shipping, name: Shipping, version: 0.1.0, owner: logistics }
+                defaults: { operatorVersion: 0.1.0, namespace: shipping }
+                operators:
+                  shipping:quote:
+                    name: Quote
+                    archetype: resource-read
+                    requiresSecrets: false
+                    input: { orderId: string }
+                    output: { fee: number }
+                """;
+    }
+
+    private static String shippingDsl() {
+        return """
+                graph shippingQuote {
+                  input { orderId: String }
+                  output { fee: Decimal }
+                  node quote : "shipping:quote" {
+                    input { orderId = ctx.orderId }
+                  }
+                  transform response { fee = quote.output.fee }
+                }
+                """;
+    }
+
+    private static IntegrationRequestContext identity() {
+        return new IntegrationRequestContext(
+                "demo-tenant", "org-a", "project-a", "local", "sg", "WORKLOAD", "agent-1",
+                "", "AGENT_TDD_DRAFT_WRITE", "corr-1");
+    }
+
+    private record Fixture(ResourceGatewayAgentTddTools tools,
+                           InMemoryOperatorLibraryRegistry libraries,
+                           InMemoryGraphDraftRepository drafts,
+                           InMemoryAgentTddStateRepository states) { }
+}

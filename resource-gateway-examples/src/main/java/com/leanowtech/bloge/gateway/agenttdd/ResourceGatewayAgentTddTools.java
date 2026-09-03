@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,27 +34,42 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final GraphDraftRepository drafts;
     private final ObjectMapper mapper;
     private final AgentTddExecutionService execution;
+    private final AgentTddMutationService mutations;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
-        this(libraries, drafts, mapper, null, null);
+        this(libraries, drafts, mapper, null, null, null, null);
     }
 
-    /** Creates the fully wired facade with contract-aware DSL and simulation services. */
-    @Autowired
+    /** Creates a focused facade with contract-aware DSL and simulation services. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper,
                                         DslImportService projection,
                                         VisualGraphSimulationService simulation) {
+        this(libraries, drafts, mapper, projection, simulation, null, null);
+    }
+
+    /** Creates the fully wired facade including canonical mutations and durable Agent overlays. */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(libraries, drafts, projection, simulation, mapper);
+        this.mutations = states == null || authoring == null || projection == null
+                ? null
+                : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);
     }
 
     /**
@@ -74,15 +90,23 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.library.get" -> library(safeArguments);
             case "rg.library.list" -> success(Map.of("libraries", librarySummaries()));
             case "rg.contract.get" -> contract(safeArguments, identity);
-            case "rg.tool.getInstruction" -> failure(
-                    "DRAFT_NOT_FOUND", "No Agent instruction is stored for the requested tool.");
-            case "rg.scenario.listCases" -> success(Map.of(
-                    "caseSetRef", requiredText(safeArguments, "caseSetRef"), "rows", List.of()));
+            case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
+            case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
             case "rg.verdict.get" -> failure(
                     "DRAFT_NOT_FOUND", "No red-to-green verdict exists for the requested tool.");
             case "rg.evidence.get" -> failure(
                     "DRAFT_NOT_FOUND", "No evidence exists for the requested reference.");
             case "rg.readiness.get" -> readiness(safeArguments, identity);
+            case "rg.library.upsert" -> executionSuccess(mutations().upsertLibrary(safeArguments, identity));
+            case "rg.feature.compose" -> executionSuccess(
+                    mutations().compose(safeArguments, "featureRef", "FEATURE", identity));
+            case "rg.tool.compose" -> executionSuccess(
+                    mutations().compose(safeArguments, "toolRef", "TOOL", identity));
+            case "rg.tool.setInstruction" -> executionSuccess(mutations().setInstruction(safeArguments, identity));
+            case "rg.scenario.upsertCases" -> executionSuccess(mutations().upsertCases(safeArguments, identity));
+            case "rg.oracle.propose" -> executionSuccess(mutations().proposeOracle(safeArguments, identity));
+            case "rg.scenario.setDependencyBehavior" -> executionSuccess(
+                    mutations().setDependencyBehavior(safeArguments, identity));
             case "rg.dsl.preview" -> executionSuccess(execution().preview(safeArguments));
             case "rg.gate.check" -> executionSuccess(execution().gate(safeArguments));
             case "rg.simulate" -> executionSuccess(execution().simulate(safeArguments, identity));
@@ -290,6 +314,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             throw new AgentTddToolException("GATE_REJECTED", "Agent execution services are unavailable.");
         }
         return execution;
+    }
+
+    private AgentTddMutationService mutations() {
+        if (mutations == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "Agent mutation services are unavailable.");
+        }
+        return mutations;
     }
 
     private static Map<String, Object> failure(String code, String message) {

@@ -51,7 +51,8 @@ public final class McpToolCatalog {
                 List.of("toolRef", "instruction", "idempotencyKey")));
         values.add(tool("rg.scenario.upsertCases", "Upsert scenarios", "Write cases; GOLDEN rows become human-review proposals.",
                 McpToolImpact.DRAFT_WRITE,
-                props("caseSetRef", string(), "rows", array(), "enumerateFrom", object(), "idempotencyKey", string()),
+                props("caseSetRef", string(), "toolRef", string(), "rows", array(), "enumerateFrom", object(),
+                        "idempotencyKey", string()),
                 List.of("caseSetRef", "rows", "idempotencyKey")));
         values.add(tool("rg.oracle.propose", "Propose oracle", "Propose a business-owned expected outcome.",
                 McpToolImpact.PROPOSE,
