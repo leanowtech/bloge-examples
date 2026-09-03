@@ -154,9 +154,17 @@ public final class McpToolCatalog {
     }
 
     private static Map<String, Object> envelopeSchema(String name) {
-        return schema(props("ok", bool(), "data", outputData(name),
-                        "diagnostics", arrayOf(diagnostic()), "error", error()),
-                List.of("ok"));
+        Map<String, Object> envelope = new LinkedHashMap<>();
+        envelope.put("type", "object");
+        envelope.put("properties", props("ok", bool(), "data", outputData(name),
+                "diagnostics", arrayOf(diagnostic()), "error", error()));
+        envelope.put("required", List.of("ok", "diagnostics"));
+        envelope.put("additionalProperties", false);
+        envelope.put("if", Map.of("properties", Map.of("ok", Map.of("const", true)),
+                "required", List.of("ok")));
+        envelope.put("then", Map.of("required", List.of("data")));
+        envelope.put("else", Map.of("required", List.of("error")));
+        return Map.copyOf(envelope);
     }
 
     private static Map<String, Object> props(Object... entries) {
@@ -223,8 +231,10 @@ public final class McpToolCatalog {
 
     private static Map<String, Object> casesEnvelope() {
         return Map.of("oneOf", List.of(
-                structuredObject(props("caseSetRef", string()), List.of("caseSetRef")),
-                structuredObject(props("rows", caseRows()), List.of("rows"))));
+                structuredObject(props("caseSetRef", Map.of("type", "string", "minLength", 1)),
+                        List.of("caseSetRef")),
+                structuredObject(props("rows", Map.of(
+                        "type", "array", "items", caseRow(), "minItems", 1)), List.of("rows"))));
     }
 
     private static Map<String, Object> enumeration() {

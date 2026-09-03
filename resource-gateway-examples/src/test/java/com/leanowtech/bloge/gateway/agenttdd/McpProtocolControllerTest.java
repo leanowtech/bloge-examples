@@ -108,6 +108,32 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void requiresSuccessDataAndHidesUnexpectedApplicationFailureMessages() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        McpProtocolController missingData = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of("ok", true, "diagnostics", java.util.List.of()));
+        JsonNode invalidEnvelope = missingData.exchange(request(15, "tools/call", Map.of(
+                        "name", "rg.library.list", "arguments", Map.of())),
+                modernHeaders("tools/call", "rg.library.list")).getBody();
+
+        McpProtocolController failing = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> {
+                    throw new IllegalStateException("provider customer-secret response");
+                });
+        JsonNode hiddenFailure = failing.exchange(request(16, "tools/call", Map.of(
+                        "name", "rg.library.list", "arguments", Map.of())),
+                modernHeaders("tools/call", "rg.library.list")).getBody();
+
+        assertThat(invalidEnvelope.path("error").path("code").asInt()).isEqualTo(-32603);
+        assertThat(hiddenFailure.path("error").path("code").asInt()).isEqualTo(-32603);
+        assertThat(hiddenFailure.toString()).doesNotContain("customer-secret", "provider");
+    }
+
+    @Test
     void rejectsModernRequestWhenRoutingHeadersDisagreeWithBody() {
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),

@@ -107,7 +107,14 @@ public final class McpProtocolController {
         requireSchemaMatch(definition.inputSchema(), arguments, -32602,
                 "Tool arguments do not match the declared input schema");
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
-        JsonNode structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
+        JsonNode structured;
+        try {
+            structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
+        } catch (McpProtocolException failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new McpProtocolException(-32603, "Tool execution failed inside the governed boundary");
+        }
         requireSchemaMatch(definition.outputSchema(), structured, -32603,
                 "Tool response does not match the declared output schema");
         boolean isError = structured.has("ok") && !structured.path("ok").asBoolean();

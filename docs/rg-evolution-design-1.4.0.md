@@ -353,7 +353,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 { "ok": true,  "data": {}, "diagnostics": [ {"level":"ERROR|WARNING|INFO","code":"","target":"","line":0,"column":0} ] }
 { "ok": false, "error": { "code":"", "message":"(无外部响应体/业务载荷)", "retryable": false, "details": {} } }
 ```
-诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。`tools/call` 在调用前、返回前分别强制执行其公布的 input/output schema；不匹配时只返回固定协议错误，不回显校验材料。`dsl.preview`/`gate.check` 的投影同样移除底层 message、metadata 与内部 regenerated DSL。
+诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。`tools/call` 在调用前、返回前分别强制执行其公布的 input/output schema；成功必须含 data，失败必须含 error，未预期异常统一折叠为固定协议错误，不回显校验或异常材料。`dsl.preview`/`gate.check` 的投影同样移除底层 message、metadata 与内部 regenerated DSL。
 **稳定错误码目录**：`UNAUTHENTICATED` / `FORBIDDEN_PURPOSE` / `DRAFT_NOT_FOUND` / `LIBRARY_NOT_FOUND` / `COMPILE_ERROR` / `GATE_REJECTED` / `SPECCING_NOT_EXECUTABLE`（设计态不可真跑/发布）/ `GOLDEN_REQUIRES_APPROVAL` / `IDEMPOTENCY_CONFLICT` / `SCHEMA_NONCONFORMANT` / `AMBIGUOUS_OUTPUT_PORT` / `RETENTION_POLICY_VIOLATION` / `EGRESS_NOT_ALLOWED` / `PUBLISH_GATE_NOT_MET` / `SIM_REAL_CALL_DETECTED`（模拟中检测到真实外呼，失败关闭）/ `COMBINATORIAL_CAP_EXCEEDED`。
 
 **代表性工具完整 in/out**（其余同信封，I/O 见 4.5）：

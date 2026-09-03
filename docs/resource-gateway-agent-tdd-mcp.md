@@ -56,7 +56,7 @@ curl --fail-with-body http://localhost:8081/mcp \
   --data '{"jsonrpc":"2.0","id":"list-1","method":"tools/list","params":{}}'
 ```
 
-响应同时提供 MCP `content` 和机器可读的 `structuredContent`。服务端在调用前按 `tools/list` 公布的 `inputSchema` 校验参数，在返回前按同一工具的 `outputSchema` 校验 `structuredContent`；任一不匹配均失败关闭，且不回显被拒绝的数据。应用错误使用统一的 `ok:false` 信封，只返回目录内稳定码和固定说明，不包含底层异常、上游响应体或 fixture 载荷。
+响应同时提供 MCP `content` 和机器可读的 `structuredContent`。服务端在调用前按 `tools/list` 公布的 `inputSchema` 校验参数，在返回前按同一工具的 `outputSchema` 校验 `structuredContent`；任一不匹配均失败关闭，且不回显被拒绝的数据。成功信封必须同时含 `ok:true`、`data`、`diagnostics`，失败信封必须同时含 `ok:false`、`error`、`diagnostics`。应用错误只返回目录内稳定码和固定说明；未预期异常折叠为固定 `-32603`，不包含底层异常、上游响应体或 fixture 载荷。
 
 ## 3. 五阶段工具
 
