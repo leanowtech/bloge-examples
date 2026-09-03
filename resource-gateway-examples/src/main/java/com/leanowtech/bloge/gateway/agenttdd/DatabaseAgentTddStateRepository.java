@@ -29,6 +29,7 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     private static final int MAX_BYTES = 16 * 1024 * 1024;
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
+    private boolean postgres;
 
     /** Creates the repository from the application JDBC boundary. */
     public DatabaseAgentTddStateRepository(JdbcTemplate jdbc, ObjectMapper mapper) {
@@ -41,6 +42,7 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     void init() {
         String product = jdbc.execute((ConnectionCallback<String>) connection ->
                 connection.getMetaData().getDatabaseProductName());
+        postgres = product != null && "PostgreSQL".equalsIgnoreCase(product.trim());
         if (product == null || !"H2".equalsIgnoreCase(product.trim())) {
             verifyExternalSchema();
             return;
@@ -223,15 +225,7 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                                 Supplier<JsonNode> action) {
         Optional<JsonNode> replay = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
         if (replay.isPresent()) return replay.get();
-        try {
-            jdbc.update("""
-                    INSERT INTO agent_tdd_idempotency
-                        (scope_key, operation, idempotency_key, request_fingerprint,
-                         response_json, completed, created_at)
-                    VALUES (?, ?, ?, ?, ?, FALSE, ?)
-                    """, scopeKey, operation, idempotencyKey, requestFingerprint,
-                    "null", Instant.now().toString());
-        } catch (DuplicateKeyException conflict) {
+        if (!reserveIdempotency(scopeKey, operation, idempotencyKey, requestFingerprint)) {
             Optional<JsonNode> completed = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
             if (completed.isPresent()) return completed.get();
             throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
@@ -249,6 +243,43 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                     "The idempotency reservation could not be completed.");
         }
         return response.deepCopy();
+    }
+
+    /**
+     * Reserves a key without leaving a PostgreSQL transaction aborted after a concurrent insert.
+     *
+     * <p>PostgreSQL treats a caught unique-constraint exception as transaction-fatal, so its path
+     * uses {@code ON CONFLICT DO NOTHING} and checks the affected row count. H2 does not support
+     * that production syntax in its default mode and safely retains the embedded-demo exception
+     * path.</p>
+     */
+    boolean reserveIdempotency(String scopeKey,
+                               String operation,
+                               String idempotencyKey,
+                               String requestFingerprint) {
+        String createdAt = Instant.now().toString();
+        if (postgres) {
+            return jdbc.update("""
+                    INSERT INTO agent_tdd_idempotency
+                        (scope_key, operation, idempotency_key, request_fingerprint,
+                         response_json, completed, created_at)
+                    VALUES (?, ?, ?, ?, ?, FALSE, ?)
+                    ON CONFLICT (scope_key, operation, idempotency_key) DO NOTHING
+                    """, scopeKey, operation, idempotencyKey, requestFingerprint,
+                    "null", createdAt) == 1;
+        }
+        try {
+            jdbc.update("""
+                    INSERT INTO agent_tdd_idempotency
+                        (scope_key, operation, idempotency_key, request_fingerprint,
+                         response_json, completed, created_at)
+                    VALUES (?, ?, ?, ?, ?, FALSE, ?)
+                    """, scopeKey, operation, idempotencyKey, requestFingerprint,
+                    "null", createdAt);
+            return true;
+        } catch (DuplicateKeyException conflict) {
+            return false;
+        }
     }
 
     private JsonNode read(String value) {

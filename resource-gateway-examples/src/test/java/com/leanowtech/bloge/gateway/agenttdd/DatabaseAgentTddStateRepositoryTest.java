@@ -13,6 +13,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.jdbc.core.ConnectionCallback;
 
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -22,6 +23,11 @@ import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** Verifies durable overlay revisions and exact idempotency replay across repository restarts. */
 class DatabaseAgentTddStateRepositoryTest {
@@ -119,6 +125,25 @@ class DatabaseAgentTddStateRepositoryTest {
 
         assertThat(first).isEqualTo(replay);
         assertThat(replay.path("publicationId").asText()).isEqualTo("pub-1");
+    }
+
+    @Test
+    void postgresReservationUsesNonThrowingConflictHandlingSoReplayCanContinue() {
+        JdbcTemplate postgresJdbc = mock(JdbcTemplate.class);
+        when(postgresJdbc.execute(any(ConnectionCallback.class))).thenReturn("PostgreSQL");
+        when(postgresJdbc.queryForObject(any(String.class), any(Class.class), any(), any(), any()))
+                .thenReturn(0L);
+        when(postgresJdbc.update(contains("ON CONFLICT"), any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
+        DatabaseAgentTddStateRepository postgresRepository =
+                new DatabaseAgentTddStateRepository(postgresJdbc, mapper);
+        postgresRepository.init();
+
+        assertThat(postgresRepository.reserveIdempotency(
+                "tenant|project|test", "rg.tool.publish", "publish-1", "sha256:req"))
+                .isFalse();
+        verify(postgresJdbc).update(contains("ON CONFLICT (scope_key, operation, idempotency_key)"),
+                any(), any(), any(), any(), any(), any());
     }
 
     @Test
