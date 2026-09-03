@@ -5,10 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionException;
 import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +36,8 @@ class AgentTddWorkflowServiceTest {
     private GraphDraftRepository drafts;
     private GraphDraft draft;
     private GraphNodeFixturePromotionService fixtures;
+    private VisualGraphRunService runner;
+    private InMemoryVisualGraphPublicationRepository publications;
     private AgentTddWorkflowService service;
 
     @BeforeEach
@@ -39,15 +46,24 @@ class AgentTddWorkflowServiceTest {
         drafts = mock(GraphDraftRepository.class);
         draft = mock(GraphDraft.class);
         fixtures = mock(GraphNodeFixturePromotionService.class);
+        runner = mock(VisualGraphRunService.class);
+        publications = new InMemoryVisualGraphPublicationRepository();
         when(draft.draftId()).thenReturn("risk-tool");
         when(draft.tenantId()).thenReturn("tenant-a");
         when(draft.environment()).thenReturn("test");
         when(draft.revision()).thenReturn(4L);
+        when(draft.graphName()).thenReturn("riskTool");
+        when(draft.namespace()).thenReturn("project-a");
+        when(draft.nodes()).thenReturn(List.of());
+        when(draft.edges()).thenReturn(List.of());
         when(draft.operatorSnapshots()).thenReturn(Map.of());
+        when(draft.operatorFingerprints()).thenReturn(Map.of());
+        when(draft.visualLayout()).thenReturn(Map.of());
+        when(draft.inputSchema()).thenReturn(SchemaEnvelope.opaque());
+        when(draft.outputSchema()).thenReturn(SchemaEnvelope.opaque());
         when(drafts.find("risk-tool")).thenReturn(Optional.of(draft));
         service = new AgentTddWorkflowService(states, drafts, fixtures,
-                mock(VisualGraphRunService.class), mock(VisualOperatorCatalog.class),
-                mock(VisualGraphPublicationRepository.class), mapper);
+                runner, mock(VisualOperatorCatalog.class), publications, mapper);
     }
 
     @Test
@@ -64,11 +80,34 @@ class AgentTddWorkflowServiceTest {
         Map<String, Object> evidence = service.evidence(
                 json(Map.of("evidenceRef", recorded.get("evidenceRef"))), identity());
 
-        assertThat(recorded.get("evidenceRef")).isEqualTo("risk-tool:RED:sha256:golden");
+        assertThat(recorded.get("evidenceRef")).asString()
+                .startsWith("risk-tool:RED:sha256:golden:sha256:");
         assertThat(verdict).containsEntry("goldenSetId", "sha256:golden")
                 .containsEntry("state", "IMPLEMENTING");
         assertThat(evidence).containsEntry("operation", "rg.simulate")
                 .doesNotContainKeys("given", "output", "payload");
+    }
+
+    @Test
+    void keepsDistinctEvidenceArtifactsWhenTheSameGoldenLineChanges() {
+        Map<String, Object> failed = Map.of(
+                "goldenSetId", "sha256:golden", "side", "RED",
+                "cases", List.of(Map.of("caseId", "g1", "verdict", "RED_FAIL")),
+                "realExternalCalls", 0);
+        Map<String, Object> passed = Map.of(
+                "goldenSetId", "sha256:golden", "side", "RED",
+                "cases", List.of(Map.of("caseId", "g1", "verdict", "RED_PASS")),
+                "realExternalCalls", 0);
+
+        String failedRef = service.recordEvidence(
+                "rg.simulate", json(Map.of("toolRef", "risk-tool")), failed, identity()).get("evidenceRef").toString();
+        String passedRef = service.recordEvidence(
+                "rg.simulate", json(Map.of("toolRef", "risk-tool")), passed, identity()).get("evidenceRef").toString();
+
+        assertThat(failedRef).isNotEqualTo(passedRef);
+        assertThat(states.list(scope(), AgentTddWorkflowService.EVIDENCE)).hasSize(2);
+        assertThat(service.evidence(json(Map.of("evidenceRef", failedRef)), identity()).toString())
+                .contains("RED_FAIL");
     }
 
     @Test
@@ -100,6 +139,37 @@ class AgentTddWorkflowServiceTest {
                 identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("PUBLISH_GATE_NOT_MET"));
+    }
+
+    @Test
+    void executablePublishCreatesImmutableArtifactAfterCurrentGreenBaselineAndSignoff() {
+        states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", json(Map.of(
+                "toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE")))));
+        String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
+        service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "status", "GO", "goldenSetId", goldenSetId, "side", "GREEN",
+                "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
+        VisualValidationResult validation = mock(VisualValidationResult.class);
+        VisualGraphActionReadiness actionReadiness = mock(VisualGraphActionReadiness.class);
+        when(validation.valid()).thenReturn(true);
+        when(validation.actionReadiness()).thenReturn(actionReadiness);
+        when(actionReadiness.publishExecutableNow()).thenReturn(true);
+        when(runner.compile(draft)).thenReturn(new DslGenerationResult(
+                true, "graph riskTool {}", List.of(), validation));
+
+        Map<String, Object> published = service.publish(json(Map.of(
+                "toolRef", "risk-tool", "signoffRef", "signoff-1",
+                "idempotencyKey", "publish-1")), identity());
+
+        assertThat(published).containsEntry("artifactKind", "EXECUTABLE")
+                .containsEntry("goldenSetId", goldenSetId);
+        assertThat(published.get("publicationId")).asString().isNotBlank();
+        assertThat(publications.all()).singleElement().satisfies(publication -> {
+            assertThat(publication.draftId()).isEqualTo("risk-tool");
+            assertThat(publication.publicationMetadata().reason()).isEqualTo("signoff-1");
+        });
     }
 
     @Test

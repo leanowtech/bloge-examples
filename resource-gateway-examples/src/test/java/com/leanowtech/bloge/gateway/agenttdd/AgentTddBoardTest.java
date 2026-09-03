@@ -1,0 +1,125 @@
+package com.leanowtech.bloge.gateway.agenttdd;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/** Verifies the structure-only board, reviewed revision fence, and shipped browser entry point. */
+class AgentTddBoardTest {
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void boardProjectsScopedReadinessAndPendingOracleWithoutProposedPayload() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        GraphDraft draft = mock(GraphDraft.class);
+        when(draft.draftId()).thenReturn("risk-tool");
+        when(draft.tenantId()).thenReturn("tenant-a");
+        when(draft.environment()).thenReturn("test");
+        when(draft.visualLayout()).thenReturn(Map.of("agentTdd", Map.of("assetKind", "TOOL")));
+        when(draft.graphName()).thenReturn("riskTool");
+        when(draft.inputSchema()).thenReturn(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope.object(
+                Map.of("amount", Map.of("type", "number")), List.of("amount")));
+        when(draft.outputSchema()).thenReturn(com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope.object(
+                Map.of("decision", Map.of("type", "string")), List.of("decision")));
+        when(draft.nodes()).thenReturn(List.of(new GraphDraft.DraftNode(
+                "decide", "decision_table", "Decide waiver", Map.of(), Map.of(), null)));
+        when(draft.edges()).thenReturn(List.of(new GraphDraft.DraftEdge(
+                "input-to-decide", "data", new GraphDraft.Endpoint("input", "amount", ""),
+                new GraphDraft.Endpoint("decide", "amount", ""))));
+        when(drafts.all()).thenReturn(List.of(draft));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ObjectNode caseSet = mapper.createObjectNode();
+        caseSet.put("toolRef", "risk-tool");
+        ObjectNode row = caseSet.putArray("rows").addObject();
+        row.put("caseId", "g1");
+        row.put("category", "GOLDEN");
+        row.put("lifecycle", "DRAFT");
+        row.put("qualityState", "DESIGNED_NOT_RUN");
+        row.putObject("proposedOracle").put("status", "PENDING").put("oracleOwner", "cx-ops")
+                .putObject("expect").put("decision", "WAIVE");
+        states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", caseSet);
+        AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
+        when(workflow.readiness(any(), eq(identity()))).thenReturn(Map.of(
+                "toolRef", "risk-tool", "state", "SPECCING", "gates", Map.of()));
+
+        Map<String, Object> board = new AgentTddBoardService(drafts, states, workflow, mapper).board(identity());
+
+        assertThat((List<?>) board.get("tools")).singleElement().satisfies(value -> {
+            Map<?, ?> tool = (Map<?, ?>) value;
+            assertThat(tool.get("contract").toString()).contains("amount", "decision", "required=true");
+            assertThat(tool.get("structure").toString()).contains("Decide waiver", "decision_table", "input");
+            assertThat(tool.get("caseTable").toString()).contains("g1", "GOLDEN", "DRAFT")
+                    .doesNotContain("expect", "given", "stubs", "WAIVE");
+        });
+        assertThat((List<?>) board.get("pendingReviews")).singleElement().satisfies(value -> {
+            Map<?, ?> review = (Map<?, ?>) value;
+            assertThat(review.get("kind")).isEqualTo("ORACLE");
+            assertThat(review.containsKey("expect")).isFalse();
+            assertThat(review.containsKey("given")).isFalse();
+            assertThat(review.containsKey("stubs")).isFalse();
+        });
+        assertThat(board).containsEntry("payloadPolicy", "STRUCTURE_ONLY");
+    }
+
+    @Test
+    void controllerAuthenticatesReadAndGovernedApprovalSeparately() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        AgentTddBoardService board = mock(AgentTddBoardService.class);
+        AgentTddReviewService reviews = mock(AgentTddReviewService.class);
+        HttpHeaders headers = new HttpHeaders();
+        when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_READ)).thenReturn(identity());
+        when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE)).thenReturn(identity());
+        when(board.board(identity())).thenReturn(Map.of("tools", List.of()));
+        when(reviews.approveOracle("golden-1", "g1", 4, identity())).thenReturn(
+                new AgentTddStoredAsset(scope(), AgentTddMutationService.CASE_SET, "golden-1", 5,
+                        "sha256:test", mapper.createObjectNode(), java.time.Instant.EPOCH));
+        AgentTddBoardController controller = new AgentTddBoardController(authenticator, board, reviews);
+
+        controller.board(headers);
+        Map<String, Object> approved = controller.approveOracle(
+                "golden-1", "g1", new AgentTddBoardController.RevisionRequest(4), headers);
+
+        assertThat(approved).containsEntry("revision", 5L).containsEntry("status", "APPROVED");
+        verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
+        verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+    }
+
+    @Test
+    void staticBoardContainsNoAuthoringEditorAndDeclaresStructureOnlyPolicy() throws Exception {
+        try (InputStream input = getClass().getResourceAsStream("/static/agent-tdd.html")) {
+            assertThat(input).isNotNull();
+            String html = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(html).contains("Agent TDD 看板", "STRUCTURE_ONLY", "expectedRevision",
+                            "输入 / 输出契约", "步骤", "场景表")
+                    .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
+        }
+    }
+
+    private static String scope() {
+        return AgentTddMutationService.scopeKey(identity());
+    }
+
+    private static IntegrationRequestContext identity() {
+        return new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "sg", "USER", "reviewer-1",
+                "", "AGENT_TDD_GOVERNANCE", "corr-1");
+    }
+}

@@ -97,6 +97,7 @@ class GraphNodeFixturePromotionServiceTest {
         assertThat(result.revision()).isEqualTo(1);
         assertThat(result.lifecycle()).isEqualTo("DRAFT");
         assertThat(result.provenance()).isEqualTo("governed");
+        assertThat(result.sourceKind()).isEqualTo(FixtureAssetDescriptor.SourceKind.SAMPLE.name());
         assertThat(materialWrites).hasSize(1);
         WriteRequest write = materialWrites.getFirst();
         assertThat(write.subject()).isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
@@ -147,12 +148,13 @@ class GraphNodeFixturePromotionServiceTest {
                     return receipt(request);
                 }, mapper, Clock.fixed(NOW, ZoneOffset.UTC), captures);
 
-        lineageService.promote("draft-1", "node_1", request("scenario-fixture"), identity);
+        var result = lineageService.promote("draft-1", "node_1", request("scenario-fixture"), identity);
 
         assertThat(materialWrites).singleElement()
                 .extracting(WriteRequest::source)
                 .extracting(FixtureAssetDescriptor.FixtureSource::kind)
                 .isEqualTo(FixtureAssetDescriptor.SourceKind.SCENARIO);
+        assertThat(result.sourceKind()).isEqualTo(FixtureAssetDescriptor.SourceKind.SCENARIO.name());
     }
 
     @Test

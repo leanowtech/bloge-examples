@@ -267,6 +267,9 @@ public final class AgentTddExecutionService {
         JsonNode rows = cases.path("rows");
         if ((!rows.isArray() || rows.isEmpty()) && states != null) {
             String caseSetRef = optionalText(arguments, "caseSetRef");
+            if (caseSetRef.isBlank()) {
+                caseSetRef = optionalText(cases, "caseSetRef");
+            }
             if (!caseSetRef.isBlank()) {
                 AgentTddStoredAsset caseSet = states.find(
                                 AgentTddMutationService.scopeKey(identity), AgentTddMutationService.CASE_SET, caseSetRef)

@@ -175,6 +175,31 @@ class AgentTddExecutionServiceTest {
         assertThat(result).containsEntry("status", "GO").containsKey("goldenSetId");
     }
 
+    @Test
+    void simulateResolvesCaseSetRefFromTheDocumentedNestedCasesEnvelope() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
+                mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(
+                        Map.of("caseId", "g1", "lifecycle", "ACTIVE",
+                                "given", Map.of("score", 720, "amount", 100),
+                                "stubs", Map.of("eligibility", Map.of("eligible", true, "ruleId", "R1")),
+                                "expect", Map.of("eligible", true, "ruleId", "R1"))))));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper, states);
+
+        Map<String, Object> result = service.simulate(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
+                "cases", Map.of("caseSetRef", "golden-1"))), identity());
+
+        assertThat(result.get("cases")).asList().singleElement()
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("caseId", "g1").containsEntry("verdict", "RED_PASS");
+    }
+
     private Fixture fixture() {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         OperatorLibrary risk = new OperatorLibrary(library.schemaVersion(), "risk", library.displayName(),

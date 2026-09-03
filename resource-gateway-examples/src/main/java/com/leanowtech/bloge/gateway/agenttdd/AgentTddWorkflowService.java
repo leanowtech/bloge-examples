@@ -92,7 +92,7 @@ public final class AgentTddWorkflowService {
         evidence.put("operation", operation);
         evidence.set("result", mapper.valueToTree(result));
         AgentTddStoredAsset stored = states.save(scope(identity), EVIDENCE,
-                evidenceRef(toolRef, result), evidence);
+                evidenceRef(toolRef, operation, result), evidence);
         ObjectNode verdict = mapper.createObjectNode();
         verdict.put("toolRef", toolRef);
         verdict.put("goldenSetId", Objects.toString(result.get("goldenSetId"), ""));
@@ -207,7 +207,7 @@ public final class AgentTddWorkflowService {
                 return Map.of("fixtureId", result.fixtureAssetId(), "revision", result.revision(),
                         "lifecycle", result.lifecycle(), "scope", scope(identity),
                         "schemaRef", result.schemaRef(), "lineageRef", result.assetRef(),
-                        "sourceKind", result.provenance());
+                        "sourceKind", result.sourceKind());
             } catch (GraphNodeFixturePromotionException failure) {
                 String code = failure.code().substring(failure.code().lastIndexOf('.') + 1);
                 if ("OUTPUT_SCHEMA_NON_UNIQUE".equals(code)) code = "AMBIGUOUS_OUTPUT_PORT";
@@ -307,9 +307,11 @@ public final class AgentTddWorkflowService {
         return "GO".equals(Objects.toString(result.get("status"), "")) ? "IMPLEMENTED" : "IMPLEMENTING";
     }
 
-    private static String evidenceRef(String toolRef, Map<String, Object> result) {
+    private String evidenceRef(String toolRef, String operation, Map<String, Object> result) {
+        String contentFingerprint = com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
+                .fromCanonicalValue(mapper, Map.of("operation", operation, "result", result), MAX_BYTES);
         return toolRef + ":" + Objects.toString(result.get("side"), "BASELINE") + ":"
-                + Objects.toString(result.get("goldenSetId"), "unknown");
+                + Objects.toString(result.get("goldenSetId"), "unknown") + ":" + contentFingerprint;
     }
 
     private static AgentTddToolException gate(String message) {

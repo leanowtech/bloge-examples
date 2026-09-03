@@ -152,10 +152,10 @@ types:                                    # 命名类型（字段基元用小写
       abuseSignal:      { enum: [none, suspected, confirmed] }
 
 operators:                                # 全部无 runtime.bindingRef → 设计态（design-only）
-  ride:order-lookup:          { name: Order Lookup,          archetype: resource-read, input: { orderId: string }, output: { order: Order } }
-  ride:responsibility-decide: { name: Responsibility Decide, archetype: resource-read, input: { order: Order },    output: { responsibility: Responsibility } }
-  ride:city-pricing-policy:   { name: City Pricing Policy,   archetype: resource-read, input: { city: string },    output: { policy: CityPolicy } }
-  ride:compensation-history:  { name: Compensation History,  archetype: resource-read, input: { orderId: string }, output: { history: History } }
+  ride:order-lookup:          { name: Order Lookup,          archetype: resource-read, requiresSecrets: false, input: { orderId: string }, output: { order: Order } }
+  ride:responsibility-decide: { name: Responsibility Decide, archetype: resource-read, requiresSecrets: false, input: { order: Order },    output: { responsibility: Responsibility } }
+  ride:city-pricing-policy:   { name: City Pricing Policy,   archetype: resource-read, requiresSecrets: false, input: { city: string },    output: { policy: CityPolicy } }
+  ride:compensation-history:  { name: Compensation History,  archetype: resource-read, requiresSecrets: false, input: { orderId: string }, output: { history: History } }
 ```
 
 返回：编译诊断（无错）+ 投影出的 4 个设计态算子。此时它们**只有契约、没有实现**。
@@ -289,9 +289,11 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 
 ## 7. 工程实施计划
 
+> 实现状态（2026-09-03）：W1–W5 已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；Agent overlay 和幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不作为运行完成证据。
+
 一次性造通完整循环（查询→调整→编译→模拟→发布），分周推进，每步复用已有能力、只补 4.8 新件。
 
-- **W1·MCP 骨架 + 阶段一查询（READ）。** 建 RG 内 Java MCP 模块、接已有用途鉴权；实现 7 个只读工具（包住已有只读投影）。验收：Agent 能盘点现状、读契约/库/golden/待办；全 READ、零风险。
+- **W1·MCP 骨架 + 阶段一查询（READ）。** 建 RG 内 Java MCP 模块、接已有用途鉴权；实现 8 个只读工具（包住已有只读投影）。验收：Agent 能盘点现状、读契约/库/golden/待办；全 READ、零风险。
 - **W2·阶段三编译 + 阶段四模拟（库契约感知）。** 实现 `dsl.preview/gate.check`（带 libraryRefs、对契约解析）、`feature.rehearse/tool.baseline/simulate`（带 libraryRefs）。验收：一份只有契约（bindingRef 全缺席）的库能被编译/检查/模拟，真实外呼为 0，红→绿按层出结论。
 - **W3·阶段二调整（DRAFT_WRITE + GOLDEN PROPOSE）。** 实现 `library.upsert/feature.compose/tool.compose/tool.setInstruction/scenario.upsertCases/oracle.propose/setDependencyBehavior`；GOLDEN 落"待批准"。验收：Agent 能改库契约/工具/用例，GOLDEN 走人工批准，改动过合入前置门+四维结论。
 - **W4·阶段五发布/治理 + 红→绿身份线 + 生命周期。** 实现 `fixture.promote/publishSpec/publish/readiness.get`；实现 goldenSetId 身份线+分层业务待办；golden 表接意图驱动生命周期。验收：端到端跑通第 5 章案例（声明契约→编排→写 golden→红→补实现→图降级→绿→发布）；核心 golden 不被统一保留期误删。
@@ -308,7 +310,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 |---|---|---|---|
 | `…/spine/authorSpine.ts`（`resolveSpine`/`parseToolCoordinate`/`toolCoordinateHref`） | 对象主线导航状态；`ToolCoordinate` 仅 UI 态、从不进协议 | **KEEP** 并升为只读看板默认导航 | 看板仍需按对象导航；无协议影响 |
 | `…/external-api/*`（`externalApiFormToDescriptor`/`toDesignContract`/`inferSchema`）+ `externalApiTransport.ts` | web 表单定义外部 API、写既有 admin 端点，`inferSchema` 从样例推 schema（有界、确定性、防环） | **DEMOTE 为逃生舱** | canonical 改为 `rg.library.upsert`；表单保留给非 Agent 用户走同一端点；`inferSchema` 逻辑复用；不删 |
-| `GraphNodeFixturePromotionController/Service` | 节点捕获输出晋级为治理 fixture，服务端派生坐标、作用域闭合先于读 | **KEEP 原样** 并由 `rg.fixture.promote` 包装 | 已服务端权威、优于规格 |
+| `GraphNodeFixturePromotionController/Service` | 节点捕获输出晋级为治理 fixture，服务端派生坐标、作用域闭合先于读 | **KEEP**，增加显式多输出端口选择并由 `rg.fixture.promote` 包装 | 保留既有单输出语义，同时消除多输出歧义 |
 | `…/decision-scenario/decisionScenario.ts`（有界谓词文法、`representativeValues` 阈值邻域、确定性枚举、opaque→需 authorSamples） | 决策表→场景枚举 | **KEEP 并升为 canonical 枚举引擎**，接 `rg.scenario.upsertCases` 枚举模式 | 正是附录 D 的算法，已存在 |
 | `…/tool/toolModel.ts` `ToolSignature`（仅 I/O + 身份，无 Agent 面描述） | 工具签名 | **EXTEND 为 `ToolAgentContract`**（加 description/whenToUse/examples-from-golden） | 补"工具缺 Agent 面契约"缺口（附录 F） |
 | 7 个平行顶层 Studio（创作面） | 各系统对象创作/治理面 | **收敛入只读看板**，创作面降为逃生舱，spine 默认导航 | Agent 优先下 web 不承担创作 |
@@ -391,7 +393,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 ```json
 // in
 { "draftId":"", "nodeId":"fetchOrder", "outputPort":"payload",
-  "fixtureId":"", "category":"", "retentionDays":0, "redactPaths":["$.payload.feeCharged"], "idempotencyKey":"" }
+  "fixtureId":"", "category":"", "retentionDays":0, "redactPaths":["/payload/feeCharged"], "idempotencyKey":"" }
 // out.data
 { "fixtureId":"", "scope":"(服务端派生)", "schemaRef":"(服务端派生)", "sourceKind":"SCENARIO|SAMPLE", "lineageRef":"" }
 // errors: AMBIGUOUS_OUTPUT_PORT, SCHEMA_NONCONFORMANT, RETENTION_POLICY_VIOLATION, DRAFT_NOT_FOUND

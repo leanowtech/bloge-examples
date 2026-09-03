@@ -12,6 +12,14 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
+Resource Gateway 1.4 also exposes an authenticated, stateless MCP Agent TDD surface at
+`POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
+cases, zero-egress red/green simulation, content-addressed evidence history, governed Fixture
+promotion, immutable Tool publication, and a structure-only review board at
+`/agent-tdd.html`. See the
+[Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
+purpose mapping, workflow, review endpoints, publish gates, and verification commands.
+
 For the user-facing path from OpenAPI import through Default Fixture simulation,
 multi-API Tool composition, whole-Flow Fixture authoring, and automatic simulation,
 see the [API, Fixture, and Tool authoring guide](../docs/resource-gateway-api-fixture-tool-authoring-guide.md).
@@ -1100,6 +1108,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `http://localhost:8080/capabilities/?lang=zh-CN&task=quality` | Inspect GP-09 quality coverage, admission blockers, the payload boundary, and each Case's exact impact closure |
 | `http://localhost:8080/business-mirror/` | Open the legacy Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
+| `http://localhost:8080/agent-tdd.html` | Inspect structure-only Agent TDD readiness, evidence counts, and pending human reviews |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
 | `http://localhost:8080/correctness/` | Inspect the exact, payload-free Correctness Workspace enabled by default; use the printed deep link rather than omitting its target coordinate |

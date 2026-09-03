@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Resource Gateway · Agent TDD 看板</title>
+  <style>
+    :root{color-scheme:light;--ink:#17212b;--muted:#687583;--line:#dce3e8;--paper:#f5f7f8;--card:#fff;--blue:#205bd8;--green:#147a50;--amber:#a65b00;--red:#b42318}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.55 system-ui,-apple-system,"PingFang SC",sans-serif}
+    header,main{max-width:1180px;margin:auto;padding:24px}header{display:flex;gap:24px;align-items:end;justify-content:space-between;border-bottom:1px solid var(--line)}
+    h1{font-size:25px;margin:0 0 4px}h2{font-size:16px;margin:0 0 14px}.sub,.meta{color:var(--muted)}.auth{display:flex;gap:8px;flex-wrap:wrap;justify-content:end}
+    input,button{border:1px solid var(--line);border-radius:7px;padding:9px 11px;background:#fff}input{min-width:230px}button{cursor:pointer;color:#fff;background:var(--blue);border-color:var(--blue)}
+    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}.metric,.panel,.tool{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.metric b{font-size:25px;display:block}
+    .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.tools{display:grid;gap:10px}.tool-head{display:flex;justify-content:space-between;gap:12px}.state{font-weight:700}.SPECCING{color:var(--amber)}.IMPLEMENTING{color:var(--blue)}.IMPLEMENTED{color:var(--green)}
+    .gates{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.gate{font-size:12px;padding:3px 7px;border-radius:999px;background:#eef2f5}.gate.ok{color:var(--green);background:#e8f5ef}.review{padding:12px 0;border-top:1px solid var(--line)}.review:first-child{border-top:0}.empty{color:var(--muted);padding:20px 0}
+    .projection{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.projection section{background:#f8fafb;border:1px solid #e8edf0;border-radius:7px;padding:9px}.projection h3{font-size:12px;margin:0 0 5px;color:var(--muted)}.projection ul{list-style:none;margin:0;padding:0}.projection li{overflow-wrap:anywhere}.projection code{font-size:11px;color:#334155}
+    .error{color:var(--red);white-space:pre-wrap}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid{grid-template-columns:1fr}}
+    @media(max-width:600px){.projection{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>Agent TDD 看板</h1><div class="sub">只读状态、红→绿证据与人工治理入口</div></div>
+  <div class="auth"><input id="token" type="password" placeholder="Bearer token（仅保存在本页内存）"><button id="load">加载看板</button></div>
+</header>
+<main>
+  <section class="summary">
+    <div class="metric"><b id="toolCount">—</b><span class="meta">Tool</span></div>
+    <div class="metric"><b id="reviewCount">—</b><span class="meta">待人工评审</span></div>
+    <div class="metric"><b id="evidenceCount">—</b><span class="meta">证据条目</span></div>
+  </section>
+  <div id="error" class="error"></div>
+  <section class="grid">
+    <div class="panel"><h2>实现与发布门禁</h2><div id="tools" class="tools"><div class="empty">输入凭据后加载。</div></div></div>
+    <div class="panel"><h2>待业务决策</h2><div id="reviews"><div class="empty">尚未加载。</div></div></div>
+  </section>
+  <div class="note">看板只请求 STRUCTURE_ONLY 视图，不展示 fixture 或业务响应载荷。批准操作要求 AGENT_TDD_GOVERNANCE purpose，并携带人实际查看的精确 revision。</div>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const headers = purpose => ({Authorization:`Bearer ${$('token').value.trim()}`,'X-Purpose':purpose,'Content-Type':'application/json'});
+  async function request(url, options={}) {
+    const response = await fetch(url, options); const body = await response.json().catch(()=>({}));
+    if (!response.ok) throw new Error(body?.error?.message || `HTTP ${response.status}`); return body;
+  }
+  function renderTool(tool) {
+    const gates = Object.entries(tool.gates || {}).map(([name,ok])=>`<span class="gate ${ok?'ok':''}">${esc(name)} ${ok?'✓':'·'}</span>`).join('');
+    const coverage=tool.caseCoverage||{}; const line=tool.redToGreen||{};
+    const fields=[...(tool.contract?.inputFields||[]).map(f=>`入 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`),...(tool.contract?.outputFields||[]).map(f=>`出 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`)].map(v=>`<li>${v}</li>`).join('')||'<li class="meta">未声明字段</li>';
+    const nodes=(tool.structure?.nodes||[]).map(n=>`<li>${esc(n.label)} <code>${esc(n.operatorRef)}</code></li>`).join('')||'<li class="meta">无节点</li>';
+    const cases=(tool.caseTable||[]).map(c=>`<li>${esc(c.caseId)} · ${esc(c.category)} · ${esc(c.lifecycle)}</li>`).join('')||'<li class="meta">无场景</li>';
+    return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="gates">${gates}</div><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>步骤 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</h3><ul>${nodes}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
+  }
+  async function approve(review) {
+    const oracle = review.kind === 'ORACLE';
+    const url = oracle ? `/api/agent-tdd/reviews/oracles/${encodeURIComponent(review.assetRef)}/${encodeURIComponent(review.caseId)}/approve` : `/api/agent-tdd/reviews/specs/${encodeURIComponent(review.assetRef)}/approve`;
+    await request(url,{method:'POST',headers:headers('AGENT_TDD_GOVERNANCE'),body:JSON.stringify({expectedRevision:review.revision})}); await load();
+  }
+  function renderReview(review,index) {
+    return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(review.revision)} · owner ${esc(review.owner)}</div><button data-review="${index}">批准</button></div>`;
+  }
+  async function load() {
+    $('error').textContent='';
+    try {
+      const data=await request('/api/agent-tdd/board',{headers:headers('AGENT_TDD_READ')});
+      $('toolCount').textContent=data.tools.length;$('reviewCount').textContent=data.pendingReviews.length;$('evidenceCount').textContent=data.evidenceCount;
+      $('tools').innerHTML=data.tools.length?data.tools.map(renderTool).join(''):'<div class="empty">当前作用域没有 Tool。</div>';
+      $('reviews').innerHTML=data.pendingReviews.length?data.pendingReviews.map(renderReview).join(''):'<div class="empty">没有待处理评审。</div>';
+      document.querySelectorAll('[data-review]').forEach(button=>button.onclick=()=>approve(data.pendingReviews[Number(button.dataset.review)]).catch(e=>$('error').textContent=e.message));
+    } catch(error) {$('error').textContent=error.message;}
+  }
+  $('load').onclick=load;
+</script>
+</body>
+</html>

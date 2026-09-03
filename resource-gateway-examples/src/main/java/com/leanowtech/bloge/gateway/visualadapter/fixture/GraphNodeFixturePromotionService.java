@@ -291,7 +291,8 @@ public class GraphNodeFixturePromotionService {
                     stored.descriptor().lifecycle().name(),
                     stored.exactRef(),
                     schemaRef,
-                    "governed");
+                    "governed",
+                    source.kind().name());
         } catch (FixtureCatalogCommandException exception) {
             if ("RG.CORRECTNESS.REVISION_CONFLICT".equals(exception.code())) {
                 throw new GraphNodeFixturePromotionException(
@@ -454,6 +455,20 @@ public class GraphNodeFixturePromotionService {
             /** Exact output schema reference used by the Fixture. */
             ExactSchemaRef schemaRef,
             /** Stable provenance label for this promotion result. */
-            String provenance
-    ) { }
+            String provenance,
+            /** Server-derived source kind: {@code SCENARIO} or {@code SAMPLE}. */
+            String sourceKind
+    ) {
+        /**
+         * Backward-compatible receipt constructor for callers that predate explicit source kind.
+         */
+        public PromotionResult(String fixtureAssetId,
+                               long revision,
+                               String lifecycle,
+                               ExactAssetRef assetRef,
+                               ExactSchemaRef schemaRef,
+                               String provenance) {
+            this(fixtureAssetId, revision, lifecycle, assetRef, schemaRef, provenance, "SAMPLE");
+        }
+    }
 }
