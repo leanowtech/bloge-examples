@@ -5,9 +5,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.Map;
+import java.util.Optional;
 
 /** Constant-time bearer credential resolver backed by a server-side identity record. */
 public final class StaticBearerIntegrationIdentityResolver implements IntegrationIdentityResolver {
@@ -25,7 +26,7 @@ public final class StaticBearerIntegrationIdentityResolver implements Integratio
                                             IntegrationWorkloadIdentity identity,
                                             boolean demoMode,
                                             Clock clock) {
-        this(Map.of(credential, identity), demoMode, clock);
+        this(Collections.singletonMap(credential, identity), demoMode, clock);
     }
 
     /**

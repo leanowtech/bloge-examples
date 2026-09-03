@@ -5,10 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.Set;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 class StaticBearerIntegrationIdentityResolverTest {
 
@@ -58,6 +59,17 @@ class StaticBearerIntegrationIdentityResolverTest {
             assertThat(identity.actorType()).isEqualTo("HUMAN");
             assertThat(identity.actorId()).isEqualTo("business-reviewer");
         });
+    }
+
+    @Test
+    void rejectsInvalidSingleCredentialConfigurationWithThePublicContract() {
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new StaticBearerIntegrationIdentityResolver(null,
+                        identity(Instant.parse("2026-07-13T00:00:00Z")), false))
+                .withMessageContaining("non-empty integration bearer credential");
+        assertThatIllegalArgumentException().isThrownBy(() ->
+                new StaticBearerIntegrationIdentityResolver("secret", null, false))
+                .withMessageContaining("server-owned integration identity");
     }
 
     private static IntegrationWorkloadIdentity identity(Instant expiresAt) {
