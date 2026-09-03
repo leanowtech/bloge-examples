@@ -151,7 +151,53 @@ public final class AgentTddBoardService {
         card.put("caseCoverage", Map.of("active", active, "stale", stale, "pendingApproval", pending));
         caseRows.sort(Comparator.comparing(row -> row.get("caseSetRef") + ":" + row.get("caseId")));
         card.put("caseTable", List.copyOf(caseRows));
+        card.put("journey", journey(card));
         return Map.copyOf(card);
+    }
+
+    /**
+     * Derives the business journey position from facts already present on one Tool card.
+     *
+     * <p>The projection intentionally performs no repository reads. A later gate therefore cannot
+     * make the journey claim stronger than the readiness and case-set facts returned in the same
+     * board response.</p>
+     */
+    private static Map<String, Object> journey(Map<String, Object> card) {
+        boolean speccing = "SPECCING".equals(card.get("state"));
+        Map<?, ?> coverage = card.get("caseCoverage") instanceof Map<?, ?> value ? value : Map.of();
+        long active = number(coverage, "active");
+        long pending = number(coverage, "pendingApproval");
+        boolean green = gate(card, "greenBaseline");
+        boolean publishable = Boolean.TRUE.equals(card.get("publishable"));
+        String stage;
+        String nextAction;
+        if (publishable) {
+            stage = "PUBLISH";
+            nextAction = "SIGNOFF_OR_PUBLISH";
+        } else if (green) {
+            stage = "PUBLISH";
+            nextAction = "AWAIT_ATTEST_OR_SIGNOFF";
+        } else if (active > 0 || pending > 0) {
+            stage = "GOLDEN";
+            nextAction = pending > 0 ? "APPROVE_GOLDEN" : "RUN_RED_GREEN";
+        } else if (!speccing) {
+            stage = "ORCHESTRATION";
+            nextAction = "ADD_GOLDEN";
+        } else {
+            stage = "RESOURCES";
+            nextAction = "BIND_OR_FIXTURE";
+        }
+        int stageIndex = List.of("CONTRACT", "RESOURCES", "ORCHESTRATION", "GOLDEN", "PUBLISH")
+                .indexOf(stage);
+        return Map.of(
+                "stage", stage,
+                "stageIndex", stageIndex,
+                "nextAction", nextAction,
+                "blocking", card.getOrDefault("remainingLimitations", List.of()));
+    }
+
+    private static long number(Map<?, ?> values, String key) {
+        return values.get(key) instanceof Number number ? number.longValue() : 0L;
     }
 
     private static List<Map<String, Object>> schemaFields(SchemaEnvelope envelope) {

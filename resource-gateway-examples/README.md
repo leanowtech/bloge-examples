@@ -20,6 +20,8 @@ no-store review details at
 `/agent-tdd.html`. See the
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
+The board derives each Tool's position and next business action along the five-act journey from
+existing readiness and case-set facts; it does not create a second workflow state or perform extra reads.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened

@@ -10,11 +10,12 @@
     header,main{max-width:1180px;margin:auto;padding:24px}header{display:flex;gap:24px;align-items:end;justify-content:space-between;border-bottom:1px solid var(--line)}
     h1{font-size:25px;margin:0 0 4px}h2{font-size:16px;margin:0 0 14px}.sub,.meta{color:var(--muted)}.auth{display:flex;gap:8px;flex-wrap:wrap;justify-content:end}
     input,button{border:1px solid var(--line);border-radius:7px;padding:9px 11px;background:#fff}input{min-width:230px}button{cursor:pointer;color:#fff;background:var(--blue);border-color:var(--blue)}
-    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}.metric,.panel,.tool{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.metric b{font-size:25px;display:block}
+    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}.metric,.panel,.tool{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}.metric b{font-size:25px;display:block}
+    .journey-legend,.journey-progress{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.journey-legend{margin-bottom:18px}.journey-legend span,.journey-dot{border:1px solid var(--line);border-radius:999px;padding:5px 8px;text-align:center;color:var(--muted);background:#fff;font-size:12px}.journey-progress{margin-top:10px}.journey-dot.active{color:#fff;background:var(--blue);border-color:var(--blue)}.journey-next{margin-top:5px;color:var(--blue);font-weight:650}
     .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.tools{display:grid;gap:10px}.tool-head{display:flex;justify-content:space-between;gap:12px}.state{font-weight:700}.SPECCING{color:var(--amber)}.IMPLEMENTING{color:var(--blue)}.IMPLEMENTED{color:var(--green)}
     .gates{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.gate{font-size:12px;padding:3px 7px;border-radius:999px;background:#eef2f5}.gate.ok{color:var(--green);background:#e8f5ef}.review{padding:12px 0;border-top:1px solid var(--line)}.review:first-child{border-top:0}.empty{color:var(--muted);padding:20px 0}
     .projection{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.projection section{background:#f8fafb;border:1px solid #e8edf0;border-radius:7px;padding:9px}.projection h3{font-size:12px;margin:0 0 5px;color:var(--muted)}.projection ul{list-style:none;margin:0;padding:0}.projection li{overflow-wrap:anywhere}.projection code{font-size:11px;color:#334155}
-    .error{color:var(--red);white-space:pre-wrap}.review-detail{white-space:pre-wrap;max-height:280px;overflow:auto;background:#101820;color:#edf2f7;border-radius:7px;padding:10px;font:12px/1.45 ui-monospace,monospace}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid{grid-template-columns:1fr}}
+    .error{color:var(--red);white-space:pre-wrap}.review-detail{white-space:pre-wrap;max-height:280px;overflow:auto;background:#101820;color:#edf2f7;border-radius:7px;padding:10px;font:12px/1.45 ui-monospace,monospace}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid{grid-template-columns:1fr}.journey-legend,.journey-progress{grid-template-columns:1fr}}
     @media(max-width:600px){.projection{grid-template-columns:1fr}}
   </style>
 </head>
@@ -29,9 +30,12 @@
     <div class="metric"><b id="reviewCount">—</b><span class="meta">待人工评审</span></div>
     <div class="metric"><b id="evidenceCount">—</b><span class="meta">证据条目</span></div>
   </section>
+  <section aria-label="五幕业务旅程" class="journey-legend">
+    <span>1 · 提案契约</span><span>2 · 接源钉样例</span><span>3 · 口述编排</span><span>4 · 定 golden</span><span>5 · 发布</span>
+  </section>
   <div id="error" class="error"></div>
   <section class="grid">
-    <div class="panel"><h2>实现与发布门禁</h2><div id="tools" class="tools"><div class="empty">输入凭据后加载。</div></div></div>
+    <div class="panel"><h2>业务主线 · 各工具进行到哪一幕</h2><div id="tools" class="tools"><div class="empty">输入凭据后加载。</div></div></div>
     <div class="panel"><h2>待业务决策</h2><div id="reviews"><div class="empty">尚未加载。</div></div></div>
   </section>
   <div class="note">看板只请求 STRUCTURE_ONLY 视图，不展示 fixture 或业务响应载荷。请先在授权的业务来源核对完整内容，再记录批准；操作要求 AGENT_TDD_GOVERNANCE purpose，并携带人实际查看的精确 revision 或 GREEN 基线指纹。</div>
@@ -39,6 +43,8 @@
 <script>
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const JOURNEY_STAGES=['提案契约','接源钉样例','口述编排','定 golden','发布'];
+  const NEXT_ACTION_LABELS={BIND_OR_FIXTURE:'下一步：接入真实资源或提供样例',ADD_GOLDEN:'下一步：定义业务应然',APPROVE_GOLDEN:'待你批准业务应然',RUN_RED_GREEN:'下一步：运行红/绿验证',AWAIT_ATTEST_OR_SIGNOFF:'下一步：等待实景验证或负责人签署',SIGNOFF_OR_PUBLISH:'下一步：签署或发布'};
   const headers = purpose => ({Authorization:`Bearer ${$('token').value.trim()}`,'X-Purpose':purpose,'Content-Type':'application/json'});
   async function request(url, options={}) {
     const response = await fetch(url, options); const body = await response.json().catch(()=>({}));
@@ -47,10 +53,12 @@
   function renderTool(tool) {
     const gates = Object.entries(tool.gates || {}).map(([name,ok])=>`<span class="gate ${ok?'ok':''}">${esc(name)} ${ok?'✓':'·'}</span>`).join('');
     const coverage=tool.caseCoverage||{}; const line=tool.redToGreen||{};
+    const journey=tool.journey||{}; const stageIndex=Number.isInteger(journey.stageIndex)?journey.stageIndex:-1;
+    const journeyDots=JOURNEY_STAGES.map((label,index)=>`<span class="journey-dot ${index<=stageIndex?'active':''}">${index+1} · ${esc(label)}</span>`).join('');
     const fields=[...(tool.contract?.inputFields||[]).map(f=>`入 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`),...(tool.contract?.outputFields||[]).map(f=>`出 · ${esc(f.name)} <code>${esc(f.type)}${f.required?' *':''}</code>`)].map(v=>`<li>${v}</li>`).join('')||'<li class="meta">未声明字段</li>';
     const nodes=(tool.structure?.nodes||[]).map(n=>`<li>${esc(n.label)} <code>${esc(n.operatorRef)}</code></li>`).join('')||'<li class="meta">无节点</li>';
     const cases=(tool.caseTable||[]).map(c=>`<li>${esc(c.caseId)} · ${esc(c.category)} · ${esc(c.lifecycle)}</li>`).join('')||'<li class="meta">无场景</li>';
-    return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="gates">${gates}</div><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>步骤 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</h3><ul>${nodes}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
+    return `<article class="tool"><div class="tool-head"><strong>${esc(tool.toolRef)}</strong><span class="state ${esc(tool.state)}">${esc(tool.state)}</span></div><div class="journey-progress">${journeyDots}</div><div class="journey-next">${esc(NEXT_ACTION_LABELS[journey.nextAction]||journey.nextAction||'')}</div><div class="meta">goldenSetId · ${esc(tool.goldenSetId || '尚未建立')}</div><div class="meta">红绿线 · ${esc(line.side||'NOT_RUN')} ${esc(line.status||'')}　用例 · ACTIVE ${esc(coverage.active||0)} / STALE ${esc(coverage.stale||0)} / 待批准 ${esc(coverage.pendingApproval||0)}</div><div class="gates">${gates}</div><div class="projection"><section><h3>输入 / 输出契约</h3><ul>${fields}</ul></section><section><h3>步骤 · ${esc(tool.contract?.nodeCount||0)} 节点 / ${esc(tool.contract?.edgeCount||0)} 连线</h3><ul>${nodes}</ul></section><section><h3>场景表</h3><ul>${cases}</ul></section></div></article>`;
   }
   async function approve(review) {
     let url, body;

@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -113,6 +114,48 @@ class AgentTddBoardTest {
     }
 
     @Test
+    void boardDerivesTheFiveActJourneyStageAndNextBusinessAction() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        List<GraphDraft> toolDrafts = List.of(
+                toolDraft("01-resources", "SPECCING"),
+                toolDraft("02-orchestration", "IMPLEMENTING"),
+                toolDraft("03-golden", "IMPLEMENTING"),
+                toolDraft("04-green", "IMPLEMENTED"),
+                toolDraft("05-publishable", "IMPLEMENTED"));
+        when(drafts.all()).thenReturn(toolDrafts);
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ObjectNode caseSet = mapper.createObjectNode().put("toolRef", "03-golden");
+        caseSet.putArray("rows").addObject()
+                .put("caseId", "pending-golden")
+                .put("lifecycle", "DRAFT")
+                .putObject("proposedOracle").put("status", "PENDING");
+        states.save(scope(), AgentTddMutationService.CASE_SET, "journey-cases", caseSet);
+        AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
+        Map<String, Map<String, Object>> readiness = Map.of(
+                "01-resources", readiness("01-resources", "SPECCING", false, false),
+                "02-orchestration", readiness("02-orchestration", "IMPLEMENTING", false, false),
+                "03-golden", readiness("03-golden", "IMPLEMENTING", false, false),
+                "04-green", readiness("04-green", "IMPLEMENTED", true, false),
+                "05-publishable", readiness("05-publishable", "IMPLEMENTED", true, true));
+        when(workflow.readiness(any(), eq(identity()))).thenAnswer(invocation -> readiness.get(
+                ((com.fasterxml.jackson.databind.JsonNode) invocation.getArgument(0))
+                        .path("toolRef").asText()));
+
+        Map<String, Map<?, ?>> byTool = new LinkedHashMap<>();
+        ((List<?>) new AgentTddBoardService(drafts, states, workflow, mapper)
+                .board(identity()).get("tools")).forEach(value -> {
+                    Map<?, ?> tool = (Map<?, ?>) value;
+                    byTool.put(tool.get("toolRef").toString(), (Map<?, ?>) tool.get("journey"));
+                });
+
+        assertJourney(byTool.get("01-resources"), "RESOURCES", 1, "BIND_OR_FIXTURE");
+        assertJourney(byTool.get("02-orchestration"), "ORCHESTRATION", 2, "ADD_GOLDEN");
+        assertJourney(byTool.get("03-golden"), "GOLDEN", 3, "APPROVE_GOLDEN");
+        assertJourney(byTool.get("04-green"), "PUBLISH", 4, "AWAIT_ATTEST_OR_SIGNOFF");
+        assertJourney(byTool.get("05-publishable"), "PUBLISH", 4, "SIGNOFF_OR_PUBLISH");
+    }
+
+    @Test
     void controllerAuthenticatesReadAndGovernedApprovalSeparately() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         AgentTddBoardService board = mock(AgentTddBoardService.class);
@@ -169,7 +212,9 @@ class AgentTddBoardTest {
             assertThat(input).isNotNull();
             String html = new String(input.readAllBytes(), StandardCharsets.UTF_8);
             assertThat(html).contains("Agent TDD 看板", "STRUCTURE_ONLY", "expectedRevision",
-                            "输入 / 输出契约", "步骤", "场景表", "PUBLISH_SIGNOFF",
+                            "五幕业务旅程", "业务主线 · 各工具进行到哪一幕",
+                            "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
+                            "步骤", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
@@ -177,6 +222,42 @@ class AgentTddBoardTest {
 
     private static String scope() {
         return AgentTddMutationService.scopeKey(identity());
+    }
+
+    private static GraphDraft toolDraft(String ref, String state) {
+        GraphDraft draft = mock(GraphDraft.class);
+        when(draft.draftId()).thenReturn(ref);
+        when(draft.tenantId()).thenReturn("tenant-a");
+        when(draft.namespace()).thenReturn("project-a");
+        when(draft.environment()).thenReturn("test");
+        when(draft.status()).thenReturn(state);
+        when(draft.graphName()).thenReturn(ref);
+        when(draft.visualLayout()).thenReturn(Map.of("agentTdd", Map.of("assetKind", "TOOL")));
+        when(draft.nodes()).thenReturn(List.of());
+        when(draft.edges()).thenReturn(List.of());
+        return draft;
+    }
+
+    private static Map<String, Object> readiness(String toolRef,
+                                                  String state,
+                                                  boolean green,
+                                                  boolean publishable) {
+        return Map.of(
+                "toolRef", toolRef,
+                "state", state,
+                "publishable", publishable,
+                "gates", Map.of("greenBaseline", green, "ownerSignoff", publishable),
+                "remainingLimitations", publishable ? List.of() : List.of("NEXT_GATE_ABSENT"));
+    }
+
+    private static void assertJourney(Map<?, ?> journey,
+                                      String stage,
+                                      int stageIndex,
+                                      String nextAction) {
+        assertThat(journey).isNotNull();
+        assertThat(journey.get("stage")).isEqualTo(stage);
+        assertThat(journey.get("stageIndex")).isEqualTo(stageIndex);
+        assertThat(journey.get("nextAction")).isEqualTo(nextAction);
     }
 
     private static IntegrationRequestContext identity() {
