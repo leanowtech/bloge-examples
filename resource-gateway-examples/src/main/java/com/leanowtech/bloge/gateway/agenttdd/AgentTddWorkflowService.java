@@ -157,8 +157,10 @@ public final class AgentTddWorkflowService {
                     .map(AgentTddStoredAsset::data)
                     .map(data -> data.path("latest"))
                     .orElseThrow(() -> gate("A green baseline is required before publication."));
-            String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity);
-            if (!"GO".equals(latest.path("status").asText()) || currentGoldenSetId.isBlank()
+            String caseSetRef = latest.path("caseSetRef").asText();
+            String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
+            if (!"GREEN".equals(latest.path("side").asText())
+                    || !"GO".equals(latest.path("status").asText()) || currentGoldenSetId.isBlank()
                     || !currentGoldenSetId.equals(latest.path("goldenSetId").asText())) {
                 throw gate("The latest evidence is not a stable green baseline.");
             }
@@ -223,8 +225,10 @@ public final class AgentTddWorkflowService {
         GraphDraft draft = draft(toolRef, identity);
         JsonNode latest = states.find(scope(identity), VERDICT, toolRef)
                 .map(AgentTddStoredAsset::data).map(data -> data.path("latest")).orElse(null);
-        String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity);
-        boolean green = latest != null && "GO".equals(latest.path("status").asText())
+        String caseSetRef = latest == null ? "" : latest.path("caseSetRef").asText();
+        String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
+        boolean green = latest != null && "GREEN".equals(latest.path("side").asText())
+                && "GO".equals(latest.path("status").asText())
                 && !currentGoldenSetId.isBlank()
                 && currentGoldenSetId.equals(latest.path("goldenSetId").asText());
         boolean signed = states.list(scope(identity), SIGNOFF).stream().map(AgentTddStoredAsset::data)
@@ -275,8 +279,11 @@ public final class AgentTddWorkflowService {
 
     private String currentGoldenSetId(String toolRef,
                                       GraphDraft draft,
-                                      IntegrationRequestContext identity) {
+                                      IntegrationRequestContext identity,
+                                      String caseSetRef) {
+        if (caseSetRef == null || caseSetRef.isBlank()) return "";
         List<String> caseIds = states.list(scope(identity), AgentTddMutationService.CASE_SET).stream()
+                .filter(asset -> caseSetRef.equals(asset.assetRef()))
                 .map(AgentTddStoredAsset::data)
                 .filter(data -> toolRef.equals(data.path("toolRef").asText()))
                 .flatMap(data -> {

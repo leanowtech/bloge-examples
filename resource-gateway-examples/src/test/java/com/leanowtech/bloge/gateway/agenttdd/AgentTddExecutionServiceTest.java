@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Verifies library-aware compilation and the zero-egress red-side execution seam. */
 class AgentTddExecutionServiceTest {
@@ -134,21 +135,26 @@ class AgentTddExecutionServiceTest {
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
         fixture.drafts().save(draft.withIdentity("risk-tool", 0));
-        JsonNode arguments = mapper.valueToTree(Map.of(
-                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "caseSetRef", "golden-1",
-                "side", "RED", "rounds", 3,
-                "cases", Map.of("rows", List.of(Map.of(
-                        "caseId", "g1", "given", Map.of("score", 720, "amount", 100),
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
+                mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE",
+                        "given", Map.of("score", 720, "amount", 100),
                         "stubs", Map.of("eligibility", Map.of("eligible", true, "ruleId", "R1")),
                         "expect", Map.of("eligible", true, "ruleId", "R1"))))));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper, states);
 
-        JsonNode response = mapper.valueToTree(fixture.tools().invoke("rg.tool.baseline", arguments, identity()));
+        Map<String, Object> result = service.baseline(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "caseSetRef", "golden-1",
+                "side", "RED", "rounds", 3)), identity());
 
-        assertThat(response.path("ok").asBoolean()).isTrue();
-        assertThat(response.path("data").path("status").asText()).isEqualTo("GO");
-        assertThat(response.path("data").path("businessFingerprintStable").asBoolean()).isTrue();
-        assertThat(response.path("data").path("realExternalCalls").asInt()).isZero();
-        assertThat(response.path("data").path("rounds")).hasSize(3);
+        assertThat(result).containsEntry("status", "GO")
+                .containsEntry("side", "RED")
+                .containsEntry("caseSetRef", "golden-1")
+                .containsEntry("businessFingerprintStable", true)
+                .containsEntry("realExternalCalls", 0);
+        assertThat(result.get("rounds")).asList().hasSize(3);
     }
 
     @Test
@@ -198,6 +204,45 @@ class AgentTddExecutionServiceTest {
         assertThat(result.get("cases")).asList().singleElement()
                 .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
                 .containsEntry("caseId", "g1").containsEntry("verdict", "RED_PASS");
+    }
+
+    @Test
+    void baselineRejectsInlineRowsThatCouldBypassTheApprovedGoldenSet() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper,
+                new InMemoryAgentTddStateRepository());
+
+        assertThatThrownBy(() -> service.baseline(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "caseSetRef", "missing",
+                "side", "RED", "rounds", 1,
+                "cases", Map.of("rows", List.of(Map.of(
+                        "caseId", "g1", "given", Map.of(), "stubs", Map.of()))))), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("DRAFT_NOT_FOUND"));
+    }
+
+    @Test
+    void approvedExecutionRejectsAnActiveRowWithoutAnExplicitOracle() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "invalid-golden",
+                mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE", "given", Map.of(), "stubs", Map.of())))));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper, states);
+
+        assertThatThrownBy(() -> service.simulate(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
+                "cases", Map.of("caseSetRef", "invalid-golden"))), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
     }
 
     private Fixture fixture() {

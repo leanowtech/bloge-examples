@@ -134,6 +134,11 @@ public final class AgentTddMutationService {
             candidate = resolveRuntimeBindings(candidate);
             requireReferencedLibraries(candidate, refs);
             GraphDraft current = drafts.find(assetRef).orElse(null);
+            if (current != null && (!current.tenantId().equals(identity.tenantId())
+                    || !current.environment().equals(identity.environmentId()))) {
+                throw new AgentTddToolException(
+                        "DRAFT_NOT_FOUND", "Graph draft was not found in the authorized scope.");
+            }
             long expectedRevision = current == null ? 0 : current.revision();
             GraphDraft scoped = scoped(candidate, assetRef, expectedRevision, assetKind, refs, identity);
             GraphDraft stored = current == null

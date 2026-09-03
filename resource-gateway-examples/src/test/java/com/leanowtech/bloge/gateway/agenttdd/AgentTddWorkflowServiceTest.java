@@ -149,6 +149,7 @@ class AgentTddWorkflowServiceTest {
         String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
         service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
                 "status", "GO", "goldenSetId", goldenSetId, "side", "GREEN",
+                "caseSetRef", "golden-1",
                 "businessFingerprintStable", true, "realExternalCalls", 0), identity());
         new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
         VisualValidationResult validation = mock(VisualValidationResult.class);
@@ -170,6 +171,24 @@ class AgentTddWorkflowServiceTest {
             assertThat(publication.draftId()).isEqualTo("risk-tool");
             assertThat(publication.publicationMetadata().reason()).isEqualTo("signoff-1");
         });
+    }
+
+    @Test
+    void executablePublishRejectsAStableRedBaselineEvenAfterBindingAndSignoff() {
+        states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", json(Map.of(
+                "toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE", "expect", Map.of())))));
+        String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
+        service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "status", "GO", "goldenSetId", goldenSetId, "caseSetRef", "golden-1",
+                "side", "RED", "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        new AgentTddReviewService(states).approveToolSignoff("risk-tool", "signoff-1", identity());
+
+        assertThatThrownBy(() -> service.publish(json(Map.of(
+                "toolRef", "risk-tool", "signoffRef", "signoff-1",
+                "idempotencyKey", "publish-red")), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("PUBLISH_GATE_NOT_MET"));
     }
 
     @Test

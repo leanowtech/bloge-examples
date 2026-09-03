@@ -182,10 +182,11 @@ public final class AgentTddExecutionService {
     }
 
     /**
-     * Repeats one case set and proves deterministic business fingerprints across bounded rounds.
+     * Repeats one durable approved case set and proves deterministic business fingerprints.
      *
      * <p>The method remains on the simulation boundary: even an implementation-ready graph uses
-     * stand-ins for operator invocations, so a baseline never becomes an accidental live call.</p>
+     * stand-ins for operator invocations, so a red baseline never becomes an accidental live call.
+     * Inline rows are discarded: governance baselines execute only the referenced durable ACTIVE set.</p>
      */
     public Map<String, Object> baseline(JsonNode arguments, IntegrationRequestContext identity) {
         int rounds = arguments.path("rounds").isInt() ? arguments.path("rounds").asInt() : 3;
@@ -196,9 +197,16 @@ public final class AgentTddExecutionService {
         LinkedHashSet<String> fingerprints = new LinkedHashSet<>();
         boolean allPass = true;
         String goldenSetId = "";
+        String side = "";
+        String caseSetRef = requiredText(arguments, "caseSetRef");
+        ObjectNode approvedRun = arguments == null || !arguments.isObject()
+                ? mapper.createObjectNode()
+                : ((ObjectNode) arguments).deepCopy();
+        approvedRun.set("cases", mapper.createObjectNode().put("caseSetRef", caseSetRef));
         for (int round = 1; round <= rounds; round++) {
-            Map<String, Object> result = simulate(arguments, identity);
+            Map<String, Object> result = simulate(approvedRun, identity);
             goldenSetId = result.get("goldenSetId").toString();
+            side = result.get("side").toString();
             String fingerprint = VisualBundleFingerprint.fromCanonicalValue(
                     mapper, result.get("cases"), MAX_FINGERPRINT_BYTES);
             fingerprints.add(fingerprint);
@@ -212,6 +220,8 @@ public final class AgentTddExecutionService {
         return Map.of(
                 "status", allPass && stable ? "GO" : "NO_GO",
                 "goldenSetId", goldenSetId,
+                "caseSetRef", caseSetRef,
+                "side", side,
                 "rounds", runs,
                 "businessFingerprintStable", stable,
                 "realExternalCalls", 0,
@@ -284,6 +294,7 @@ public final class AgentTddExecutionService {
                     throw new AgentTddToolException(
                             "GOLDEN_REQUIRES_APPROVAL", "The case set has no approved ACTIVE rows.");
                 }
+                active.forEach(AgentTddExecutionService::requireOracle);
                 return List.copyOf(active);
             }
         }
@@ -295,9 +306,17 @@ public final class AgentTddExecutionService {
             if (!row.isObject()) {
                 throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "Every case row must be an object.");
             }
+            requireOracle(row);
             values.add(row);
         });
         return List.copyOf(values);
+    }
+
+    private static void requireOracle(JsonNode row) {
+        if (!row.has("expect") || row.path("expect").isMissingNode() || row.path("expect").isNull()) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "Every executable case row must contain an explicit expect Oracle.");
+        }
     }
 
     private Map<String, Object> executeCase(GraphDraft draft,

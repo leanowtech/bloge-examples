@@ -209,6 +209,23 @@ class AgentTddMutationServiceTest {
                 .lowering().mode()).isEqualTo("resource-descriptor");
     }
 
+    @Test
+    void composeCannotReplaceAnotherTenantDraftWithTheSameReference() {
+        Fixture fixture = fixtureWithTool();
+        IntegrationRequestContext otherTenant = new IntegrationRequestContext(
+                "other-tenant", "org-b", "project-b", "local", "sg", "WORKLOAD", "agent-2",
+                "", "AGENT_TDD_DRAFT_WRITE", "corr-2");
+        JsonNode response = mapper.valueToTree(fixture.tools().invoke("rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "idempotencyKey", "cross-tenant-compose")), otherTenant));
+
+        assertThat(response.path("ok").asBoolean()).isFalse();
+        assertThat(response.path("error").path("code").asText()).isEqualTo("DRAFT_NOT_FOUND");
+        assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
+                assertThat(draft.tenantId()).isEqualTo("demo-tenant"));
+    }
+
     private Fixture fixtureWithTool() {
         Fixture fixture = fixture();
         invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(

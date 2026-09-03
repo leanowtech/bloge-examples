@@ -68,7 +68,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
 
-`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；服务端只执行引用用例集中的 `ACTIVE` 行。`rg.tool.baseline` 使用顶层 `caseSetRef`。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
+`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
 ## 4. bindingRef 与 goldenSetId
 
@@ -98,10 +98,13 @@ Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`
 
 - 所有库算子均有可解析、schema 相容的 `runtime.bindingRef`。
 - 最新 baseline 为 `GO`，并与当前 ACTIVE 用例计算出的 `goldenSetId` 相同。
+- 最新 baseline 明确来自 `GREEN` 侧；`RED` baseline 即使稳定通过也不能解锁发布。
 - `signoffRef` 对应已批准且属于当前 Tool 的人工签署。
 - 既有 Visual Graph validator、lowering 和 BLOGE compiler 允许发布可执行制品。
 
 任一条件不满足时，调用返回 `PUBLISH_GATE_NOT_MET` 或更具体的稳定错误码，不创建发布物。
+
+Feature/Tool 草稿按租户和环境闭合。若其他作用域已经占用同一个草稿引用，compose 返回 `DRAFT_NOT_FOUND`，不会读取或覆盖该草稿。
 
 ## 7. 验证与排查
 
