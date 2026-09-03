@@ -159,11 +159,14 @@ class AgentTddBoardTest {
     void controllerAuthenticatesReadAndGovernedApprovalSeparately() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         AgentTddBoardService board = mock(AgentTddBoardService.class);
+        AgentTddLibraryOverviewService overview = mock(AgentTddLibraryOverviewService.class);
         AgentTddReviewService reviews = mock(AgentTddReviewService.class);
         HttpHeaders headers = new HttpHeaders();
         when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_READ)).thenReturn(identity());
         when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE)).thenReturn(identity());
         when(board.board(identity())).thenReturn(Map.of("tools", List.of()));
+        when(overview.overview(identity())).thenReturn(Map.of(
+                "buildingBlocks", List.of(), "worldModel", Map.of()));
         when(reviews.approveOracle("golden-1", "g1", 4, "sha256:proposal", identity())).thenReturn(
                 new AgentTddStoredAsset(scope(), AgentTddMutationService.CASE_SET, "golden-1", 5,
                         "sha256:test", mapper.createObjectNode(), java.time.Instant.EPOCH));
@@ -171,9 +174,11 @@ class AgentTddBoardTest {
                 "sha256:evidence", identity())).thenReturn(
                 new AgentTddStoredAsset(scope(), AgentTddWorkflowService.SIGNOFF, "ops-42", 1,
                         "sha256:signoff", mapper.createObjectNode(), java.time.Instant.EPOCH));
-        AgentTddBoardController controller = new AgentTddBoardController(authenticator, board, reviews);
+        AgentTddBoardController controller = new AgentTddBoardController(
+                authenticator, board, overview, reviews);
 
         controller.board(headers);
+        Map<String, Object> libraryOverview = controller.libraryOverview(headers).getBody();
         Map<String, Object> approved = controller.approveOracle(
                 "golden-1", "g1", new AgentTddBoardController.RevisionRequest(
                         4, "sha256:proposal"), headers);
@@ -183,8 +188,34 @@ class AgentTddBoardTest {
 
         assertThat(approved).containsEntry("revision", 5L).containsEntry("status", "APPROVED");
         assertThat(signed).containsEntry("revision", 1L).containsEntry("status", "APPROVED");
-        verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
+        assertThat(libraryOverview).containsKey("buildingBlocks").containsKey("worldModel");
+        verify(authenticator, times(2)).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
         verify(authenticator, times(2)).authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+    }
+
+    @Test
+    void libraryOverviewIsAnAuthenticatedNonCacheableHttpProjection() throws Exception {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        AgentTddLibraryOverviewService overview = mock(AgentTddLibraryOverviewService.class);
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        when(overview.overview(identity())).thenReturn(Map.of(
+                "buildingBlocks", List.of(Map.of(
+                        "ref", "bloge:decisionTable", "kind", "BASE", "title", "按规则表判定")),
+                "worldModel", Map.of("types", List.of(), "operations", List.of())));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AgentTddBoardController(
+                        authenticator, mock(AgentTddBoardService.class), overview,
+                        mock(AgentTddReviewService.class)))
+                .build();
+
+        mvc.perform(get("/api/agent-tdd/library-overview")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
+                        .header("X-Purpose", "AGENT_TDD_READ"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"))
+                .andExpect(jsonPath("$.buildingBlocks[0].title").value("按规则表判定"))
+                .andExpect(jsonPath("$.worldModel.operations").isArray());
     }
 
     @Test
@@ -195,7 +226,8 @@ class AgentTddBoardTest {
                         "RG.INTEGRATION.AUTHENTICATION_REQUIRED", "Authentication is required.",
                         "corr-auth", Map.of())));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new AgentTddBoardController(
-                        authenticator, mock(AgentTddBoardService.class), mock(AgentTddReviewService.class)))
+                        authenticator, mock(AgentTddBoardService.class),
+                        mock(AgentTddLibraryOverviewService.class), mock(AgentTddReviewService.class)))
                 .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
 
@@ -213,6 +245,8 @@ class AgentTddBoardTest {
             String html = new String(input.readAllBytes(), StandardCharsets.UTF_8);
             assertThat(html).contains("Agent TDD 看板", "STRUCTURE_ONLY", "expectedRevision",
                             "五幕业务旅程", "业务主线 · 各工具进行到哪一幕",
+                            "第1幕 · 你的世界观与可用积木", "buildingBlocks", "worldModel",
+                            "/api/agent-tdd/library-overview", "仅契约", "已接入",
                             "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
                             "步骤", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef")

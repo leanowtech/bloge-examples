@@ -44,6 +44,8 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 - 人工看板：`http://localhost:8081/agent-tdd.html`
 - 日志：`target/example-logs/resource-gateway.log`
 
+看板顶部的「第 1 幕 · 你的世界观与可用积木」并列显示平台基础积木和当前作用域内已导入的业务操作。业务操作标记为「仅契约」或「已接入」；业务类型只从已声明的输出 Schema 派生。该视图不读取 Fixture 或真实响应，HTTP 响应使用 `no-store`。
+
 停止服务：
 
 ```bash

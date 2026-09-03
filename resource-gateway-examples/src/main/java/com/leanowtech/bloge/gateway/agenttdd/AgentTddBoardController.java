@@ -25,14 +25,17 @@ import java.util.Objects;
 public final class AgentTddBoardController {
     private final IntegrationRequestAuthenticator authenticator;
     private final AgentTddBoardService board;
+    private final AgentTddLibraryOverviewService libraryOverview;
     private final AgentTddReviewService reviews;
 
     /** Creates the board boundary with existing integration authentication and audit. */
     public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
                                    AgentTddBoardService board,
+                                   AgentTddLibraryOverviewService libraryOverview,
                                    AgentTddReviewService reviews) {
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.board = Objects.requireNonNull(board, "board");
+        this.libraryOverview = Objects.requireNonNull(libraryOverview, "libraryOverview");
         this.reviews = Objects.requireNonNull(reviews, "reviews");
     }
 
@@ -40,6 +43,15 @@ public final class AgentTddBoardController {
     @GetMapping("/board")
     public Map<String, Object> board(@RequestHeader HttpHeaders headers) {
         return this.board.board(authenticate(headers, IntegrationOperation.AGENT_TDD_READ));
+    }
+
+    /** Returns the business-readable platform building blocks and declared world model. */
+    @GetMapping("/library-overview")
+    public ResponseEntity<Map<String, Object>> libraryOverview(@RequestHeader HttpHeaders headers) {
+        Map<String, Object> body = libraryOverview.overview(
+                authenticate(headers, IntegrationOperation.AGENT_TDD_READ));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache").body(body);
     }
 
     /** Approves one pending business Oracle at the exact reviewed case-set revision. */
