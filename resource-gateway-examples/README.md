@@ -37,8 +37,8 @@ one exact operator output port, then server-derives its Fixture id, scope, schem
 SAMPLE lineage; the MCP response never echoes the sample value.
 The repository launcher keeps Correctness authoring and encrypted Fixture material opt-in. When both are
 enabled for the local Agent TDD guide and no key ring is injected, it creates one private AES-256 demo key
-under `target/example-secrets`, reuses it across restarts, reasserts mode `0600`, rejects symlink key paths,
-and never prints it. Codex receives only the four
+under `target/example-secrets`, reuses it across restarts, reasserts mode `0600`, rejects symlink secret
+directories and key paths, and never prints it. Codex receives only the four
 `AGENT_TDD_*` purposes; the service derives the narrower Fixture-material write purpose after governance
 authorization instead of exposing that credential to the Agent.
 When a bound read dependency does not exist yet, `rg.tool.compose` returns
@@ -52,12 +52,14 @@ After a durable logical GREEN, the platform-only `AGENT_TDD_ATTEST` boundary aut
 approved ACTIVE cases against frozen, descriptor-backed `READ_EXTERNAL` dependencies. It is not an MCP tool:
 WORKLOAD callers cannot choose real inputs, bindings, URLs, or execution mode. Production environments and
 external writes fail closed. Each real run binds immutable operator snapshots and exact resource descriptors;
-the HTTP operator checks the descriptor again immediately before request construction, closing registry-replace
-races. The resulting `ATTESTATION` stores only per-case Oracle booleans, dependency call counts, environment,
+the HTTP operator checks the descriptor during admission and again when the rendered request enters the HTTP
+transport, closing registry-replace races. The resulting `ATTESTATION` stores only per-case Oracle booleans,
+HTTP-transport dispatch counts by dependency, environment,
 and contract/implementation/evidence fingerprints. The platform commits the reservation before leaving the
 database transaction for the real read, then completes it in a separate transaction. Exact completed retries
-replay without repeating the read; an unfinished crash residue fails closed for human recovery. Failed runs
-can be retried only by a HUMAN/USER confirmation on the board. Publication and
+replay without repeating the read; an unfinished crash residue is projected as `RECOVERY_REQUIRED` for human
+recovery. Each HUMAN/USER board confirmation commits a new attempt revision before the external execution, so
+a lost recovery process does not permanently reuse its unfinished reservation. Publication and
 readiness require current logical GREEN, current `ATTESTED` evidence, and an independently approved owner
 signoff; graph, case-set, binding, implementation, or descriptor drift invalidates the prior attestation.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and

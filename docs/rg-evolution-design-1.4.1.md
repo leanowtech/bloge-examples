@@ -277,7 +277,7 @@ private static Map<String,Object> journey(Map<String,Object> card){
 ---
 
 ### A5 · 实景验证（ATTEST）
-见前述**完整工程规格**（§枚举 `AGENT_TDD_ATTEST` / `ATTESTATION` 复用现有资产表无新迁移 / `AgentTddAttestationService` 算法 / `VisualGraphRunService.run` 真实执行与 `nodeAttempts` 观测 / `EgressHostPolicy` host 白名单 / 自动触发运行者 / `readiness`·`publish` 门禁 diff / 测试用例 / 两处待确认）。此处不重复。
+见前述**完整工程规格**（§枚举 `AGENT_TDD_ATTEST` / `ATTESTATION` 复用现有资产表无新迁移 / `AgentTddAttestationService` 算法 / `VisualGraphRunService.run` 真实执行与 `HTTP_TRANSPORT_DISPATCHED` 观测 / `EgressHostPolicy` host 白名单 / 自动触发运行者 / `readiness`·`publish` 门禁 diff / 测试用例 / 两处待确认）。此处不重复。
 
 ---
 
@@ -317,6 +317,6 @@ P4  端到端旅程用例贯穿                  ── 依赖全部
 | A4 事实覆盖 | 看板与场景枚举共用谓词代表值，显示确定性覆盖计数和最多 20 个盲区 | `AgentTddDecisionScenarioEnumeratorTest`、`AgentTddBoardTest` |
 | A5 实景验证 | 逻辑 GREEN 后由平台内部 `AGENT_TDD_ATTEST` 自动执行；仅限沙箱、精确 host、只读 descriptor；证据 payload-free，并绑定当前 graph/case/binding/descriptor；发布需要 GREEN、ATTESTED、signoff | `AgentTddAttestationServiceTest`、`HttpResourceOperatorTest`、`AgentTddMcpOperationalWorkflowTest`、`AgentTddWorkflowServiceTest` |
 
-A5 的自动执行使用持久幂等 reservation：先在独立事务提交 reservation，再在事务外执行真实读取，最后以独立事务写入回放；同一 GREEN 的并发或重复触发不会重复外呼。进程退出留下的未完成 reservation 不会被自动认领，而是返回 `ATTESTATION_RECOVERY_REQUIRED` 等待人工核对后重跑。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在发包前按内部 execution capture 再核对 descriptor；注册表替换不能越过白名单校验。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
+A5 的自动执行使用持久幂等 reservation：先在独立事务提交 reservation，再在事务外执行真实读取，最后以独立事务写入回放；同一 GREEN 的并发或重复触发不会重复外呼。进程退出留下的未完成 reservation 不会被自动认领；readiness 和看板投影 `RECOVERY_REQUIRED`，原因码为 `ATTESTATION_RECOVERY_REQUIRED`。人工核对后，每次确认都先持久化新的 attempt revision，再执行新的受控读取，因此人工恢复进程再次退出也不会永久卡在旧 key。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在请求进入 transport 前再次核对 descriptor；注册表替换、参数渲染失败、节点 attempt 或 fallback 都不能伪装成真实调用。`realExternalCalls` 只统计 `HTTP_TRANSPORT_DISPATCHED` 事件。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
 
 完整启动、Codex MCP 配置、三段式操作、两个人工停点、实景失败恢复、停止命令和回归命令见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。
