@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.Alert;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -215,6 +216,36 @@ class AgentTddMcpOperationalWorkflowTest {
         JsonNode cases = invoke("rg.scenario.listCases", Map.of("caseSetRef", caseSetRef),
                 "AGENT_TDD_READ");
         assertThat(cases.at("/data/rows/0/lifecycle").asText()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @Timeout(30)
+    void browserRendersRuleMatrixAndReflectsTheProjectedRuleOutput() throws Exception {
+        WebDriver browser = newChromeDriverOrSkip();
+        try {
+            browser.get("http://localhost:" + port + "/agent-tdd.html");
+            JavascriptExecutor javascript = (JavascriptExecutor) browser;
+            Map<String, Object> matrix = Map.of(
+                    "nodeId", "policy", "label", "纠纷规则", "hitPolicy", "unique",
+                    "conditionColumns", List.of(Map.of("id", "party", "label", "责任方")),
+                    "outputColumns", List.of(Map.of("id", "decision", "label", "处置")),
+                    "rules", List.of(Map.of("id", "R1", "conditions", Map.of("party", "= driver"),
+                            "outputs", Map.of("decision", "REVIEW"))),
+                    "otherwise", Map.of("decision", "ESCALATE_HUMAN"));
+
+            String original = (String) javascript.executeScript(
+                    "return renderRuleMatrix(arguments[0]);", matrix);
+            Map<String, Object> changed = new java.util.LinkedHashMap<>(matrix);
+            changed.put("rules", List.of(Map.of("id", "R1", "conditions", Map.of("party", "= driver"),
+                    "outputs", Map.of("decision", "APPROVE"))));
+            String revised = (String) javascript.executeScript(
+                    "return renderRuleMatrix(arguments[0]);", changed);
+
+            assertThat(original).contains("责任方", "处置", "REVIEW", "ESCALATE_HUMAN");
+            assertThat(revised).contains("APPROVE").doesNotContain(">REVIEW<");
+        } finally {
+            browser.quit();
+        }
     }
 
     /**

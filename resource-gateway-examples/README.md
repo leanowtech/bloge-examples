@@ -22,6 +22,10 @@ no-store review details at
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
 The board derives each Tool's position and next business action along the five-act journey from
 existing readiness and case-set facts; it does not create a second workflow state or perform extra reads.
+Decision-table nodes are projected as business-readable rule matrices with a fixed prose flow summary;
+operator references remain available in a collapsed technical view. The adjacent fact-coverage view
+reuses the scenario enumerator's bounded predicate domains to show ACTIVE GOLDEN coverage and up to
+twenty deterministic blind spots without inventing values for opaque predicates.
 Its authenticated `GET /api/agent-tdd/library-overview` projection places business-readable platform
 building blocks beside the current scope's declared world model. Imported operations are marked `仅契约`
 or `已接入`, while business types are derived only from declared output schemas; the projection is

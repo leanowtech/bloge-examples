@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemHandler;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import org.junit.jupiter.api.Test;
@@ -142,8 +143,9 @@ class AgentTddBoardTest {
                         .path("toolRef").asText()));
 
         Map<String, Map<?, ?>> byTool = new LinkedHashMap<>();
-        ((List<?>) new AgentTddBoardService(drafts, states, workflow, mapper)
-                .board(identity()).get("tools")).forEach(value -> {
+        List<?> projectedTools = (List<?>) new AgentTddBoardService(drafts, states, workflow, mapper)
+                .board(identity()).get("tools");
+        projectedTools.forEach(value -> {
                     Map<?, ?> tool = (Map<?, ?>) value;
                     byTool.put(tool.get("toolRef").toString(), (Map<?, ?>) tool.get("journey"));
                 });
@@ -153,6 +155,73 @@ class AgentTddBoardTest {
         assertJourney(byTool.get("03-golden"), "GOLDEN", 3, "APPROVE_GOLDEN");
         assertJourney(byTool.get("04-green"), "PUBLISH", 4, "AWAIT_ATTEST_OR_SIGNOFF");
         assertJourney(byTool.get("05-publishable"), "PUBLISH", 4, "SIGNOFF_OR_PUBLISH");
+        assertThat(projectedTools).allSatisfy(value -> {
+            Map<?, ?> tool = (Map<?, ?>) value;
+            assertThat((List<?>) tool.get("ruleMatrices")).isEmpty();
+            assertThat(tool.get("flowSummary")).isEqualTo("接收输入事实 → 产出结果");
+        });
+    }
+
+    @Test
+    void boardProjectsBusinessRuleMatrixAndDeterministicFactCoverage() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        GraphDraft draft = toolDraft("dispute-tool", "IMPLEMENTING");
+        Map<String, Object> decisionConfig = Map.of(
+                "hitPolicy", "unique",
+                "conditionColumns", List.of(
+                        Map.of("id", "party", "label", "责任方"),
+                        Map.of("id", "severity", "label", "严重度")),
+                "outputColumns", List.of(Map.of("id", "decision", "label", "处置")),
+                "rules", List.of(
+                        Map.of("id", "R1", "conditions", Map.of(
+                                        "party", "party in {\"driver\",\"passenger\"}",
+                                        "severity", "severity in {\"low\",\"medium\",\"high\"}"),
+                                "output", Map.of("decision", "REVIEW")),
+                        Map.of("id", "R2", "otherwise", true,
+                                "outputs", Map.of("decision", "ESCALATE_HUMAN"))));
+        when(draft.nodes()).thenReturn(List.of(
+                new GraphDraft.DraftNode(
+                        "facts", "resource:dispute.getFacts", "查询责任方", Map.of(), Map.of(), null),
+                new GraphDraft.DraftNode(
+                        "disputePolicy", "bloge:decisionTable", "Dispute policy",
+                        Map.of(), decisionConfig, null)));
+        when(draft.edges()).thenReturn(List.of(new GraphDraft.DraftEdge(
+                "facts-policy", "data", new GraphDraft.Endpoint("facts", "payload", ""),
+                new GraphDraft.Endpoint("disputePolicy", "inputs", "party"))));
+        when(draft.operatorSnapshots()).thenReturn(Map.of("facts", readOperator()));
+        when(drafts.all()).thenReturn(List.of(draft));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ObjectNode caseSet = mapper.createObjectNode().put("toolRef", "dispute-tool");
+        caseSet.putArray("rows").addObject().put("caseId", "g-driver-high")
+                .put("category", "GOLDEN").put("lifecycle", "ACTIVE")
+                .putObject("given").put("party", "driver").put("severity", "high");
+        caseSet.withArray("rows").addObject().put("caseId", "g-passenger-low")
+                .put("category", "GOLDEN").put("lifecycle", "ACTIVE")
+                .putObject("given").put("party", "passenger").put("severity", "low");
+        states.save(scope(), AgentTddMutationService.CASE_SET, "dispute-golden", caseSet);
+        AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
+        when(workflow.readiness(any(), eq(identity()))).thenReturn(
+                readiness("dispute-tool", "IMPLEMENTING", false, false));
+
+        Map<?, ?> tool = (Map<?, ?>) ((List<?>) new AgentTddBoardService(drafts, states, workflow, mapper)
+                .board(identity()).get("tools")).getFirst();
+
+        Map<?, ?> matrix = (Map<?, ?>) ((List<?>) tool.get("ruleMatrices")).getFirst();
+        assertThat(matrix.get("nodeId")).isEqualTo("disputePolicy");
+        assertThat(matrix.get("hitPolicy")).isEqualTo("unique");
+        assertThat(matrix.get("conditionColumns").toString()).contains("责任方", "严重度");
+        assertThat(matrix.get("rules").toString()).contains("party", "driver", "REVIEW");
+        assertThat(matrix.get("otherwise").toString()).contains("ESCALATE_HUMAN");
+        assertThat(tool.get("flowSummary").toString())
+                .startsWith("取『查询责任方』事实 → 按『Dispute policy』规则表判定")
+                .endsWith("产出结果");
+
+        Map<?, ?> coverage = (Map<?, ?>) tool.get("factCoverage");
+        assertThat(coverage.get("totalCount")).isEqualTo(6L);
+        assertThat(coverage.get("coveredCount")).isEqualTo(2L);
+        assertThat((List<?>) coverage.get("blindSpots")).hasSize(4);
+        assertThat(coverage.get("blindSpots").toString())
+                .contains("driver", "low", "medium", "passenger", "high");
     }
 
     @Test
@@ -249,7 +318,8 @@ class AgentTddBoardTest {
                             "/api/agent-tdd/library-overview", "仅契约", "已接入",
                             "第2幕 · 已提供样例", "providedFixtures", "sourceKind",
                             "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
-                            "步骤", "场景表", "PUBLISH_SIGNOFF",
+                            "renderRuleMatrix", "覆盖 · 已覆盖", "查看事实组合盲区",
+                            "展开查看技术结构", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
@@ -271,6 +341,20 @@ class AgentTddBoardTest {
         when(draft.nodes()).thenReturn(List.of());
         when(draft.edges()).thenReturn(List.of());
         return draft;
+    }
+
+    private static OperatorDefinition readOperator() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1", "resource:dispute.getFacts", "1.0.0",
+                new OperatorDefinition.Display("查询责任方", "", List.of("resource-read")),
+                new OperatorDefinition.Source(
+                        "resource-descriptor", "dispute.getFacts", "GET", "/facts", true),
+                new OperatorDefinition.Ports(List.of(), List.of()),
+                com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope.opaque(),
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", false, false, false),
+                new OperatorDefinition.Lowering(
+                        "resource-descriptor", "httpResource", Map.of("resourceId", "dispute.getFacts")),
+                List.of());
     }
 
     private static Map<String, Object> readiness(String toolRef,

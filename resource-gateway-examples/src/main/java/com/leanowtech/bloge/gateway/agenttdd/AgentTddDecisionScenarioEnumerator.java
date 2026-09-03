@@ -72,6 +72,41 @@ public final class AgentTddDecisionScenarioEnumerator {
                 : combinations(nodeId, rules, cap);
     }
 
+    /**
+     * Derives the same deterministic fact domains used by combinatorial scenario enumeration.
+     *
+     * <p>The returned columns and values are sorted and detached from the draft. Opaque predicates
+     * without author samples are omitted because the board must expose them as unknown rather than
+     * inventing business values. Both the canonical and legacy decision-table references are read
+     * so older stored drafts retain an honest coverage projection.</p>
+     *
+     * @param node decision-table node whose rules define the bounded fact space
+     * @return ordered fact columns and their representative boundary values
+     */
+    public Map<String, List<JsonNode>> factDomains(GraphDraft.DraftNode node) {
+        if (node == null || !Set.of("bloge:decisionTable", "decision_table").contains(node.operatorRef())) {
+            return Map.of();
+        }
+        if (!(node.config().get("rules") instanceof List<?>)) {
+            return Map.of();
+        }
+        LinkedHashMap<String, LinkedHashSet<JsonNode>> domains = new LinkedHashMap<>();
+        for (Rule rule : rules(node.config().get("rules"), mapper.createObjectNode())) {
+            for (Predicate predicate : rule.predicates()) {
+                if (!predicate.blocked()) {
+                    predicate.values().forEach(value -> domains
+                            .computeIfAbsent(predicate.column(), ignored -> new LinkedHashSet<>())
+                            .add(value.deepCopy()));
+                }
+            }
+        }
+        LinkedHashMap<String, List<JsonNode>> ordered = new LinkedHashMap<>();
+        domains.keySet().stream().sorted().forEach(column -> ordered.put(column,
+                domains.get(column).stream().sorted(AgentTddDecisionScenarioEnumerator::compareValues)
+                        .map(value -> (JsonNode) value.deepCopy()).toList()));
+        return java.util.Collections.unmodifiableMap(ordered);
+    }
+
     private List<ObjectNode> perRule(String nodeId, List<Rule> rules, int cap, String oracleOwner) {
         List<ObjectNode> rows = new ArrayList<>();
         int ruleOrdinal = 0;
