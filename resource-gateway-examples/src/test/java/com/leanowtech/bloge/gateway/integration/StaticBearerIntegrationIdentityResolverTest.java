@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Set;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,6 +39,25 @@ class StaticBearerIntegrationIdentityResolverTest {
 
         assertThat(expired.resolve("secret")).isEmpty();
         assertThat(disabled.resolve("secret")).isEmpty();
+    }
+
+    @Test
+    void resolvesAgentAndHumanDemoCredentialsToDifferentTrustedActors() {
+        IntegrationWorkloadIdentity agent = identity(Instant.parse("2026-07-13T00:00:00Z"));
+        IntegrationWorkloadIdentity reviewer = new IntegrationWorkloadIdentity(
+                "reviewer", "tenant-a", "org-a", "project-a", "prod", "sg",
+                "HUMAN", "business-reviewer", "", Set.of("AGENT_TDD_GOVERNANCE"),
+                Instant.parse("2026-07-13T00:00:00Z"), true);
+        StaticBearerIntegrationIdentityResolver resolver = new StaticBearerIntegrationIdentityResolver(
+                Map.of("agent-secret", agent, "review-secret", reviewer), true,
+                Clock.fixed(Instant.parse("2026-07-12T00:00:00Z"), ZoneOffset.UTC));
+
+        assertThat(resolver.resolve("agent-secret")).get().extracting(IntegrationWorkloadIdentity::actorType)
+                .isEqualTo("WORKLOAD");
+        assertThat(resolver.resolve("review-secret")).get().satisfies(identity -> {
+            assertThat(identity.actorType()).isEqualTo("HUMAN");
+            assertThat(identity.actorId()).isEqualTo("business-reviewer");
+        });
     }
 
     private static IntegrationWorkloadIdentity identity(Instant expiresAt) {

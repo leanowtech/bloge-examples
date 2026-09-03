@@ -14,7 +14,7 @@
     .grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.tools{display:grid;gap:10px}.tool-head{display:flex;justify-content:space-between;gap:12px}.state{font-weight:700}.SPECCING{color:var(--amber)}.IMPLEMENTING{color:var(--blue)}.IMPLEMENTED{color:var(--green)}
     .gates{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.gate{font-size:12px;padding:3px 7px;border-radius:999px;background:#eef2f5}.gate.ok{color:var(--green);background:#e8f5ef}.review{padding:12px 0;border-top:1px solid var(--line)}.review:first-child{border-top:0}.empty{color:var(--muted);padding:20px 0}
     .projection{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.projection section{background:#f8fafb;border:1px solid #e8edf0;border-radius:7px;padding:9px}.projection h3{font-size:12px;margin:0 0 5px;color:var(--muted)}.projection ul{list-style:none;margin:0;padding:0}.projection li{overflow-wrap:anywhere}.projection code{font-size:11px;color:#334155}
-    .error{color:var(--red);white-space:pre-wrap}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid{grid-template-columns:1fr}}
+    .error{color:var(--red);white-space:pre-wrap}.review-detail{white-space:pre-wrap;max-height:280px;overflow:auto;background:#101820;color:#edf2f7;border-radius:7px;padding:10px;font:12px/1.45 ui-monospace,monospace}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid{grid-template-columns:1fr}}
     @media(max-width:600px){.projection{grid-template-columns:1fr}}
   </style>
 </head>
@@ -55,11 +55,15 @@
   async function approve(review) {
     let url, body;
     if (review.kind === 'ORACLE') {
+      const detail=await request(`/api/agent-tdd/reviews/oracles/${encodeURIComponent(review.assetRef)}/${encodeURIComponent(review.caseId)}?expectedRevision=${encodeURIComponent(review.revision)}`,{headers:headers('AGENT_TDD_GOVERNANCE')});
+      if (!window.confirm(`请核对以下业务应然，确认后才会批准：\n\n${JSON.stringify(detail,null,2)}`)) return;
       url=`/api/agent-tdd/reviews/oracles/${encodeURIComponent(review.assetRef)}/${encodeURIComponent(review.caseId)}/approve`;
-      body={expectedRevision:review.revision};
+      body={expectedRevision:review.revision,proposalFingerprint:detail.proposalFingerprint};
     } else if (review.kind === 'PUBLISH_SPEC') {
+      const detail=await request(`/api/agent-tdd/reviews/specs/${encodeURIComponent(review.assetRef)}?expectedRevision=${encodeURIComponent(review.revision)}`,{headers:headers('AGENT_TDD_GOVERNANCE')});
+      if (!window.confirm(`请核对以下发布规格，确认后才会批准：\n\n${JSON.stringify(detail,null,2)}`)) return;
       url=`/api/agent-tdd/reviews/specs/${encodeURIComponent(review.assetRef)}/approve`;
-      body={expectedRevision:review.revision};
+      body={expectedRevision:review.revision,proposalFingerprint:detail.proposalFingerprint};
     } else if (review.kind === 'PUBLISH_SIGNOFF') {
       const signoffRef=window.prompt('输入外部评审单或变更单编号（signoffRef）');
       if (!signoffRef?.trim()) return;
@@ -71,7 +75,8 @@
   function renderReview(review,index) {
     const revision=review.revision ?? review.draftRevision ?? '—';
     const baseline=review.kind==='PUBLISH_SIGNOFF'?`<div class="meta">golden ${esc(review.goldenSetId)} · evidence ${esc(review.evidenceFingerprint)}</div>`:'';
-    return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(revision)} · owner ${esc(review.owner)}</div>${baseline}<button data-review="${index}">记录已批准</button></div>`;
+    const action=review.kind==='PUBLISH_SIGNOFF'?'核对基线并签署':'查看详情并批准';
+    return `<div class="review"><strong>${esc(review.kind)}</strong><div>${esc(review.assetRef)}${review.caseId?' · '+esc(review.caseId):''}</div><div class="meta">revision ${esc(revision)} · owner ${esc(review.owner)}</div>${baseline}<button data-review="${index}">${action}</button></div>`;
   }
   async function load() {
     $('error').textContent='';

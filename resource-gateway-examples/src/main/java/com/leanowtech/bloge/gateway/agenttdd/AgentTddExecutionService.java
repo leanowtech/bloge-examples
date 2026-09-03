@@ -134,7 +134,7 @@ public final class AgentTddExecutionService {
         String toolRef = requiredText(arguments, "toolRef");
         List<String> refs = libraryRefs(arguments);
         GraphDraft draft = drafts.find(toolRef)
-                .filter(candidate -> sameScope(candidate, identity))
+                .filter(identity::matchesDraftScope)
                 .orElseThrow(() -> new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Tool draft was not found in the authorized scope."));
         requireDraftLibraries(draft, refs);
@@ -763,11 +763,6 @@ public final class AgentTddExecutionService {
         }
         Object binding = operator.lowering().parameters().get("bindingRef");
         return !(binding instanceof String value) || value.isBlank();
-    }
-
-    private static boolean sameScope(GraphDraft draft, IntegrationRequestContext identity) {
-        return draft.tenantId().equals(identity.tenantId())
-                && draft.environment().equals(identity.environmentId());
     }
 
     private static String normalizedLayer(JsonNode row) {

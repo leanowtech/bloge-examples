@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -48,6 +49,7 @@ public final class AgentTddBoardController {
                                              @RequestBody RevisionRequest request,
                                              @RequestHeader HttpHeaders headers) {
         var stored = reviews.approveOracle(caseSetRef, caseId, request.expectedRevision(),
+                request.proposalFingerprint(),
                 authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
         return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
     }
@@ -58,8 +60,32 @@ public final class AgentTddBoardController {
                                            @RequestBody RevisionRequest request,
                                            @RequestHeader HttpHeaders headers) {
         var stored = reviews.approvePublishSpec(toolRef, request.expectedRevision(),
+                request.proposalFingerprint(),
                 authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
         return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
+    }
+
+    /** Opens the exact payload-bearing Oracle proposal for a human before approval. */
+    @GetMapping("/reviews/oracles/{caseSetRef}/{caseId}")
+    public ResponseEntity<Map<String, Object>> oracleReview(@PathVariable String caseSetRef,
+                                                            @PathVariable String caseId,
+                                                            @RequestParam long expectedRevision,
+                                                            @RequestHeader HttpHeaders headers) {
+        Map<String, Object> body = reviews.oracleReview(caseSetRef, caseId, expectedRevision,
+                authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache").body(body);
+    }
+
+    /** Opens the exact payload-bearing publish specification for a human before approval. */
+    @GetMapping("/reviews/specs/{toolRef}")
+    public ResponseEntity<Map<String, Object>> publishSpecReview(@PathVariable String toolRef,
+                                                                 @RequestParam long expectedRevision,
+                                                                 @RequestHeader HttpHeaders headers) {
+        Map<String, Object> body = reviews.publishSpecReview(toolRef, expectedRevision,
+                authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache").body(body);
     }
 
     /** Records a separately authenticated owner signoff for executable publication. */
@@ -86,7 +112,7 @@ public final class AgentTddBoardController {
     }
 
     /** @param expectedRevision exact revision visible to the human reviewer */
-    public record RevisionRequest(long expectedRevision) { }
+    public record RevisionRequest(long expectedRevision, String proposalFingerprint) { }
 
     /** Exact baseline material the human reviewed before approving executable publication. */
     public record SignoffRequest(long draftRevision, String goldenSetId, String evidenceFingerprint) { }

@@ -83,9 +83,7 @@ public record IntegrationRequestContext(
 
     public void requireDraftScope(GraphDraft draft) {
         requireComplete();
-        if (draft == null
-                || !tenantId.equals(draft.tenantId())
-                || !environmentId.equals(draft.environment())) {
+        if (!matchesDraftScope(draft)) {
             throw new IntegrationProblemException(IntegrationProblem.notFound(
                     "RG.INTEGRATION.DRAFT_NOT_FOUND",
                     "Draft was not found in the authorized integration scope.",
@@ -93,6 +91,20 @@ public record IntegrationRequestContext(
                     Map.of()
             ));
         }
+    }
+
+    /**
+     * Returns whether a visual draft belongs to this exact tenant, project namespace and
+     * environment.
+     *
+     * <p>A draft id is only unique inside this triple. Callers that omit the project namespace can
+     * otherwise expose or mutate a same-named draft owned by another project.</p>
+     */
+    public boolean matchesDraftScope(GraphDraft draft) {
+        return draft != null
+                && tenantId.equals(draft.tenantId())
+                && projectId.equals(draft.namespace())
+                && environmentId.equals(draft.environment());
     }
 
     public boolean hasClearanceAtLeast(String requiredClearance) {

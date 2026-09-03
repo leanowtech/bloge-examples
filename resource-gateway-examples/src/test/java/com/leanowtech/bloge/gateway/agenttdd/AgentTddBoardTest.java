@@ -3,12 +3,17 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemHandler;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +27,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Verifies the structure-only board, reviewed revision fence, and shipped browser entry point. */
 class AgentTddBoardTest {
@@ -33,6 +42,7 @@ class AgentTddBoardTest {
         GraphDraft draft = mock(GraphDraft.class);
         when(draft.draftId()).thenReturn("risk-tool");
         when(draft.tenantId()).thenReturn("tenant-a");
+        when(draft.namespace()).thenReturn("project-a");
         when(draft.environment()).thenReturn("test");
         when(draft.visualLayout()).thenReturn(Map.of("agentTdd", Map.of("assetKind", "TOOL")));
         when(draft.graphName()).thenReturn("riskTool");
@@ -55,6 +65,7 @@ class AgentTddBoardTest {
         row.put("lifecycle", "DRAFT");
         row.put("qualityState", "DESIGNED_NOT_RUN");
         row.putObject("proposedOracle").put("status", "PENDING").put("oracleOwner", "cx-ops")
+                .put("proposedBy", "codex-agent").put("proposalFingerprint", "sha256:proposal")
                 .putObject("expect").put("decision", "WAIVE");
         states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", caseSet);
         ObjectNode verdict = mapper.createObjectNode();
@@ -110,7 +121,7 @@ class AgentTddBoardTest {
         when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_READ)).thenReturn(identity());
         when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE)).thenReturn(identity());
         when(board.board(identity())).thenReturn(Map.of("tools", List.of()));
-        when(reviews.approveOracle("golden-1", "g1", 4, identity())).thenReturn(
+        when(reviews.approveOracle("golden-1", "g1", 4, "sha256:proposal", identity())).thenReturn(
                 new AgentTddStoredAsset(scope(), AgentTddMutationService.CASE_SET, "golden-1", 5,
                         "sha256:test", mapper.createObjectNode(), java.time.Instant.EPOCH));
         when(reviews.approveToolSignoff("risk-tool", "ops-42", 7, "sha256:golden",
@@ -121,7 +132,8 @@ class AgentTddBoardTest {
 
         controller.board(headers);
         Map<String, Object> approved = controller.approveOracle(
-                "golden-1", "g1", new AgentTddBoardController.RevisionRequest(4), headers);
+                "golden-1", "g1", new AgentTddBoardController.RevisionRequest(
+                        4, "sha256:proposal"), headers);
         Map<String, Object> signed = controller.approveSignoff(
                 "risk-tool", "ops-42", new AgentTddBoardController.SignoffRequest(
                         7, "sha256:golden", "sha256:evidence"), headers);
@@ -130,6 +142,25 @@ class AgentTddBoardTest {
         assertThat(signed).containsEntry("revision", 1L).containsEntry("status", "APPROVED");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
         verify(authenticator, times(2)).authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+    }
+
+    @Test
+    void controllerMapsAuthenticationFailureToTheStableProblemBoundary() throws Exception {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenThrow(new IntegrationProblemException(IntegrationProblem.unauthorized(
+                        "RG.INTEGRATION.AUTHENTICATION_REQUIRED", "Authentication is required.",
+                        "corr-auth", Map.of())));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new AgentTddBoardController(
+                        authenticator, mock(AgentTddBoardService.class), mock(AgentTddReviewService.class)))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+
+        mvc.perform(get("/api/agent-tdd/board"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE,
+                        "Bearer realm=\"resource-gateway-integration\""))
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.AUTHENTICATION_REQUIRED"));
     }
 
     @Test

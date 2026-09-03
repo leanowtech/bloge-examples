@@ -4,13 +4,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Map;
 
 /** Constant-time bearer credential resolver backed by a server-side identity record. */
 public final class StaticBearerIntegrationIdentityResolver implements IntegrationIdentityResolver {
-    private final byte[] credentialDigest;
-    private final IntegrationWorkloadIdentity identity;
+    private final List<CredentialIdentity> identities;
     private final Clock clock;
     private final boolean demoMode;
 
@@ -24,26 +25,52 @@ public final class StaticBearerIntegrationIdentityResolver implements Integratio
                                             IntegrationWorkloadIdentity identity,
                                             boolean demoMode,
                                             Clock clock) {
-        if (credential == null || credential.isBlank()) {
-            throw new IllegalArgumentException("A non-empty integration bearer credential is required");
+        this(Map.of(credential, identity), demoMode, clock);
+    }
+
+    /**
+     * Creates a small server-owned credential registry, used by the local demo to keep the Agent
+     * workload credential separate from the human reviewer credential.
+     */
+    public StaticBearerIntegrationIdentityResolver(Map<String, IntegrationWorkloadIdentity> credentials,
+                                                    boolean demoMode) {
+        this(credentials, demoMode, Clock.systemUTC());
+    }
+
+    StaticBearerIntegrationIdentityResolver(Map<String, IntegrationWorkloadIdentity> credentials,
+                                             boolean demoMode,
+                                             Clock clock) {
+        if (credentials == null || credentials.isEmpty()) {
+            throw new IllegalArgumentException("At least one integration bearer credential is required");
         }
-        if (identity == null || identity.identityId().isBlank()) {
-            throw new IllegalArgumentException("A server-owned integration identity is required");
-        }
-        this.credentialDigest = digest(credential.trim());
-        this.identity = identity;
+        List<CredentialIdentity> configured = new ArrayList<>();
+        credentials.forEach((credential, identity) -> {
+            if (credential == null || credential.isBlank()) {
+                throw new IllegalArgumentException("A non-empty integration bearer credential is required");
+            }
+            if (identity == null || identity.identityId().isBlank()) {
+                throw new IllegalArgumentException("A server-owned integration identity is required");
+            }
+            configured.add(new CredentialIdentity(digest(credential.trim()), identity));
+        });
+        this.identities = List.copyOf(configured);
         this.clock = clock == null ? Clock.systemUTC() : clock;
         this.demoMode = demoMode;
     }
 
     @Override
     public Optional<IntegrationWorkloadIdentity> resolve(String credential) {
-        if (credential == null || credential.isBlank()
-                || !MessageDigest.isEqual(credentialDigest, digest(credential.trim()))
-                || !identity.activeAt(clock.instant())) {
+        if (credential == null || credential.isBlank()) {
             return Optional.empty();
         }
-        return Optional.of(identity);
+        byte[] supplied = digest(credential.trim());
+        IntegrationWorkloadIdentity matched = null;
+        for (CredentialIdentity candidate : identities) {
+            if (MessageDigest.isEqual(candidate.digest(), supplied)) {
+                matched = candidate.identity();
+            }
+        }
+        return matched == null || !matched.activeAt(clock.instant()) ? Optional.empty() : Optional.of(matched);
     }
 
     @Override
@@ -54,7 +81,7 @@ public final class StaticBearerIntegrationIdentityResolver implements Integratio
     @Override
     public Descriptor descriptor() {
         return new Descriptor("STATIC_BEARER_REGISTRY", "SERVER_REGISTRY", true, demoMode,
-                !identity.delegatedBy().isBlank(), Map.of(
+                identities.stream().anyMatch(value -> !value.identity().delegatedBy().isBlank()), Map.of(
                 "keyRotationSupported", false,
                 "keyRevocationSupported", false,
                 "tokenRevocationSupported", false));
@@ -67,4 +94,6 @@ public final class StaticBearerIntegrationIdentityResolver implements Integratio
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
     }
+
+    private record CredentialIdentity(byte[] digest, IntegrationWorkloadIdentity identity) { }
 }

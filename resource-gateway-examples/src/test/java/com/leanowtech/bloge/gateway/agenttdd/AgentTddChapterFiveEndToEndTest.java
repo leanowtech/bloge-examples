@@ -104,7 +104,8 @@ class AgentTddChapterFiveEndToEndTest {
                         "expect", Map.of("decision", "WAIVE_FULL"), "oracleOwner", "cx-policy"))));
         long caseRevision = cases.path("data").path("revision").asLong();
         new AgentTddReviewService(states).approveOracle(
-                "cancel-golden", "g1", caseRevision, identity());
+                "cancel-golden", "g1", caseRevision,
+                cases.at("/data/rows/0/proposedOracle/proposalFingerprint").asText(), reviewerIdentity());
 
         JsonNode failingRed = invoke(tools, "rg.simulate", Map.of(
                 "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"), "side", "RED",
@@ -145,7 +146,7 @@ class AgentTddChapterFiveEndToEndTest {
         new AgentTddReviewService(states).approveToolSignoff(
                 "cancel-tool", "owner-signoff", green.path("data").path("draftRevision").asLong(),
                 green.path("data").path("goldenSetId").asText(),
-                green.path("data").path("evidenceFingerprint").asText(), identity());
+                green.path("data").path("evidenceFingerprint").asText(), reviewerIdentity());
 
         JsonNode ready = invoke(tools, "rg.readiness.get", Map.of("toolRef", "cancel-tool"));
         assertThat(ready.at("/data/publishable").asBoolean()).as(ready.toPrettyString()).isTrue();
@@ -165,7 +166,7 @@ class AgentTddChapterFiveEndToEndTest {
         new AgentTddReviewService(states).approveToolSignoff(
                 "cancel-tool", "owner-signoff-v2", green.at("/data/draftRevision").asLong(),
                 green.at("/data/goldenSetId").asText(),
-                green.at("/data/evidenceFingerprint").asText(), identity());
+                green.at("/data/evidenceFingerprint").asText(), reviewerIdentity());
 
         JsonNode published = invoke(tools, "rg.tool.publish", Map.of(
                 "toolRef", "cancel-tool", "signoffRef", "owner-signoff-v2",
@@ -256,7 +257,13 @@ class AgentTddChapterFiveEndToEndTest {
 
     private static IntegrationRequestContext identity() {
         return new IntegrationRequestContext(
-                "tenant-a", "org-a", "project-a", "test", "sg", "USER", "reviewer-1",
-                "", "AGENT_TDD_GOVERNED_WRITE", "corr-1");
+                "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "codex-agent",
+                "", "AGENT_TDD_AUTHORING", "corr-1");
+    }
+
+    private static IntegrationRequestContext reviewerIdentity() {
+        return new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "sg", "HUMAN", "reviewer-1",
+                "", "AGENT_TDD_GOVERNANCE", "corr-review");
     }
 }

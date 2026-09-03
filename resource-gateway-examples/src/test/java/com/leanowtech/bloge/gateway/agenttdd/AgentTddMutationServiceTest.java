@@ -180,7 +180,8 @@ class AgentTddMutationServiceTest {
                         "description", "Gets a quote", "whenToUse", "Before checkout",
                         "inputs", List.of(), "outputs", Map.of("kind", "object"), "errors", List.of()))));
         new AgentTddReviewService(fixture.states()).approveOracle(
-                "shipping-cases", "g1", 1, identity());
+                "shipping-cases", "g1", 1,
+                proposalFingerprint(fixture.states(), "shipping-cases", "g1"), reviewerIdentity());
 
         JsonNode instruction = invoke(fixture, "rg.tool.getInstruction",
                 mapper.valueToTree(Map.of("toolRef", "shipping-tool")));
@@ -201,7 +202,8 @@ class AgentTddMutationServiceTest {
                         "expect", Map.of("fee", 8), "oracleOwner", "logistics")),
                 "idempotencyKey", "cases-drift-1")));
         new AgentTddReviewService(fixture.states()).approveOracle(
-                "shipping-golden", "g1", proposed.path("data").path("revision").asLong(), identity());
+                "shipping-golden", "g1", proposed.path("data").path("revision").asLong(),
+                proposalFingerprint(fixture.states(), "shipping-golden", "g1"), reviewerIdentity());
 
         invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
                 "toolRef", "shipping-tool", "graph", Map.of("dsl", shippingDslWithRegion()),
@@ -276,6 +278,24 @@ class AgentTddMutationServiceTest {
         assertThat(response.path("error").path("code").asText()).isEqualTo("DRAFT_NOT_FOUND");
         assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
                 assertThat(draft.tenantId()).isEqualTo("demo-tenant"));
+    }
+
+    @Test
+    void composeCannotReplaceAnotherProjectDraftWithTheSameReference() {
+        Fixture fixture = fixtureWithTool();
+        IntegrationRequestContext otherProject = new IntegrationRequestContext(
+                "demo-tenant", "org-a", "project-b", "local", "sg", "WORKLOAD", "agent-2",
+                "", "AGENT_TDD_DRAFT_WRITE", "corr-2");
+
+        JsonNode response = mapper.valueToTree(fixture.tools().invoke("rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "idempotencyKey", "cross-project-compose")), otherProject));
+
+        assertThat(response.path("ok").asBoolean()).isFalse();
+        assertThat(response.path("error").path("code").asText()).isEqualTo("DRAFT_NOT_FOUND");
+        assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
+                assertThat(draft.namespace()).isEqualTo("project-a"));
     }
 
     private Fixture fixtureWithTool() {
@@ -374,6 +394,24 @@ class AgentTddMutationServiceTest {
         return new IntegrationRequestContext(
                 "demo-tenant", "org-a", "project-a", "local", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_DRAFT_WRITE", "corr-1");
+    }
+
+    private static IntegrationRequestContext reviewerIdentity() {
+        return new IntegrationRequestContext(
+                "demo-tenant", "org-a", "project-a", "local", "sg", "HUMAN", "reviewer-1",
+                "", "AGENT_TDD_GOVERNANCE", "corr-review");
+    }
+
+    private static String proposalFingerprint(InMemoryAgentTddStateRepository states,
+                                              String caseSetRef,
+                                              String caseId) {
+        for (JsonNode row : states.find(AgentTddMutationService.scopeKey(identity()),
+                AgentTddMutationService.CASE_SET, caseSetRef).orElseThrow().data().path("rows")) {
+            if (caseId.equals(row.path("caseId").asText())) {
+                return row.path("proposedOracle").path("proposalFingerprint").asText();
+            }
+        }
+        throw new AssertionError("pending case not found");
     }
 
     private static GraphDraft decisionDraft() {

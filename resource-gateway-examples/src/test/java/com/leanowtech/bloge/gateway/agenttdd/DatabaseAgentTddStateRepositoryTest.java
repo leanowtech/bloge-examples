@@ -63,6 +63,24 @@ class DatabaseAgentTddStateRepositoryTest {
     }
 
     @Test
+    void versionedPostgresMigrationProvidesTheRepositoryWireSchema() {
+        EmbeddedDatabase migrated = new EmbeddedDatabaseBuilder().generateUniqueName(true)
+                .setType(EmbeddedDatabaseType.H2)
+                .addScript("db/postgresql/V20260903_020__agent_tdd_runtime.sql")
+                .build();
+        try {
+            DatabaseAgentTddStateRepository migratedRepository = new DatabaseAgentTddStateRepository(
+                    new JdbcTemplate(migrated), mapper);
+            migratedRepository.init();
+
+            assertThat(migratedRepository.save("tenant|project|test", "CASE_SET", "cases-1",
+                    mapper.valueToTree(Map.of("status", "READY"))).revision()).isEqualTo(1);
+        } finally {
+            migrated.shutdown();
+        }
+    }
+
+    @Test
     void rejectsReuseOfIdempotencyKeyForDifferentMaterial() {
         repository.record("tenant-a|test", "rg.tool.compose", "idem-1", "sha256:first",
                 mapper.valueToTree(Map.of("toolRef", "tool-1")));

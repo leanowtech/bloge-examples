@@ -63,7 +63,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         JsonNode arguments = mapper.valueToTree(Map.of(
                 "toolRef", "risk-tool",
                 "libraryRefs", List.of("risk"),
@@ -92,7 +92,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         JsonNode arguments = mapper.valueToTree(Map.of(
                 "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
                 "cases", Map.of("rows", List.of(Map.of(
@@ -129,7 +129,7 @@ class AgentTddExecutionServiceTest {
                         }
                         """, List.of(), List.of(), "test", Map.of())).draft()
                 .withIdentity("green-tool", 0);
-        draft = fixture.drafts().save(draft);
+        draft = fixture.drafts().save(scoped(draft, "green-tool"));
         AgentTddExecutionService service = new AgentTddExecutionService(
                 fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper);
 
@@ -213,7 +213,7 @@ class AgentTddExecutionServiceTest {
                 new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                         "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(),
                         "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         clearInvocations(fixture.catalog());
 
         fixture.tools().invoke("rg.simulate", mapper.valueToTree(Map.of(
@@ -248,7 +248,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         JsonNode arguments = mapper.valueToTree(Map.of(
                 "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "GREEN",
                 "cases", Map.of("rows", List.of(Map.of("caseId", "g1", "given", Map.of(),
@@ -304,7 +304,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
                 mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
@@ -332,7 +332,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
                 mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(
@@ -356,7 +356,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "golden-1",
                 mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(
@@ -383,7 +383,7 @@ class AgentTddExecutionServiceTest {
                 new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                         "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(),
                         "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         AgentTddExecutionService service = new AgentTddExecutionService(
                 fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper,
                 new InMemoryAgentTddStateRepository());
@@ -402,7 +402,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         AgentTddExecutionService service = new AgentTddExecutionService(
                 fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper,
                 new InMemoryAgentTddStateRepository());
@@ -421,7 +421,7 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
                 "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
-        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        fixture.drafts().save(scoped(draft));
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         states.save(AgentTddMutationService.scopeKey(identity()), AgentTddMutationService.CASE_SET, "invalid-golden",
                 mapper.valueToTree(Map.of("toolRef", "risk-tool", "rows", List.of(Map.of(
@@ -483,6 +483,18 @@ class AgentTddExecutionServiceTest {
         return new IntegrationRequestContext(
                 "demo-tenant", "org-a", "project-a", "local", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_EXECUTION", "corr-1");
+    }
+
+    private static GraphDraft scoped(GraphDraft draft) {
+        return scoped(draft, "risk-tool");
+    }
+
+    private static GraphDraft scoped(GraphDraft draft, String draftId) {
+        return new GraphDraft(draft.schemaVersion(), draftId, 0, draft.graphName(),
+                identity().tenantId(), identity().projectId(), identity().environmentId(), draft.status(),
+                draft.inputSchema(), draft.outputSchema(), draft.nodes(), draft.edges(), draft.visualLayout(),
+                draft.nodeFixtures(), draft.output(), draft.operatorFingerprints(), draft.operatorSnapshots(),
+                draft.revisionMetadata());
     }
 
     private record Fixture(ResourceGatewayAgentTddTools tools,

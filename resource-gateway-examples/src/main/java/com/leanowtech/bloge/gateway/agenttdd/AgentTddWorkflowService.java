@@ -161,7 +161,11 @@ public final class AgentTddWorkflowService {
             proposal.put("toolRef", toolRef);
             proposal.put("draftRevision", draft.revision());
             proposal.put("status", "PENDING");
+            proposal.put("proposedBy", identity.actorId());
             proposal.set("draft", mapper.valueToTree(draft));
+            proposal.put("proposalFingerprint",
+                    com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
+                            .fromCanonicalValue(mapper, proposal, MAX_BYTES));
             AgentTddStoredAsset stored = states.save(scope(identity), PUBLISH_SPEC, toolRef, proposal);
             return Map.of("toolRef", toolRef, "proposalStatus", "PENDING",
                     "revision", stored.revision(), "awaiting", "human-approval");
@@ -304,8 +308,7 @@ public final class AgentTddWorkflowService {
     }
 
     private GraphDraft draft(String toolRef, IntegrationRequestContext identity) {
-        return drafts.find(toolRef).filter(value -> value.tenantId().equals(identity.tenantId())
-                        && value.environment().equals(identity.environmentId()))
+        return drafts.find(toolRef).filter(identity::matchesDraftScope)
                 .orElseThrow(() -> new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Tool draft was not found in the authorized scope."));
     }

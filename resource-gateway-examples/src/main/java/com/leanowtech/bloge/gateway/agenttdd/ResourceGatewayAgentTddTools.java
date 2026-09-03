@@ -194,7 +194,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 .forEach(value -> byRef.put(value.get("ref").toString(), value));
         drafts.all().stream()
                 .filter(Objects::nonNull)
-                .filter(draft -> sameScope(draft, identity))
+                .filter(identity::matchesDraftScope)
                 .sorted(Comparator.comparing(GraphDraft::draftId))
                 .map(this::graphCapability)
                 .filter(value -> requestedKind.isBlank() || requestedKind.equals(value.get("kind")))
@@ -280,7 +280,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     "speccing", false
             ));
         }
-        GraphDraft draft = drafts.find(assetRef).filter(value -> sameScope(value, identity)).orElse(null);
+        GraphDraft draft = drafts.find(assetRef).filter(identity::matchesDraftScope).orElse(null);
         if (draft == null) {
             return failure("DRAFT_NOT_FOUND", "Business contract was not found.");
         }
@@ -295,7 +295,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
 
     private Map<String, Object> readiness(JsonNode arguments, IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
-        GraphDraft draft = drafts.find(toolRef).filter(value -> sameScope(value, identity)).orElse(null);
+        GraphDraft draft = drafts.find(toolRef).filter(identity::matchesDraftScope).orElse(null);
         if (draft == null) {
             return failure("DRAFT_NOT_FOUND", "Tool draft was not found.");
         }
@@ -394,11 +394,6 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         }
         Object binding = operator.lowering().parameters().get("bindingRef");
         return !(binding instanceof String value) || value.isBlank();
-    }
-
-    private static boolean sameScope(GraphDraft draft, IntegrationRequestContext identity) {
-        return draft.tenantId().equals(identity.tenantId())
-                && draft.environment().equals(identity.environmentId());
     }
 
     private static String requiredText(JsonNode arguments, String field) {

@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
+import java.util.Map;
 
 /**
  * Human review boundary that can make a pending business Oracle effective.
@@ -32,6 +33,7 @@ public final class AgentTddReviewService {
     public synchronized AgentTddStoredAsset approveOracle(String caseSetRef,
                                                           String caseId,
                                                           long expectedRevision,
+                                                          String proposalFingerprint,
                                                           IntegrationRequestContext identity) {
         String scope = AgentTddMutationService.scopeKey(identity);
         AgentTddStoredAsset current = states.find(scope, AgentTddMutationService.CASE_SET, caseSetRef)
@@ -56,6 +58,8 @@ public final class AgentTddReviewService {
             throw new AgentTddToolException("GOLDEN_REQUIRES_APPROVAL",
                     "The GOLDEN case has no pending Oracle proposal.");
         }
+        requireIndependentHuman(identity, proposal.path("proposedBy").asText());
+        requireProposalFingerprint(proposal, proposalFingerprint);
         selected.set("expect", proposal.path("expect").deepCopy());
         selected.put("oracleOwner", proposal.path("oracleOwner").asText());
         selected.put("lifecycle", "ACTIVE");
@@ -72,6 +76,7 @@ public final class AgentTddReviewService {
     /** Approves an exact pending specification proposal without turning it into executable code. */
     public synchronized AgentTddStoredAsset approvePublishSpec(String toolRef,
                                                                long expectedRevision,
+                                                               String proposalFingerprint,
                                                                IntegrationRequestContext identity) {
         String scope = AgentTddMutationService.scopeKey(identity);
         AgentTddStoredAsset current = states.find(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef)
@@ -82,6 +87,8 @@ public final class AgentTddReviewService {
         if (!"PENDING".equals(data.path("status").asText())) {
             throw new AgentTddToolException("GATE_REJECTED", "Specification proposal is not pending.");
         }
+        requireIndependentHuman(identity, data.path("proposedBy").asText());
+        requireProposalFingerprint(data, proposalFingerprint);
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
         return states.saveIfRevision(scope, AgentTddWorkflowService.PUBLISH_SPEC, toolRef,
@@ -105,6 +112,7 @@ public final class AgentTddReviewService {
                                                                String goldenSetId,
                                                                String evidenceFingerprint,
                                                                IntegrationRequestContext identity) {
+        requireHuman(identity);
         if (toolRef == null || toolRef.isBlank() || signoffRef == null || signoffRef.isBlank()
                 || draftRevision < 1 || goldenSetId == null || goldenSetId.isBlank()
                 || evidenceFingerprint == null || evidenceFingerprint.isBlank()) {
@@ -127,6 +135,90 @@ public final class AgentTddReviewService {
     private static void requireRevision(AgentTddStoredAsset current, long expectedRevision, String label) {
         if (current.revision() != expectedRevision) {
             throw new AgentTddToolException("GATE_REJECTED", label + " changed after the reviewer opened it.");
+        }
+    }
+
+    /**
+     * Returns the exact pending Oracle material to a separately authenticated human reviewer.
+     *
+     * <p>This payload-bearing projection is deliberately not an MCP tool and is protected by the
+     * governed-write identity boundary. The returned fingerprint must be echoed by approval so the
+     * decision is bound to what the reviewer actually opened.</p>
+     */
+    public synchronized Map<String, Object> oracleReview(String caseSetRef,
+                                                         String caseId,
+                                                         long expectedRevision,
+                                                         IntegrationRequestContext identity) {
+        requireHuman(identity);
+        AgentTddStoredAsset current = states.find(AgentTddMutationService.scopeKey(identity),
+                        AgentTddMutationService.CASE_SET, caseSetRef)
+                .orElseThrow(() -> new AgentTddToolException("DRAFT_NOT_FOUND", "Case set was not found."));
+        requireRevision(current, expectedRevision, "Case set");
+        for (JsonNode row : current.data().path("rows")) {
+            if (!caseId.equals(row.path("caseId").asText())) continue;
+            JsonNode proposal = row.path("proposedOracle");
+            if (!"PENDING".equals(proposal.path("status").asText())) break;
+            return Map.of(
+                    "caseSetRef", caseSetRef,
+                    "caseId", caseId,
+                    "revision", current.revision(),
+                    "intent", row.path("intent").deepCopy(),
+                    "given", row.path("given").deepCopy(),
+                    "stubs", row.path("stubs").deepCopy(),
+                    "expect", proposal.path("expect").deepCopy(),
+                    "oracleOwner", proposal.path("oracleOwner").asText(),
+                    "proposedBy", proposal.path("proposedBy").asText(),
+                    "proposalFingerprint", proposal.path("proposalFingerprint").asText());
+        }
+        throw new AgentTddToolException("DRAFT_NOT_FOUND", "Pending GOLDEN case was not found.");
+    }
+
+    /** Returns the exact pending publish specification that a human must inspect before approval. */
+    public synchronized Map<String, Object> publishSpecReview(String toolRef,
+                                                              long expectedRevision,
+                                                              IntegrationRequestContext identity) {
+        requireHuman(identity);
+        AgentTddStoredAsset current = states.find(AgentTddMutationService.scopeKey(identity),
+                        AgentTddWorkflowService.PUBLISH_SPEC, toolRef)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "DRAFT_NOT_FOUND", "Specification proposal was not found."));
+        requireRevision(current, expectedRevision, "Specification proposal");
+        if (!"PENDING".equals(current.data().path("status").asText())) {
+            throw new AgentTddToolException("GATE_REJECTED", "Specification proposal is not pending.");
+        }
+        return Map.of("toolRef", toolRef, "revision", current.revision(),
+                "draftRevision", current.data().path("draftRevision").asLong(),
+                "draft", current.data().path("draft").deepCopy(),
+                "proposedBy", current.data().path("proposedBy").asText(),
+                "proposalFingerprint", current.data().path("proposalFingerprint").asText());
+    }
+
+    /** Enforces the human side of the Agent-proposes, human-decides trust boundary. */
+    private static void requireHuman(IntegrationRequestContext identity) {
+        if (identity == null || !("USER".equals(identity.actorType()) || "HUMAN".equals(identity.actorType()))) {
+            throw new AgentTddToolException("GATE_REJECTED",
+                    "This governance decision requires a separately authenticated human identity.");
+        }
+    }
+
+    /** Enforces both human review and maker-checker separation for a stored proposal. */
+    private static void requireIndependentHuman(IntegrationRequestContext identity, String proposedBy) {
+        requireHuman(identity);
+        if (proposedBy == null || proposedBy.isBlank()) {
+            throw new AgentTddToolException("GATE_REJECTED",
+                    "The proposal has no authenticated proposer and cannot be approved.");
+        }
+        if (proposedBy.equals(identity.actorId())) {
+            throw new AgentTddToolException("GATE_REJECTED",
+                    "The proposal author cannot approve the same governance decision.");
+        }
+    }
+
+    private static void requireProposalFingerprint(JsonNode proposal, String reviewedFingerprint) {
+        String current = proposal.path("proposalFingerprint").asText();
+        if (current.isBlank() || reviewedFingerprint == null || !current.equals(reviewedFingerprint.trim())) {
+            throw new AgentTddToolException("GATE_REJECTED",
+                    "The approval is not bound to the exact proposal opened by the reviewer.");
         }
     }
 }

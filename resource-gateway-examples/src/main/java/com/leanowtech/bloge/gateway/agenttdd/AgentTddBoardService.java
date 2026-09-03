@@ -38,7 +38,7 @@ public final class AgentTddBoardService {
         String scope = AgentTddMutationService.scopeKey(identity);
         List<Map<String, Object>> tools = drafts.all().stream()
                 .filter(Objects::nonNull)
-                .filter(draft -> sameScope(draft, identity) && "TOOL".equals(assetKind(draft)))
+                .filter(draft -> identity.matchesDraftScope(draft) && "TOOL".equals(assetKind(draft)))
                 .sorted(Comparator.comparing(GraphDraft::draftId))
                 .map(draft -> toolCard(draft, scope, identity))
                 .toList();
@@ -48,13 +48,16 @@ public final class AgentTddBoardService {
                     if ("PENDING".equals(row.path("proposedOracle").path("status").asText())) {
                         reviews.add(Map.of("kind", "ORACLE", "assetRef", asset.assetRef(),
                                 "caseId", row.path("caseId").asText(), "revision", asset.revision(),
-                                "owner", row.path("proposedOracle").path("oracleOwner").asText()));
+                                "owner", row.path("proposedOracle").path("oracleOwner").asText(),
+                                "proposalFingerprint",
+                                row.path("proposedOracle").path("proposalFingerprint").asText()));
                     }
                 }));
         states.list(scope, AgentTddWorkflowService.PUBLISH_SPEC).stream()
                 .filter(asset -> "PENDING".equals(asset.data().path("status").asText()))
                 .forEach(asset -> reviews.add(Map.of("kind", "PUBLISH_SPEC", "assetRef", asset.assetRef(),
-                        "revision", asset.revision(), "owner", "tool-owner")));
+                        "revision", asset.revision(), "owner", "tool-owner",
+                        "proposalFingerprint", asset.data().path("proposalFingerprint").asText())));
         tools.stream()
                 .filter(tool -> gate(tool, "greenBaseline") && !gate(tool, "ownerSignoff"))
                 .forEach(tool -> pendingSignoff(scope, tool).ifPresent(reviews::add));
@@ -167,11 +170,6 @@ public final class AgentTddBoardService {
             return Objects.toString(values.get("type"), "unknown");
         }
         return "unknown";
-    }
-
-    private static boolean sameScope(GraphDraft draft, IntegrationRequestContext identity) {
-        return draft.tenantId().equals(identity.tenantId())
-                && draft.environment().equals(identity.environmentId());
     }
 
     private static String assetKind(GraphDraft draft) {

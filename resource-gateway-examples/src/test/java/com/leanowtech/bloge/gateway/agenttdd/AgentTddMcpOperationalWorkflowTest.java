@@ -89,7 +89,8 @@ class AgentTddMcpOperationalWorkflowTest {
                         "oracleOwner", "wallet-ops")),
                 "idempotencyKey", "cases-wallet-ops-test"));
         reviews.approveOracle(CASE_SET_REF, "wallet-usd",
-                cases.at("/data/revision").asLong(), identity());
+                cases.at("/data/revision").asLong(),
+                cases.at("/data/rows/0/proposedOracle/proposalFingerprint").asText(), reviewerIdentity());
 
         JsonNode red = invoke("rg.simulate", Map.of(
                 "toolRef", TOOL_REF, "libraryRefs", List.of(), "side", "RED",
@@ -108,7 +109,7 @@ class AgentTddMcpOperationalWorkflowTest {
         reviews.approveToolSignoff(TOOL_REF, "ops-review-test",
                 green.at("/data/draftRevision").asLong(),
                 green.at("/data/goldenSetId").asText(),
-                green.at("/data/evidenceFingerprint").asText(), identity());
+                green.at("/data/evidenceFingerprint").asText(), reviewerIdentity());
         assertThat(invoke("rg.readiness.get", Map.of("toolRef", TOOL_REF))
                 .at("/data/publishable").asBoolean()).isTrue();
 
@@ -143,6 +144,13 @@ class AgentTddMcpOperationalWorkflowTest {
     private static IntegrationRequestContext identity() {
         return new IntegrationRequestContext(
                 "tenant-a", "knowledge-governance", "tool-studio", "prod", "local",
-                "USER", "ops-reviewer", "", "AGENT_TDD_GOVERNANCE", "ops-test");
+                "WORKLOAD", "codex-agent", "", "AGENT_TDD_AUTHORING", "ops-test");
     }
+
+    private static IntegrationRequestContext reviewerIdentity() {
+        return new IntegrationRequestContext(
+                "tenant-a", "knowledge-governance", "tool-studio", "prod", "local",
+                "HUMAN", "ops-reviewer", "", "AGENT_TDD_GOVERNANCE", "ops-review");
+    }
+
 }

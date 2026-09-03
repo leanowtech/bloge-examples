@@ -135,8 +135,7 @@ public final class AgentTddMutationService {
             candidate = resolveRuntimeBindings(candidate);
             requireReferencedLibraries(candidate, refs);
             GraphDraft current = drafts.find(assetRef).orElse(null);
-            if (current != null && (!current.tenantId().equals(identity.tenantId())
-                    || !current.environment().equals(identity.environmentId()))) {
+            if (current != null && !identity.matchesDraftScope(current)) {
                 throw new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Graph draft was not found in the authorized scope.");
             }
@@ -203,7 +202,7 @@ public final class AgentTddMutationService {
             List<Map<String, Object>> proposed = new ArrayList<>();
             rowsNode.forEach(value -> {
                 ObjectNode row = normalizedRow(value);
-                prepareForStorage(row, proposed);
+                prepareForStorage(row, proposed, identity);
                 rows.put(row.path("caseId").asText(), row);
             });
             int enumeratedCount = 0;
@@ -215,7 +214,7 @@ public final class AgentTddMutationService {
                 List<ObjectNode> generated = enumerator.enumerate(
                         requireScopedDraft(toolRef, identity), arguments.path("enumerateFrom"));
                 generated.forEach(row -> {
-                    prepareForStorage(row, proposed);
+                    prepareForStorage(row, proposed, identity);
                     rows.put(row.path("caseId").asText(), row);
                 });
                 enumeratedCount = generated.size();
@@ -232,7 +231,9 @@ public final class AgentTddMutationService {
     }
 
     /** Converts every authored or generated GOLDEN Oracle into a human-owned pending proposal. */
-    private void prepareForStorage(ObjectNode row, List<Map<String, Object>> proposed) {
+    private void prepareForStorage(ObjectNode row,
+                                   List<Map<String, Object>> proposed,
+                                   IntegrationRequestContext identity) {
         if (!"GOLDEN".equals(row.path("category").asText())) return;
         String caseId = row.path("caseId").asText();
         JsonNode expected = row.remove("expect");
@@ -241,6 +242,8 @@ public final class AgentTddMutationService {
             proposal.set("expect", expected);
             proposal.put("oracleOwner", requiredText(row, "oracleOwner"));
             proposal.put("status", "PENDING");
+            proposal.put("proposedBy", identity.actorId());
+            proposal.put("proposalFingerprint", proposalFingerprint(proposal));
             row.set("proposedOracle", proposal);
             proposed.add(Map.of("caseId", caseId, "awaiting", "human-approval"));
         }
@@ -269,6 +272,8 @@ public final class AgentTddMutationService {
             proposal.set("expect", expected.deepCopy());
             proposal.put("oracleOwner", owner);
             proposal.put("status", "PENDING");
+            proposal.put("proposedBy", identity.actorId());
+            proposal.put("proposalFingerprint", proposalFingerprint(proposal));
             row.set("proposedOracle", proposal);
             row.put("lifecycle", "DRAFT");
             replaceRow(data, row);
@@ -567,8 +572,7 @@ public final class AgentTddMutationService {
     }
 
     private GraphDraft requireScopedDraft(String ref, IntegrationRequestContext identity) {
-        return drafts.find(ref).filter(draft -> draft.tenantId().equals(identity.tenantId())
-                        && draft.environment().equals(identity.environmentId()))
+        return drafts.find(ref).filter(identity::matchesDraftScope)
                 .orElseThrow(() -> new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Tool draft was not found in the authorized scope."));
     }
@@ -594,6 +598,10 @@ public final class AgentTddMutationService {
     static String scopeKey(IntegrationRequestContext identity) {
         return String.join("|", identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.region());
+    }
+
+    private String proposalFingerprint(JsonNode proposal) {
+        return VisualBundleFingerprint.fromCanonicalValue(mapper, proposal, MAX_BYTES);
     }
 
     private static boolean designOnly(OperatorDefinition operator) {

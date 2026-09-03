@@ -264,19 +264,40 @@ class AgentTddWorkflowServiceTest {
         JsonNode arguments = json(Map.of(
                 "toolRef", "risk-tool", "idempotencyKey", "spec-1"));
 
-        Map<String, Object> first = service.publishSpec(arguments, identity());
-        Map<String, Object> replay = service.publishSpec(arguments, identity());
+        Map<String, Object> first = service.publishSpec(arguments, authorIdentity());
+        Map<String, Object> replay = service.publishSpec(arguments, authorIdentity());
         AgentTddStoredAsset proposal = states.find(scope(), AgentTddWorkflowService.PUBLISH_SPEC,
                 "risk-tool").orElseThrow();
 
         assertThat(first).isEqualTo(replay).containsEntry("proposalStatus", "PENDING");
+        String proposalFingerprint = proposal.data().path("proposalFingerprint").asText();
         assertThatThrownBy(() -> new AgentTddReviewService(states).approvePublishSpec(
-                "risk-tool", proposal.revision() + 1, identity()))
+                "risk-tool", proposal.revision() + 1, proposalFingerprint, identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
         AgentTddStoredAsset approved = new AgentTddReviewService(states).approvePublishSpec(
-                "risk-tool", proposal.revision(), identity());
+                "risk-tool", proposal.revision(), proposalFingerprint, identity());
         assertThat(approved.data().path("status").asText()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    void governanceRejectsWorkloadSignoffAndSelfApproval() {
+        AgentTddReviewService review = new AgentTddReviewService(states);
+        Map<String, Object> proposalResult = service.publishSpec(json(Map.of(
+                "toolRef", "risk-tool", "idempotencyKey", "spec-separation")), identity());
+        AgentTddStoredAsset proposal = states.find(scope(), AgentTddWorkflowService.PUBLISH_SPEC,
+                "risk-tool").orElseThrow();
+
+        assertThatThrownBy(() -> review.approveToolSignoff(
+                "risk-tool", "workload-signoff", 4, "sha256:golden", "sha256:evidence",
+                authorIdentity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
+        assertThatThrownBy(() -> review.approvePublishSpec(
+                "risk-tool", ((Number) proposalResult.get("revision")).longValue(),
+                proposal.data().path("proposalFingerprint").asText(), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("GATE_REJECTED"));
     }
 
     @Test
@@ -437,5 +458,11 @@ class AgentTddWorkflowServiceTest {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "USER", "reviewer-1",
                 "", "AGENT_TDD_GOVERNED_WRITE", "corr-1");
+    }
+
+    private static IntegrationRequestContext authorIdentity() {
+        return new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "agent-1",
+                "", "AGENT_TDD_AUTHORING", "corr-agent");
     }
 }

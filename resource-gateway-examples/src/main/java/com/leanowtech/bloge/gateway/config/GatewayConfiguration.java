@@ -212,6 +212,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -492,6 +493,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.jwt.maximum-lifetime-seconds:900}") long jwtMaximumLifetimeSeconds,
             @Value("${gateway.integration.identity.demo-enabled:true}") boolean demoEnabled,
             @Value("${gateway.integration.identity.demo-token:bloge-aneke-demo-token}") String token,
+            @Value("${gateway.integration.identity.demo-review-token:bloge-reviewer-demo-token}") String reviewToken,
             @Value("${gateway.integration.identity.identity-id:demo-aneke-workload}") String identityId,
             @Value("${gateway.integration.identity.tenant-id:tenant-a}") String tenantId,
             @Value("${gateway.integration.identity.organization-id:knowledge-governance}") String organizationId,
@@ -499,6 +501,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.environment-id:prod}") String environmentId,
             @Value("${gateway.integration.identity.region:local}") String region,
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
+            @Value("${gateway.integration.identity.reviewer-actor-id:business-reviewer}") String reviewerActorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
             @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_WRITE,CORRECTNESS_REVIEW,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE}") String allowedPurposes) {
@@ -532,7 +535,16 @@ public class GatewayConfiguration {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(identityId, tenantId,
                 organizationId, projectId, environmentId, region, "WORKLOAD", actorId, "", purposes,
                 Instant.MAX, true, commaSeparated(groups), clearance, "", Instant.MAX);
-        return new StaticBearerIntegrationIdentityResolver(token, identity, true);
+        IntegrationWorkloadIdentity reviewer = new IntegrationWorkloadIdentity("demo-human-reviewer", tenantId,
+                organizationId, projectId, environmentId, region, "HUMAN", reviewerActorId, "",
+                Set.of("AGENT_TDD_READ", "AGENT_TDD_GOVERNANCE"), Instant.MAX, true,
+                commaSeparated(groups), clearance, "", Instant.MAX);
+        Map<String, IntegrationWorkloadIdentity> demoIdentities = new LinkedHashMap<>();
+        demoIdentities.put(token, identity);
+        if (demoIdentities.put(reviewToken, reviewer) != null) {
+            throw new IllegalArgumentException("Agent and human demo credentials must be different");
+        }
+        return new StaticBearerIntegrationIdentityResolver(demoIdentities, true);
     }
 
     /** Central authentication and purpose-policy gate for all protected integration endpoints. */

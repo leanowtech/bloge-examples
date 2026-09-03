@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import jakarta.annotation.PostConstruct;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +19,10 @@ import java.util.function.Supplier;
 /**
  * JDBC-backed Agent TDD overlay and idempotency repository.
  *
- * <p>The tables are additive and self-bootstrapping, matching the example server's existing H2
- * repositories. Exact response JSON is retained so a retried write cannot observe a later asset
- * revision and mistake it for the original result.</p>
+ * <p>The tables self-bootstrap only for the embedded H2 example. External databases must apply the
+ * versioned migration first and are checked at startup without runtime DDL. Exact response JSON is
+ * retained so a retried write cannot observe a later asset revision and mistake it for the original
+ * result.</p>
  */
 @Repository
 public class DatabaseAgentTddStateRepository implements AgentTddStateRepository {
@@ -34,9 +36,15 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         this.mapper = mapper;
     }
 
-    /** Creates additive local tables when the application starts. */
+    /** Creates additive H2 tables or verifies that an external migration has already run. */
     @PostConstruct
     void init() {
+        String product = jdbc.execute((ConnectionCallback<String>) connection ->
+                connection.getMetaData().getDatabaseProductName());
+        if (product == null || !"H2".equalsIgnoreCase(product.trim())) {
+            verifyExternalSchema();
+            return;
+        }
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS agent_tdd_assets (
                     scope_key VARCHAR(1024) NOT NULL,
@@ -62,6 +70,17 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                 )
                 """);
         jdbc.execute("ALTER TABLE agent_tdd_idempotency ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT TRUE NOT NULL");
+    }
+
+    private void verifyExternalSchema() {
+        jdbc.queryForObject("""
+                SELECT COUNT(*) FROM agent_tdd_assets
+                 WHERE scope_key = ? AND asset_kind = ? AND asset_ref = ? AND revision < 0
+                """, Long.class, "", "", "");
+        jdbc.queryForObject("""
+                SELECT COUNT(*) FROM agent_tdd_idempotency
+                 WHERE scope_key = ? AND operation = ? AND idempotency_key = ? AND completed = FALSE
+                """, Long.class, "", "");
     }
 
     @Override
