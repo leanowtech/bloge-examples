@@ -177,13 +177,16 @@ public class DynamicGatewayComposerService {
         ResourceExecutionAdmissionRegistry.AdmissionLease admission = request.admittedResources().isEmpty()
                 ? null : executionAdmissions.register(captureId, request.admittedResources());
         ExecutionOutcome outcome;
+        Map<String, List<ResourceExecutionAdmissionRegistry.TransportDispatch>> transportDispatches;
         try {
             outcome = execute(graph, context, registration);
+            transportDispatches = admission == null ? Map.of() : admission.transportDispatches();
         } finally {
             if (admission != null) admission.close();
         }
         GraphResult result = outcome.result();
-        NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(captureId, result, context);
+        NodeExecutionCaptureInterceptor.CapturedExecution captured = executionCapture.complete(
+                captureId, result, context, transportDispatches);
         DynamicRunControlView control = runControls.view(registration);
         if (result == null) {
             String error = outcome.terminationUnconfirmed()

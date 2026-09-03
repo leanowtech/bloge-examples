@@ -539,15 +539,41 @@ class HttpResourceOperatorTest {
                 ResourceExecutionAdmissionRegistry.EXECUTION_CAPTURE_ID_CONTEXT_KEY, "run-1");
         registry.put(replaced);
 
-        try (ResourceExecutionAdmissionRegistry.AdmissionLease ignored =
+        try (ResourceExecutionAdmissionRegistry.AdmissionLease lease =
                      admissions.register("run-1", Map.of("profile.read", approved))) {
             assertThatThrownBy(() -> operator.execute(
                     new HttpResourceInput("profile.read", Map.of()), context))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Resource descriptor changed after governed admission.");
+            assertThat(lease.transportDispatches()).isEmpty();
         }
 
         assertThat(httpStub.wasInvoked()).isFalse();
+    }
+
+    @Test
+    void controlledAdmissionRecordsTheExactTransportDispatch() throws Exception {
+        ResourceDescriptor approved = simpleDescriptor("profile.read");
+        ResourceExecutionAdmissionRegistry admissions = new ResourceExecutionAdmissionRegistry();
+        operator = new HttpResourceOperator(httpStub, registry, evaluator,
+                new UrlTemplateRenderer(), new PayloadExtractor(), new ResponseValidator(evaluator), admissions);
+        OperatorContext context = operatorContext();
+        context.graphContext().put(
+                ResourceExecutionAdmissionRegistry.EXECUTION_CAPTURE_ID_CONTEXT_KEY, "run-transport");
+        registry.put(approved);
+        httpStub.setResponse(new HttpResponseOutput(
+                200, Map.of(), "{}", Duration.ofMillis(1)));
+
+        try (ResourceExecutionAdmissionRegistry.AdmissionLease lease =
+                     admissions.register("run-transport", Map.of("profile.read", approved))) {
+            operator.execute(new HttpResourceInput("profile.read", Map.of()), context);
+
+            assertThat(lease.transportDispatches()).containsOnlyKeys("testNode");
+            assertThat(lease.transportDispatches().get("testNode")).singleElement().satisfies(dispatch -> {
+                assertThat(dispatch.retryAttempt()).isZero();
+                assertThat(dispatch.observedAt()).isNotNull();
+            });
+        }
     }
 
     @Test

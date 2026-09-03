@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import com.leanowtech.bloge.gateway.visualadapter.ResourceRegistryVisualAdapter;
 import org.springframework.stereotype.Service;
@@ -108,11 +109,33 @@ public final class AgentTddAttestationService {
                         "GREEN_BASELINE_ABSENT", "A current logical GREEN baseline is required."));
         LinkedHashMap<String, Object> green = new LinkedHashMap<>(mapper.convertValue(latest, OBJECT_MAP));
         green.put("toolRef", normalizedToolRef);
-        long currentAttestationRevision = states.find(AgentTddMutationService.scopeKey(reviewer),
-                        ATTESTATION, normalizedToolRef)
-                .map(AgentTddStoredAsset::revision).orElse(0L);
+        long currentAttestationRevision = reserveManualAttempt(Map.copyOf(green), reviewer).revision();
         return attestOnce(Map.copyOf(green), platformIdentity(reviewer),
                 "MANUAL", currentAttestationRevision);
+    }
+
+    /**
+     * Commits one human-authorized attempt revision before its external execution starts.
+     *
+     * <p>If the process exits after this commit, a later human confirmation advances the revision
+     * and therefore receives a different durable execution key. Concurrent confirmations still
+     * race on the same revision and only one can reserve the next attempt.</p>
+     */
+    private AgentTddStoredAsset reserveManualAttempt(Map<String, Object> green,
+                                                     IntegrationRequestContext reviewer) {
+        String scope = AgentTddMutationService.scopeKey(reviewer);
+        String toolRef = text(green, "toolRef");
+        java.util.Optional<AgentTddStoredAsset> current = states.find(scope, ATTESTATION, toolRef);
+        if (current.map(AgentTddStoredAsset::data)
+                .filter(data -> sameSubject(data, green))
+                .filter(data -> "ATTESTED".equals(data.path("status").asText()))
+                .isPresent()) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The current logical GREEN line is already attested.");
+        }
+        long expectedRevision = current.map(AgentTddStoredAsset::revision).orElse(0L);
+        return states.saveIfRevision(scope, ATTESTATION, toolRef, expectedRevision,
+                mapper.valueToTree(recoveryProjection(green, reviewer.environmentId())));
     }
 
     /**
@@ -188,7 +211,7 @@ public final class AgentTddAttestationService {
             return mapper.convertValue(reservation.response(), OBJECT_MAP);
         }
         if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.IN_PROGRESS) {
-            return failureProjection(green, identity.environmentId(), "ATTESTATION_RECOVERY_REQUIRED");
+            return persistRecoveryRequired(green, identity);
         }
         JsonNode response = mapper.valueToTree(attestReserved(green, identity));
         return mapper.convertValue(states.completeExternalExecution(scope, ATTESTATION_EXECUTE,
@@ -370,8 +393,7 @@ public final class AgentTddAttestationService {
                             ResourceRegistryVisualAdapter.toVisual(dependency.descriptor())));
             VisualGraphRunResponse response = runner.runAgainst(
                     plan.executable(), runtimeInputs, "", plan.frozenCatalog(), admittedDescriptors);
-            calls.replaceAll((nodeId, ignored) -> response.nodeAttempts()
-                    .getOrDefault(nodeId, List.of()).size());
+            calls.replaceAll((nodeId, ignored) -> transportDispatchCount(response, nodeId));
             boolean dependenciesCalled = calls.values().stream().allMatch(count -> count > 0);
             boolean held = response.success() && AgentTddExecutionService.expectedMatches(
                     row.path("expect"), mapper.valueToTree(response.output()));
@@ -451,6 +473,33 @@ public final class AgentTddAttestationService {
         return projection;
     }
 
+    /** Persists a payload-free recovery state unless a concurrent runner already wrote the result. */
+    private Map<String, Object> persistRecoveryRequired(Map<String, Object> green,
+                                                        IntegrationRequestContext identity) {
+        Map<String, Object> projection = recoveryProjection(green, identity.environmentId());
+        String toolRef = text(green, "toolRef");
+        if (toolRef.isBlank()) return projection;
+        String scope = AgentTddMutationService.scopeKey(identity);
+        java.util.Optional<AgentTddStoredAsset> current = states.find(scope, ATTESTATION, toolRef);
+        if (current.map(AgentTddStoredAsset::data)
+                .filter(data -> sameSubject(data, green))
+                .filter(data -> "ATTESTED".equals(data.path("status").asText()))
+                .isPresent()) {
+            return mapper.convertValue(current.orElseThrow().data(), OBJECT_MAP);
+        }
+        try {
+            return mapper.convertValue(states.saveIfRevision(scope, ATTESTATION, toolRef,
+                    current.map(AgentTddStoredAsset::revision).orElse(0L), mapper.valueToTree(projection)).data(),
+                    OBJECT_MAP);
+        } catch (AgentTddToolException concurrentChange) {
+            return states.find(scope, ATTESTATION, toolRef)
+                    .filter(asset -> sameSubject(asset.data(), green))
+                    .map(AgentTddStoredAsset::data)
+                    .map(data -> mapper.convertValue(data, OBJECT_MAP))
+                    .orElse(projection);
+        }
+    }
+
     private ObjectNode baseEvidence(AttestationPlan plan, String status, String reasonCode) {
         ObjectNode evidence = mapper.createObjectNode();
         evidence.put("toolRef", plan.toolRef());
@@ -484,6 +533,33 @@ public final class AgentTddAttestationService {
         evidence.put("dependencies", List.of());
         evidence.put("realExternalCalls", 0);
         return Map.copyOf(evidence);
+    }
+
+    private static Map<String, Object> recoveryProjection(Map<String, Object> green,
+                                                          String environment) {
+        LinkedHashMap<String, Object> evidence = new LinkedHashMap<>(failureProjection(
+                green, environment, "ATTESTATION_RECOVERY_REQUIRED"));
+        evidence.put("status", "RECOVERY_REQUIRED");
+        return Map.copyOf(evidence);
+    }
+
+    private static boolean sameSubject(JsonNode evidence, Map<String, Object> green) {
+        return evidence != null
+                && text(green, "toolRef").equals(evidence.path("toolRef").asText())
+                && text(green, "goldenSetId").equals(evidence.path("goldenSetId").asText())
+                && text(green, "evidenceFingerprint").equals(
+                        evidence.path("evidenceFingerprint").asText())
+                && number(green, "draftRevision") == evidence.path("draftRevision").asLong(-1);
+    }
+
+    /** Counts only requests observed at the governed HTTP transport boundary. */
+    private static int transportDispatchCount(VisualGraphRunResponse response, String nodeId) {
+        Map<String, VisualNodeExecutionFact> facts = response.nodeExecutionFacts();
+        VisualNodeExecutionFact fact = facts == null ? null : facts.get(nodeId);
+        if (fact == null) return 0;
+        return Math.toIntExact(fact.events().stream()
+                .filter(event -> "HTTP_TRANSPORT_DISPATCHED".equals(event.type()))
+                .count());
     }
 
     private static String failureReason(List<Map<String, Object>> cases,

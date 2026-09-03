@@ -52,6 +52,14 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
     }
 
     CapturedExecution complete(String captureId, GraphResult result, GraphContext context) {
+        return complete(captureId, result, context, Map.of());
+    }
+
+    CapturedExecution complete(
+            String captureId,
+            GraphResult result,
+            GraphContext context,
+            Map<String, List<ResourceExecutionAdmissionRegistry.TransportDispatch>> transportDispatches) {
         CaptureState state = captures.remove(captureId);
         if (state == null) {
             return CapturedExecution.empty();
@@ -59,6 +67,7 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         if (context != null) {
             state.recordSideEffects(context.sideEffectJournal().snapshots());
         }
+        state.recordTransportDispatches(transportDispatches);
         return new CapturedExecution(state.orderedAttempts(), state.executionFacts(result));
     }
 
@@ -338,6 +347,15 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             }
         }
 
+        private void recordTransportDispatches(
+                Map<String, List<ResourceExecutionAdmissionRegistry.TransportDispatch>> dispatches) {
+            if (dispatches == null) return;
+            dispatches.forEach((nodeId, observed) -> observed.forEach(dispatch ->
+                    fact(nodeId, graph == null ? null : graph.nodes().get(nodeId))
+                            .eventAt("HTTP_TRANSPORT_DISPATCHED", dispatch.retryAttempt(), null,
+                                    dispatch.observedAt())));
+        }
+
         private MutableNodeFact fact(String nodeId, NodeSpec spec) {
             return facts.compute(nodeId, (ignored, current) -> {
                 if (current == null) {
@@ -465,7 +483,11 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
         }
 
         private synchronized void event(String eventType, int attempt, Exception error) {
-            events.add(new DynamicGraphRunResponse.Event(++eventSequence, eventType, Instant.now(), attempt,
+            eventAt(eventType, attempt, error, Instant.now());
+        }
+
+        private synchronized void eventAt(String eventType, int attempt, Exception error, Instant observedAt) {
+            events.add(new DynamicGraphRunResponse.Event(++eventSequence, eventType, observedAt, attempt,
                     type(error)));
         }
 
@@ -529,12 +551,22 @@ final class NodeExecutionCaptureInterceptor implements OperatorInterceptor, Exec
             }
             boolean exhausted = configuredMaxAttempts > 1 && attempts >= configuredMaxAttempts;
             String sideEffectOutcome = aggregateSideEffectOutcome(sideEffectAttempts);
+            List<DynamicGraphRunResponse.Event> orderedEvents = events.stream()
+                    .sorted(Comparator.comparing(DynamicGraphRunResponse.Event::observedAt)
+                            .thenComparingInt(DynamicGraphRunResponse.Event::sequence))
+                    .toList();
+            List<DynamicGraphRunResponse.Event> resequenced = new ArrayList<>();
+            for (int index = 0; index < orderedEvents.size(); index++) {
+                DynamicGraphRunResponse.Event event = orderedEvents.get(index);
+                resequenced.add(new DynamicGraphRunResponse.Event(index + 1, event.type(), event.observedAt(),
+                        event.attempt(), event.errorType()));
+            }
             return new DynamicGraphRunResponse.NodeExecutionFact(status, reason, source, causedBy,
                     new DynamicGraphRunResponse.Retry(configuredMaxAttempts, attempts, exhausted, lastErrorType),
                     new DynamicGraphRunResponse.Timeout(timeoutConfigured, configuredTimeoutMs, timeoutObserved),
                     new DynamicGraphRunResponse.Fallback(fallbackConfigured, fallbackUsed, fallbackStrategy,
                             fallbackOriginalErrorType),
-                    sideEffectOutcome, List.copyOf(sideEffectAttempts), List.copyOf(events));
+                    sideEffectOutcome, List.copyOf(sideEffectAttempts), List.copyOf(resequenced));
         }
     }
 

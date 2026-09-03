@@ -90,6 +90,37 @@ class ExampleServicesScriptTest {
     }
 
     @Test
+    void localFixtureKeyRejectsASymlinkedSecretDirectory() throws Exception {
+        Path parent = Files.createTempDirectory("rg-fixture-secret-parent-");
+        Path outside = Files.createTempDirectory("rg-fixture-secret-outside-");
+        Path secretLink = parent.resolve("example-secrets");
+        Files.createSymbolicLink(secretLink, outside);
+        try {
+            Process process = new ProcessBuilder("bash", "-c", """
+                    source "$1"
+                    SECRET_DIR="$2"
+                    RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true
+                    RG_CORRECTNESS_AUTHORING_ENABLED=true
+                    RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING=
+                    prepare_local_fixture_material_key
+                    """, "fixture-key-symlink-test", SCRIPT.toString(), secretLink.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            process.getOutputStream().close();
+
+            assertThat(process.waitFor()).isNotZero();
+            assertThat(new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8))
+                    .contains("secret directory must be a regular non-symlink directory");
+            assertThat(outside.resolve("resource-gateway-fixture-material.key")).doesNotExist();
+        } finally {
+            Files.deleteIfExists(outside.resolve("resource-gateway-fixture-material.key"));
+            Files.deleteIfExists(secretLink);
+            Files.deleteIfExists(parent);
+            Files.deleteIfExists(outside);
+        }
+    }
+
+    @Test
     void codexGuideKeepsLeastPrivilegeSetupAndGovernedHumanStopsExecutable() throws Exception {
         String guide = Files.readString(AGENT_TDD_GUIDE, StandardCharsets.UTF_8);
 

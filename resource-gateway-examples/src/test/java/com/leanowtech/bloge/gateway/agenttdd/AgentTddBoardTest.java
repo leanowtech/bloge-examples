@@ -355,7 +355,7 @@ class AgentTddBoardTest {
                             "代表值待补充", "coverageComplete",
                             "展开查看技术结构", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef", "实景验证",
-                            "data-attestation-rerun", "/attestations/")
+                            "data-attestation-rerun", "/attestations/", "RECOVERY_REQUIRED")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
     }

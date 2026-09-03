@@ -17,6 +17,7 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -241,7 +242,7 @@ class AgentTddMcpOperationalWorkflowTest {
     }
 
     @Test
-    void realResponseThatViolatesTheApprovedOracleKeepsPublicationClosed() {
+    void realResponseThatViolatesTheApprovedOracleKeepsPublicationClosed() throws Exception {
         String toolRef = "codex-profile-attestation-failure-test";
         String caseSetRef = "codex-profile-attestation-failure-cases";
         JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
@@ -293,11 +294,30 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(rejected.getStatusCode().value()).isEqualTo(409);
         assertThat(rejected.getBody().at("/error/code").asText()).isEqualTo("FORBIDDEN_PURPOSE");
 
-        JsonNode rerun = reviewAction(rerunPath, null);
-        assertThat(rerun.path("status").asText()).isEqualTo("FAILED");
-        assertThat(rerun.path("reasonCode").asText()).isEqualTo("ATTESTATION_ORACLE_MISMATCH");
-        assertThat(rerun.path("realExternalCalls").asInt()).isEqualTo(1);
-        assertThat(rerun.toString()).doesNotContain("u-mismatch", "Alice", "Bob", "payload", "output");
+        WebDriver browser = newChromeDriverOrSkip();
+        try {
+            WebDriverWait wait = new WebDriverWait(browser, Duration.ofSeconds(12));
+            browser.get("http://localhost:" + port + "/agent-tdd.html");
+            wait.until(ExpectedConditions.elementToBeClickable(By.id("token")))
+                    .sendKeys("bloge-reviewer-demo-token");
+            browser.findElement(By.id("load")).click();
+            By retryButton = By.xpath("//article[contains(@class,'tool') and contains(.,'"
+                    + toolRef + "')]//button[@data-attestation-rerun]");
+            WebElement retry = wait.until(ExpectedConditions.elementToBeClickable(retryButton));
+            retry.click();
+            wait.until(ExpectedConditions.alertIsPresent()).accept();
+            wait.until(ExpectedConditions.stalenessOf(retry));
+            wait.until(ExpectedConditions.elementToBeClickable(retryButton));
+        } finally {
+            browser.quit();
+        }
+        JsonNode recoveredCard = toolCard(agentGet("/api/agent-tdd/board"), toolRef);
+        assertThat(recoveredCard.at("/attestation/status").asText()).isEqualTo("FAILED");
+        assertThat(recoveredCard.at("/attestation/reasonCode").asText())
+                .isEqualTo("ATTESTATION_ORACLE_MISMATCH");
+        assertThat(recoveredCard.at("/attestation/realExternalCalls").asInt()).isEqualTo(1);
+        assertThat(recoveredCard.path("attestation").toString())
+                .doesNotContain("u-mismatch", "Alice", "Bob", "payload", "output");
     }
 
     @Test

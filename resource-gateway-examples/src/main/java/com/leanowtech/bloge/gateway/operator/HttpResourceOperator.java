@@ -280,6 +280,9 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
                                                 ResourceDescriptor descriptor,
                                                 HttpRequestInput httpInput,
                                                 OperatorContext ctx) throws Exception {
+        if (executionAdmissions != null) {
+            executionAdmissions.recordTransportDispatch(ctx, descriptor);
+        }
         HttpResponseOutput httpResponse = httpRequestOperator.execute(httpInput, ctx);
         var validationResult = validator.validate(httpResponse, descriptor.responseProtocol());
         if (!validationResult.success()) {

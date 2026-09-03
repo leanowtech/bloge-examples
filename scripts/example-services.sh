@@ -72,7 +72,15 @@ prepare_local_fixture_material_key() {
 
     local key_file="${SECRET_DIR}/resource-gateway-fixture-material.key"
     local temporary_key_file="${key_file}.tmp.$$"
+    if [ -L "${SECRET_DIR}" ]; then
+        echo "Local Fixture material secret directory must be a regular non-symlink directory." >&2
+        return 1
+    fi
     mkdir -p "${SECRET_DIR}"
+    if [ -L "${SECRET_DIR}" ] || [ ! -d "${SECRET_DIR}" ]; then
+        echo "Local Fixture material secret directory must be a regular non-symlink directory." >&2
+        return 1
+    fi
     chmod 700 "${SECRET_DIR}"
     if [ -e "${key_file}" ] && { [ ! -f "${key_file}" ] || [ -L "${key_file}" ]; }; then
         echo "Local Fixture material key must be a regular non-symlink file." >&2

@@ -429,6 +429,37 @@ class AgentTddWorkflowServiceTest {
     }
 
     @Test
+    void readinessProjectsTheCurrentFailedAttestationForHumanRecovery() {
+        states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", json(Map.of(
+                "toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE")))));
+        String goldenSetId = AgentTddExecutionService.goldenSetId(mapper, "risk-tool", draft, List.of("g1"));
+        String evidenceFingerprint = currentEvidenceFingerprint("golden-1", "GREEN");
+        service.recordEvidence("rg.tool.baseline", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "status", "GO", "goldenSetId", goldenSetId, "side", "GREEN",
+                "caseSetRef", "golden-1", "caseSetRevision", currentCaseSetRevision("golden-1"),
+                "draftRevision", 4, "evidenceFingerprint", evidenceFingerprint,
+                "businessFingerprintStable", true, "realExternalCalls", 0), identity());
+        states.save(scope(), AgentTddAttestationService.ATTESTATION, "risk-tool", json(Map.ofEntries(
+                Map.entry("toolRef", "risk-tool"), Map.entry("status", "FAILED"),
+                Map.entry("reasonCode", "ATTESTATION_ORACLE_MISMATCH"), Map.entry("environment", "test"),
+                Map.entry("goldenSetId", goldenSetId), Map.entry("evidenceFingerprint", evidenceFingerprint),
+                Map.entry("draftRevision", 4), Map.entry("caseSetRef", "golden-1"),
+                Map.entry("realExternalCalls", 1), Map.entry("cases", List.of()),
+                Map.entry("dependencies", List.of()))));
+
+        Map<String, Object> readiness = service.readiness(
+                json(Map.of("toolRef", "risk-tool")), identity());
+
+        assertThat(readiness.get("attestation")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("status", "FAILED")
+                .containsEntry("reasonCode", "ATTESTATION_ORACLE_MISMATCH")
+                .containsEntry("realExternalCalls", 1);
+        assertThat(readiness.get("gates")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("runtimeAttestation", false);
+    }
+
+    @Test
     void fixtureWrapperMapsLegacyMultiOutputFailureToStableMcpCode() {
         when(fixtures.promote(any(String.class), any(String.class), any(String.class),
                 any(com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionRequest.class),

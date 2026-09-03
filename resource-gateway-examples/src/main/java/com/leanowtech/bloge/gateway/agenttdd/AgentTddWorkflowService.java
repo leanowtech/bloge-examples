@@ -344,10 +344,13 @@ public final class AgentTddWorkflowService {
                 && currentGoldenSetId.equals(latest.path("goldenSetId").asText())
                 && draft.revision() == latest.path("draftRevision").asLong(-1)
                 && currentEvidenceFingerprint.equals(latest.path("evidenceFingerprint").asText());
-        java.util.Optional<JsonNode> currentAttestation = green
-                ? currentAttestation(toolRef, draft.revision(), currentGoldenSetId,
+        java.util.Optional<JsonNode> latestAttestation = green
+                ? latestAttestation(toolRef, draft.revision(), currentGoldenSetId,
                         currentEvidenceFingerprint, identity)
                 : java.util.Optional.empty();
+        java.util.Optional<JsonNode> currentAttestation = latestAttestation
+                .filter(data -> "ATTESTED".equals(data.path("status").asText()))
+                .filter(data -> attestations == null || attestations.isCurrent(data, identity));
         boolean attested = currentAttestation.isPresent();
         String attestedImplementation = currentAttestation
                 .map(data -> data.path("implementationFingerprint").asText()).orElse("");
@@ -375,7 +378,7 @@ public final class AgentTddWorkflowService {
         readiness.put("goldenSetId", currentGoldenSetId);
         readiness.put("gates", Map.of("bindingsComplete", !design, "greenBaseline", green,
                 "runtimeAttestation", attested, "ownerSignoff", signed));
-        readiness.put("attestation", currentAttestation
+        readiness.put("attestation", latestAttestation
                 .map(value -> mapper.convertValue(value, OBJECT_MAP))
                 .orElse(Map.of("status", "ABSENT", "environment", draft.environment(),
                         "realExternalCalls", 0, "cases", List.of(), "dependencies", List.of())));
@@ -409,18 +412,27 @@ public final class AgentTddWorkflowService {
                 identity.clearance(), identity.delegationGrantId());
     }
 
-    /** Returns only an attestation bound to the exact current publish subject. */
+    /** Returns the latest success, failure, or recovery state bound to the current GREEN subject. */
+    private java.util.Optional<JsonNode> latestAttestation(String toolRef,
+                                                           long draftRevision,
+                                                           String goldenSetId,
+                                                           String evidenceFingerprint,
+                                                           IntegrationRequestContext identity) {
+        return states.find(scope(identity), AgentTddAttestationService.ATTESTATION, toolRef)
+                .map(AgentTddStoredAsset::data)
+                .filter(data -> draftRevision == data.path("draftRevision").asLong(-1))
+                .filter(data -> goldenSetId.equals(data.path("goldenSetId").asText()))
+                .filter(data -> evidenceFingerprint.equals(data.path("evidenceFingerprint").asText()));
+    }
+
+    /** Returns only a successful attestation whose implementation remains current. */
     private java.util.Optional<JsonNode> currentAttestation(String toolRef,
                                                             long draftRevision,
                                                             String goldenSetId,
                                                             String evidenceFingerprint,
                                                             IntegrationRequestContext identity) {
-        return states.find(scope(identity), AgentTddAttestationService.ATTESTATION, toolRef)
-                .map(AgentTddStoredAsset::data)
+        return latestAttestation(toolRef, draftRevision, goldenSetId, evidenceFingerprint, identity)
                 .filter(data -> "ATTESTED".equals(data.path("status").asText()))
-                .filter(data -> draftRevision == data.path("draftRevision").asLong(-1))
-                .filter(data -> goldenSetId.equals(data.path("goldenSetId").asText()))
-                .filter(data -> evidenceFingerprint.equals(data.path("evidenceFingerprint").asText()))
                 .filter(data -> attestations == null || attestations.isCurrent(data, identity));
     }
 

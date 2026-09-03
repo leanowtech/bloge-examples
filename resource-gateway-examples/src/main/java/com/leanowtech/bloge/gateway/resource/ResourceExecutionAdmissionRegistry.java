@@ -3,7 +3,9 @@ package com.leanowtech.bloge.gateway.resource;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,10 +56,27 @@ public final class ResourceExecutionAdmissionRegistry {
         Object rawRequestId = context.graphContext().get(EXECUTION_CAPTURE_ID_CONTEXT_KEY);
         Admission admission = active.get(normalized(rawRequestId == null ? "" : rawRequestId.toString()));
         if (admission == null) return;
-        ResourceDescriptor approved = admission.descriptors().get(descriptor.resourceId());
-        if (!descriptor.equals(approved)) {
-            throw new IllegalStateException("Resource descriptor changed after governed admission.");
-        }
+        admission.requireCurrent(descriptor);
+    }
+
+    /**
+     * Records that an admitted HTTP request crossed the last application guard into its transport.
+     *
+     * <p>This observation is intentionally later than node invocation capture. Parameter rendering,
+     * descriptor replacement, and other pre-transport failures therefore cannot be reported as a
+     * real external call. A transport may still fail after accepting the request, so the event is
+     * a conservative dispatch observation rather than a claim that the remote system replied.</p>
+     *
+     * @param context current operator context, including the runtime-owned capture id and node id
+     * @param descriptor exact descriptor used to build the request
+     */
+    public void recordTransportDispatch(OperatorContext context, ResourceDescriptor descriptor) {
+        if (context == null || descriptor == null) return;
+        Object rawRequestId = context.graphContext().get(EXECUTION_CAPTURE_ID_CONTEXT_KEY);
+        Admission admission = active.get(normalized(rawRequestId == null ? "" : rawRequestId.toString()));
+        if (admission == null) return;
+        admission.requireCurrent(descriptor);
+        admission.record(context.nodeId(), context.retryAttempt());
     }
 
     /** Lease for one exact controlled execution; closing it cannot fail. */
@@ -79,10 +98,26 @@ public final class ResourceExecutionAdmissionRegistry {
                 closed = true;
             }
         }
+
+        /** Returns a payload-free snapshot of transport dispatches observed under this lease. */
+        public Map<String, List<TransportDispatch>> transportDispatches() {
+            return admission.transportDispatches();
+        }
     }
 
-    private record Admission(Map<String, ResourceDescriptor> descriptors) {
-        private Admission {
+    /** Low-cardinality observation produced immediately before the HTTP transport is invoked. */
+    public record TransportDispatch(int retryAttempt, Instant observedAt) {
+        public TransportDispatch {
+            retryAttempt = Math.max(0, retryAttempt);
+            observedAt = observedAt == null ? Instant.EPOCH : observedAt;
+        }
+    }
+
+    private static final class Admission {
+        private final Map<String, ResourceDescriptor> descriptors;
+        private final ConcurrentHashMap<String, List<TransportDispatch>> dispatches = new ConcurrentHashMap<>();
+
+        private Admission(Map<String, ResourceDescriptor> descriptors) {
             LinkedHashMap<String, ResourceDescriptor> copy = new LinkedHashMap<>();
             if (descriptors != null) {
                 descriptors.forEach((resourceId, descriptor) -> {
@@ -95,7 +130,30 @@ public final class ResourceExecutionAdmissionRegistry {
                     copy.put(normalized, descriptor);
                 });
             }
-            descriptors = Map.copyOf(copy);
+            this.descriptors = Map.copyOf(copy);
+        }
+
+        private void requireCurrent(ResourceDescriptor descriptor) {
+            ResourceDescriptor approved = descriptors.get(descriptor.resourceId());
+            if (!descriptor.equals(approved)) {
+                throw new IllegalStateException("Resource descriptor changed after governed admission.");
+            }
+        }
+
+        private void record(String nodeId, int retryAttempt) {
+            dispatches.computeIfAbsent(normalized(nodeId), ignored ->
+                    java.util.Collections.synchronizedList(new java.util.ArrayList<>()))
+                    .add(new TransportDispatch(retryAttempt, Instant.now()));
+        }
+
+        private Map<String, List<TransportDispatch>> transportDispatches() {
+            LinkedHashMap<String, List<TransportDispatch>> snapshot = new LinkedHashMap<>();
+            dispatches.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+                synchronized (entry.getValue()) {
+                    snapshot.put(entry.getKey(), List.copyOf(entry.getValue()));
+                }
+            });
+            return Map.copyOf(snapshot);
         }
     }
 

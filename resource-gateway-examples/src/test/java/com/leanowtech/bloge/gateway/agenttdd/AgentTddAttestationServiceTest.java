@@ -14,10 +14,12 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionFact;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -126,6 +128,30 @@ class AgentTddAttestationServiceTest {
     }
 
     @Test
+    void nodeAttemptWithoutAnHttpTransportDispatchCannotAttestARealDependency() {
+        Map<String, Object> green = greenFor(resourceOperator("READ_EXTERNAL"),
+                descriptor("GET", "https://localhost/read"));
+        VisualGraphRunResponse response = mock(VisualGraphRunResponse.class);
+        when(response.success()).thenReturn(true);
+        when(response.output()).thenReturn(Map.of());
+        when(response.nodeAttempts()).thenReturn(Map.of(
+                "dependency", List.of(mock(VisualNodeExecutionAttempt.class))));
+        when(response.nodeExecutionFacts()).thenReturn(Map.of());
+        when(runner.runAgainst(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
+                org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap()))
+                .thenReturn(response);
+
+        Map<String, Object> evidence = service.attest(
+                green, identity("test", "PLATFORM", "AGENT_TDD_ATTEST"));
+
+        assertThat(evidence).containsEntry("status", "FAILED")
+                .containsEntry("reasonCode", "ATTESTATION_DEPENDENCY_NOT_CALLED")
+                .containsEntry("realExternalCalls", 0);
+    }
+
+    @Test
     void replaysOneAutomaticAttestationWithoutRepeatingTheRealRead() {
         Map<String, Object> green = greenFor(resourceOperator("READ_EXTERNAL"),
                 descriptor("GET", "https://localhost/read"));
@@ -134,6 +160,7 @@ class AgentTddAttestationServiceTest {
         when(response.output()).thenReturn(Map.of());
         when(response.nodeAttempts()).thenReturn(Map.of(
                 "dependency", List.of(mock(VisualNodeExecutionAttempt.class))));
+        when(response.nodeExecutionFacts()).thenReturn(Map.of("dependency", dispatchedFact()));
         when(runner.runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
@@ -166,6 +193,7 @@ class AgentTddAttestationServiceTest {
         when(response.output()).thenReturn(Map.of());
         when(response.nodeAttempts()).thenReturn(Map.of(
                 "dependency", List.of(mock(VisualNodeExecutionAttempt.class))));
+        when(response.nodeExecutionFacts()).thenReturn(Map.of("dependency", dispatchedFact()));
         when(runner.runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
@@ -182,6 +210,47 @@ class AgentTddAttestationServiceTest {
         assertThat(automatic).containsEntry("status", "FAILED");
         assertThat(firstRecovery).containsEntry("status", "FAILED");
         assertThat(secondRecovery).containsEntry("status", "FAILED");
+        verify(runner, times(3)).runAgainst(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
+                org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap());
+    }
+
+    @Test
+    void humanCanCreateANewAttemptAfterThePreviousRecoveryProcessWasLost() {
+        Map<String, Object> green = greenFor(resourceOperator("READ_EXTERNAL"),
+                descriptor("GET", "https://localhost/read"));
+        VisualGraphRunResponse failed = mock(VisualGraphRunResponse.class);
+        when(failed.success()).thenReturn(false);
+        when(failed.output()).thenReturn(Map.of());
+        when(failed.nodeAttempts()).thenReturn(Map.of(
+                "dependency", List.of(mock(VisualNodeExecutionAttempt.class))));
+        when(failed.nodeExecutionFacts()).thenReturn(Map.of("dependency", dispatchedFact()));
+        VisualGraphRunResponse recovered = mock(VisualGraphRunResponse.class);
+        when(recovered.success()).thenReturn(true);
+        when(recovered.output()).thenReturn(Map.of());
+        when(recovered.nodeAttempts()).thenReturn(Map.of(
+                "dependency", List.of(mock(VisualNodeExecutionAttempt.class))));
+        when(recovered.nodeExecutionFacts()).thenReturn(Map.of("dependency", dispatchedFact()));
+        when(runner.runAgainst(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
+                org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.<String, VisualResourceDescriptor>anyMap()))
+                .thenReturn(failed)
+                .thenThrow(new AssertionError("simulated process loss"))
+                .thenReturn(recovered);
+
+        assertThat(service.attest(green, identity("test", "PLATFORM", "AGENT_TDD_ATTEST")))
+                .containsEntry("status", "FAILED");
+        assertThatThrownBy(() -> service.rerun(
+                "risk-tool", identity("test", "USER", "AGENT_TDD_GOVERNANCE")))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("process loss");
+
+        Map<String, Object> result = service.rerun(
+                "risk-tool", identity("test", "USER", "AGENT_TDD_GOVERNANCE"));
+
+        assertThat(result).containsEntry("status", "ATTESTED");
         verify(runner, times(3)).runAgainst(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyMap(),
                 org.mockito.ArgumentMatchers.eq(""), org.mockito.ArgumentMatchers.any(),
@@ -220,6 +289,16 @@ class AgentTddAttestationServiceTest {
         states.save(AgentTddMutationService.scopeKey(identity("test", "PLATFORM", "AGENT_TDD_ATTEST")),
                 AgentTddWorkflowService.VERDICT, "risk-tool", verdict);
         return green;
+    }
+
+    private static VisualNodeExecutionFact dispatchedFact() {
+        return new VisualNodeExecutionFact(
+                "SUCCESS", "NONE", "ENGINE_STATUS", List.of(),
+                new VisualNodeExecutionFact.Retry(1, 1, false, ""),
+                new VisualNodeExecutionFact.Timeout(false, 0, false),
+                new VisualNodeExecutionFact.Fallback(false, false, "NONE", ""),
+                "NOT_CAPTURED", List.of(), List.of(new VisualNodeExecutionFact.Event(
+                        1, "HTTP_TRANSPORT_DISPATCHED", Instant.now(), 0, "")));
     }
 
     private static OperatorDefinition resourceOperator(String effect) {
