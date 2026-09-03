@@ -98,6 +98,18 @@ public final class AgentTddDecisionScenarioEnumerator {
      * @return immutable known domains plus deterministically ordered unknown columns
      */
     public FactDomainAnalysis analyzeFactDomains(GraphDraft.DraftNode node) {
+        return analyzeFactDomains(node, mapper.createObjectNode());
+    }
+
+    /**
+     * Derives fact domains while using explicit author-owned representative values for opaque
+     * predicates.
+     *
+     * @param node decision-table node whose rules define the bounded fact space
+     * @param authorSamples values approved by the author, keyed by fact column
+     * @return immutable known domains plus deterministically ordered unknown columns
+     */
+    public FactDomainAnalysis analyzeFactDomains(GraphDraft.DraftNode node, JsonNode authorSamples) {
         if (node == null || !Set.of("bloge:decisionTable", "decision_table").contains(node.operatorRef())) {
             return new FactDomainAnalysis(Map.of(), List.of());
         }
@@ -106,7 +118,8 @@ public final class AgentTddDecisionScenarioEnumerator {
         }
         LinkedHashMap<String, LinkedHashSet<JsonNode>> domains = new LinkedHashMap<>();
         LinkedHashSet<String> unknownColumns = new LinkedHashSet<>();
-        for (Rule rule : rules(node.config().get("rules"), mapper.createObjectNode())) {
+        JsonNode samples = authorSamples == null ? mapper.createObjectNode() : authorSamples;
+        for (Rule rule : rules(node.config().get("rules"), samples)) {
             for (Predicate predicate : rule.predicates()) {
                 if (predicate.blocked()) {
                     unknownColumns.add(predicate.column());

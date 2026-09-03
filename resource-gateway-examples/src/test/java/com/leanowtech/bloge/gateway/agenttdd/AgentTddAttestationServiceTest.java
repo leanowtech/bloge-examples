@@ -185,6 +185,38 @@ class AgentTddAttestationServiceTest {
     }
 
     @Test
+    void unfinishedReservationCannotOverwriteItsAlreadyPersistedFailure() {
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, Object> green = greenFor(resourceOperator("READ_EXTERNAL"),
+                descriptor("GET", "https://localhost/read"));
+        String scope = AgentTddMutationService.scopeKey(
+                identity("test", "PLATFORM", "AGENT_TDD_ATTEST"));
+        Map<String, Object> failed = new java.util.LinkedHashMap<>(green);
+        failed.put("status", "FAILED");
+        failed.put("reasonCode", "ATTESTATION_ORACLE_MISMATCH");
+        failed.put("environment", "test");
+        failed.put("cases", List.of());
+        failed.put("dependencies", List.of());
+        failed.put("realExternalCalls", 1);
+        states.save(scope, AgentTddAttestationService.ATTESTATION, "risk-tool",
+                mapper.valueToTree(failed));
+        Map<String, Object> requestMaterial = Map.of(
+                "toolRef", "risk-tool", "environment", "test", "trigger", "AUTO",
+                "priorAttestationRevision", 0, "green", green);
+        String fingerprint = com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
+                .fromCanonicalValue(mapper, requestMaterial, 1024 * 1024);
+        states.reserveExternalExecution(scope, "ATTESTATION_EXECUTE", fingerprint, fingerprint);
+
+        Map<String, Object> replay = service.attest(
+                green, identity("test", "PLATFORM", "AGENT_TDD_ATTEST"));
+
+        assertThat(replay).containsEntry("status", "FAILED")
+                .containsEntry("reasonCode", "ATTESTATION_ORACLE_MISMATCH")
+                .containsEntry("realExternalCalls", 1);
+        verifyNoInteractions(runner);
+    }
+
+    @Test
     void eachHumanRecoveryAfterFailureCreatesOneNewControlledAttempt() {
         Map<String, Object> green = greenFor(resourceOperator("READ_EXTERNAL"),
                 descriptor("GET", "https://localhost/read"));

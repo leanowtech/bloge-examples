@@ -332,7 +332,8 @@ public final class McpToolCatalog {
                 "realCalled", bool(), "realCallCount", integer()),
                 List.of("nodeId", "operatorRef", "resourceId", "realCalled", "realCallCount"));
         return structuredObject(props(
-                "toolRef", string(), "status", enumString("ABSENT", "ATTESTED", "FAILED"),
+                "toolRef", string(), "status", enumString(
+                        "ABSENT", "ATTESTED", "FAILED", "RECOVERY_REQUIRED"),
                 "reasonCode", string(), "environment", string(), "goldenSetId", string(),
                 "evidenceFingerprint", string(), "contractFingerprint", string(),
                 "implementationFingerprint", string(), "draftRevision", integer(),

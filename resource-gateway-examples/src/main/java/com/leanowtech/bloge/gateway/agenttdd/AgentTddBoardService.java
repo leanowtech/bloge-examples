@@ -350,11 +350,12 @@ public final class AgentTddBoardService {
     /** Computes bounded, deterministic golden coverage over enumerated decision-table facts. */
     private Map<String, Object> factCoverage(GraphDraft draft, List<JsonNode> activeGoldenGiven) {
         AgentTddDecisionScenarioEnumerator enumerator = new AgentTddDecisionScenarioEnumerator(mapper);
+        JsonNode authorSamples = approvedGoldenSamples(activeGoldenGiven);
         LinkedHashMap<String, LinkedHashSet<JsonNode>> merged = new LinkedHashMap<>();
         LinkedHashSet<String> unknownColumns = new LinkedHashSet<>();
         draft.nodes().stream().filter(AgentTddBoardService::isDecisionTable).forEach(node -> {
             AgentTddDecisionScenarioEnumerator.FactDomainAnalysis analysis =
-                    enumerator.analyzeFactDomains(node);
+                    enumerator.analyzeFactDomains(node, authorSamples);
             analysis.domains().forEach((column, values) -> values.forEach(value ->
                     merged.computeIfAbsent(column, ignored -> new LinkedHashSet<>()).add(value)));
             unknownColumns.addAll(analysis.unknownColumns());
@@ -403,6 +404,28 @@ public final class AgentTddBoardService {
                 "coverageComplete", true, "dimensions", dimensions,
                 "unknownDimensions", List.of(), "coveredCount", (long) covered.size(),
                 "totalCount", total, "blindSpots", List.copyOf(blindSpots));
+    }
+
+    /** Collects deterministic representative values only from approved ACTIVE GOLDEN inputs. */
+    private JsonNode approvedGoldenSamples(List<JsonNode> activeGoldenGiven) {
+        LinkedHashMap<String, LinkedHashSet<JsonNode>> byColumn = new LinkedHashMap<>();
+        for (JsonNode given : activeGoldenGiven) {
+            given.properties().forEach(entry -> byColumn
+                    .computeIfAbsent(entry.getKey(), ignored -> new LinkedHashSet<>())
+                    .add(entry.getValue().deepCopy()));
+        }
+        var samples = mapper.createObjectNode();
+        byColumn.keySet().stream().sorted().forEach(column -> {
+            var values = samples.putArray(column);
+            byColumn.get(column).stream()
+                    .sorted(AgentTddBoardService::compareJsonValues)
+                    .forEach(value -> values.add(value.deepCopy()));
+        });
+        return samples;
+    }
+
+    private static int compareJsonValues(JsonNode left, JsonNode right) {
+        return left.toString().compareTo(right.toString());
     }
 
     private void appendBlindSpots(List<String> columns,

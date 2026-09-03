@@ -207,6 +207,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.Duration;
@@ -377,14 +378,22 @@ public class GatewayConfiguration {
     }
 
     /**
-     * Low-level HTTP request operator using the JDK {@link java.net.http.HttpClient}.
+     * Low-level HTTP request operator using a non-redirecting JDK {@link HttpClient}.
+     *
+     * <p>Resource Gateway validates the exact descriptor host before dispatch. Following a 3xx
+     * inside the client would move the request beyond that governed host, so redirects remain
+     * visible to graph logic as ordinary HTTP responses and are never followed implicitly.</p>
      *
      * @return a new HTTP request operator
      */
     @Bean
     @ConditionalOnMissingBean
     public HttpRequestOperator httpRequestOperator() {
-        return new HttpRequestOperator();
+        HttpClient client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+        return new HttpRequestOperator(client);
     }
 
     /**

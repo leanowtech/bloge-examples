@@ -207,6 +207,33 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void acceptsRecoveryRequiredReadinessThroughTheAdvertisedOutputSchema() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of(
+                        "ok", true,
+                        "data", Map.of(
+                                "toolRef", "risk-tool", "state", "IMPLEMENTED", "publishable", false,
+                                "attestation", Map.of(
+                                        "status", "RECOVERY_REQUIRED", "reasonCode",
+                                        "ATTESTATION_RECOVERY_REQUIRED", "environment", "test",
+                                        "cases", List.of(), "dependencies", List.of(),
+                                        "realExternalCalls", 0)),
+                        "diagnostics", List.of()));
+
+        JsonNode response = controller.exchange(request(22, "tools/call", Map.of(
+                        "name", "rg.readiness.get", "arguments", Map.of("toolRef", "risk-tool"))),
+                modernHeaders("tools/call", "rg.readiness.get")).getBody();
+
+        assertThat(response.at("/result/structuredContent/data/attestation/status").asText())
+                .isEqualTo("RECOVERY_REQUIRED");
+        assertThat(response.path("error").isMissingNode()).isTrue();
+    }
+
+    @Test
     void mapsAuthenticationAndPurposeFailuresToStablePayloadFreeRpcErrors() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))

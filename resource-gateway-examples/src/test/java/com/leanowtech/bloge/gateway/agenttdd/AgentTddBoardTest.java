@@ -258,6 +258,39 @@ class AgentTddBoardTest {
     }
 
     @Test
+    void boardUsesApprovedGoldenValuesAsOpaquePredicateAuthorSamples() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        GraphDraft draft = toolDraft("sampled-policy", "IMPLEMENTING");
+        Map<String, Object> config = Map.of(
+                "conditionColumns", List.of(Map.of("id", "riskBand", "label", "风险带")),
+                "outputColumns", List.of(Map.of("id", "decision", "label", "处置")),
+                "rules", List.of(Map.of(
+                        "id", "R1", "conditions", Map.of("riskBand", "matches proprietary-band"),
+                        "outputs", Map.of("decision", "REVIEW"))));
+        when(draft.nodes()).thenReturn(List.of(new GraphDraft.DraftNode(
+                "policy", "bloge:decisionTable", "Sampled policy", Map.of(), config, null)));
+        when(drafts.all()).thenReturn(List.of(draft));
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ObjectNode caseSet = mapper.createObjectNode().put("toolRef", "sampled-policy");
+        caseSet.putArray("rows").addObject().put("caseId", "g-high")
+                .put("category", "GOLDEN").put("lifecycle", "ACTIVE")
+                .putObject("given").put("riskBand", "HIGH");
+        states.save(scope(), AgentTddMutationService.CASE_SET, "sampled-golden", caseSet);
+        AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
+        when(workflow.readiness(any(), eq(identity()))).thenReturn(
+                readiness("sampled-policy", "IMPLEMENTING", false, false));
+
+        Map<?, ?> tool = (Map<?, ?>) ((List<?>) new AgentTddBoardService(
+                drafts, states, workflow, mapper).board(identity()).get("tools")).getFirst();
+        Map<?, ?> coverage = (Map<?, ?>) tool.get("factCoverage");
+
+        assertThat(coverage.get("status")).isEqualTo("COMPLETE");
+        assertThat(coverage.get("coveredCount")).isEqualTo(1L);
+        assertThat(coverage.get("totalCount")).isEqualTo(1L);
+        assertThat(coverage.get("unknownDimensions")).isEqualTo(List.of());
+    }
+
+    @Test
     void controllerAuthenticatesReadAndGovernedApprovalSeparately() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         AgentTddBoardService board = mock(AgentTddBoardService.class);

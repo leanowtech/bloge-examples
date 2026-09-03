@@ -483,7 +483,7 @@ public final class AgentTddAttestationService {
         java.util.Optional<AgentTddStoredAsset> current = states.find(scope, ATTESTATION, toolRef);
         if (current.map(AgentTddStoredAsset::data)
                 .filter(data -> sameSubject(data, green))
-                .filter(data -> "ATTESTED".equals(data.path("status").asText()))
+                .filter(AgentTddAttestationService::isStableAttestationProjection)
                 .isPresent()) {
             return mapper.convertValue(current.orElseThrow().data(), OBJECT_MAP);
         }
@@ -550,6 +550,12 @@ public final class AgentTddAttestationService {
                 && text(green, "evidenceFingerprint").equals(
                         evidence.path("evidenceFingerprint").asText())
                 && number(green, "draftRevision") == evidence.path("draftRevision").asLong(-1);
+    }
+
+    /** Returns whether an exact subject already has evidence that recovery must not overwrite. */
+    private static boolean isStableAttestationProjection(JsonNode evidence) {
+        return Set.of("ATTESTED", "FAILED", "RECOVERY_REQUIRED")
+                .contains(evidence.path("status").asText());
     }
 
     /** Counts only requests observed at the governed HTTP transport boundary. */
