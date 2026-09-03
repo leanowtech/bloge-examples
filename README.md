@@ -91,6 +91,11 @@ To run the complete Resource Gateway Agent TDD workflow from Codex through MCP,
 including least-privilege Codex configuration, copy-ready prompts, human Oracle
 approval, zero-egress RED/GREEN evidence, signoff, and publication, follow the
 [Codex Agent TDD MCP operating guide](docs/resource-gateway-agent-tdd-mcp.md).
+That workflow explicitly enables Correctness authoring and encrypted Fixture
+material. When both opt-in flags are enabled and no key ring is injected, the
+repository launcher creates and reuses a private local demo key under
+`target/example-secrets`; it never prints the key. Production deployments must
+inject managed key material instead of using this local convenience.
 
 PID files are written to `target/example-pids/`, and logs are written to
 `target/example-logs/`. The start script runs Graph Engine through its Maven

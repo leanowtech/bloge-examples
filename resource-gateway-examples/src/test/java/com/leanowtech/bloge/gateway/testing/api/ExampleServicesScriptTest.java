@@ -25,11 +25,19 @@ class ExampleServicesScriptTest {
                 "RG_REUSABLE_FLOW_AUTHORING_ENABLED=\"${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}\"",
                 "RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=\"${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:-true}\"",
                 "RG_INTEGRATION_ENVIRONMENT_ID=\"${RG_INTEGRATION_ENVIRONMENT_ID:-local}\"",
+                "RG_CORRECTNESS_AUTHORING_ENABLED=\"${RG_CORRECTNESS_AUTHORING_ENABLED:-false}\"",
+                "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=\"${RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED:-false}\"",
+                "prepare_local_fixture_material_key",
+                "openssl rand -base64 32",
+                "target/example-secrets",
                 "RESOURCE_GATEWAY_ADDRESS=\"${RESOURCE_GATEWAY_ADDRESS:-127.0.0.1}\"",
                 "export RG_API_RESOURCE_AUTHORING_ENABLED",
                 "export RG_REUSABLE_FLOW_AUTHORING_ENABLED",
                 "export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED",
                 "export RG_INTEGRATION_ENVIRONMENT_ID",
+                "export RG_CORRECTNESS_AUTHORING_ENABLED",
+                "export RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED",
+                "export RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING",
                 "--server.address=${RESOURCE_GATEWAY_ADDRESS}");
 
         Process process = new ProcessBuilder("bash", SCRIPT.toString(), "--help")
@@ -42,8 +50,10 @@ class ExampleServicesScriptTest {
                         "RG_API_RESOURCE_AUTHORING_ENABLED default: true",
                         "RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true",
                         "RG_INTEGRATION_ENVIRONMENT_ID default: local",
+                        "RG_CORRECTNESS_AUTHORING_ENABLED default: false",
+                        "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED default: false",
                         "RESOURCE_GATEWAY_ADDRESS default: 127.0.0.1",
-                        "Set either variable to false to disable that authoring surface");
+                        "Set an authoring variable to false to disable that surface");
     }
 
     @Test
@@ -57,7 +67,9 @@ class ExampleServicesScriptTest {
                 "[mcp_servers.rg_govern]",
                 "bearer_token_env_var = \"RG_MCP_TOKEN\"",
                 "RG_INTEGRATION_ENVIRONMENT_ID=local",
-                "node wallet : \"resource:wallet-service.getBalance\"",
+                "RG_CORRECTNESS_AUTHORING_ENABLED=true",
+                "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true",
+                "node profile : \"resource:user-service.getProfile\"",
                 "人工停点一：批准 Oracle",
                 "人工停点二：签署发布证据",
                 "realExternalCalls=0",

@@ -22,16 +22,19 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /** Proves durable evidence identity and fail-closed publication governance. */
 class AgentTddWorkflowServiceTest {
@@ -445,7 +448,8 @@ class AgentTddWorkflowServiceTest {
     void directSampleWrapperDerivesFixtureIdentityAndMapsSchemaFailures() {
         when(fixtures.provide(eq("resource:applicant"), eq("payload"), eq(Map.of("score", 760)),
                 any(com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionRequest.class),
-                eq(identity()))).thenAnswer(invocation -> {
+                argThat(context -> "CORRECTNESS_FIXTURE_MATERIAL_WRITE".equals(context.purpose())
+                        && context.actorId().equals(identity().actorId())))).thenAnswer(invocation -> {
                     var request = (com.leanowtech.bloge.gateway.visualadapter.fixture
                             .GraphNodeFixturePromotionRequest) invocation.getArgument(3);
                     return new GraphNodeFixturePromotionService.PromotionResult(
@@ -478,7 +482,8 @@ class AgentTddWorkflowServiceTest {
 
         when(fixtures.provide(eq("resource:applicant"), eq("payload"), eq(Map.of("score", "bad")),
                 any(com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionRequest.class),
-                eq(identity()))).thenThrow(new GraphNodeFixturePromotionException(
+                argThat(context -> "CORRECTNESS_FIXTURE_MATERIAL_WRITE".equals(context.purpose()))))
+                .thenThrow(new GraphNodeFixturePromotionException(
                         422, "RG.VISUAL.PROMOTION.OUTPUT_SCHEMA_INVALID", "Schema mismatch"));
         assertThatThrownBy(() -> service.provideFixture(json(Map.of(
                 "operatorRef", "resource:applicant", "outputPort", "payload",
@@ -487,6 +492,18 @@ class AgentTddWorkflowServiceTest {
                 "idempotencyKey", "provide-bad")), identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+    }
+
+    @Test
+    void fixtureWrapperRejectsAnUnauthenticatedInternalPurposeBridge() {
+        assertThatThrownBy(() -> service.provideFixture(json(Map.of(
+                "operatorRef", "resource:applicant", "outputPort", "payload",
+                "sampleValue", Map.of("score", 760), "category", "INTERNAL",
+                "retentionDays", 3, "redactPaths", List.of(),
+                "idempotencyKey", "provide-wrong-purpose")), authorIdentity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("FORBIDDEN_PURPOSE"));
+        verifyNoInteractions(fixtures);
     }
 
     @Test
@@ -559,7 +576,7 @@ class AgentTddWorkflowServiceTest {
     private static IntegrationRequestContext identity() {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "USER", "reviewer-1",
-                "", "AGENT_TDD_GOVERNED_WRITE", "corr-1");
+                "", "AGENT_TDD_GOVERNANCE", "corr-1", Set.of(), "CONFIDENTIAL", "");
     }
 
     private static IntegrationRequestContext authorIdentity() {

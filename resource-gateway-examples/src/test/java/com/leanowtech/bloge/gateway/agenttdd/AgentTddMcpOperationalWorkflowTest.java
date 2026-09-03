@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -29,27 +31,36 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
-import java.util.List;
-import java.util.Map;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Verifies the documented Codex MCP operating flow against the real Spring service graph. */
+/** Verifies the documented A0-A5 Codex MCP journey against real HTTP, browser, and Spring services. */
 @SpringBootTest(
         classes = ResourceGatewayApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "gateway.seed-descriptors=false",
+                "gateway.authoring.local-schema-bootstrap.enabled=true",
                 "gateway.integration.identity.environment-id=test",
+                "gateway.testing.correctness.enabled=true",
+                "gateway.testing.correctness.fixture-material.enabled=true",
+                "gateway.testing.correctness.fixture-material.active-key-id=agent-tdd-test-v1",
+                "gateway.testing.correctness.fixture-material.key-ring="
+                        + "agent-tdd-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "spring.datasource.url=jdbc:h2:mem:agent-tdd-mcp-ops;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })
 class AgentTddMcpOperationalWorkflowTest {
     private static final String TOOL_REF = "codex-profile-ops-test";
     private static final String CASE_SET_REF = "codex-profile-cases-test";
+    private static final String RESOURCE_ID = "codex-profile-service.getProfile-test";
+    private static final String LIBRARY_ID = "codex-profile-ops-library-test";
+    private static final String LIBRARY_OPERATOR_REF = "codex-profile:read";
 
     @Autowired
     private WritableResourceRegistry resources;
@@ -76,31 +87,81 @@ class AgentTddMcpOperationalWorkflowTest {
     void composesApprovesRunsLogicalGreenAutomaticallyAttestsSignsAndPublishes() {
         negotiateCodexLifecycle();
 
+        JsonNode initialOverview = agentGet("/api/agent-tdd/library-overview");
+        assertThat(initialOverview.path("buildingBlocks")).anySatisfy(block ->
+                assertThat(block.path("ref").asText()).isEqualTo("bloge:decisionTable"));
+
+        JsonNode declared = invoke("rg.resource.declare", Map.of(
+                "resourceId", RESOURCE_ID,
+                "method", "GET",
+                "urlTemplate", "http://localhost:" + port
+                        + "/demo-upstream/api/users/{userId}/profile",
+                "payloadSchema", profileEnvelopeSchema(),
+                "idempotencyKey", "declare-profile-ops-test"), "AGENT_TDD_AUTHORING");
+        assertThat(declared.at("/data/registered").asBoolean()).isTrue();
+
         JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
         JsonNode profile = java.util.stream.StreamSupport.stream(
                         capabilities.at("/data/capabilities").spliterator(), false)
-                .filter(value -> value.path("ref").asText().contains("user-service.getProfile"))
+                .filter(value -> value.path("ref").asText().equals("resource:" + RESOURCE_ID))
                 .findFirst().orElseThrow();
         String bindingRef = profile.path("ref").asText();
         JsonNode contract = invoke("rg.contract.get", Map.of("assetRef", bindingRef), "AGENT_TDD_READ");
         assertThat(contract.at("/data/bindingRef").asText()).isEqualTo(bindingRef);
 
+        invoke("rg.library.upsert", Map.of(
+                "libraryYaml", profileLibrary(bindingRef),
+                "idempotencyKey", "library-profile-ops-test"), "AGENT_TDD_AUTHORING");
+        JsonNode logicalContract = invoke(
+                "rg.contract.get", Map.of("assetRef", LIBRARY_OPERATOR_REF), "AGENT_TDD_READ");
+        assertSemanticallyEquivalentSchemas(
+                logicalContract.at("/data/inputs/0/schema"), contract.at("/data/inputs/0/schema"));
+        assertSemanticallyEquivalentSchemas(
+                logicalContract.at("/data/outputs/0/schema"), contract.at("/data/outputs/0/schema"));
+        assertThat(logicalContract.at("/data/effect"))
+                .isEqualTo(contract.at("/data/effect"));
+        JsonNode provided = invoke("rg.fixture.provide", Map.of(
+                "operatorRef", LIBRARY_OPERATOR_REF,
+                "outputPort", "payload",
+                "sampleValue", profileEnvelope("u-sample"),
+                "category", "INTERNAL",
+                "retentionDays", 3,
+                "redactPaths", List.of("/data/email"),
+                "idempotencyKey", "provide-profile-sample-test"), "AGENT_TDD_GOVERNANCE");
+        assertThat(provided.at("/data/sourceKind").asText()).isEqualTo("SAMPLE");
+        assertThat(provided.at("/data").toString()).doesNotContain("Alice", "premium", "email");
+
+        JsonNode populatedOverview = agentGet("/api/agent-tdd/library-overview");
+        assertThat(populatedOverview.at("/worldModel/operations")).anySatisfy(operation -> {
+            assertThat(operation.path("ref").asText()).isEqualTo(LIBRARY_OPERATOR_REF);
+            assertThat(operation.path("bound").asBoolean()).isTrue();
+        });
+        assertThat(populatedOverview.path("samples")).anySatisfy(sample ->
+                assertThat(sample.path("sourceKind").asText()).isEqualTo("SAMPLE"));
+
         JsonNode composed = invoke("rg.tool.compose", Map.of(
                 "toolRef", TOOL_REF,
-                "graph", Map.of("sourceId", TOOL_REF + ".bloge", "dsl", graph(bindingRef)),
-                "libraryRefs", List.of(),
-                "idempotencyKey", "compose-wallet-ops-test"), "AGENT_TDD_AUTHORING");
+                "graph", Map.of("sourceId", TOOL_REF + ".bloge", "dsl", policyGraph()),
+                "libraryRefs", List.of(LIBRARY_ID),
+                "idempotencyKey", "compose-profile-policy-test"), "AGENT_TDD_AUTHORING");
         assertThat(composed.at("/data/revision").asLong()).isEqualTo(1);
+
+        JsonNode composedCard = toolCard(agentGet("/api/agent-tdd/board"), TOOL_REF);
+        assertThat(composedCard.at("/journey/stage").asText()).isEqualTo("ORCHESTRATION");
+        assertThat(composedCard.at("/ruleMatrices/0/rules/0/outputs/decision").asText())
+                .isEqualTo("PRIORITY");
+        assertThat(composedCard.path("flowSummary").asText())
+                .contains("事实", "规则表", "产出");
 
         invoke("rg.tool.setInstruction", Map.of(
                 "toolRef", TOOL_REF,
                 "instruction", Map.of(
                         "name", "codexProfileOps",
                         "title", "Customer profile lookup",
-                        "description", "Reads a governed customer profile.",
-                        "whenToUse", "Use for an operator-requested customer profile.",
+                        "description", "Reads a governed customer profile and applies service priority.",
+                        "whenToUse", "Use for an operator-requested customer service priority.",
                         "inputs", List.of(Map.of("name", "userId", "type", "string", "required", true)),
-                        "outputs", Map.of("name", "string", "tier", "string"),
+                        "outputs", Map.of("name", "string", "decision", "string"),
                         "errors", List.of(Map.of("code", "PROFILE_UNAVAILABLE"))),
                 "idempotencyKey", "instruction-profile-ops-test"), "AGENT_TDD_AUTHORING");
         JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
@@ -110,16 +171,15 @@ class AgentTddMcpOperationalWorkflowTest {
                         "caseId", "profile-premium",
                         "category", "GOLDEN",
                         "layer", "contract",
-                        "given", Map.of("userId", "u-100"),
-                        "stubs", Map.of("profile", Map.of(
-                                "payload", Map.of("userId", "u-100", "name", "Alice", "tier", "premium"))),
-                        "expect", Map.of("name", "Alice", "tier", "premium"),
-                        "intent", "Return the exact governed customer profile",
+                        "given", Map.of("userId", "u-100", "tier", "premium"),
+                        "stubs", Map.of("profile", Map.of("payload", profileEnvelope("u-100"))),
+                        "expect", Map.of("name", "Alice", "decision", "PRIORITY"),
+                        "intent", "Prioritize a premium customer using the governed profile",
                         "oracleOwner", "profile-ops")),
                 "idempotencyKey", "cases-profile-ops-test"), "AGENT_TDD_AUTHORING");
         JsonNode oracleReview = reviewGet("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
                 + "/profile-premium?expectedRevision=" + cases.at("/data/revision").asLong());
-        assertThat(oracleReview.path("intent").asText()).contains("governed customer profile");
+        assertThat(oracleReview.path("intent").asText()).contains("premium customer");
         assertAgentCannotApprove("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
                 + "/profile-premium/approve", Map.of(
                 "expectedRevision", cases.at("/data/revision").asLong(),
@@ -128,15 +188,21 @@ class AgentTddMcpOperationalWorkflowTest {
                 "expectedRevision", cases.at("/data/revision").asLong(),
                 "proposalFingerprint", oracleReview.path("proposalFingerprint").asText()));
 
+        JsonNode goldenCard = toolCard(agentGet("/api/agent-tdd/board"), TOOL_REF);
+        assertThat(goldenCard.at("/journey/stage").asText()).isEqualTo("GOLDEN");
+        assertThat(goldenCard.at("/factCoverage/dimensions")).anySatisfy(dimension ->
+                assertThat(dimension.path("column").asText()).isEqualTo("tier"));
+        assertThat(goldenCard.at("/factCoverage/coveredCount").asInt()).isPositive();
+
         JsonNode red = invoke("rg.simulate", Map.of(
-                "toolRef", TOOL_REF, "libraryRefs", List.of(), "side", "RED",
+                "toolRef", TOOL_REF, "libraryRefs", List.of(LIBRARY_ID), "side", "RED",
                 "cases", Map.of("caseSetRef", CASE_SET_REF)), "AGENT_TDD_EXECUTION");
         assertThat(red.at("/data/cases/0/verdict").asText())
                 .as(red.toPrettyString()).isEqualTo("RED_PASS");
         assertThat(red.at("/data/realExternalCalls").asInt()).isZero();
 
         JsonNode green = invoke("rg.tool.baseline", Map.of(
-                "toolRef", TOOL_REF, "libraryRefs", List.of(),
+                "toolRef", TOOL_REF, "libraryRefs", List.of(LIBRARY_ID),
                 "caseSetRef", CASE_SET_REF, "side", "GREEN", "rounds", 2), "AGENT_TDD_EXECUTION");
         assertThat(green.at("/data/status").asText()).isEqualTo("GO");
         assertThat(green.at("/data/businessFingerprintStable").asBoolean()).isTrue();
@@ -146,8 +212,16 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(green.at("/data/attestation/realExternalCalls").asInt()).isEqualTo(1);
         assertThat(green.at("/data/attestation/cases/0/oracleHeld").asBoolean()).isTrue();
         assertThat(green.at("/data/attestation/dependencies/0/realCallCount").asInt()).isEqualTo(1);
-        assertThat(green.at("/data/attestation").toString())
-                .doesNotContain("u-100", "100.5", "USD", "payload", "output");
+        JsonNode attestation = green.at("/data/attestation");
+        assertThat(attestation.findValues("given")).isEmpty();
+        assertThat(attestation.findValues("expect")).isEmpty();
+        assertThat(attestation.findValues("output")).isEmpty();
+        assertThat(attestation.findValues("payload")).isEmpty();
+        assertThat(attestation.toString()).doesNotContain("u-100", "Alice", "alice@example.com");
+
+        JsonNode attestedCard = toolCard(agentGet("/api/agent-tdd/board"), TOOL_REF);
+        assertThat(attestedCard.at("/journey/stage").asText()).isEqualTo("PUBLISH");
+        assertThat(attestedCard.at("/gates/runtimeAttestation").asBoolean()).isTrue();
 
         reviewPost("/api/agent-tdd/reviews/tools/" + TOOL_REF
                 + "/signoffs/ops-review-test/approve", Map.of(
@@ -382,6 +456,28 @@ class AgentTddMcpOperationalWorkflowTest {
         return response.getBody();
     }
 
+    private JsonNode agentGet(String path) {
+        ResponseEntity<JsonNode> response = http.exchange(path, HttpMethod.GET,
+                new HttpEntity<>(headers("bloge-aneke-demo-token", "AGENT_TDD_READ")), JsonNode.class);
+        assertThat(response.getStatusCode().is2xxSuccessful()).as(response.toString()).isTrue();
+        return response.getBody();
+    }
+
+    private static JsonNode toolCard(JsonNode board, String toolRef) {
+        return java.util.stream.StreamSupport.stream(board.path("tools").spliterator(), false)
+                .filter(card -> toolRef.equals(card.path("toolRef").asText()))
+                .findFirst().orElseThrow();
+    }
+
+    private void assertSemanticallyEquivalentSchemas(JsonNode authoredNode, JsonNode runtimeNode) {
+        SchemaEnvelope authored = mapper.convertValue(authoredNode, SchemaEnvelope.class);
+        SchemaEnvelope runtime = mapper.convertValue(runtimeNode, SchemaEnvelope.class);
+        assertThat(VisualSchemaCompatibility.schemasCompatible(authored.schema(), runtime.schema())
+                && VisualSchemaCompatibility.schemasCompatible(runtime.schema(), authored.schema()))
+                .as("authored=%s runtime=%s", authoredNode, runtimeNode)
+                .isTrue();
+    }
+
     private void reviewPost(String path, Object body) {
         assertThat(reviewAction(path, body).path("status").asText()).isEqualTo("APPROVED");
     }
@@ -461,6 +557,80 @@ class AgentTddMcpOperationalWorkflowTest {
                   }
                 }
                 """.formatted(bindingRef);
+    }
+
+    private static String policyGraph() {
+        return """
+                graph codexProfilePriority {
+                  input { userId: String }
+                  node profile : "codex-profile:read" {
+                    input { params = { userId: ctx.userId } }
+                  }
+                  decision_table policy(
+                    tier = profile.output.payload.data.tier
+                  ) hit=first -> { decision: String } {
+                    rule (tier: tier == "premium") -> { decision: "PRIORITY" }
+                    otherwise -> { decision: "STANDARD" }
+                  }
+                  transform response {
+                    name = profile.output.payload.data.name
+                    decision = policy.output.decision
+                  }
+                }
+                """;
+    }
+
+    private static String profileLibrary(String bindingRef) {
+        return """
+                schemaVersion: bloge.visualLibraryAuthoring.v1
+                library: { id: codex-profile-ops-library-test, name: Profile operations, version: 1.0.0, owner: profile-ops }
+                defaults: { operatorVersion: 1.0.0, namespace: codex-profile }
+                types:
+                  ProfileParams:
+                    fields: { userId: string }
+                  ProfileData:
+                    fields: { userId: string, name: string, email: string, tier: string }
+                  ProfileEnvelope:
+                    fields: { code: integer, message: string, data: ProfileData }
+                operators:
+                  codex-profile:read:
+                    name: Customer profile
+                    archetype: resource-read
+                    requiresSecrets: false
+                    input: { params: ProfileParams }
+                    output: { payload: ProfileEnvelope }
+                    runtime: { bindingRef: "%s" }
+                """.formatted(bindingRef);
+    }
+
+    private static Map<String, Object> profileEnvelope(String userId) {
+        return Map.of(
+                "code", 0,
+                "message", "ok",
+                "data", Map.of(
+                        "userId", userId,
+                        "name", "Alice",
+                        "email", "alice@example.com",
+                        "tier", "premium"));
+    }
+
+    private static Map<String, Object> profileEnvelopeSchema() {
+        return Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "code", Map.of("type", "integer"),
+                        "message", Map.of("type", "string"),
+                        "data", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "userId", Map.of("type", "string"),
+                                        "name", Map.of("type", "string"),
+                                        "email", Map.of("type", "string"),
+                                        "tier", Map.of("type", "string")),
+                                "required", List.of("userId", "name", "email", "tier"),
+                                "additionalProperties", false)),
+                "required", List.of("code", "message", "data"),
+                "additionalProperties", false);
     }
 
 }

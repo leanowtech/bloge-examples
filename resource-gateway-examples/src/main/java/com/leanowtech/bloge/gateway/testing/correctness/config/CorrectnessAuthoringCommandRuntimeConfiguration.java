@@ -66,6 +66,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioReviewA
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.VisualOperatorFixtureSchemaSource;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -275,6 +276,32 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
             CorrectnessAuthoringSchemaReadiness readiness
     ) {
         return new DatabaseFixtureApprovalReceiptRepository(jdbc, mapper);
+    }
+
+    /**
+     * Uses the current visual operator contract as the exact schema authority for supplied samples.
+     *
+     * <p>This adapter permits payload-free DRAFT creation without an enterprise schema registry.
+     * It does not authorize review, approval, or activation.</p>
+     */
+    @Bean
+    @ConditionalOnBean(VisualOperatorCatalog.class)
+    @ConditionalOnMissingBean
+    FixtureSchemaSource visualOperatorFixtureSchemaSource(
+            VisualOperatorCatalog operators, ObjectMapper mapper) {
+        return new VisualOperatorFixtureSchemaSource(operators, mapper);
+    }
+
+    /**
+     * Supplies a fail-closed review policy when no enterprise Fixture reviewer is configured.
+     *
+     * <p>The policy exists only so direct sample provision can persist a DRAFT. Every review,
+     * approval, activation, and revocation attempt remains denied.</p>
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    FixtureReviewAuthorizer failClosedFixtureReviewAuthorizer() {
+        return FixtureReviewAuthorizer.denyAll();
     }
 
     @Bean

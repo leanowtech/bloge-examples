@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.flow.ReusableFlowPublicatio
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceAuthoringSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceConnectionSnapshotSchemaReadiness;
 import com.leanowtech.bloge.gateway.visual.authoring.simulation.SimulationRunSchemaReadiness;
+import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessAuthoringSchemaReadiness;
+import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessFixtureMaterialSchemaReadiness;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,8 +29,10 @@ class LocalAuthoringSchemaBootstrapConfigurationTest {
 
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_local_authoring_schema_migrations", Integer.class))
-                .isEqualTo(19);
+                .isEqualTo(25);
         assertThatCode(() -> {
+            new CorrectnessAuthoringSchemaReadiness(jdbc);
+            new CorrectnessFixtureMaterialSchemaReadiness(jdbc);
             new ApiResourceAuthoringSchemaReadiness(jdbc);
             new ApiConnectionAuthoringSchemaReadiness(jdbc);
             new ApiResourceConnectionSnapshotSchemaReadiness(jdbc);
@@ -55,7 +59,7 @@ class LocalAuthoringSchemaBootstrapConfigurationTest {
     private static JdbcTemplate jdbc(String name) {
         JdbcDataSource source = new JdbcDataSource();
         source.setURL("jdbc:h2:mem:local-authoring-bootstrap-" + name
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+                + ";DB_CLOSE_DELAY=-1");
         return new JdbcTemplate(source);
     }
 }

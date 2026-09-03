@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_DIR="${ROOT_DIR}/target/example-pids"
 LOG_DIR="${ROOT_DIR}/target/example-logs"
+SECRET_DIR="${ROOT_DIR}/target/example-secrets"
 
 GRAPH_ENGINE_PORT="${GRAPH_ENGINE_PORT:-8080}"
 RESOURCE_GATEWAY_PORT="${RESOURCE_GATEWAY_PORT:-8081}"
@@ -15,6 +16,10 @@ RG_API_RESOURCE_AUTHORING_ENABLED="${RG_API_RESOURCE_AUTHORING_ENABLED:-true}"
 RG_REUSABLE_FLOW_AUTHORING_ENABLED="${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}"
 RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED="${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:-true}"
 RG_INTEGRATION_ENVIRONMENT_ID="${RG_INTEGRATION_ENVIRONMENT_ID:-local}"
+RG_CORRECTNESS_AUTHORING_ENABLED="${RG_CORRECTNESS_AUTHORING_ENABLED:-false}"
+RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED="${RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED:-false}"
+RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID="${RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID:-resource-gateway-local-fixture-v1}"
+RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="${RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING:-}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -42,8 +47,44 @@ Environment:
   RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true
   RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED default: true for the embedded H2 database
   RG_INTEGRATION_ENVIRONMENT_ID default: local for zero-egress Agent TDD execution
-  Set either variable to false to disable that authoring surface.
+  RG_CORRECTNESS_AUTHORING_ENABLED default: false; set true for Agent TDD sample provision
+  RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED default: false; set true with correctness authoring
+  The local launcher creates a private AES-256 key when Fixture material is enabled without a key ring.
+  Set an authoring variable to false to disable that surface.
 EOF
+}
+
+prepare_local_fixture_material_key() {
+    if [ "${RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED}" != "true" ]; then
+        return 0
+    fi
+    if [ "${RG_CORRECTNESS_AUTHORING_ENABLED}" != "true" ]; then
+        echo "Fixture material requires RG_CORRECTNESS_AUTHORING_ENABLED=true." >&2
+        return 1
+    fi
+    if [ -n "${RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING}" ]; then
+        return 0
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "openssl is required to create the local Fixture material key." >&2
+        return 1
+    fi
+
+    local key_file="${SECRET_DIR}/resource-gateway-fixture-material.key"
+    local temporary_key_file="${key_file}.tmp.$$"
+    mkdir -p "${SECRET_DIR}"
+    chmod 700 "${SECRET_DIR}"
+    if [ ! -s "${key_file}" ]; then
+        umask 077
+        if ! openssl rand -base64 32 | tr -d '\r\n' > "${temporary_key_file}"; then
+            rm -f "${temporary_key_file}"
+            echo "Unable to create the local Fixture material key." >&2
+            return 1
+        fi
+        mv "${temporary_key_file}" "${key_file}"
+        chmod 600 "${key_file}"
+    fi
+    RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="${RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID}=$(tr -d '\r\n' < "${key_file}")"
 }
 
 service_title() {
@@ -324,12 +365,17 @@ start_service() {
         resource-gateway)
             workdir="$(service_workdir "${service}")"
             jar="$(service_jar "${service}")"
+            prepare_local_fixture_material_key
             (
                 cd "${workdir}"
                 export RG_API_RESOURCE_AUTHORING_ENABLED
                 export RG_REUSABLE_FLOW_AUTHORING_ENABLED
                 export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED
                 export RG_INTEGRATION_ENVIRONMENT_ID
+                export RG_CORRECTNESS_AUTHORING_ENABLED
+                export RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED
+                export RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID
+                export RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING
                 nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" \
                     "--server.address=${RESOURCE_GATEWAY_ADDRESS}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"

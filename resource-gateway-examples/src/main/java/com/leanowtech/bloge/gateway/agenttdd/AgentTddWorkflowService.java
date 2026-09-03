@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.GraphDraftOperatorSnapshotCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
@@ -267,7 +268,8 @@ public final class AgentTddWorkflowService {
                         new GraphNodeFixturePromotionRequest(
                                 GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
                                 requiredText(arguments, "fixtureId"), requiredText(arguments, "category"),
-                                arguments.path("retentionDays").asInt(), redactions), identity);
+                                arguments.path("retentionDays").asInt(), redactions),
+                        fixtureWriteIdentity(identity));
                 return Map.of("fixtureId", result.fixtureAssetId(), "revision", result.revision(),
                         "lifecycle", result.lifecycle(), "scope", scope(identity),
                         "schemaRef", result.schemaRef(), "lineageRef", result.assetRef(),
@@ -305,7 +307,8 @@ public final class AgentTddWorkflowService {
                         new GraphNodeFixturePromotionRequest(
                                 GraphNodeFixturePromotionRequest.SCHEMA_VERSION, fixtureId,
                                 requiredText(arguments, "category"),
-                                arguments.path("retentionDays").asInt(), redactions), identity);
+                                arguments.path("retentionDays").asInt(), redactions),
+                        fixtureWriteIdentity(identity));
                 return Map.of("fixtureId", result.fixtureAssetId(), "revision", result.revision(),
                         "lifecycle", result.lifecycle(), "scope", scope(identity),
                         "schemaRef", result.schemaRef(), "lineageRef", result.assetRef(),
@@ -378,6 +381,32 @@ public final class AgentTddWorkflowService {
                         "realExternalCalls", 0, "cases", List.of(), "dependencies", List.of())));
         readiness.put("remainingLimitations", List.copyOf(remaining));
         return Map.copyOf(readiness);
+    }
+
+    /**
+     * Narrows an already authenticated Agent governance call to the protected Fixture-material
+     * write purpose expected by the underlying correctness boundary.
+     *
+     * <p>The original purpose is checked before it is replaced. This keeps direct service calls
+     * fail-closed while allowing the Agent TDD application service to compose two independently
+     * purpose-protected subsystems without exposing the material-write credential to Codex.</p>
+     */
+    private static IntegrationRequestContext fixtureWriteIdentity(IntegrationRequestContext identity) {
+        if (identity == null) {
+            throw new AgentTddToolException("UNAUTHENTICATED", "A verified reviewer identity is required.");
+        }
+        identity.requireComplete();
+        if (!IntegrationOperation.AGENT_TDD_GOVERNED_WRITE.accepts(identity.purpose())) {
+            throw new AgentTddToolException(
+                    "FORBIDDEN_PURPOSE", "Agent governance purpose is required for Fixture material writes.");
+        }
+        String materialPurpose = IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_WRITE
+                .acceptedPurposes().iterator().next();
+        return new IntegrationRequestContext(
+                identity.tenantId(), identity.organizationId(), identity.projectId(),
+                identity.environmentId(), identity.region(), identity.actorType(), identity.actorId(),
+                identity.delegatedBy(), materialPurpose, identity.correlationId(), identity.groups(),
+                identity.clearance(), identity.delegationGrantId());
     }
 
     /** Returns only an attestation bound to the exact current publish subject. */

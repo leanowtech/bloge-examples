@@ -33,6 +33,11 @@ payload-free and returned with `no-store` rather than sampling fixtures or provi
 sample list reads only governed Fixture descriptors. `rg.fixture.provide` validates a supplied sample against
 one exact operator output port, then server-derives its Fixture id, scope, schema reference, retention and
 SAMPLE lineage; the MCP response never echoes the sample value.
+The repository launcher keeps Correctness authoring and encrypted Fixture material opt-in. When both are
+enabled for the local Agent TDD guide and no key ring is injected, it creates one private AES-256 demo key
+under `target/example-secrets`, reuses it across restarts, and never prints it. Codex receives only the four
+`AGENT_TDD_*` purposes; the service derives the narrower Fixture-material write purpose after governance
+authorization instead of exposing that credential to the Agent.
 When a bound read dependency does not exist yet, `rg.tool.compose` returns
 `RESOURCE_NOT_REGISTERED`. The authoring-only `rg.resource.declare` bridge registers an allowlisted
 `GET`, `HEAD`, or `OPTIONS` descriptor together with its visual design contract; write methods fail
@@ -54,8 +59,10 @@ The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persi
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened
 deployment should set the launcher's `RESOURCE_GATEWAY_ADDRESS=0.0.0.0` or Spring's `SERVER_ADDRESS` directly.
-External PostgreSQL deployments apply
-`db/postgresql/V20260903_020__agent_tdd_runtime.sql`; runtime DDL remains H2-only.
+External PostgreSQL deployments apply the versioned Correctness migrations from `V20260815_005` through
+`V20260816_010` and `V20260903_020__agent_tdd_runtime.sql` through the deployment migration system. The
+embedded-H2 launcher executes and checksums the complete authoring migration set, including those Correctness
+tables; external data sources never receive application-startup DDL.
 Its scenario compiler covers the complete seven-behavior dependency vocabulary through the shared
 isolated testing kernel, and its deterministic decision-table enumerator implements the bounded
 comparison, range, membership, otherwise, and author-sampled opaque grammar.
