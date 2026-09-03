@@ -23,16 +23,24 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Stateless Streamable-HTTP JSON-RPC boundary for the RG Agent TDD tool surface.
+ * Streamable-HTTP JSON-RPC boundary for the RG Agent TDD tool surface.
  *
- * <p>The current MCP protocol sends version, method, name and client identity on each request.
- * Legacy {@code initialize} remains supported for clients that have not moved to the stateless
- * lifecycle. Application identity is always derived from the existing RG integration authority.</p>
+ * <p>The boundary supports both the sessionless 2026-07-28 protocol and Codex clients using the
+ * negotiated 2025-11-25 lifecycle. Stateless requests mirror method and tool name in routing
+ * headers; negotiated legacy requests use their JSON-RPC body and protocol-version header. The
+ * legacy {@code notifications/initialized} message is acknowledged without manufacturing a
+ * JSON-RPC response. Application identity is always derived from the existing RG integration
+ * authority.</p>
  */
 @RestController
 public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
+    private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order: READ, "
+            + "AUTHORING, EXECUTION, then GOVERNANCE. Never invent runtime bindings or approval "
+            + "evidence. RED and GREEN must report realExternalCalls=0. Human Oracle approval and "
+            + "executable signoff happen through the review boundary; pause and ask the operator. "
+            + "Call rg.readiness.get before publish and publish only when publishable=true.";
 
     private final ObjectMapper mapper;
     private final McpToolCatalog catalog;
@@ -51,7 +59,7 @@ public final class McpProtocolController {
     }
 
     /**
-     * Exchanges one complete stateless MCP request.
+     * Exchanges one MCP request or legacy lifecycle notification.
      *
      * @param request JSON-RPC request object
      * @param headers protocol routing and integration authentication headers
@@ -62,6 +70,12 @@ public final class McpProtocolController {
                                              @RequestHeader HttpHeaders headers) {
         JsonNode id = request != null && request.isObject() ? request.get("id") : null;
         try {
+            if (isInitializedNotification(request)) {
+                validateLegacyNotification(headers);
+                return ResponseEntity.accepted()
+                        .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                        .build();
+            }
             requireRequest(request);
             String method = text(request, "method");
             validateRouting(headers, method, request.path("params"));
@@ -184,7 +198,8 @@ public final class McpProtocolController {
         return Map.of(
                 "protocolVersion", MODERN_PROTOCOL_VERSION,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
-                "capabilities", Map.of("tools", Map.of("listChanged", false))
+                "capabilities", Map.of("tools", Map.of("listChanged", false)),
+                "instructions", AGENT_INSTRUCTIONS
         );
     }
 
@@ -197,7 +212,8 @@ public final class McpProtocolController {
         return Map.of(
                 "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
-                "capabilities", Map.of("tools", Map.of("listChanged", false))
+                "capabilities", Map.of("tools", Map.of("listChanged", false)),
+                "instructions", AGENT_INSTRUCTIONS
         );
     }
 
@@ -213,9 +229,33 @@ public final class McpProtocolController {
         }
     }
 
+    private static boolean isInitializedNotification(JsonNode request) {
+        return request != null && request.isObject()
+                && "2.0".equals(text(request, "jsonrpc"))
+                && !request.has("id")
+                && "notifications/initialized".equals(text(request, "method"));
+    }
+
+    /**
+     * Validates the only lifecycle notification consumed by this synchronous server.
+     *
+     * <p>Codex sends the negotiated protocol version after initialization. No custom routing
+     * headers are required by the 2025-11-25 transport, and the server intentionally does not
+     * create a session because all Agent TDD state is carried by authenticated durable assets.</p>
+     */
+    private static void validateLegacyNotification(HttpHeaders headers) {
+        String version = header(headers, "MCP-Protocol-Version");
+        if (!version.isBlank() && !LEGACY_PROTOCOL_VERSION.equals(version)) {
+            throw new McpProtocolException(-32022, "Unsupported MCP lifecycle notification version");
+        }
+    }
+
     private static void validateRouting(HttpHeaders headers, String method, JsonNode params) {
         String version = header(headers, "MCP-Protocol-Version");
         if (version.isBlank()) {
+            return;
+        }
+        if (LEGACY_PROTOCOL_VERSION.equals(version)) {
             return;
         }
         if (!MODERN_PROTOCOL_VERSION.equals(version)) {

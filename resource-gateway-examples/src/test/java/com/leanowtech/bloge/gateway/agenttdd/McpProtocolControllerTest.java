@@ -24,7 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Verifies the stateless MCP 2026-07-28 HTTP/JSON-RPC boundary. */
+/** Verifies the MCP Streamable HTTP boundary for legacy and stateless Codex clients. */
 class McpProtocolControllerTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -45,6 +45,41 @@ class McpProtocolControllerTest {
         assertThat(response.path("result").path("tools")).hasSize(24);
         assertThat(response.path("result").path("ttlMs").asInt()).isPositive();
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
+    }
+
+    @Test
+    void listsToolsForNegotiatedLegacyClientWithoutDraftRoutingHeaders() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of("called", name));
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("MCP-Protocol-Version", McpProtocolController.LEGACY_PROTOCOL_VERSION);
+
+        ResponseEntity<JsonNode> response = controller.exchange(
+                request(8, "tools/list", Map.of()), headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(24);
+        verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
+    }
+
+    @Test
+    void acceptsLegacyInitializedNotificationWithoutJsonRpcResponse() {
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
+                (name, arguments, identity) -> Map.of());
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("MCP-Protocol-Version", McpProtocolController.LEGACY_PROTOCOL_VERSION);
+        JsonNode notification = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0", "method", "notifications/initialized", "params", Map.of()));
+
+        ResponseEntity<JsonNode> response = controller.exchange(notification, headers);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(202);
+        assertThat(response.getBody()).isNull();
     }
 
     @Test
@@ -244,6 +279,8 @@ class McpProtocolControllerTest {
 
         assertThat(modern.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
+        assertThat(modern.path("result").path("instructions").asText())
+                .startsWith("Use the Agent TDD tools in order");
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }
