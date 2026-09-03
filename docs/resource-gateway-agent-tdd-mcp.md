@@ -56,7 +56,7 @@ curl --fail-with-body http://localhost:8081/mcp \
   --data '{"jsonrpc":"2.0","id":"list-1","method":"tools/list","params":{}}'
 ```
 
-响应同时提供 MCP `content` 和机器可读的 `structuredContent`。应用错误使用统一的 `ok:false` 信封，不包含上游响应体或 fixture 载荷。
+响应同时提供 MCP `content` 和机器可读的 `structuredContent`。服务端在调用前按 `tools/list` 公布的 `inputSchema` 校验参数，在返回前按同一工具的 `outputSchema` 校验 `structuredContent`；任一不匹配均失败关闭，且不回显被拒绝的数据。应用错误使用统一的 `ok:false` 信封，只返回目录内稳定码和固定说明，不包含底层异常、上游响应体或 fixture 载荷。
 
 ## 3. 五阶段工具
 
@@ -74,15 +74,15 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。
 
-`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；两种证据源互斥，禁止在同一请求中并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
+`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；`cases` 的 JSON Schema 使用 `oneOf` 强制两种证据源恰选其一，禁止空对象或并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
-持久化用例成功执行后，服务端把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`，但不改变其生命周期。该运营状态不进入证据语义指纹，因此状态推进不会使刚生成的证据自我失效。
+持久化用例成功执行时，结果携带服务端解析出的 `caseSetRef` 和 `caseSetRevision`。证据持久化只允许以该 revision 做 CAS，把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`；执行后若用例内容已变化，整次证据写入失败，不会按复用的 caseId 误标新行。该运营状态不进入证据语义指纹，因此成功的状态推进不会使刚生成的证据自我失效。
 
 ## 4. bindingRef 与 goldenSetId
 
 外部算子没有 `runtime.bindingRef` 时，Tool 状态为 `SPECCING`。此状态允许红侧模拟和 `rg.tool.publishSpec`，禁止绿侧发布。
 
-`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端只读取一次目录并物化为不可变的临时可执行图，再从同一个对象计算证据指纹、执行/编译和冻结发布物，避免检查与使用之间的目标替换竞态。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
+`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端通过一次批量目录投影物化临时可执行图，并从 `operatorSnapshots` 构造本次操作专属的只读 catalog。证据指纹、validator、simulation、DSL generator、dependency report 和发布冻结均使用这一实例，不再回读可变目录，避免检查与使用之间的目标替换竞态。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
 
 DSL 中的 `node.output.field` 会按目录声明解析到真实输出端口；单字段输入同样绑定到真实命名端口，而不是固定写入 `inputs/output` 占位端口。这样，第 5 章这类标量命名端口契约能通过同一套导入、校验、模拟和发布链路。
 
@@ -90,7 +90,7 @@ DSL 中的 `node.output.field` 会按目录声明解析到真实输出端口；�
 
 `rg.verdict.get` 默认返回当前线；传入 `{toolRef, goldenSetId}` 可读取已归档的旧线。新 `goldenSetId` 从空的 red/green 分层矩阵开始，不能继承上一组用例的通过数。
 
-GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bindingRef` 已解析后才能运行。EXECUTE 权限不会调用这些真实 binding；外部依赖继续由用例中的受控行为替换，因此 `realExternalCalls=0` 是硬约束。GREEN 证明“绑定齐全的可执行图在受控依赖下符合业务 Oracle”，不证明真实集成健康或生产环境治理；后两项仍在诚实结论中标为未证明。
+GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bindingRef` 已解析后才能运行。EXECUTE 权限不会调用这些真实 binding；外部依赖继续由用例中的受控行为替换，因此 `realExternalCalls=0` 是硬约束。执行层还会独立检查 simulator 报告的 `realNodeIds`：出现任一非 `PURE` 节点即以 `SIM_REAL_CALL_DETECTED` 失败关闭。GREEN 证明“绑定齐全的可执行图在受控依赖下符合业务 Oracle”，不证明真实集成健康或生产环境治理；后两项仍在诚实结论中标为未证明。
 
 `rg.fixture.promote` 必须显式指定 `outputPort`。返回的 `sourceKind` 由服务端捕获证据派生：存在与当前草稿、节点、算子和输出一致的有效模拟捕获时为 `SCENARIO`，否则为 `SAMPLE`；客户端不能自行声明该来源。
 
@@ -104,7 +104,7 @@ GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bi
 - 批准规格发布提议：`POST /api/agent-tdd/reviews/specs/{toolRef}/approve`。
 - 签署可执行 Tool：`POST /api/agent-tdd/reviews/tools/{toolRef}/signoffs/{signoffRef}/approve`，请求体必须携带 `{draftRevision, goldenSetId, evidenceFingerprint}`。
 
-Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，原子 revision fence 拒绝批准；重新读取后再评审。签署记录精确绑定 Tool 草稿 revision、goldenSetId 和 GREEN evidenceFingerprint，任一内容变化都会使旧签署失效。
+Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，原子 revision fence 拒绝批准；重新读取后再评审。签署记录精确绑定 Tool 草稿 revision、goldenSetId 和 GREEN evidenceFingerprint，任一内容变化都会使旧签署失效；同一 `signoffRef` 只允许创建一次，不能被后续批准覆盖。
 
 所有 MCP 写工具通过状态库的 `executeOnce` 边界执行：服务端先原子占用 `{scope, operation, idempotencyKey}`，业务写与成功响应在同一事务内完成，再开放精确重放。相同键与相同请求只执行一次；不同请求材料或进行中的冲突失败关闭。内存实现也以同一临界区覆盖业务动作与响应记录。
 
@@ -147,5 +147,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 5. 对 `GOLDEN_REQUIRES_APPROVAL`，在看板批准目标 revision 后重新读取 case set。
 6. 对 `PUBLISH_GATE_NOT_MET`，调用 `rg.readiness.get`，按 `remainingLimitations` 逐项处理。
 7. 对依赖行为的 `SCHEMA_NONCONFORMANT`，检查 `afterMillis`、精确 `replayRef`、REPLAY/OBSERVE 的冻结 `value`。
+8. 对 JSON-RPC `-32602`，以最新 `tools/list` 的 `inputSchema` 修正参数；`-32603` 表示服务端结果与其公布的 `outputSchema` 不一致，应作为实现缺陷处理。
 
-排查期间不要记录 Bearer credential、fixture material 或业务响应体。
+排查期间不要记录 Bearer credential、fixture material 或业务响应体。`rg.dsl.preview` 与 `rg.gate.check` 只返回诊断的稳定码和源码坐标；底层 `message`、`metadata` 以及用于内部校验的 regenerated DSL 不进入 MCP 响应。

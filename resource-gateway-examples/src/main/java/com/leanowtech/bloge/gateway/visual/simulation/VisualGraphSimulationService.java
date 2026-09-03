@@ -214,6 +214,30 @@ public class VisualGraphSimulationService {
                                                   Map<String, Object> context,
                                                   String outputNode,
                                                   Map<String, NodeFixture> fixtures) {
+        return simulateAgainst(draft, context, outputNode, fixtures, catalog);
+    }
+
+    /**
+     * Simulates against one caller-owned immutable operator view.
+     *
+     * <p>This overload is the consistency boundary used by governed Agent TDD execution. The same
+     * snapshot catalog that identifies the executable must remain authoritative for validation,
+     * node classification, sample generation, DSL lowering, and terminal schema checks.</p>
+     *
+     * @param draft materialized graph draft
+     * @param context initial graph context
+     * @param outputNode optional output node override
+     * @param fixtures request-scoped fixtures
+     * @param operationCatalog immutable catalog captured for this operation
+     * @return the isolated simulation result
+     */
+    public VisualGraphSimulationResponse simulateAgainst(GraphDraft draft,
+                                                         Map<String, Object> context,
+                                                         String outputNode,
+                                                         Map<String, NodeFixture> fixtures,
+                                                         VisualOperatorCatalog operationCatalog) {
+        VisualOperatorCatalog frozenCatalog = Objects.requireNonNull(
+                operationCatalog, "operationCatalog");
         rejectProductionSimulation();
         if (draft == null) {
             return blocked(false, List.of(VisualDiagnostic.error("visual.simulate.draftMissing",
@@ -225,7 +249,9 @@ public class VisualGraphSimulationService {
             return blocked(false, capDiagnostics, List.of("Simulation resource caps exceeded."), "");
         }
 
-        VisualValidationResult validation = validator.validate(draft);
+        VisualValidationResult validation = frozenCatalog == catalog
+                ? validator.validate(draft)
+                : new GraphDraftValidator(frozenCatalog).validate(draft);
         if (!validation.valid()) {
             return blocked(false, validation.diagnostics(), List.of("Visual validation failed."), "");
         }
@@ -240,7 +266,7 @@ public class VisualGraphSimulationService {
         List<GraphDraft.DraftNode> simulationNodes = new ArrayList<>();
 
         for (GraphDraft.DraftNode node : draft.nodes()) {
-            Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
+            Optional<OperatorDefinition> operator = frozenCatalog.find(node.operatorRef());
             if (operator.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.simulate.operatorUnknown",
                         "Operator '%s' on node '%s' is unknown and cannot be simulated."
@@ -288,7 +314,8 @@ public class VisualGraphSimulationService {
         }
 
         GraphDraft simulationDraft = withNodes(draft, simulationNodes);
-        SimulationOperatorCatalog simulationCatalog = new SimulationOperatorCatalog(catalog, syntheticDefinitions);
+        SimulationOperatorCatalog simulationCatalog = new SimulationOperatorCatalog(
+                frozenCatalog, syntheticDefinitions);
         DslGenerationResult generated = new GraphDraftDslGenerator(simulationCatalog).generate(simulationDraft);
         diagnostics.addAll(generated.diagnostics());
         if (!generated.generated()) {
@@ -313,14 +340,14 @@ public class VisualGraphSimulationService {
                             if (fixture != null
                                     && fixture.resourceFidelity() != NodeFixture.ResourceFidelity.OUTPUT_LEVEL
                                     && !hasRawResourceEvidence(output)) {
-                                String resourceId = resourceEvidenceId(draft, nodeId);
+                                String resourceId = resourceEvidenceId(draft, nodeId, frozenCatalog);
                                 if (resourceId != null) {
                                     output = Map.of("resourceId", resourceId, "governedPayload", output);
                                 }
                             }
                             return new VisualSimulationPlan.Standin(
                                     nodeId,
-                                    rewrittenSimulationOperatorRef(draft, nodeId, fixture),
+                                    rewrittenSimulationOperatorRef(draft, nodeId, fixture, frozenCatalog),
                                     output,
                                     fixture == null ? null : fixture.expectedInput(),
                                     fixture == null
@@ -384,7 +411,8 @@ public class VisualGraphSimulationService {
                 && mockOutputsByNodeId.containsKey(dynamic.outputNode())) {
             output = mockOutputsByNodeId.get(dynamic.outputNode());
         }
-        boolean terminalConforms = terminalOutputConforms(draft, dynamic.outputNode(), output);
+        boolean terminalConforms = terminalOutputConforms(
+                draft, dynamic.outputNode(), output, frozenCatalog);
         Map<String, Object> results = new LinkedHashMap<>(dynamic.results());
         Map<String, String> statusMap = dynamic.statusMap();
         // Graph execution omits completed nodes whose mock output is null.  Authors still need an
@@ -455,13 +483,15 @@ public class VisualGraphSimulationService {
                 && "httpResource".equals(operator.lowering().operatorRef());
     }
 
-    private String rewrittenSimulationOperatorRef(GraphDraft draft, String nodeId,
-                                                  NodeFixture fixture) {
+    private String rewrittenSimulationOperatorRef(GraphDraft draft,
+                                                  String nodeId,
+                                                  NodeFixture fixture,
+                                                  VisualOperatorCatalog operationCatalog) {
         if (fixture != null && fixture.resourceFidelity() != NodeFixture.ResourceFidelity.OUTPUT_LEVEL) {
             Optional<OperatorDefinition> operator = draft.nodes().stream()
                     .filter(node -> node.id().equals(nodeId))
                     .findFirst()
-                    .flatMap(node -> catalog.find(node.operatorRef()));
+                    .flatMap(node -> operationCatalog.find(node.operatorRef()));
             if (operator.map(value -> "httpResource".equals(value.lowering().operatorRef()))
                     .orElse(false)) {
                 return "httpResource";
@@ -482,12 +512,14 @@ public class VisualGraphSimulationService {
      * @param nodeId mocked node whose resource identity is required
      * @return catalog resource identity, compatibility config identity, or {@code null}
      */
-    private String resourceEvidenceId(GraphDraft draft, String nodeId) {
+    private String resourceEvidenceId(GraphDraft draft,
+                                      String nodeId,
+                                      VisualOperatorCatalog operationCatalog) {
         return draft.nodes().stream()
                 .filter(node -> node.id().equals(nodeId))
                 .findFirst()
                 .map(node -> {
-                    Optional<String> catalogResource = catalog.find(node.operatorRef())
+                    Optional<String> catalogResource = operationCatalog.find(node.operatorRef())
                             .map(OperatorDefinition::lowering)
                             .map(OperatorDefinition.Lowering::parameters)
                             .map(parameters -> parameters.get("resourceId"))
@@ -702,11 +734,14 @@ public class VisualGraphSimulationService {
         return effective;
     }
 
-    private boolean terminalOutputConforms(GraphDraft draft, String outputNodeId, Object output) {
+    private boolean terminalOutputConforms(GraphDraft draft,
+                                           String outputNodeId,
+                                           Object output,
+                                           VisualOperatorCatalog operationCatalog) {
         return draft.nodes().stream()
                 .filter(node -> node.id().equals(outputNodeId))
                 .findFirst()
-                .flatMap(node -> catalog.find(node.operatorRef()))
+                .flatMap(node -> operationCatalog.find(node.operatorRef()))
                 .map(operator -> terminalOutputConforms(operator, output))
                 .orElse(true);
     }

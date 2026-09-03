@@ -48,7 +48,8 @@ class McpProtocolControllerTest {
                 .thenReturn(identity());
         McpToolInvoker invoker = (name, arguments, identity) -> Map.of(
                 "ok", true,
-                "data", Map.of("side", "RED", "realExternalCalls", 0),
+                "data", Map.of("goldenSetId", "sha256:golden", "side", "RED",
+                        "realExternalCalls", 0),
                 "diagnostics", java.util.List.of());
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), authenticator, invoker);
@@ -66,6 +67,44 @@ class McpProtocolControllerTest {
                 .path("realExternalCalls").asInt()).isZero();
         assertThat(response.path("result").path("content").get(0).path("type").asText()).isEqualTo("text");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_EXECUTE);
+    }
+
+    @Test
+    void rejectsArgumentsThatDoNotMatchTheAdvertisedSchemaBeforeInvocation() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        McpToolControllerProbe invoker = new McpToolControllerProbe();
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, invoker);
+
+        JsonNode response = controller.exchange(request(13, "tools/call", Map.of(
+                "name", "rg.simulate",
+                "arguments", Map.of("toolRef", "ride:cancel", "libraryRefs", java.util.List.of("ride"),
+                        "cases", Map.of("caseSetRef", "golden", "rows", java.util.List.of())))),
+                modernHeaders("tools/call", "rg.simulate")).getBody();
+
+        assertThat(response.path("error").path("code").asInt()).isEqualTo(-32602);
+        assertThat(response.path("error").path("message").asText())
+                .isEqualTo("Tool arguments do not match the declared input schema");
+        assertThat(invoker.called).isFalse();
+    }
+
+    @Test
+    void rejectsImplementationResponseThatViolatesOutputSchemaWithoutReflectingPayload() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of(
+                        "ok", true, "data", Map.of("undeclared", "customer-secret"),
+                        "diagnostics", java.util.List.of()));
+
+        JsonNode response = controller.exchange(request(14, "tools/call", Map.of(
+                        "name", "rg.library.list", "arguments", Map.of())),
+                modernHeaders("tools/call", "rg.library.list")).getBody();
+
+        assertThat(response.path("error").path("code").asInt()).isEqualTo(-32603);
+        assertThat(response.toString()).doesNotContain("customer-secret", "undeclared");
     }
 
     @Test
@@ -118,5 +157,15 @@ class McpProtocolControllerTest {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_EXECUTE", "corr-1");
+    }
+
+    private static final class McpToolControllerProbe implements McpToolInvoker {
+        private boolean called;
+
+        @Override
+        public Object invoke(String name, JsonNode arguments, IntegrationRequestContext identity) {
+            called = true;
+            return Map.of("ok", true, "diagnostics", java.util.List.of());
+        }
     }
 }

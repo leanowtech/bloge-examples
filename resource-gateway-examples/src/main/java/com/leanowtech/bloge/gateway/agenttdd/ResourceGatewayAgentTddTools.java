@@ -146,7 +146,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");
             };
         } catch (AgentTddToolException failure) {
-            return failure(failure.code(), failure.getMessage());
+            return failure(failure.code(), safeErrorMessage(failure.code()));
         }
     }
 
@@ -382,5 +382,33 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                         "details", Map.of()),
                 "diagnostics", List.of()
         );
+    }
+
+    /**
+     * Maps application failures to stable payload-free protocol prose.
+     *
+     * <p>Lower layers may include rejected source fragments, fixture values, or provider details in
+     * exception messages. The MCP surface exposes the stable error code while retaining only this
+     * catalog-owned explanation.</p>
+     */
+    private static String safeErrorMessage(String code) {
+        return switch (code == null ? "" : code) {
+            case "UNAUTHENTICATED" -> "Authentication is required.";
+            case "FORBIDDEN_PURPOSE" -> "The authenticated purpose does not authorize this operation.";
+            case "DRAFT_NOT_FOUND" -> "The requested governed asset was not found.";
+            case "LIBRARY_NOT_FOUND" -> "A referenced library or runtime binding was not found.";
+            case "COMPILE_ERROR" -> "Compilation failed; inspect payload-free diagnostics.";
+            case "SPECCING_NOT_EXECUTABLE" -> "A design-only asset is not executable.";
+            case "GOLDEN_REQUIRES_APPROVAL" -> "Business approval is required for the golden Oracle.";
+            case "IDEMPOTENCY_CONFLICT" -> "The idempotency key conflicts with an existing request.";
+            case "SCHEMA_NONCONFORMANT" -> "The request does not conform to the declared tool schema.";
+            case "AMBIGUOUS_OUTPUT_PORT" -> "The requested output port is ambiguous.";
+            case "RETENTION_POLICY_VIOLATION" -> "The requested retention policy is not allowed.";
+            case "EGRESS_NOT_ALLOWED" -> "Outbound access is not allowed for this operation.";
+            case "PUBLISH_GATE_NOT_MET" -> "One or more publication gates are not satisfied.";
+            case "SIM_REAL_CALL_DETECTED" -> "Simulation detected a forbidden real invocation.";
+            case "COMBINATORIAL_CAP_EXCEEDED" -> "Scenario enumeration exceeds its configured cap.";
+            default -> "The requested operation was rejected by a governance gate.";
+        };
     }
 }

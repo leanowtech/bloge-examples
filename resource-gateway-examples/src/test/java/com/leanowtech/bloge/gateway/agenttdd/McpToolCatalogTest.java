@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.List;
 
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Verifies the public MCP tool catalog promised by the RG 1.4 design. */
@@ -71,6 +73,24 @@ class McpToolCatalogTest {
                 catalog.require("rg.scenario.listCases")).get("rows")).get("items");
         assertThat(stringKeys((Map<?, ?>) row.get("properties"))).contains(
                 "lifecycle", "qualityState", "sourceRunRef");
+    }
+
+    @Test
+    void everyAdvertisedInputAndOutputSchemaIsValidAndCasesHaveOneExactSource() {
+        McpToolCatalog catalog = new McpToolCatalog();
+
+        catalog.all().forEach(definition -> {
+            assertThat(VisualSchemaValidator.validateSchema(
+                    definition.inputSchema(), "/input/" + definition.name()))
+                    .as(definition.name() + " input schema").isEmpty();
+            assertThat(VisualSchemaValidator.validateSchema(
+                    definition.outputSchema(), "/output/" + definition.name()))
+                    .as(definition.name() + " output schema").isEmpty();
+        });
+        Map<?, ?> cases = schemaProperty(catalog.require("rg.simulate").inputSchema(), "cases");
+        assertThat(cases.keySet().stream().map(Object::toString).toList())
+                .contains("oneOf").doesNotContain("properties", "required");
+        assertThat((List<?>) cases.get("oneOf")).hasSize(2);
     }
 
     @SuppressWarnings("unchecked")

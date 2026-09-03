@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.GraphDraftOperatorSnapshotCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
@@ -85,7 +87,7 @@ public final class AgentTddExecutionService {
         List<String> refs = libraryRefs(arguments);
         DslVisualProjection result = project(arguments, refs);
         return Map.of(
-                "projection", result,
+                "projection", safeProjection(result),
                 "libraryRefs", refs,
                 "speccing", speccing(result.draft()),
                 "executable", !speccing(result.draft())
@@ -106,7 +108,7 @@ public final class AgentTddExecutionService {
         return Map.of(
                 "accepted", compileAccepted && rewrite.allowed(),
                 "compileAccepted", compileAccepted,
-                "rewriteGate", rewrite,
+                "rewriteGate", safeRewriteGate(rewrite),
                 "libraryRefs", refs,
                 "honestVerdict", Map.of("dimensions", List.of(
                         dimension("contract-conformance", compileAccepted ? "PASS" : "FAIL",
@@ -143,11 +145,16 @@ public final class AgentTddExecutionService {
         if (!Set.of("RED", "GREEN").contains(side)) {
             throw new AgentTddToolException("GATE_REJECTED", "side must be RED or GREEN.");
         }
-        List<JsonNode> rows = caseRows(arguments, identity);
+        ResolvedCases resolvedCases = caseRows(arguments, identity);
+        List<JsonNode> rows = resolvedCases.rows();
         List<String> caseIds = rows.stream().map(row -> requiredText(row, "caseId")).sorted().toList();
         String goldenSetId = goldenSetId(mapper, toolRef, draft, caseIds);
+        Map<String, OperatorDefinition> bindingTargets = projection.resolveOperators(
+                AgentTddRuntimeBindingResolver.bindingLookupRefs(draft));
         GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(
-                draft, projection::resolveOperator);
+                draft, ref -> java.util.Optional.ofNullable(bindingTargets.get(ref)));
+        GraphDraft simulationDraft = "GREEN".equals(side) ? executable : draft;
+        VisualOperatorCatalog operationCatalog = frozenCatalog(simulationDraft);
         List<Map<String, String>> bindingIdentity =
                 AgentTddRuntimeBindingResolver.bindingIdentity(draft, executable);
         String evidenceFingerprint = evidenceFingerprint(
@@ -160,7 +167,8 @@ public final class AgentTddExecutionService {
         for (JsonNode row : rows) {
             Map<String, Object> result = greenBlocked
                     ? blockedCase(row)
-                    : executeCase(draft, executable, row, side, arguments.path("adhocFixtures"));
+                    : executeCase(draft, executable, operationCatalog, row, side,
+                            arguments.path("adhocFixtures"));
             results.add(result);
             String verdict = result.get("verdict").toString();
             if (verdict.endsWith("PASS")) passed++;
@@ -168,22 +176,26 @@ public final class AgentTddExecutionService {
             realExternalCalls += ((Number) result.getOrDefault("realExternalCalls", 0)).intValue();
         }
         Map<String, Map<String, Integer>> byLayer = layerSummary(results);
-        return Map.of(
-                "goldenSetId", goldenSetId,
-                "evidenceFingerprint", evidenceFingerprint,
-                "draftRevision", draft.revision(),
-                "side", side,
-                "byLayer", byLayer,
-                "cases", results,
-                "realExternalCalls", realExternalCalls,
-                "honestVerdict", Map.of("dimensions", List.of(
+        LinkedHashMap<String, Object> response = new LinkedHashMap<>();
+        response.put("goldenSetId", goldenSetId);
+        response.put("evidenceFingerprint", evidenceFingerprint);
+        response.put("draftRevision", draft.revision());
+        response.put("side", side);
+        response.put("byLayer", byLayer);
+        response.put("cases", results);
+        response.put("realExternalCalls", realExternalCalls);
+        response.put("honestVerdict", Map.of("dimensions", List.of(
                         dimension("business-correctness", failed == 0 && !greenBlocked ? "PASS" : "FAIL",
                                 "Literal expected outcomes were compared with simulated graph results.",
                                 "Dependency bindings are replaced and real integrations remain unproved."),
                         dimension("dependency-isolation", "PASS",
                                 "Every external dependency invocation was replaced by the simulation boundary.",
-                                "GREEN proves resolved bindings and pure graph behavior, not live integration health.")))
-        );
+                                "GREEN proves resolved bindings and pure graph behavior, not live integration health."))));
+        if (!resolvedCases.caseSetRef().isBlank()) {
+            response.put("caseSetRef", resolvedCases.caseSetRef());
+            response.put("caseSetRevision", resolvedCases.revision());
+        }
+        return Map.copyOf(response);
     }
 
     /** Runs the same zero-egress kernel for a Feature draft and always evaluates the red side. */
@@ -216,6 +228,7 @@ public final class AgentTddExecutionService {
         String goldenSetId = "";
         String evidenceFingerprint = "";
         long draftRevision = -1;
+        long caseSetRevision = -1;
         String side = "";
         int realExternalCalls = 0;
         Object caseResults = List.of();
@@ -231,6 +244,7 @@ public final class AgentTddExecutionService {
             goldenSetId = result.get("goldenSetId").toString();
             evidenceFingerprint = result.get("evidenceFingerprint").toString();
             draftRevision = ((Number) result.get("draftRevision")).longValue();
+            caseSetRevision = ((Number) result.getOrDefault("caseSetRevision", -1)).longValue();
             side = result.get("side").toString();
             String fingerprint = VisualBundleFingerprint.fromCanonicalValue(
                     mapper, result.get("cases"), MAX_FINGERPRINT_BYTES);
@@ -254,6 +268,7 @@ public final class AgentTddExecutionService {
         baseline.put("evidenceFingerprint", evidenceFingerprint);
         baseline.put("draftRevision", draftRevision);
         baseline.put("caseSetRef", caseSetRef);
+        baseline.put("caseSetRevision", caseSetRevision);
         baseline.put("side", side);
         baseline.put("rounds", runs);
         baseline.put("businessFingerprintStable", stable);
@@ -308,7 +323,7 @@ public final class AgentTddExecutionService {
         }
     }
 
-    private List<JsonNode> caseRows(JsonNode arguments, IntegrationRequestContext identity) {
+    private ResolvedCases caseRows(JsonNode arguments, IntegrationRequestContext identity) {
         JsonNode cases = arguments.path("cases");
         JsonNode rows = cases.path("rows");
         String referencedCaseSet = optionalText(arguments, "caseSetRef");
@@ -334,7 +349,7 @@ public final class AgentTddExecutionService {
                             "GOLDEN_REQUIRES_APPROVAL", "The case set has no approved ACTIVE rows.");
                 }
                 active.forEach(AgentTddExecutionService::requireOracle);
-                return List.copyOf(active);
+                return new ResolvedCases(List.copyOf(active), caseSetRef, caseSet.revision());
             }
         }
         if (!rows.isArray() || rows.isEmpty()) {
@@ -348,7 +363,7 @@ public final class AgentTddExecutionService {
             requireOracle(row);
             values.add(row);
         });
-        return List.copyOf(values);
+        return new ResolvedCases(List.copyOf(values), "", 0);
     }
 
     private static void requireOracle(JsonNode row) {
@@ -360,6 +375,7 @@ public final class AgentTddExecutionService {
 
     private Map<String, Object> executeCase(GraphDraft draft,
                                             GraphDraft executable,
+                                            VisualOperatorCatalog operationCatalog,
                                             JsonNode row,
                                             String side,
                                             JsonNode adhocFixtures) {
@@ -369,14 +385,16 @@ public final class AgentTddExecutionService {
                 throw new AgentTddToolException(
                         "GATE_REJECTED", "GREEN execution does not accept ad-hoc fixture overrides.");
             }
-            return executeGreenCase(executable, row);
+            return executeGreenCase(executable, operationCatalog, row);
         }
         Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
         if (adhocFixtures.isArray()) {
             adhocFixtures.forEach(value -> fixtures.put(
                     requiredText(value, "nodeId"), new NodeFixture(mapper.convertValue(value.get("value"), Object.class))));
         }
-        VisualGraphSimulationResponse response = simulation.simulate(draft, given, "", fixtures);
+        VisualGraphSimulationResponse response = simulation.simulateAgainst(
+                draft, given, "", fixtures, operationCatalog);
+        requireNoRealExternalCalls(draft, response, operationCatalog);
         boolean oracleHeld = response.success() && response.terminalOutputConforms()
                 && expectedMatches(row.path("expect"), mapper.valueToTree(response.output()));
         String verdict = side + "_" + (oracleHeld ? "PASS" : "FAIL");
@@ -399,10 +417,14 @@ public final class AgentTddExecutionService {
         return result;
     }
 
-    private Map<String, Object> executeGreenCase(GraphDraft executable, JsonNode row) {
+    private Map<String, Object> executeGreenCase(GraphDraft executable,
+                                                 VisualOperatorCatalog operationCatalog,
+                                                 JsonNode row) {
         Map<String, Object> given = objectMap(row.path("given"));
         Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
-        VisualGraphSimulationResponse response = simulation.simulate(executable, given, "", fixtures);
+        VisualGraphSimulationResponse response = simulation.simulateAgainst(
+                executable, given, "", fixtures, operationCatalog);
+        requireNoRealExternalCalls(executable, response, operationCatalog);
         boolean oracleHeld = response.success() && response.terminalOutputConforms()
                 && expectedMatches(row.path("expect"), mapper.valueToTree(response.output()));
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
@@ -436,6 +458,86 @@ public final class AgentTddExecutionService {
                 "target", diagnostic.target(),
                 "line", diagnostic.line(),
                 "column", diagnostic.column())).toList();
+    }
+
+    /**
+     * Removes diagnostic prose, metadata, and regenerated source from an MCP preview projection.
+     *
+     * <p>The graph and source positions are the requested READ result. Lower-layer diagnostic
+     * messages can interpolate parser fragments or runtime values, so only stable codes and
+     * coordinates cross the Agent protocol boundary.</p>
+     */
+    private static Map<String, Object> safeProjection(DslVisualProjection projection) {
+        return Map.of(
+                "schemaVersion", projection.schemaVersion(),
+                "sourceId", projection.sourceId(),
+                "draft", projection.draft(),
+                "sourceMap", projection.sourceMap(),
+                "coverage", projection.coverage(),
+                "roundTrip", safeRoundTrip(projection.roundTrip()),
+                "diagnostics", safeDiagnostics(projection.diagnostics()));
+    }
+
+    /** Returns the payload-free portion of a DSL rewrite decision. */
+    private static Map<String, Object> safeRewriteGate(DslRewriteGateResult gate) {
+        return Map.of(
+                "schemaVersion", gate.schemaVersion(),
+                "sourceId", gate.sourceId(),
+                "allowed", gate.allowed(),
+                "decision", gate.decision(),
+                "roundTrip", safeRoundTrip(gate.roundTrip()),
+                "diagnostics", safeDiagnostics(gate.diagnostics()));
+    }
+
+    /** Returns round-trip identity without diagnostic prose or regenerated DSL text. */
+    private static Map<String, Object> safeRoundTrip(
+            com.leanowtech.bloge.gateway.visual.importer.DslRoundTripSummary roundTrip) {
+        return Map.of(
+                "supported", roundTrip.supported(),
+                "status", roundTrip.status(),
+                "sourceFingerprint", roundTrip.sourceFingerprint(),
+                "generatedFingerprint", roundTrip.generatedFingerprint(),
+                "diagnostics", safeDiagnostics(roundTrip.diagnostics()));
+    }
+
+    private static VisualOperatorCatalog frozenCatalog(GraphDraft draft) {
+        try {
+            return GraphDraftOperatorSnapshotCatalog.from(draft);
+        } catch (IllegalArgumentException failure) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "Executable operator snapshots are incomplete or inconsistent.");
+        }
+    }
+
+    /**
+     * Fails closed if the simulation kernel ever reports a non-pure node as actually executed.
+     *
+     * <p>The current simulator mocks every operator-invoking node and lists only pure BLOGE
+     * primitives in {@code realNodeIds}. This independent check turns a future classification
+     * regression into the stable {@code SIM_REAL_CALL_DETECTED} governance error.</p>
+     */
+    static void requireNoRealExternalCalls(GraphDraft draft,
+                                           VisualGraphSimulationResponse response,
+                                           VisualOperatorCatalog operationCatalog) {
+        if (response == null || response.realNodeIds().isEmpty()) return;
+        Set<String> real = Set.copyOf(response.realNodeIds());
+        boolean forbidden = draft.nodes().stream()
+                .filter(node -> real.contains(node.id()))
+                .map(GraphDraft.DraftNode::operatorRef)
+                .map(operationCatalog::find)
+                .flatMap(java.util.Optional::stream)
+                .anyMatch(operator -> !"PURE".equals(operator.capabilities().effect()));
+        if (forbidden) {
+            throw new AgentTddToolException(
+                    "SIM_REAL_CALL_DETECTED", "Simulation reported a non-pure operator invocation.");
+        }
+    }
+
+    private record ResolvedCases(List<JsonNode> rows, String caseSetRef, long revision) {
+        private ResolvedCases {
+            rows = rows == null ? List.of() : List.copyOf(rows);
+            caseSetRef = caseSetRef == null ? "" : caseSetRef;
+        }
     }
 
     private static Map<String, Object> blockedCase(JsonNode row) {

@@ -120,8 +120,8 @@ public final class AgentTddReviewService {
         data.put("evidenceFingerprint", evidenceFingerprint.trim());
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
-        return states.save(AgentTddMutationService.scopeKey(identity),
-                AgentTddWorkflowService.SIGNOFF, signoffRef.trim(), data);
+        return states.saveIfRevision(AgentTddMutationService.scopeKey(identity),
+                AgentTddWorkflowService.SIGNOFF, signoffRef.trim(), 0, data);
     }
 
     private static void requireRevision(AgentTddStoredAsset current, long expectedRevision, String label) {

@@ -99,6 +99,20 @@ public class DslImportService {
     }
 
     /**
+     * Resolves a set of runtime binding targets from one logical catalog projection.
+     *
+     * <p>Agent publication and execution use this bulk seam before creating their immutable
+     * operation catalog. It prevents a multi-node materialization from observing different live
+     * catalog revisions one lookup at a time.</p>
+     *
+     * @param operatorRefs exact target references and compatibility aliases to resolve
+     * @return immutable definitions keyed by the references visible in one catalog view
+     */
+    public Map<String, OperatorDefinition> resolveOperators(Iterable<String> operatorRefs) {
+        return catalog.findAll(operatorRefs);
+    }
+
+    /**
      * Builds a repository-level migration report by previewing every DSL source against the same
      * effective schema view.
      *

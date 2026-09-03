@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.GraphDraftOperatorSnapshotCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -89,7 +90,7 @@ public final class AgentTddWorkflowService {
                                               Map<String, Object> result,
                                               IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
-        markPassingCasesReady(arguments, result, identity);
+        markPassingCasesReady(result, identity);
         ObjectNode evidence = mapper.createObjectNode();
         evidence.put("toolRef", toolRef);
         evidence.put("operation", operation);
@@ -171,7 +172,8 @@ public final class AgentTddWorkflowService {
                 throw new AgentTddToolException(
                         "SPECCING_NOT_EXECUTABLE", "A Tool with unbound library operators cannot be published.");
             }
-            GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
+            FrozenExecutable frozen = frozenExecutable(draft);
+            GraphDraft executable = frozen.draft();
             JsonNode latest = states.find(scope(identity), VERDICT, toolRef)
                     .map(AgentTddStoredAsset::data)
                     .map(data -> data.path("latest"))
@@ -197,7 +199,7 @@ public final class AgentTddWorkflowService {
                     || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())) {
                 throw gate("The owner signoff does not approve this Tool.");
             }
-            DslGenerationResult generation = runner.compile(executable);
+            DslGenerationResult generation = runner.compileAgainst(executable, frozen.catalog());
             if (!generation.generated() || !generation.validation().valid()
                     || !generation.validation().actionReadiness().publishExecutableNow()) {
                 throw gate("The authoritative visual compiler did not accept executable publication.");
@@ -205,7 +207,7 @@ public final class AgentTddWorkflowService {
             List<OperatorDefinition> snapshots = snapshots(executable);
             VisualGraphPublication candidate = VisualGraphPublication.from(
                     executable, snapshots, generation.validation(), generation,
-                    GraphDraftDependencyReport.from(executable, catalog),
+                    GraphDraftDependencyReport.from(executable, frozen.catalog()),
                     VisualGraphPublication.PublicationMetadata.of(
                             identity.actorId(), "MCP_AGENT_TDD",
                             "Published after stable green baseline and owner signoff.", signoffRef));
@@ -253,7 +255,7 @@ public final class AgentTddWorkflowService {
                 .map(AgentTddStoredAsset::data).map(data -> data.path("latest")).orElse(null);
         String caseSetRef = latest == null ? "" : latest.path("caseSetRef").asText();
         String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
-        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
+        GraphDraft executable = frozenExecutable(draft).draft();
         String currentEvidenceFingerprint = currentEvidenceFingerprint(
                 toolRef, draft, executable, identity, caseSetRef, "GREEN");
         boolean green = latest != null && "GREEN".equals(latest.path("side").asText())
@@ -378,14 +380,23 @@ public final class AgentTddWorkflowService {
         return matrix;
     }
 
-    /** Advances successfully executed ACTIVE cases without changing their semantic evidence. */
-    private void markPassingCasesReady(JsonNode arguments,
-                                       Map<String, Object> result,
+    /**
+     * Advances successfully executed ACTIVE cases at the exact revision used by execution.
+     *
+     * <p>The execution result, rather than client arguments, is the only accepted durable source.
+     * A case-set edit between resolution and evidence persistence rejects the entire evidence write;
+     * it can never mark a different row revision READY merely because a case id was reused.</p>
+     */
+    private void markPassingCasesReady(Map<String, Object> result,
                                        IntegrationRequestContext identity) {
         String caseSetRef = Objects.toString(result.get("caseSetRef"), "").trim();
-        if (caseSetRef.isBlank()) caseSetRef = arguments.path("caseSetRef").asText().trim();
-        if (caseSetRef.isBlank()) caseSetRef = arguments.path("cases").path("caseSetRef").asText().trim();
         if (caseSetRef.isBlank()) return;
+        long executedRevision = result.get("caseSetRevision") instanceof Number revision
+                ? revision.longValue() : -1;
+        if (executedRevision < 1) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "Durable case execution revision is missing.");
+        }
         String resolvedCaseSetRef = caseSetRef;
         java.util.Set<String> passing = new java.util.LinkedHashSet<>();
         JsonNode executed = mapper.valueToTree(result.getOrDefault("cases", List.of()));
@@ -394,10 +405,13 @@ public final class AgentTddWorkflowService {
                 passing.add(row.path("caseId").asText());
             }
         });
-        if (passing.isEmpty()) return;
         AgentTddStoredAsset current = states.find(
                 scope(identity), AgentTddMutationService.CASE_SET, resolvedCaseSetRef).orElse(null);
-        if (current == null) return;
+        if (current == null || current.revision() != executedRevision) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "Case set changed after execution and before evidence persistence.");
+        }
+        if (passing.isEmpty()) return;
         ObjectNode data = (ObjectNode) current.data().deepCopy();
         boolean[] changed = {false};
         data.path("rows").forEach(row -> {
@@ -410,9 +424,25 @@ public final class AgentTddWorkflowService {
         });
         if (changed[0]) {
             states.saveIfRevision(scope(identity), AgentTddMutationService.CASE_SET,
-                    resolvedCaseSetRef, current.revision(), data);
+                    resolvedCaseSetRef, executedRevision, data);
         }
     }
+
+    private FrozenExecutable frozenExecutable(GraphDraft draft) {
+        Map<String, OperatorDefinition> targets = catalog.findAll(
+                AgentTddRuntimeBindingResolver.bindingLookupRefs(draft));
+        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(
+                draft, ref -> java.util.Optional.ofNullable(targets.get(ref)));
+        try {
+            return new FrozenExecutable(executable,
+                    GraphDraftOperatorSnapshotCatalog.from(executable));
+        } catch (IllegalArgumentException failure) {
+            throw new AgentTddToolException(
+                    "PUBLISH_GATE_NOT_MET", "Executable operator snapshots are incomplete or inconsistent.");
+        }
+    }
+
+    private record FrozenExecutable(GraphDraft draft, GraphDraftOperatorSnapshotCatalog catalog) { }
 
     private static String verdictLineRef(String toolRef, String goldenSetId) {
         return toolRef + ":" + goldenSetId;

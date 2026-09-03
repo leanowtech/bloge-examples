@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
@@ -15,6 +17,7 @@ import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDs
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualProductionAdmissionPolicy;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationResponse;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visualadapter.VisualSimulationKernelAdapter;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -25,6 +28,13 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Verifies library-aware compilation and the zero-egress red-side execution seam. */
 class AgentTddExecutionServiceTest {
@@ -147,6 +157,61 @@ class AgentTddExecutionServiceTest {
         assertThat(mapper.valueToTree(safe).toString())
                 .doesNotContain("customer-secret", "provider-secret", "message", "metadata")
                 .contains("visual.simulate.inputAssertionMismatch", "/fixtures/dependency/expectedInput");
+    }
+
+    @Test
+    void previewAndGateNeverExposeParserMessagesMetadataOrRegeneratedDsl() {
+        Fixture fixture = fixture();
+        JsonNode arguments = mapper.valueToTree(Map.of(
+                "source", Map.of("sourceId", "secret.bloge",
+                        "dsl", "graph broken { node x : customer-secret ("),
+                "libraryRefs", List.of()));
+
+        String preview = mapper.valueToTree(
+                fixture.tools().invoke("rg.dsl.preview", arguments, identity())).toString();
+        String gate = mapper.valueToTree(
+                fixture.tools().invoke("rg.gate.check", arguments, identity())).toString();
+
+        assertThat(preview).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
+        assertThat(gate).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
+        assertThat(preview).contains("visual.dslImport.parseFailed", "sourceMap");
+    }
+
+    @Test
+    void executionDoesNotReadTheLiveCatalogAfterCapturingItsOperationView() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(
+                new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                        "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(),
+                        "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        clearInvocations(fixture.catalog());
+
+        fixture.tools().invoke("rg.simulate", mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
+                "cases", Map.of("rows", List.of(Map.of(
+                        "caseId", "g1", "given", Map.of(),
+                        "stubs", Map.of("eligibility", Map.of("eligible", true, "ruleId", "R1")),
+                        "expect", Map.of("eligible", true, "ruleId", "R1")))))), identity());
+
+        verify(fixture.catalog(), never()).find(any());
+    }
+
+    @Test
+    void failsClosedWithStableCodeIfSimulationReportsARealExternalNode() {
+        OperatorDefinition external = VisualCatalogTestSupport.orderSubmittedEventSourceOperator();
+        GraphDraft draft = mock(GraphDraft.class);
+        when(draft.nodes()).thenReturn(List.of(new GraphDraft.DraftNode(
+                "events", external.operatorRef(), "", Map.of(), Map.of(), null)));
+        VisualOperatorCatalog catalog = mock(VisualOperatorCatalog.class);
+        when(catalog.find(external.operatorRef())).thenReturn(java.util.Optional.of(external));
+        VisualGraphSimulationResponse response = mock(VisualGraphSimulationResponse.class);
+        when(response.realNodeIds()).thenReturn(List.of("events"));
+
+        assertThatThrownBy(() -> AgentTddExecutionService.requireNoRealExternalCalls(
+                draft, response, catalog))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SIM_REAL_CALL_DETECTED"));
     }
 
     @Test
@@ -348,7 +413,7 @@ class AgentTddExecutionServiceTest {
                 library.version(), library.owner(), library.status(), library.builtInFunctions(), library.operators());
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(risk);
-        var catalog = VisualCatalogTestSupport.catalogWithLibrary(risk);
+        VisualOperatorCatalog catalog = spy(VisualCatalogTestSupport.catalogWithLibrary(risk));
         DslImportService projection = new DslImportService(catalog, new OperatorLibraryValidator());
         VisualGraphSimulationService simulation = new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
@@ -357,7 +422,7 @@ class AgentTddExecutionServiceTest {
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
                 libraries, drafts, mapper, projection, simulation);
-        return new Fixture(tools, drafts, projection, libraries, simulation);
+        return new Fixture(tools, drafts, projection, libraries, simulation, catalog);
     }
 
     private static String eligibilityDsl() {
@@ -395,5 +460,6 @@ class AgentTddExecutionServiceTest {
                            InMemoryGraphDraftRepository drafts,
                            DslImportService projection,
                            InMemoryOperatorLibraryRegistry libraries,
-                           VisualGraphSimulationService simulation) { }
+                           VisualGraphSimulationService simulation,
+                           VisualOperatorCatalog catalog) { }
 }

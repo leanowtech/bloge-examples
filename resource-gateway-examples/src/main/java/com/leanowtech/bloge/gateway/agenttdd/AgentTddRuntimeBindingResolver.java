@@ -9,6 +9,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.function.Function;
 
 /** Materializes server-approved library bindings into a compiler-only graph projection. */
@@ -98,6 +100,23 @@ final class AgentTddRuntimeBindingResolver {
         }
         identities.sort(Comparator.comparing(identity -> identity.get("nodeId")));
         return List.copyOf(identities);
+    }
+
+    /**
+     * Returns every exact and resource-compatibility reference needed to materialize a draft.
+     *
+     * <p>Callers bulk-resolve this closed set once and then pass the resulting immutable map to
+     * {@link #materialize(GraphDraft, Function)}. No live catalog access is needed afterward.</p>
+     */
+    static Set<String> bindingLookupRefs(GraphDraft draft) {
+        LinkedHashSet<String> refs = new LinkedHashSet<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            String bindingRef = bindingRef(draft.operatorSnapshots().get(node.id()));
+            if (bindingRef.isBlank()) continue;
+            refs.add(bindingRef);
+            refs.add("resource:" + bindingRef);
+        }
+        return Set.copyOf(refs);
     }
 
     private static OperatorDefinition resolve(

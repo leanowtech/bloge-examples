@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.runtime;
 
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -53,12 +54,38 @@ public class VisualGraphRunService {
      * @return generated DSL plus lowering/compiler diagnostics
      */
     public DslGenerationResult compile(GraphDraft draft) {
+        return compileWith(draft, validator, generator);
+    }
+
+    /**
+     * Compiles a materialized draft against one immutable operation catalog.
+     *
+     * <p>Governed publication passes the same frozen catalog used for executable identity and
+     * dependency reporting. Validation and DSL generation therefore cannot observe a later live
+     * catalog replacement.</p>
+     *
+     * @param draft materialized graph draft
+     * @param operationCatalog immutable operator definitions captured for this publication
+     * @return generated DSL plus lowering/compiler diagnostics
+     */
+    public DslGenerationResult compileAgainst(GraphDraft draft,
+                                              VisualOperatorCatalog operationCatalog) {
+        if (operationCatalog == null) {
+            throw new IllegalArgumentException("operationCatalog is required");
+        }
+        return compileWith(draft, new GraphDraftValidator(operationCatalog),
+                new GraphDraftDslGenerator(operationCatalog));
+    }
+
+    private DslGenerationResult compileWith(GraphDraft draft,
+                                            GraphDraftValidator operationValidator,
+                                            GraphDraftDslGenerator operationGenerator) {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
             return new DslGenerationResult(false, "", fingerprintDiagnostics,
                     repairValidation(draft, fingerprintDiagnostics));
         }
-        VisualValidationResult validation = validator.validate(draft);
+        VisualValidationResult validation = operationValidator.validate(draft);
         if (!validation.valid()) {
             return new DslGenerationResult(false, "", validation.diagnostics(), validation);
         }
@@ -66,7 +93,7 @@ public class VisualGraphRunService {
             return new DslGenerationResult(false, "", List.of(actionReadinessDiagnostic("compile",
                     validation.actionReadiness())), validation);
         }
-        DslGenerationResult generated = generator.generate(draft);
+        DslGenerationResult generated = operationGenerator.generate(draft);
         if (!generated.generated()) {
             return new DslGenerationResult(false, generated.dsl(), generated.diagnostics(), validation);
         }

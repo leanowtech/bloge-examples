@@ -353,7 +353,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 { "ok": true,  "data": {}, "diagnostics": [ {"level":"ERROR|WARNING|INFO","code":"","target":"","line":0,"column":0} ] }
 { "ok": false, "error": { "code":"", "message":"(无外部响应体/业务载荷)", "retryable": false, "details": {} } }
 ```
-诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。
+诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。`tools/call` 在调用前、返回前分别强制执行其公布的 input/output schema；不匹配时只返回固定协议错误，不回显校验材料。`dsl.preview`/`gate.check` 的投影同样移除底层 message、metadata 与内部 regenerated DSL。
 **稳定错误码目录**：`UNAUTHENTICATED` / `FORBIDDEN_PURPOSE` / `DRAFT_NOT_FOUND` / `LIBRARY_NOT_FOUND` / `COMPILE_ERROR` / `GATE_REJECTED` / `SPECCING_NOT_EXECUTABLE`（设计态不可真跑/发布）/ `GOLDEN_REQUIRES_APPROVAL` / `IDEMPOTENCY_CONFLICT` / `SCHEMA_NONCONFORMANT` / `AMBIGUOUS_OUTPUT_PORT` / `RETENTION_POLICY_VIOLATION` / `EGRESS_NOT_ALLOWED` / `PUBLISH_GATE_NOT_MET` / `SIM_REAL_CALL_DETECTED`（模拟中检测到真实外呼，失败关闭）/ `COMBINATORIAL_CAP_EXCEEDED`。
 
 **代表性工具完整 in/out**（其余同信封，I/O 见 4.5）：
@@ -374,7 +374,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 { "toolRef":"", "libraryRefs":["ride-cancellation"], "cases":{"caseSetRef":""},
   "adhocFixtures":[ {"nodeId":"fetchOrder","value":{"payload":{}}} ] }
 // out.data
-{ "goldenSetId":"", "side":"RED",
+{ "goldenSetId":"", "side":"RED", "caseSetRef":"", "caseSetRevision":1,
   "byLayer": {"unit":{"pass":0,"fail":0},"contract":{},"integration":{},"smoke":{}},
   "cases":[ {"caseId":"g3","layer":"contract","verdict":"RED_PASS|RED_FAIL|GREEN_PASS|GREEN_FAIL|GREEN_BLOCKED",
              "oracle":{"invariant":"","held":true},"schemaConformant":true} ],
@@ -425,7 +425,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 contractFingerprint = stableHash( 工具 I/O 契约 + 所有被引算子契约(archetype/input/output) )   // 不含 bindingRef 指向的实现
 goldenSetId         = stableHash( toolRef + contractFingerprint + sortedSet(caseIds) )
 ```
-实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线，但旧 GREEN 证据与人工签署失效；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线按 `{toolRef,goldenSetId}` 归档可查，矩阵不继承）。证据指纹另含草稿 revision、Oracle/stub 语义和每个 bindingRef 当前解析出的目标实现指纹；通过的 ACTIVE 行推进为 `qualityState=READY`，该运营状态不参与证据语义指纹。
+实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线，但旧 GREEN 证据与人工签署失效；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线按 `{toolRef,goldenSetId}` 归档可查，矩阵不继承）。证据指纹另含草稿 revision、Oracle/stub 语义和每个 bindingRef 当前解析出的目标实现指纹。GREEN/发布先批量解析 binding，再由物化图的 `operatorSnapshots` 建立本次操作的不可变 catalog；指纹、校验、模拟、DSL 生成、依赖报告和冻结发布物共享该视图。通过的 ACTIVE 行只在执行所得 `caseSetRevision` 仍匹配时以 CAS 推进为 `qualityState=READY`，该运营状态不参与证据语义指纹。
 
 **工具实现就绪状态机**：
 ```

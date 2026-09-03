@@ -175,7 +175,14 @@ public final class McpToolCatalog {
                 "description", "Business JSON constrained by the referenced runtime contract.");
     }
     private static Map<String, Object> anyJson() {
-        return Map.of("description", "Any JSON value constrained by the referenced runtime contract.");
+        return Map.of("oneOf", List.of(
+                Map.of("type", "object", "additionalProperties", true),
+                Map.of("type", "array", "items", true),
+                string(),
+                Map.of("type", "number"),
+                bool(),
+                Map.of("type", "null")),
+                "description", "Any JSON value constrained by the referenced runtime contract.");
     }
     private static Map<String, Object> structuredObject(Map<String, Object> properties, List<String> required) {
         return schema(properties, required);
@@ -215,7 +222,9 @@ public final class McpToolCatalog {
     private static Map<String, Object> caseRows() { return arrayOf(caseRow()); }
 
     private static Map<String, Object> casesEnvelope() {
-        return structuredObject(props("caseSetRef", string(), "rows", caseRows()), List.of());
+        return Map.of("oneOf", List.of(
+                structuredObject(props("caseSetRef", string()), List.of("caseSetRef")),
+                structuredObject(props("rows", caseRows()), List.of("rows"))));
     }
 
     private static Map<String, Object> enumeration() {
@@ -336,6 +345,7 @@ public final class McpToolCatalog {
                     "honestVerdict", honestVerdict()), List.of("libraryRefs"));
             case "rg.feature.rehearse", "rg.simulate", "rg.tool.baseline" -> structuredObject(props(
                     "goldenSetId", string(), "evidenceFingerprint", string(), "draftRevision", integer(),
+                    "caseSetRevision", integer(),
                     "side", enumString("RED", "GREEN"), "byLayer", executionLayerSummary(),
                     "cases", arrayOf(executionCase()), "realExternalCalls", integer(),
                     "honestVerdict", honestVerdict(), "evidenceRef", string(), "status", string(),

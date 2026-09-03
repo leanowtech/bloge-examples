@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -102,8 +104,12 @@ public final class McpProtocolController {
         if (!arguments.isObject()) {
             throw new McpProtocolException(-32602, "Tool arguments must be an object");
         }
+        requireSchemaMatch(definition.inputSchema(), arguments, -32602,
+                "Tool arguments do not match the declared input schema");
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
         JsonNode structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
+        requireSchemaMatch(definition.outputSchema(), structured, -32603,
+                "Tool response does not match the declared output schema");
         boolean isError = structured.has("ok") && !structured.path("ok").asBoolean();
         return Map.of(
                 "content", List.of(Map.of("type", "text", "text", structured.toString())),
@@ -180,5 +186,23 @@ public final class McpProtocolController {
     private static String header(HttpHeaders headers, String name) {
         String value = headers == null ? null : headers.getFirst(name);
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * Enforces the exact schema advertised by {@code tools/list} without reflecting rejected data.
+     *
+     * <p>Only a fixed protocol error is returned. Validator diagnostics are deliberately not copied
+     * because they may contain rejected property names or values supplied by the caller.</p>
+     */
+    private void requireSchemaMatch(Map<String, Object> schema,
+                                    JsonNode value,
+                                    int errorCode,
+                                    String safeMessage) {
+        Object schemaVisible = mapper.convertValue(value, Object.class);
+        SchemaEnvelope envelope = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA, "2020-12", schema);
+        if (!VisualSchemaValidator.validateValue(envelope, schemaVisible, "/mcp").isEmpty()) {
+            throw new McpProtocolException(errorCode, safeMessage);
+        }
     }
 }
