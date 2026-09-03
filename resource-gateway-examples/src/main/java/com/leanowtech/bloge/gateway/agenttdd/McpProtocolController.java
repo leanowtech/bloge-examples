@@ -26,9 +26,9 @@ import java.util.Objects;
  * Streamable-HTTP JSON-RPC boundary for the RG Agent TDD tool surface.
  *
  * <p>The boundary supports both the sessionless 2026-07-28 protocol and Codex clients using the
- * negotiated 2025-11-25 lifecycle. Stateless requests mirror method and tool name in routing
- * headers; negotiated legacy requests use their JSON-RPC body and protocol-version header. The
- * legacy {@code notifications/initialized} message is acknowledged without manufacturing a
+ * negotiated 2025-06-18 or 2025-11-25 lifecycle. Stateless requests mirror method and tool name in
+ * routing headers; negotiated legacy requests use their JSON-RPC body and protocol-version header.
+ * The legacy {@code notifications/initialized} message is acknowledged without manufacturing a
  * JSON-RPC response. Application identity is always derived from the existing RG integration
  * authority.</p>
  */
@@ -36,6 +36,7 @@ import java.util.Objects;
 public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
+    public static final String CODEX_PROTOCOL_VERSION = "2025-06-18";
     private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order: READ, "
             + "AUTHORING, EXECUTION, then GOVERNANCE. Never invent runtime bindings or approval "
             + "evidence. RED and GREEN must report realExternalCalls=0. Human Oracle approval and "
@@ -187,11 +188,7 @@ public final class McpProtocolController {
     }
 
     private Map<String, Object> listTools(IntegrationRequestContext ignored) {
-        return Map.of(
-                "tools", catalog.all().stream().map(McpToolDefinition::protocolView).toList(),
-                "ttlMs", 300_000,
-                "cacheScope", "user"
-        );
+        return Map.of("tools", catalog.all().stream().map(McpToolDefinition::protocolView).toList());
     }
 
     private Map<String, Object> discover() {
@@ -206,7 +203,8 @@ public final class McpProtocolController {
     private Map<String, Object> initialize(JsonNode params) {
         String requested = text(params, "protocolVersion");
         if (!requested.isBlank() && !MODERN_PROTOCOL_VERSION.equals(requested)
-                && !LEGACY_PROTOCOL_VERSION.equals(requested)) {
+                && !LEGACY_PROTOCOL_VERSION.equals(requested)
+                && !CODEX_PROTOCOL_VERSION.equals(requested)) {
             throw new McpProtocolException(-32602, "Unsupported MCP protocol version");
         }
         return Map.of(
@@ -245,7 +243,8 @@ public final class McpProtocolController {
      */
     private static void validateLegacyNotification(HttpHeaders headers) {
         String version = header(headers, "MCP-Protocol-Version");
-        if (!version.isBlank() && !LEGACY_PROTOCOL_VERSION.equals(version)) {
+        if (!version.isBlank() && !LEGACY_PROTOCOL_VERSION.equals(version)
+                && !CODEX_PROTOCOL_VERSION.equals(version)) {
             throw new McpProtocolException(-32022, "Unsupported MCP lifecycle notification version");
         }
     }
@@ -255,7 +254,7 @@ public final class McpProtocolController {
         if (version.isBlank()) {
             return;
         }
-        if (LEGACY_PROTOCOL_VERSION.equals(version)) {
+        if (LEGACY_PROTOCOL_VERSION.equals(version) || CODEX_PROTOCOL_VERSION.equals(version)) {
             return;
         }
         if (!MODERN_PROTOCOL_VERSION.equals(version)) {

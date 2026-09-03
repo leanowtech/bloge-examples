@@ -43,7 +43,7 @@ class McpProtocolControllerTest {
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
         assertThat(response.path("result").path("tools")).hasSize(24);
-        assertThat(response.path("result").path("ttlMs").asInt()).isPositive();
+        assertThat(response.path("result").fieldNames()).toIterable().containsExactly("tools");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -56,7 +56,7 @@ class McpProtocolControllerTest {
                 mapper, new McpToolCatalog(), authenticator,
                 (name, arguments, identity) -> Map.of("called", name));
         HttpHeaders headers = new HttpHeaders();
-        headers.set("MCP-Protocol-Version", McpProtocolController.LEGACY_PROTOCOL_VERSION);
+        headers.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
 
         ResponseEntity<JsonNode> response = controller.exchange(
                 request(8, "tools/list", Map.of()), headers);
@@ -72,7 +72,7 @@ class McpProtocolControllerTest {
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
                 (name, arguments, identity) -> Map.of());
         HttpHeaders headers = new HttpHeaders();
-        headers.set("MCP-Protocol-Version", McpProtocolController.LEGACY_PROTOCOL_VERSION);
+        headers.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
         JsonNode notification = mapper.valueToTree(Map.of(
                 "jsonrpc", "2.0", "method", "notifications/initialized", "params", Map.of()));
 
@@ -274,6 +274,11 @@ class McpProtocolControllerTest {
 
         JsonNode modern = controller.exchange(request(11, "initialize", Map.of(
                 "protocolVersion", McpProtocolController.MODERN_PROTOCOL_VERSION)), new HttpHeaders()).getBody();
+        JsonNode codex = controller.exchange(request(21, "initialize", Map.of(
+                "protocolVersion", McpProtocolController.CODEX_PROTOCOL_VERSION,
+                "capabilities", Map.of(),
+                "clientInfo", Map.of("name", "codex-mcp-client", "version", "0.150.0-alpha.8"))),
+                new HttpHeaders()).getBody();
         JsonNode unknown = controller.exchange(request(12, "initialize", Map.of(
                 "protocolVersion", "2099-01-01")), new HttpHeaders()).getBody();
 
@@ -281,6 +286,8 @@ class McpProtocolControllerTest {
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
         assertThat(modern.path("result").path("instructions").asText())
                 .startsWith("Use the Agent TDD tools in order");
+        assertThat(codex.path("result").path("protocolVersion").asText())
+                .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }
