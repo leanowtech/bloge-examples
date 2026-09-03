@@ -41,6 +41,13 @@ public final class McpToolCatalog {
                 McpToolImpact.DRAFT_WRITE,
                 props("libraryYaml", string(), "idempotencyKey", string()),
                 List.of("libraryYaml", "idempotencyKey")));
+        values.add(tool("rg.resource.declare", "Declare sandbox resource",
+                "Register one allowlisted read-only resource descriptor and its visual contract.",
+                McpToolImpact.DRAFT_WRITE,
+                props("resourceId", string(), "method", enumString("GET", "HEAD", "OPTIONS"),
+                        "urlTemplate", string(), "payloadSchema", businessObject(),
+                        "idempotencyKey", string()),
+                List.of("resourceId", "method", "urlTemplate", "payloadSchema", "idempotencyKey")));
         values.add(tool("rg.feature.compose", "Compose feature", "Create or replace a Feature graph draft.",
                 McpToolImpact.DRAFT_WRITE, composeProperties(), List.of("featureRef", "graph", "libraryRefs", "idempotencyKey")));
         values.add(tool("rg.tool.compose", "Compose tool", "Create or replace a Tool graph draft.",
@@ -351,6 +358,9 @@ public final class McpToolCatalog {
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
                     "honestVerdict", honestVerdict()), List.of("libraryId", "version"));
+            case "rg.resource.declare" -> structuredObject(props("resourceId", string(), "registered", bool(),
+                    "host", string(), "method", string(), "contractId", string()),
+                    List.of("resourceId", "registered", "host", "method", "contractId"));
             case "rg.feature.compose", "rg.tool.compose" -> structuredObject(props("assetRef", string(),
                     "assetKind", string(), "revision", integer(), "speccing", bool(), "executable", bool(),
                     "libraryRefs", stringArray(), "honestVerdict", honestVerdict()),

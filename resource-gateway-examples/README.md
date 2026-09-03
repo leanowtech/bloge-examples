@@ -29,6 +29,10 @@ payload-free and returned with `no-store` rather than sampling fixtures or provi
 sample list reads only governed Fixture descriptors. `rg.fixture.provide` validates a supplied sample against
 one exact operator output port, then server-derives its Fixture id, scope, schema reference, retention and
 SAMPLE lineage; the MCP response never echoes the sample value.
+When a bound read dependency does not exist yet, `rg.tool.compose` returns
+`RESOURCE_NOT_REGISTERED`. The authoring-only `rg.resource.declare` bridge registers an allowlisted
+`GET`, `HEAD`, or `OPTIONS` descriptor together with its visual design contract; write methods fail
+closed until a sandbox substitute and reconciliation contract exist.
 Agent TDD resource declaration and sandbox attestation share an exact-host egress policy configured by
 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`. It rejects wildcard/suffix matching, user-info, authority templates,
 non-HTTP schemes and an empty allowlist; the local default admits only `localhost` and `127.0.0.1`.

@@ -81,7 +81,7 @@ url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING" }
 enabled_tools = [
-  "rg.library.upsert", "rg.feature.compose", "rg.tool.compose",
+  "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
   "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
   "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec"
 ]
@@ -133,6 +133,8 @@ codex mcp get rg_read
 在 Codex 会话中输入 `/mcp`，应看到四个 server 均已连接。Resource Gateway 会与当前 Codex 协商 `2025-06-18` 生命周期；也兼容仓库定义的无状态 `2026-07-28` 请求和旧 `2025-11-25` initialize。Codex 会自动完成 `initialize` 和 `notifications/initialized`。
 
 业务方直接给出典型数据时，使用 `rg.fixture.provide`，传入 `operatorRef`、精确 `outputPort`、`sampleValue`、分类、保留天数和幂等键。服务端先按该输出端口的 Schema 校验样本，再派生 Fixture ID、作用域、Schema 引用和 SAMPLE 来源。响应不返回 `sampleValue`。同一幂等键携带不同样本时，请求返回 `IDEMPOTENCY_CONFLICT`。
+
+编排引用尚未登记的资源时，`rg.tool.compose` 返回 `RESOURCE_NOT_REGISTERED`。先调用 `rg.resource.declare`，提交 `resourceId`、`method`、`urlTemplate`、响应 `payloadSchema` 和幂等键，再重新编排。该工具只接受 `GET`、`HEAD` 和 `OPTIONS`，并同时写入资源描述符与可视化设计契约；目标主机必须命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 的精确白名单。登记成功后，使用 `resource:<resourceId>` 作为库算子的 `runtime.bindingRef`。当前桥接不登记写操作；需要写外部系统时停止流程，先建立沙箱替身和对账方案。
 
 连接失败时先检查：
 

@@ -414,7 +414,9 @@ public final class AgentTddMutationService {
             OperatorDefinition target = projection.resolveOperator(binding)
                     .or(() -> projection.resolveOperator("resource:" + binding))
                     .orElseThrow(() -> new AgentTddToolException(
-                            "LIBRARY_NOT_FOUND", "runtime.bindingRef does not resolve in the server catalog."));
+                            Set.of("resource-read", "external-write").contains(bindingArchetype(operator))
+                                    ? "RESOURCE_NOT_REGISTERED" : "LIBRARY_NOT_FOUND",
+                            "runtime.bindingRef does not resolve in the server catalog."));
             requireCompatibleBinding(operator, target);
             OperatorDefinition.Source source = new OperatorDefinition.Source(
                     target.source().kind(), target.source().resourceId(), target.source().method(),
@@ -470,12 +472,17 @@ public final class AgentTddMutationService {
     }
 
     private static String bindingArchetype(OperatorDefinition operator) {
-        return operator.display().tags().stream()
+        String declared = operator.display().tags().stream()
                 .map(value -> value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT))
                 .filter(Set.of("resource-read", "external-write", "remote-worker", "ai-tool",
                         "event-source", "message-handler", "webhook")::contains)
                 .findFirst()
                 .orElse(operator.source().kind());
+        if ("resource-descriptor".equals(declared)) {
+            return "WRITE_EXTERNAL".equals(operator.capabilities().effect())
+                    ? "external-write" : "resource-read";
+        }
+        return declared;
     }
 
     private GraphDraft scoped(GraphDraft source,

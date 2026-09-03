@@ -16,13 +16,14 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(25);
+        assertThat(catalog.all()).hasSize(26);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.oracle.propose").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.simulate").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.tool.publish").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
+        assertThat(catalog.require("rg.resource.declare").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
     }
 
@@ -86,6 +87,12 @@ class McpToolCatalogTest {
                 "redactPaths", "idempotencyKey");
         assertThat(stringKeys(dataProperties(catalog.require("rg.fixture.provide")))).contains(
                 "fixtureId", "scope", "schemaRef", "sourceKind", "lineageRef");
+        Map<?, ?> declareInput = (Map<?, ?>) catalog.require("rg.resource.declare")
+                .inputSchema().get("properties");
+        assertThat(stringKeys(declareInput)).containsExactlyInAnyOrder(
+                "resourceId", "method", "urlTemplate", "payloadSchema", "idempotencyKey");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.resource.declare")))).containsExactlyInAnyOrder(
+                "resourceId", "registered", "host", "method", "contractId");
     }
 
     @Test
