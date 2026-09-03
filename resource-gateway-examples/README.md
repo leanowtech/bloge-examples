@@ -22,6 +22,8 @@ no-store review details at
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
+The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened
+deployment should set the launcher's `RESOURCE_GATEWAY_ADDRESS=0.0.0.0` or Spring's `SERVER_ADDRESS` directly.
 External PostgreSQL deployments apply
 `db/postgresql/V20260903_020__agent_tdd_runtime.sql`; runtime DDL remains H2-only.
 Its scenario compiler covers the complete seven-behavior dependency vocabulary through the shared

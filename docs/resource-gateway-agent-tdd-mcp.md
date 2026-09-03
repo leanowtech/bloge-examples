@@ -20,17 +20,25 @@
 前置条件：Java 25、Maven 3.9，以及本机 Maven 仓库中已安装的 BLOGE 依赖。先在专门运行 Resource Gateway 的 **终端 A** 中执行；不要从这个终端启动 Codex：
 
 ```bash
+printf 'Local Agent token: '
+IFS= read -rs RG_AGENT_DEMO_TOKEN
+printf '\nLocal reviewer token: '
+IFS= read -rs RG_REVIEW_DEMO_TOKEN
+printf '\n'
+
 RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true \
-RG_INTEGRATION_DEMO_TOKEN='replace-with-a-local-agent-token' \
-RG_INTEGRATION_DEMO_REVIEW_TOKEN='replace-with-a-different-reviewer-token' \
+RG_INTEGRATION_DEMO_TOKEN="${RG_AGENT_DEMO_TOKEN}" \
+RG_INTEGRATION_DEMO_REVIEW_TOKEN="${RG_REVIEW_DEMO_TOKEN}" \
 RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,CORRECTNESS_FIXTURE_MATERIAL_WRITE' \
 RESOURCE_GATEWAY_PORT=8081 \
 ./scripts/start-examples.sh resource-gateway
 
+unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
+
 ./scripts/example-services.sh status resource-gateway
 ```
 
-启动脚本会管理 PID、日志、端口和 readiness，默认绑定 `127.0.0.1`，并设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。只有在已配置正式身份提供方、网络访问控制和 TLS 后，才可用 `RESOURCE_GATEWAY_ADDRESS`（或 `SERVER_ADDRESS`）开放非 loopback 地址。
+启动脚本会管理 PID、日志、端口和 readiness，默认绑定 `127.0.0.1`，并设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。只有在已配置正式身份提供方、网络访问控制和 TLS 后，才可将 `RESOURCE_GATEWAY_ADDRESS` 设置为 `0.0.0.0`；启动脚本仍通过 loopback 做 readiness。直接运行 Spring Boot 时才使用 `SERVER_ADDRESS`。
 
 - MCP：`http://localhost:8081/mcp`
 - 人工看板：`http://localhost:8081/agent-tdd.html`
@@ -98,14 +106,17 @@ tool_timeout_sec = 120
 不要把 Bearer token 直接写进 TOML。在独立的 **终端 B** 中只注入 Agent token，再从这里启动 Codex CLI：
 
 ```bash
-export RG_MCP_TOKEN='replace-with-a-local-agent-token'
+printf 'Local Agent token: '
+IFS= read -rs RG_MCP_TOKEN
+printf '\n'
+export RG_MCP_TOKEN
 unset RG_REVIEW_TOKEN RG_INTEGRATION_DEMO_REVIEW_TOKEN
 codex
 ```
 
 Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_TOKEN`，然后完全退出并重新打开。不要从终端 A 启动 Desktop、CLI 或 IDE；也不要把 reviewer token 存进能被 Codex 进程继承的全局 Shell 配置。
 
-**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml` 或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 `replace-with-a-different-reviewer-token`；该值只保存在当前页面内存。Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
+**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
 
 检查配置：
 
