@@ -409,16 +409,37 @@ public final class AgentTddMutationService {
     private GraphDraft resolveRuntimeBindings(GraphDraft draft) {
         Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>(draft.operatorSnapshots());
         Map<String, String> fingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
-        snapshots.replaceAll((nodeId, operator) -> {
-            if (operator == null) return null;
+        Map<String, OperatorDefinition> resolvedTargets = new LinkedHashMap<>();
+        List<String> missingResourceIds = new ArrayList<>();
+        snapshots.forEach((nodeId, operator) -> {
+            if (operator == null) return;
             Object configured = bindingRef(operator);
-            if (!(configured instanceof String binding) || binding.isBlank()) return operator;
+            if (!(configured instanceof String binding) || binding.isBlank()) return;
             OperatorDefinition target = projection.resolveOperator(binding)
                     .or(() -> projection.resolveOperator("resource:" + binding))
-                    .orElseThrow(() -> new AgentTddToolException(
-                            Set.of("resource-read", "external-write").contains(bindingArchetype(operator))
-                                    ? "RESOURCE_NOT_REGISTERED" : "LIBRARY_NOT_FOUND",
-                            "runtime.bindingRef does not resolve in the server catalog."));
+                    .orElse(null);
+            if (target == null) {
+                if (Set.of("resource-read", "external-write").contains(bindingArchetype(operator))) {
+                    missingResourceIds.add(binding.startsWith("resource:")
+                            ? binding.substring("resource:".length()) : binding);
+                    return;
+                }
+                throw new AgentTddToolException(
+                        "LIBRARY_NOT_FOUND", "runtime.bindingRef does not resolve in the server catalog.");
+            }
+            resolvedTargets.put(nodeId, target);
+        });
+        if (!missingResourceIds.isEmpty()) {
+            List<String> ordered = missingResourceIds.stream().distinct().sorted().toList();
+            throw new AgentTddToolException("RESOURCE_NOT_REGISTERED",
+                    "One or more runtime resources are not registered.",
+                    Map.of("missingResourceIds", ordered));
+        }
+        snapshots.replaceAll((nodeId, operator) -> {
+            if (operator == null) return null;
+            OperatorDefinition target = resolvedTargets.get(nodeId);
+            if (target == null) return operator;
+            String binding = String.valueOf(bindingRef(operator));
             requireCompatibleBinding(operator, target);
             OperatorDefinition.Source source = new OperatorDefinition.Source(
                     target.source().kind(), target.source().resourceId(), target.source().method(),

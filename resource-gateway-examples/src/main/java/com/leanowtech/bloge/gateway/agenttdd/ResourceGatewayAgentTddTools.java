@@ -206,7 +206,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");
             };
         } catch (AgentTddToolException failure) {
-            return failure(failure.code(), safeErrorMessage(failure.code()));
+            return failure(failure.code(), safeErrorMessage(failure.code()), failure.details());
         }
     }
 
@@ -506,13 +506,19 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     }
 
     private static Map<String, Object> failure(String code, String message) {
+        return failure(code, message, Map.of());
+    }
+
+    private static Map<String, Object> failure(String code,
+                                               String message,
+                                               Map<String, Object> details) {
         return Map.of(
                 "ok", false,
                 "error", Map.of(
                         "code", code,
                         "message", message,
                         "retryable", false,
-                        "details", Map.of()),
+                        "details", details == null ? Map.of() : Map.copyOf(details)),
                 "diagnostics", List.of()
         );
     }

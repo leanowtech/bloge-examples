@@ -228,6 +228,36 @@ class AgentTddBoardTest {
     }
 
     @Test
+    void boardMarksCoverageUnknownWhenAnOpaquePredicateHasNoAuthorSample() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        GraphDraft draft = toolDraft("opaque-policy", "IMPLEMENTING");
+        Map<String, Object> config = Map.of(
+                "conditionColumns", List.of(Map.of("id", "riskBand", "label", "风险带")),
+                "outputColumns", List.of(Map.of("id", "decision", "label", "处置")),
+                "rules", List.of(Map.of(
+                        "id", "R1",
+                        "conditions", Map.of("riskBand", "matches proprietary-band"),
+                        "outputs", Map.of("decision", "REVIEW"))));
+        when(draft.nodes()).thenReturn(List.of(new GraphDraft.DraftNode(
+                "policy", "bloge:decisionTable", "Opaque policy", Map.of(), config, null)));
+        when(drafts.all()).thenReturn(List.of(draft));
+        AgentTddWorkflowService workflow = mock(AgentTddWorkflowService.class);
+        when(workflow.readiness(any(), eq(identity())))
+                .thenReturn(readiness("opaque-policy", "IMPLEMENTING", false, false));
+
+        Map<?, ?> tool = (Map<?, ?>) ((List<?>) new AgentTddBoardService(
+                drafts, new InMemoryAgentTddStateRepository(), workflow, mapper)
+                .board(identity()).get("tools")).getFirst();
+        Map<?, ?> coverage = (Map<?, ?>) tool.get("factCoverage");
+
+        assertThat(coverage.get("status")).isEqualTo("UNKNOWN");
+        assertThat(coverage.get("coverageComplete")).isEqualTo(false);
+        assertThat(coverage.get("unknownDimensions").toString())
+                .contains("riskBand", "REPRESENTATIVE_VALUES_REQUIRED");
+        assertThat(coverage.get("blindSpots")).isEqualTo(List.of());
+    }
+
+    @Test
     void controllerAuthenticatesReadAndGovernedApprovalSeparately() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         AgentTddBoardService board = mock(AgentTddBoardService.class);
@@ -318,10 +348,11 @@ class AgentTddBoardTest {
             assertThat(html).contains("Agent TDD 看板", "STRUCTURE_ONLY", "expectedRevision",
                             "五幕业务旅程", "业务主线 · 各工具进行到哪一幕",
                             "第1幕 · 你的世界观与可用积木", "buildingBlocks", "worldModel",
-                            "/api/agent-tdd/library-overview", "仅契约", "已接入",
+                            "/api/agent-tdd/library-overview", "草稿世界观 · 待用例检验", "已接入",
                             "第2幕 · 已提供样例", "providedFixtures", "sourceKind",
                             "NEXT_ACTION_LABELS", "journey-dot", "输入 / 输出契约",
                             "renderRuleMatrix", "覆盖 · 已覆盖", "查看事实组合盲区",
+                            "代表值待补充", "coverageComplete",
                             "展开查看技术结构", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef", "实景验证",
                             "data-attestation-rerun", "/attestations/")

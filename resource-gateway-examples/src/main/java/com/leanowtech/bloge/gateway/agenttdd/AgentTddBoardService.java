@@ -351,15 +351,30 @@ public final class AgentTddBoardService {
     private Map<String, Object> factCoverage(GraphDraft draft, List<JsonNode> activeGoldenGiven) {
         AgentTddDecisionScenarioEnumerator enumerator = new AgentTddDecisionScenarioEnumerator(mapper);
         LinkedHashMap<String, LinkedHashSet<JsonNode>> merged = new LinkedHashMap<>();
-        draft.nodes().stream().filter(AgentTddBoardService::isDecisionTable).forEach(node ->
-                enumerator.factDomains(node).forEach((column, values) -> values.forEach(value ->
-                        merged.computeIfAbsent(column, ignored -> new LinkedHashSet<>()).add(value))));
+        LinkedHashSet<String> unknownColumns = new LinkedHashSet<>();
+        draft.nodes().stream().filter(AgentTddBoardService::isDecisionTable).forEach(node -> {
+            AgentTddDecisionScenarioEnumerator.FactDomainAnalysis analysis =
+                    enumerator.analyzeFactDomains(node);
+            analysis.domains().forEach((column, values) -> values.forEach(value ->
+                    merged.computeIfAbsent(column, ignored -> new LinkedHashSet<>()).add(value)));
+            unknownColumns.addAll(analysis.unknownColumns());
+        });
         List<String> columns = merged.keySet().stream().sorted().toList();
         LinkedHashMap<String, List<JsonNode>> domains = new LinkedHashMap<>();
         columns.forEach(column -> domains.put(column, List.copyOf(merged.get(column))));
         List<Map<String, Object>> dimensions = columns.stream().map(column -> Map.<String, Object>of(
                 "column", column,
                 "values", domains.get(column).stream().map(this::plainValue).toList())).toList();
+        List<Map<String, Object>> unknownDimensions = unknownColumns.stream().sorted()
+                .map(column -> Map.<String, Object>of(
+                        "column", column,
+                        "reasonCode", "REPRESENTATIVE_VALUES_REQUIRED"))
+                .toList();
+        if (!unknownDimensions.isEmpty()) {
+            return Map.of("status", "UNKNOWN", "coverageComplete", false,
+                    "dimensions", dimensions, "unknownDimensions", unknownDimensions,
+                    "coveredCount", 0L, "totalCount", 0L, "blindSpots", List.of());
+        }
         Set<List<JsonNode>> covered = new LinkedHashSet<>();
         for (JsonNode given : activeGoldenGiven) {
             List<JsonNode> combination = new ArrayList<>();
@@ -384,7 +399,9 @@ public final class AgentTddBoardService {
         }
         List<Map<String, Object>> blindSpots = new ArrayList<>();
         appendBlindSpots(columns, domains, covered, 0, new ArrayList<>(), blindSpots);
-        return Map.of("dimensions", dimensions, "coveredCount", (long) covered.size(),
+        return Map.of("status", columns.isEmpty() ? "NOT_APPLICABLE" : "COMPLETE",
+                "coverageComplete", true, "dimensions", dimensions,
+                "unknownDimensions", List.of(), "coveredCount", (long) covered.size(),
                 "totalCount", total, "blindSpots", List.copyOf(blindSpots));
     }
 

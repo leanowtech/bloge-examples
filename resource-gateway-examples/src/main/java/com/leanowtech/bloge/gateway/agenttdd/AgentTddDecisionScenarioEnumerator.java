@@ -84,16 +84,33 @@ public final class AgentTddDecisionScenarioEnumerator {
      * @return ordered fact columns and their representative boundary values
      */
     public Map<String, List<JsonNode>> factDomains(GraphDraft.DraftNode node) {
+        return analyzeFactDomains(node).domains();
+    }
+
+    /**
+     * Derives enumerable domains and explicitly names predicates that still need author samples.
+     *
+     * <p>A board must not interpret an empty domain as complete coverage when the predicate grammar
+     * is opaque. Keeping the unknown columns beside the known domains lets every projection fail
+     * closed without teaching a second predicate parser.</p>
+     *
+     * @param node decision-table node whose rules define the bounded fact space
+     * @return immutable known domains plus deterministically ordered unknown columns
+     */
+    public FactDomainAnalysis analyzeFactDomains(GraphDraft.DraftNode node) {
         if (node == null || !Set.of("bloge:decisionTable", "decision_table").contains(node.operatorRef())) {
-            return Map.of();
+            return new FactDomainAnalysis(Map.of(), List.of());
         }
         if (!(node.config().get("rules") instanceof List<?>)) {
-            return Map.of();
+            return new FactDomainAnalysis(Map.of(), List.of());
         }
         LinkedHashMap<String, LinkedHashSet<JsonNode>> domains = new LinkedHashMap<>();
+        LinkedHashSet<String> unknownColumns = new LinkedHashSet<>();
         for (Rule rule : rules(node.config().get("rules"), mapper.createObjectNode())) {
             for (Predicate predicate : rule.predicates()) {
-                if (!predicate.blocked()) {
+                if (predicate.blocked()) {
+                    unknownColumns.add(predicate.column());
+                } else {
                     predicate.values().forEach(value -> domains
                             .computeIfAbsent(predicate.column(), ignored -> new LinkedHashSet<>())
                             .add(value.deepCopy()));
@@ -104,7 +121,17 @@ public final class AgentTddDecisionScenarioEnumerator {
         domains.keySet().stream().sorted().forEach(column -> ordered.put(column,
                 domains.get(column).stream().sorted(AgentTddDecisionScenarioEnumerator::compareValues)
                         .map(value -> (JsonNode) value.deepCopy()).toList()));
-        return java.util.Collections.unmodifiableMap(ordered);
+        return new FactDomainAnalysis(java.util.Collections.unmodifiableMap(ordered),
+                unknownColumns.stream().sorted().toList());
+    }
+
+    /** Immutable decision fact-space analysis shared by enumeration and the business board. */
+    public record FactDomainAnalysis(Map<String, List<JsonNode>> domains,
+                                     List<String> unknownColumns) {
+        public FactDomainAnalysis {
+            domains = domains == null ? Map.of() : Map.copyOf(domains);
+            unknownColumns = unknownColumns == null ? List.of() : List.copyOf(unknownColumns);
+        }
     }
 
     private List<ObjectNode> perRule(String nodeId, List<Rule> rules, int cap, String oracleOwner) {

@@ -384,8 +384,21 @@ class AgentTddMcpOperationalWorkflowTest {
             String revised = (String) javascript.executeScript(
                     "return renderRuleMatrix(arguments[0]);", changed);
 
+            @SuppressWarnings("unchecked")
+            List<Number> journeyCounts = (List<Number>) javascript.executeScript("""
+                    const host = document.createElement('div');
+                    host.innerHTML = renderTool(arguments[0]);
+                    document.body.appendChild(host);
+                    return [host.querySelectorAll('.journey-dot').length,
+                            host.querySelectorAll('.journey-dot.active').length];
+                    """, Map.of(
+                    "toolRef", "journey-dom-test",
+                    "state", "IMPLEMENTING",
+                    "journey", Map.of("stageIndex", 2, "nextAction", "ADD_GOLDEN")));
+
             assertThat(original).contains("责任方", "处置", "REVIEW", "ESCALATE_HUMAN");
             assertThat(revised).contains("APPROVE").doesNotContain(">REVIEW<");
+            assertThat(journeyCounts).extracting(Number::intValue).containsExactly(5, 3);
         } finally {
             browser.quit();
         }

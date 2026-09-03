@@ -306,6 +306,26 @@ class AgentTddMutationServiceTest {
     }
 
     @Test
+    void composeReportsEveryMissingResourceBindingAsPayloadFreeStructuredDetails() {
+        Fixture fixture = fixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", twoMissingResourcesLibraryYaml(), "idempotencyKey", "missing-lib-1")));
+
+        JsonNode response = invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "missing-resources-tool",
+                "graph", Map.of("sourceId", "missing.bloge", "dsl", twoMissingResourcesDsl()),
+                "libraryRefs", List.of("missing-resources"),
+                "idempotencyKey", "missing-compose-1")));
+
+        assertThat(response.path("ok").asBoolean()).isFalse();
+        assertThat(response.at("/error/code").asText()).isEqualTo("RESOURCE_NOT_REGISTERED");
+        assertThat(response.at("/error/details/missingResourceIds"))
+                .containsExactly(mapper.valueToTree("catalog-service.lookup"),
+                        mapper.valueToTree("pricing-service.quote"));
+        assertThat(response.toString()).doesNotContain("urlTemplate", "payload", "secret");
+    }
+
+    @Test
     void composeCannotReplaceAnotherTenantDraftWithTheSameReference() {
         Fixture fixture = fixtureWithTool();
         IntegrationRequestContext otherTenant = new IntegrationRequestContext(
@@ -403,6 +423,41 @@ class AgentTddMutationServiceTest {
                     input: { orderId: string }
                     output: { fee: number }
                     runtime: { bindingRef: "resource:shipping-service.quote" }
+                """;
+    }
+
+    private static String twoMissingResourcesLibraryYaml() {
+        return """
+                schemaVersion: bloge.visualLibraryAuthoring.v1
+                library: { id: missing-resources, name: Missing resources, version: 0.1.0, owner: ops }
+                defaults: { operatorVersion: 0.1.0, namespace: missing }
+                operators:
+                  missing:catalog:
+                    name: Catalog lookup
+                    archetype: resource-read
+                    requiresSecrets: false
+                    input: { itemId: string }
+                    output: { price: number }
+                    runtime: { bindingRef: "resource:catalog-service.lookup" }
+                  missing:pricing:
+                    name: Pricing quote
+                    archetype: resource-read
+                    requiresSecrets: false
+                    input: { itemId: string }
+                    output: { price: number }
+                    runtime: { bindingRef: "resource:pricing-service.quote" }
+                """;
+    }
+
+    private static String twoMissingResourcesDsl() {
+        return """
+                graph missingResources {
+                  input { itemId: String }
+                  output { price: Decimal }
+                  node catalog : "missing:catalog" { input { itemId = ctx.itemId } }
+                  node pricing : "missing:pricing" { input { itemId = ctx.itemId } }
+                  transform response { price = pricing.output.price }
+                }
                 """;
     }
 
