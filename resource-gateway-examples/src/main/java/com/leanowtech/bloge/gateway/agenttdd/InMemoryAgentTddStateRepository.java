@@ -93,7 +93,7 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
             throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
                     "The idempotency key was already used for different request material.");
         }
-        return Optional.of(entry.response().deepCopy());
+        return entry.completed() ? Optional.of(entry.response().deepCopy()) : Optional.empty();
     }
 
     @Override
@@ -104,11 +104,11 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
                                     JsonNode response) {
         String key = idempotencyKey(scopeKey, operation, idempotencyKey);
         IdempotencyEntry previous = idempotency.get(key);
-        if (previous != null && !previous.requestFingerprint().equals(requestFingerprint)) {
-            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
-                    "The idempotency key was already used for different request material.");
+        if (previous != null) {
+            requireMatchingFingerprint(previous, requestFingerprint);
+            if (previous.completed()) return;
         }
-        idempotency.putIfAbsent(key, new IdempotencyEntry(requestFingerprint, response.deepCopy()));
+        idempotency.put(key, new IdempotencyEntry(requestFingerprint, response.deepCopy(), true));
     }
 
     @Override
@@ -124,6 +124,51 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
         return response.deepCopy();
     }
 
+    @Override
+    public synchronized ExternalExecutionReservation reserveExternalExecution(
+            String scopeKey,
+            String operation,
+            String idempotencyKey,
+            String requestFingerprint) {
+        String key = idempotencyKey(scopeKey, operation, idempotencyKey);
+        IdempotencyEntry existing = idempotency.get(key);
+        if (existing != null) {
+            requireMatchingFingerprint(existing, requestFingerprint);
+            return existing.completed()
+                    ? new ExternalExecutionReservation(ExternalExecutionStatus.COMPLETED, existing.response())
+                    : new ExternalExecutionReservation(ExternalExecutionStatus.IN_PROGRESS, null);
+        }
+        idempotency.put(key, new IdempotencyEntry(requestFingerprint, null, false));
+        return new ExternalExecutionReservation(ExternalExecutionStatus.ACQUIRED, null);
+    }
+
+    @Override
+    public synchronized JsonNode completeExternalExecution(String scopeKey,
+                                                           String operation,
+                                                           String idempotencyKey,
+                                                           String requestFingerprint,
+                                                           JsonNode response) {
+        String key = idempotencyKey(scopeKey, operation, idempotencyKey);
+        IdempotencyEntry existing = idempotency.get(key);
+        if (existing == null) {
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The external execution reservation does not exist.");
+        }
+        requireMatchingFingerprint(existing, requestFingerprint);
+        if (existing.completed()) return existing.response().deepCopy();
+        JsonNode copy = response == null ? com.fasterxml.jackson.databind.node.NullNode.getInstance()
+                : response.deepCopy();
+        idempotency.put(key, new IdempotencyEntry(requestFingerprint, copy, true));
+        return copy.deepCopy();
+    }
+
+    private static void requireMatchingFingerprint(IdempotencyEntry entry, String requestFingerprint) {
+        if (!entry.requestFingerprint().equals(requestFingerprint)) {
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The idempotency key was already used for different request material.");
+        }
+    }
+
     private static String assetKey(String scope, String kind, String ref) {
         return scope + '\u001f' + kind + '\u001f' + ref;
     }
@@ -132,5 +177,5 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
         return scope + '\u001f' + operation + '\u001f' + key;
     }
 
-    private record IdempotencyEntry(String requestFingerprint, JsonNode response) { }
+    private record IdempotencyEntry(String requestFingerprint, JsonNode response, boolean completed) { }
 }

@@ -47,6 +47,9 @@ class DatabaseAgentTddStateRepositoryPostgresCertificationTest {
                 .setServerConfig("synchronous_commit", "on")
                 .setServerConfig("lock_timeout", "5s")
                 .start();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260903_020__agent_tdd_runtime.sql"))
+                .execute(postgres.getPostgresDatabase());
     }
 
     @AfterAll
@@ -60,8 +63,6 @@ class DatabaseAgentTddStateRepositoryPostgresCertificationTest {
     void concurrentSameKeyReturnsTheExactCommittedReplayWithoutAbortingTheTransaction()
             throws Exception {
         DataSource dataSource = postgres.getPostgresDatabase();
-        new ResourceDatabasePopulator(new ClassPathResource(
-                "db/postgresql/V20260903_020__agent_tdd_runtime.sql")).execute(dataSource);
         Replica first = replica(dataSource);
         Replica second = replica(dataSource);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -111,6 +112,41 @@ class DatabaseAgentTddStateRepositoryPostgresCertificationTest {
             releaseFirstAction.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void unfinishedExternalReservationIsVisibleAcrossReplicasBeforeAnyCompletion() {
+        DataSource dataSource = postgres.getPostgresDatabase();
+        Replica first = replica(dataSource);
+        Replica second = replica(dataSource);
+
+        AgentTddStateRepository.ExternalExecutionReservation acquired = first.transactions().execute(status ->
+                first.repository().reserveExternalExecution(
+                        "tenant|project|test", "ATTESTATION_EXECUTE",
+                        "attest-crash-safe", "sha256:attest"));
+        AgentTddStateRepository.ExternalExecutionReservation observed = second.transactions().execute(status ->
+                second.repository().reserveExternalExecution(
+                        "tenant|project|test", "ATTESTATION_EXECUTE",
+                        "attest-crash-safe", "sha256:attest"));
+
+        assertThat(acquired.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.ACQUIRED);
+        assertThat(observed.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.IN_PROGRESS);
+        JsonNode completed = second.transactions().execute(status ->
+                second.repository().completeExternalExecution(
+                        "tenant|project|test", "ATTESTATION_EXECUTE",
+                        "attest-crash-safe", "sha256:attest",
+                        mapper.valueToTree(Map.of("status", "ATTESTED"))));
+        AgentTddStateRepository.ExternalExecutionReservation replay = first.transactions().execute(status ->
+                first.repository().reserveExternalExecution(
+                        "tenant|project|test", "ATTESTATION_EXECUTE",
+                        "attest-crash-safe", "sha256:attest"));
+
+        assertThat(completed.path("status").asText()).isEqualTo("ATTESTED");
+        assertThat(replay.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.COMPLETED);
+        assertThat(replay.response()).isEqualTo(completed);
     }
 
     private Replica replica(DataSource dataSource) {

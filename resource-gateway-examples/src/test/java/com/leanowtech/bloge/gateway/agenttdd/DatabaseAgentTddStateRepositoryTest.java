@@ -128,6 +128,32 @@ class DatabaseAgentTddStateRepositoryTest {
     }
 
     @Test
+    void externalExecutionReservationSurvivesRestartAndPreventsImplicitReexecution() {
+        AgentTddStateRepository.ExternalExecutionReservation acquired = repository.reserveExternalExecution(
+                "tenant-a|test", "ATTESTATION_EXECUTE", "green-1", "sha256:green");
+
+        DatabaseAgentTddStateRepository restarted = new DatabaseAgentTddStateRepository(
+                new JdbcTemplate(database), mapper);
+        restarted.init();
+        AgentTddStateRepository.ExternalExecutionReservation recovered = restarted.reserveExternalExecution(
+                "tenant-a|test", "ATTESTATION_EXECUTE", "green-1", "sha256:green");
+
+        assertThat(acquired.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.ACQUIRED);
+        assertThat(recovered.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.IN_PROGRESS);
+        JsonNode completed = restarted.completeExternalExecution(
+                "tenant-a|test", "ATTESTATION_EXECUTE", "green-1", "sha256:green",
+                mapper.valueToTree(Map.of("status", "ATTESTED")));
+        AgentTddStateRepository.ExternalExecutionReservation replay = restarted.reserveExternalExecution(
+                "tenant-a|test", "ATTESTATION_EXECUTE", "green-1", "sha256:green");
+        assertThat(completed.path("status").asText()).isEqualTo("ATTESTED");
+        assertThat(replay.status())
+                .isEqualTo(AgentTddStateRepository.ExternalExecutionStatus.COMPLETED);
+        assertThat(replay.response().path("status").asText()).isEqualTo("ATTESTED");
+    }
+
+    @Test
     void postgresReservationUsesNonThrowingConflictHandlingSoReplayCanContinue() {
         JdbcTemplate postgresJdbc = mock(JdbcTemplate.class);
         when(postgresJdbc.execute(any(ConnectionCallback.class))).thenReturn("PostgreSQL");

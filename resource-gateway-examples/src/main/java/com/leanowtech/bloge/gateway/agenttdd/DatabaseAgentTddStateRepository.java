@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.Instant;
 import java.util.List;
@@ -246,6 +247,82 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     }
 
     /**
+     * Commits an external-effect reservation independently of the caller and later network work.
+     *
+     * <p>{@code REQUIRES_NEW} is essential: process loss after a request was sent must leave a
+     * durable unfinished marker rather than rolling the reservation back and allowing an implicit
+     * duplicate call.</p>
+     */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ExternalExecutionReservation reserveExternalExecution(String scopeKey,
+                                                                  String operation,
+                                                                  String idempotencyKey,
+                                                                  String requestFingerprint) {
+        Optional<ReservationRow> existing = reservation(
+                scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (existing.isPresent()) return reservationResult(existing.get());
+        if (reserveIdempotency(scopeKey, operation, idempotencyKey, requestFingerprint)) {
+            return new ExternalExecutionReservation(ExternalExecutionStatus.ACQUIRED, null);
+        }
+        return reservation(scopeKey, operation, idempotencyKey, requestFingerprint)
+                .map(this::reservationResult)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "IDEMPOTENCY_CONFLICT", "The external execution reservation is unavailable."));
+    }
+
+    /** Records an external execution response after the network call has left all DB transactions. */
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public JsonNode completeExternalExecution(String scopeKey,
+                                              String operation,
+                                              String idempotencyKey,
+                                              String requestFingerprint,
+                                              JsonNode response) {
+        JsonNode safeResponse = response == null
+                ? com.fasterxml.jackson.databind.node.NullNode.getInstance() : response;
+        int updated = jdbc.update("""
+                UPDATE agent_tdd_idempotency
+                   SET response_json = ?, completed = TRUE
+                 WHERE scope_key = ? AND operation = ? AND idempotency_key = ?
+                   AND request_fingerprint = ? AND completed = FALSE
+                """, write(safeResponse), scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (updated == 1) return safeResponse.deepCopy();
+        return reservation(scopeKey, operation, idempotencyKey, requestFingerprint)
+                .filter(ReservationRow::completed)
+                .map(ReservationRow::response)
+                .map(value -> (JsonNode) value.deepCopy())
+                .orElseThrow(() -> new AgentTddToolException(
+                        "IDEMPOTENCY_CONFLICT", "The external execution reservation could not be completed."));
+    }
+
+    private Optional<ReservationRow> reservation(String scopeKey,
+                                                 String operation,
+                                                 String idempotencyKey,
+                                                 String requestFingerprint) {
+        List<ReservationRow> rows = jdbc.query("""
+                        SELECT request_fingerprint, response_json, completed
+                          FROM agent_tdd_idempotency
+                         WHERE scope_key = ? AND operation = ? AND idempotency_key = ?
+                        """, (rs, row) -> new ReservationRow(rs.getString("request_fingerprint"),
+                        read(rs.getString("response_json")), rs.getBoolean("completed")),
+                scopeKey, operation, idempotencyKey);
+        if (rows.isEmpty()) return Optional.empty();
+        ReservationRow row = rows.getFirst();
+        if (!row.fingerprint().equals(requestFingerprint)) {
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The idempotency key was already used for different request material.");
+        }
+        return Optional.of(row);
+    }
+
+    private ExternalExecutionReservation reservationResult(ReservationRow row) {
+        return row.completed()
+                ? new ExternalExecutionReservation(ExternalExecutionStatus.COMPLETED, row.response())
+                : new ExternalExecutionReservation(ExternalExecutionStatus.IN_PROGRESS, null);
+    }
+
+    /**
      * Reserves a key without leaving a PostgreSQL transaction aborted after a concurrent insert.
      *
      * <p>PostgreSQL treats a caught unique-constraint exception as transaction-fatal, so its path
@@ -299,6 +376,8 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
     }
 
     private record Replay(String fingerprint, JsonNode response) { }
+
+    private record ReservationRow(String fingerprint, JsonNode response, boolean completed) { }
 
     private static AgentTddToolException staleRevision() {
         return new AgentTddToolException("GATE_REJECTED", "Asset changed after the reviewed revision.");

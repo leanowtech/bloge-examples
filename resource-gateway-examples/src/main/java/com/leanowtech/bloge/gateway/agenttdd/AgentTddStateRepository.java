@@ -11,6 +11,41 @@ import java.util.function.Supplier;
  */
 public interface AgentTddStateRepository {
 
+    /** Durable lifecycle of a non-transactional external execution reservation. */
+    enum ExternalExecutionStatus {
+        /** This caller durably acquired the right to perform the external execution. */
+        ACQUIRED,
+        /** Another caller or a crashed process owns an unfinished durable reservation. */
+        IN_PROGRESS,
+        /** The execution already completed and its exact response is available for replay. */
+        COMPLETED
+    }
+
+    /**
+     * Result of reserving an external execution whose network effects cannot join a database
+     * transaction.
+     *
+     * @param status durable reservation status
+     * @param response exact completed response; present only for {@link ExternalExecutionStatus#COMPLETED}
+     */
+    record ExternalExecutionReservation(ExternalExecutionStatus status, JsonNode response) {
+        public ExternalExecutionReservation {
+            if (status == null) throw new IllegalArgumentException("status is required");
+            response = response == null ? null : response.deepCopy();
+            if (status == ExternalExecutionStatus.COMPLETED && response == null) {
+                throw new IllegalArgumentException("completed reservation requires a response");
+            }
+            if (status != ExternalExecutionStatus.COMPLETED && response != null) {
+                throw new IllegalArgumentException("unfinished reservation cannot carry a response");
+            }
+        }
+
+        @Override
+        public JsonNode response() {
+            return response == null ? null : response.deepCopy();
+        }
+    }
+
     /** Finds the current overlay for one exact server-derived scope. */
     Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef);
 
@@ -91,4 +126,27 @@ public interface AgentTddStateRepository {
                          String idempotencyKey,
                          String requestFingerprint,
                          Supplier<JsonNode> action);
+
+    /**
+     * Commits a durable reservation before a caller performs a real external execution.
+     *
+     * <p>The reservation must commit in a transaction independent from the later network call.
+     * An unfinished reservation survives process loss and fails closed as {@code IN_PROGRESS}; it
+     * must never be silently reclaimed because the external effect may already have occurred.</p>
+     */
+    ExternalExecutionReservation reserveExternalExecution(String scopeKey,
+                                                          String operation,
+                                                          String idempotencyKey,
+                                                          String requestFingerprint);
+
+    /**
+     * Completes a previously acquired external execution reservation in an independent transaction.
+     *
+     * @return an immutable copy of the exact response recorded for subsequent replay
+     */
+    JsonNode completeExternalExecution(String scopeKey,
+                                       String operation,
+                                       String idempotencyKey,
+                                       String requestFingerprint,
+                                       JsonNode response);
 }

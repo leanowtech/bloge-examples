@@ -157,10 +157,11 @@ public final class AgentTddAttestationService {
     /**
      * Reserves one exact attestation attempt before any network request is allowed to run.
      *
-     * <p>The automatic key is stable for one GREEN fingerprint, so concurrent baseline calls
-     * execute the real dependency once and replay the same payload-free observation. A manual
-     * recovery key additionally binds the current attestation revision: two clicks race on one
-     * reservation, while a later deliberate retry receives a new key.</p>
+     * <p>The automatic key is stable for one GREEN fingerprint. Its reservation commits before
+     * any network request, and completion commits afterwards, so concurrent calls cannot duplicate
+     * the external read and process loss leaves an explicit recovery marker. A manual recovery key
+     * additionally binds the current attestation revision: two clicks race on one reservation,
+     * while a later deliberate retry receives a new key.</p>
      */
     private Map<String, Object> attestOnce(Map<String, Object> green,
                                            IntegrationRequestContext identity,
@@ -180,10 +181,18 @@ public final class AgentTddAttestationService {
                 "green", green == null ? Map.of() : green);
         String requestFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 mapper, requestMaterial, MAX_FINGERPRINT_BYTES);
-        JsonNode response = states.executeOnce(scope, ATTESTATION_EXECUTE,
-                requestFingerprint, requestFingerprint,
-                () -> mapper.valueToTree(attestReserved(green, identity)));
-        return mapper.convertValue(response, OBJECT_MAP);
+        AgentTddStateRepository.ExternalExecutionReservation reservation =
+                states.reserveExternalExecution(scope, ATTESTATION_EXECUTE,
+                        requestFingerprint, requestFingerprint);
+        if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.COMPLETED) {
+            return mapper.convertValue(reservation.response(), OBJECT_MAP);
+        }
+        if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.IN_PROGRESS) {
+            return failureProjection(green, identity.environmentId(), "ATTESTATION_RECOVERY_REQUIRED");
+        }
+        JsonNode response = mapper.valueToTree(attestReserved(green, identity));
+        return mapper.convertValue(states.completeExternalExecution(scope, ATTESTATION_EXECUTE,
+                requestFingerprint, requestFingerprint, response), OBJECT_MAP);
     }
 
     private Map<String, Object> attestReserved(Map<String, Object> green,
