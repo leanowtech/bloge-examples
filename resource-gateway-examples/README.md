@@ -25,21 +25,24 @@ existing readiness and case-set facts; it does not create a second workflow stat
 Decision-table nodes are projected as business-readable rule matrices with a fixed prose flow summary;
 operator references remain available in a collapsed technical view. The adjacent fact-coverage view
 reuses the scenario enumerator's bounded predicate domains to show ACTIVE GOLDEN coverage and up to
-twenty deterministic blind spots without inventing values for opaque predicates.
+twenty deterministic blind spots without inventing values for opaque predicates. Opaque predicates
+without author samples are reported as unknown dimensions with incomplete coverage; they can never
+collapse to a misleading `0 / 0` "fully covered" projection.
 Its authenticated `GET /api/agent-tdd/library-overview` projection places business-readable platform
-building blocks beside the current scope's declared world model. Imported operations are marked `仅契约`
-or `已接入`, while business types are derived only from declared output schemas; the projection is
+building blocks beside the current scope's declared world model. Imported operations are marked
+`草稿世界观 · 待用例检验` or `已接入`, while business types are derived only from declared output schemas; the projection is
 payload-free and returned with `no-store` rather than sampling fixtures or provider responses. Its second-act
 sample list reads only governed Fixture descriptors. `rg.fixture.provide` validates a supplied sample against
 one exact operator output port, then server-derives its Fixture id, scope, schema reference, retention and
 SAMPLE lineage; the MCP response never echoes the sample value.
 The repository launcher keeps Correctness authoring and encrypted Fixture material opt-in. When both are
 enabled for the local Agent TDD guide and no key ring is injected, it creates one private AES-256 demo key
-under `target/example-secrets`, reuses it across restarts, and never prints it. Codex receives only the four
+under `target/example-secrets`, reuses it across restarts, reasserts mode `0600`, rejects symlink key paths,
+and never prints it. Codex receives only the four
 `AGENT_TDD_*` purposes; the service derives the narrower Fixture-material write purpose after governance
 authorization instead of exposing that credential to the Agent.
 When a bound read dependency does not exist yet, `rg.tool.compose` returns
-`RESOURCE_NOT_REGISTERED`. The authoring-only `rg.resource.declare` bridge registers an allowlisted
+`RESOURCE_NOT_REGISTERED` with every missing resource id in payload-free error details. The authoring-only `rg.resource.declare` bridge registers an allowlisted
 `GET`, `HEAD`, or `OPTIONS` descriptor together with its visual design contract; write methods fail
 closed until a sandbox substitute and reconciliation contract exist.
 Agent TDD resource declaration and sandbox attestation share an exact-host egress policy configured by
@@ -51,8 +54,10 @@ WORKLOAD callers cannot choose real inputs, bindings, URLs, or execution mode. P
 external writes fail closed. Each real run binds immutable operator snapshots and exact resource descriptors;
 the HTTP operator checks the descriptor again immediately before request construction, closing registry-replace
 races. The resulting `ATTESTATION` stores only per-case Oracle booleans, dependency call counts, environment,
-and contract/implementation/evidence fingerprints. Exact automatic retries replay one reservation without
-repeating the read. Failed runs can be retried only by a HUMAN/USER confirmation on the board. Publication and
+and contract/implementation/evidence fingerprints. The platform commits the reservation before leaving the
+database transaction for the real read, then completes it in a separate transaction. Exact completed retries
+replay without repeating the read; an unfinished crash residue fails closed for human recovery. Failed runs
+can be retried only by a HUMAN/USER confirmation on the board. Publication and
 readiness require current logical GREEN, current `ATTESTED` evidence, and an independently approved owner
 signoff; graph, case-set, binding, implementation, or descriptor drift invalidates the prior attestation.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and

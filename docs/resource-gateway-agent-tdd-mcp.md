@@ -45,7 +45,7 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 
 启动脚本会管理 PID、日志、端口和 readiness，默认绑定 `127.0.0.1`，并设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。只有在已配置正式身份提供方、网络访问控制和 TLS 后，才可将 `RESOURCE_GATEWAY_ADDRESS` 设置为 `0.0.0.0`；启动脚本仍通过 loopback 做 readiness。直接运行 Spring Boot 时才使用 `SERVER_ADDRESS`。
 
-上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 需要把样例加密后存入受治理的 Fixture 仓库。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
+上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 需要把样例加密后存入受治理的 Fixture 仓库。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它，并在每次读取前重新收紧为 `0600`。已有路径若不是普通文件或是符号链接，启动会失败关闭。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
 
 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 是精确主机名白名单，不接受通配符、URL 或域名后缀。资源声明和后续实景验证只允许 HTTP/HTTPS，且拒绝 user-info、可变主机模板和未配置主机。空值表示全部拒绝。
 
@@ -53,11 +53,11 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 - 人工看板：`http://localhost:8081/agent-tdd.html`
 - 日志：`target/example-logs/resource-gateway.log`
 
-看板顶部的「第 1 幕 · 你的世界观与可用积木」并列显示平台基础积木和当前作用域内已导入的业务操作。业务操作标记为「仅契约」或「已接入」；业务类型只从已声明的输出 Schema 派生。该视图不读取 Fixture 或真实响应，HTTP 响应使用 `no-store`。
+看板顶部的「第 1 幕 · 你的世界观与可用积木」并列显示平台基础积木和当前作用域内已导入的业务操作。业务操作标记为「草稿世界观 · 待用例检验」或「已接入」；业务类型只从已声明的输出 Schema 派生。该视图不读取 Fixture 或真实响应，HTTP 响应使用 `no-store`。
 
-每个 Tool 卡片优先显示固定模板生成的业务流程摘要和决策规则表。规则表从决策节点的 `hitPolicy`、条件列、输出列、规则行与兜底行投影，不要求业务评审人阅读 DSL；算子引用和连线保留在「展开查看技术结构」中。卡片的覆盖区使用与场景枚举相同的谓词代表值算法，显示 ACTIVE GOLDEN 已覆盖组合、事实空间总数和最多 20 条盲区。没有可枚举决策维度时，计数为 `0 / 0`，不会猜测不透明谓词的业务值。
+每个 Tool 卡片优先显示固定模板生成的业务流程摘要和决策规则表。规则表从决策节点的 `hitPolicy`、条件列、输出列、规则行与兜底行投影，不要求业务评审人阅读 DSL；算子引用和连线保留在「展开查看技术结构」中。卡片的覆盖区使用与场景枚举相同的谓词代表值算法，显示 ACTIVE GOLDEN 已覆盖组合、事实空间总数和最多 20 条盲区。
 
-Tool 卡片还显示实景验证状态、环境和真实调用总数。逻辑 GREEN 后平台自动验证；失败时只有 HUMAN/USER reviewer 能在看板确认“将访问已批准的只读沙箱资源”后重跑。该 HTTP 恢复入口不是 MCP 工具，WORKLOAD 身份即使知道地址也会被拒绝。
+不透明谓词没有业务方代表值时，看板把对应列标为“代表值待补充”，`coverageComplete=false`，不会显示“覆盖周全”或用 `0 / 0` 冒充完整事实空间。没有决策表时则明确显示“当前无决策表事实空间”。Tool 卡片还显示实景验证状态、环境和真实调用总数。逻辑 GREEN 后平台自动验证；失败时只有 HUMAN/USER reviewer 能在看板确认“将访问已批准的只读沙箱资源”后重跑。该 HTTP 恢复入口不是 MCP 工具，WORKLOAD 身份即使知道地址也会被拒绝。
 
 停止服务：
 
@@ -146,7 +146,7 @@ codex mcp get rg_read
 
 业务方直接给出典型数据时，使用 `rg.fixture.provide`，传入 `operatorRef`、精确 `outputPort`、`sampleValue`、分类、保留天数和幂等键。服务端先按该输出端口的 Schema 校验样本，再派生 Fixture ID、作用域、Schema 引用和 SAMPLE 来源。响应不返回 `sampleValue`。同一幂等键携带不同样本时，请求返回 `IDEMPOTENCY_CONFLICT`。
 
-编排引用尚未登记的资源时，`rg.tool.compose` 返回 `RESOURCE_NOT_REGISTERED`。先调用 `rg.resource.declare`，提交 `resourceId`、`method`、`urlTemplate`、响应 `payloadSchema` 和幂等键，再重新编排。该工具只接受 `GET`、`HEAD` 和 `OPTIONS`，并同时写入资源描述符与可视化设计契约；目标主机必须命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 的精确白名单。登记成功后，使用 `resource:<resourceId>` 作为库算子的 `runtime.bindingRef`。当前桥接不登记写操作；需要写外部系统时停止流程，先建立沙箱替身和对账方案。
+编排引用尚未登记的资源时，`rg.tool.compose` 返回 `RESOURCE_NOT_REGISTERED`，并在 payload-free 的 `error.details.missingResourceIds` 一次列出全部缺失资源 ID。先逐个调用 `rg.resource.declare`，提交 `resourceId`、`method`、`urlTemplate`、响应 `payloadSchema` 和幂等键，再重新编排。该工具只接受 `GET`、`HEAD` 和 `OPTIONS`，并同时写入资源描述符与可视化设计契约；目标主机必须命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 的精确白名单。登记成功后，使用 `resource:<resourceId>` 作为库算子的 `runtime.bindingRef`。当前桥接不登记写操作；需要写外部系统时停止流程，先建立沙箱替身和对账方案。
 
 连接失败时先检查：
 
@@ -219,7 +219,7 @@ graph codexProfileOps {
 
 GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，自身不产生真实外部请求。`ATTESTED` 是另一份证据：平台把同一批 ACTIVE GOLDEN 的依赖换成当前冻结的真实只读 descriptor，在精确 host 白名单内执行，并再次核对 Oracle。证据绑定 tool、draft revision、goldenSetId、case-set revision、契约、实现和 GREEN evidence fingerprint；任一项漂移都会使它失效。
 
-实景证据只保存每个依赖是否调用及次数、每条用例是否成功/满足 Oracle、环境和稳定指纹。它不保存 URL、请求、响应、given、expect、异常消息或认证材料。相同 GREEN 的自动请求采用持久幂等 reservation，只执行一次真实读取；人工每次确认后的失败重跑形成一个新受控 attempt。
+实景证据只保存每个依赖是否调用及次数、每条用例是否成功/满足 Oracle、环境和稳定指纹。它不保存 URL、请求、响应、given、expect、异常消息或认证材料。相同 GREEN 的自动请求会先在独立数据库事务中提交持久 reservation，再离开事务执行真实读取，完成后用另一事务写入精确回放结果。并发重复请求不会再次外呼；首个请求完成后可精确回放。进程若在外呼期间退出，未完成 reservation 会保留并返回 `ATTESTATION_RECOVERY_REQUIRED`，绝不自动猜测重试；人工核对沙箱状态后，才可从看板发起新的受控 attempt。
 
 ### 4.4 人工停点二：签署发布证据
 
@@ -301,6 +301,7 @@ MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案�
 | `ATTESTATION_ENVIRONMENT_NOT_ALLOWED` | 环境不是 local/test/sandbox | 切换到受控沙箱；不能放宽到 prod |
 | `WRITE_EFFECT_NOT_ALLOWED` / `EGRESS_NOT_ALLOWED` | 依赖是写操作、未登记或 host 未精确放行 | 建只读沙箱资源或修正精确白名单；不要让 Agent 绕过 |
 | `ATTESTATION_EXECUTION_FAILED` / `ATTESTATION_ORACLE_MISMATCH` | 真实依赖执行失败，或真实结论违背已批准 Oracle | 人工查沙箱与契约；确认后从看板重跑 |
+| `ATTESTATION_RECOVERY_REQUIRED` | 已存在未完成的持久实景 reservation，可能在进程退出前已经发出请求 | 禁止 Agent 自动重试；人工核对沙箱后从看板确认新 attempt |
 | `ATTESTATION_STALE` | GREEN、draft、case set、binding 或 descriptor 在执行期间变化 | 重新运行逻辑 GREEN，生成当前证据 |
 | `PUBLISH_GATE_NOT_MET` | GREEN、实景验证、签署或 fingerprint 缺失/过期 | 按 readiness.remainingLimitations 补证据 |
 | JSON-RPC `-32602` | 参数不符合当前 inputSchema | 以最新 tools/list 修正 |
@@ -333,7 +334,7 @@ mvn -f resource-gateway-examples/pom.xml \
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、人工失败重跑和发布服务，贯穿用户资料查询。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单和 exact replay；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求。`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、人工失败重跑和发布服务，贯穿用户资料查询。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单和 exact replay；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 

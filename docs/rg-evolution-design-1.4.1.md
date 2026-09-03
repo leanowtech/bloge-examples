@@ -264,7 +264,7 @@ private static Map<String,Object> journey(Map<String,Object> card){
 ```
 
 **后端改动**（`AgentTddBoardService`，复用枚举器的代表值逻辑）：
-- 事实空间 `dimensions`：对该工具决策表的每个条件列，用**与既有确定性枚举器同一套**代表值推导（枚举/阈值邻域/成员集）得出该列取值集合。抽 `AgentTddDecisionScenarioEnumerator` 里的"谓词→代表值"为可复用方法供此处调用（避免两套逻辑）。
+- 事实空间 `dimensions`：对该工具决策表的每个条件列，用**与既有确定性枚举器同一套**代表值推导（枚举/阈值邻域/成员集）得出该列取值集合。抽 `AgentTddDecisionScenarioEnumerator` 里的"谓词→代表值"为可复用方法供此处调用（避免两套逻辑）。不透明谓词没有 author sample 时必须投影为 `status=UNKNOWN`、`coverageComplete=false` 和 `unknownDimensions[].reasonCode=REPRESENTATIVE_VALUES_REQUIRED`；此时不得以 `0 / 0` 或空盲区宣称覆盖完整。
 - 已覆盖组合：把该工具 `CASE_SET` 中 `lifecycle=ACTIVE` 的 golden 行的 `given` 投影到这些条件列，得已覆盖组合集合。
 - `blindSpots = 笛卡尔积(dimensions) − 已覆盖`，按确定性顺序截断到上限（如 20），并给 `coveredCount/totalCount`。
 
@@ -317,6 +317,6 @@ P4  端到端旅程用例贯穿                  ── 依赖全部
 | A4 事实覆盖 | 看板与场景枚举共用谓词代表值，显示确定性覆盖计数和最多 20 个盲区 | `AgentTddDecisionScenarioEnumeratorTest`、`AgentTddBoardTest` |
 | A5 实景验证 | 逻辑 GREEN 后由平台内部 `AGENT_TDD_ATTEST` 自动执行；仅限沙箱、精确 host、只读 descriptor；证据 payload-free，并绑定当前 graph/case/binding/descriptor；发布需要 GREEN、ATTESTED、signoff | `AgentTddAttestationServiceTest`、`HttpResourceOperatorTest`、`AgentTddMcpOperationalWorkflowTest`、`AgentTddWorkflowServiceTest` |
 
-A5 的自动执行使用持久幂等 reservation：同一 GREEN 的并发或重复触发只执行一次真实读取并回放同一结构化结果。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在发包前按内部 execution capture 再核对 descriptor；注册表替换不能越过白名单校验。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
+A5 的自动执行使用持久幂等 reservation：先在独立事务提交 reservation，再在事务外执行真实读取，最后以独立事务写入回放；同一 GREEN 的并发或重复触发不会重复外呼。进程退出留下的未完成 reservation 不会被自动认领，而是返回 `ATTESTATION_RECOVERY_REQUIRED` 等待人工核对后重跑。运行前冻结 operator snapshot 和 resource descriptor，HTTP 算子在发包前按内部 execution capture 再核对 descriptor；注册表替换不能越过白名单校验。失败后只在人工看板提供确认重跑，WORKLOAD 身份和 MCP 工具目录都没有真实调用入口。`readiness` 只有在 `greenBaseline`、`runtimeAttestation`、`ownerSignoff` 三门同时成立时才可发布。
 
 完整启动、Codex MCP 配置、三段式操作、两个人工停点、实景失败恢复、停止命令和回归命令见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。
