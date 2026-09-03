@@ -2,7 +2,7 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成能力发现、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-完整流程有两个人工停点。Agent 不能批准自己提出的业务 Oracle，也不能替人签署发布；这两步必须在 Resource Gateway 看板中完成。
+完整流程有两个人工停点。Agent 不能批准自己提出的业务 Oracle，也不能替人签署发布；这两步必须用独立的人工 reviewer 凭据在 Resource Gateway 看板中完成。服务端会校验 actor type、提议者与批准者分离，以及人实际打开的 proposal fingerprint。
 
 ## 1. 四条权限边界
 
@@ -11,7 +11,7 @@
 | READ | Codex Agent | 查能力、契约、用例、证据和 readiness |
 | AUTHORING | Codex Agent | 写草稿、Instruction、场景和依赖行为 |
 | EXECUTION | Codex Agent | 做 RED、GREEN、baseline；真实外呼必须为 0 |
-| GOVERNANCE | 人工为主，Agent 只提交发布 | 人工批 Oracle、签署证据；Agent 在门禁通过后发布 |
+| GOVERNANCE | 人与 Agent 分权 | 人工 reviewer 批 Oracle、签署证据；Agent 只能在门禁通过后提交发布 |
 
 这不是 Agent 直接调用生产 API 的入口。`rg.simulate` 和 `rg.tool.baseline` 即使使用已绑定的 API，依赖节点仍由用例 stub 替代；`realExternalCalls` 必须为 `0`。
 
@@ -21,8 +21,10 @@
 
 ```bash
 export RG_MCP_TOKEN='replace-with-a-local-token'
+export RG_REVIEW_TOKEN='replace-with-a-different-reviewer-token'
 export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true
 export RG_INTEGRATION_DEMO_TOKEN="$RG_MCP_TOKEN"
+export RG_INTEGRATION_DEMO_REVIEW_TOKEN="$RG_REVIEW_TOKEN"
 export RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,CORRECTNESS_FIXTURE_MATERIAL_WRITE'
 
 RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
@@ -41,7 +43,7 @@ RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
 ./scripts/stop-examples.sh resource-gateway
 ```
 
-Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器；外部 PostgreSQL 的 schema 也应走正式数据库变更流程。
+两个 token 必须不同。`RG_MCP_TOKEN` 映射到 `WORKLOAD` Agent；`RG_REVIEW_TOKEN` 映射到 `HUMAN` reviewer，且只允许 READ/GOVERNANCE。Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器。外部 PostgreSQL 必须先应用 `db/postgresql/V20260903_020__agent_tdd_runtime.sql`；只有嵌入式 H2 会自动建 Agent TDD 表，外部库缺 migration 时启动失败关闭。
 
 ## 3. 把 MCP 配进 Codex
 
@@ -95,6 +97,8 @@ tool_timeout_sec = 120
 ```
 
 不要把 Bearer token 直接写进 TOML。确保启动 Codex 的进程能读取 `RG_MCP_TOKEN`，然后完全退出并重新打开 Codex。CLI 可从已经导出该变量的 Shell 启动；Desktop 应通过系统的安全环境注入方式把同名变量传给应用进程。
+
+**绝对不要把 `RG_REVIEW_TOKEN` 传给 Codex、写进 `.codex/config.toml` 或粘进对话。** Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
 
 检查配置：
 
@@ -151,9 +155,9 @@ graph codexWalletOps {
 
 ### 4.2 人工停点一：批准 Oracle
 
-打开 `http://localhost:8081/agent-tdd.html`，输入本地 token，找到 `codex-wallet-cases-v1 / wallet-usd`。确认业务意图、输入结构、期望结构和 owner 后点击批准。
+打开 `http://localhost:8081/agent-tdd.html`，输入 **`RG_REVIEW_TOKEN`**，找到 `codex-wallet-cases-v1 / wallet-usd`，点击“查看详情并批准”。浏览器会先用 HUMAN 身份读取精确 revision 的 `intent/given/stubs/expect/owner/proposedBy`，显示确认框；逐项核对后再批准。
 
-看板只展示 `STRUCTURE_ONLY` 投影，不展示 `given`、`expect`、fixture 或运行输出值。批准绑定你看到的 `expectedRevision`；如果 Agent 在评审期间修改了用例，服务端会拒绝旧 revision，必须刷新后重审。
+看板列表仍是 `STRUCTURE_ONLY`；payload-bearing 详情只在人工治理端点按需读取，响应带 `no-store`，不会进入 MCP。批准同时绑定 `expectedRevision` 和详情的 `proposalFingerprint`；如果 Agent 在评审期间修改了用例，服务端会拒绝，必须刷新后重审。提议者与 reviewer 是同一 actor 时也会拒绝。
 
 批准后，让 Agent 调用 `rg.scenario.listCases`，确认该行是 `ACTIVE`。
 
@@ -177,7 +181,7 @@ GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足�
 
 ### 4.4 人工停点二：签署发布证据
 
-回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
+仍使用 **`RG_REVIEW_TOKEN`** 回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
 
 签署不可变；同一个 `signoffRef` 不能覆盖使用。草稿、ACTIVE 用例、Oracle、stub、binding 或目标实现任何一项变化，旧 GREEN 和旧签署都会失效。
 
@@ -239,6 +243,7 @@ MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案�
 | `FORBIDDEN_PURPOSE` / 400 或 403 | purpose 缺失、非法或越权 | 使用四 server 配置并检查 allowed purposes |
 | `GATE_REJECTED` / 503 | 身份/审计基础设施不可用，或生产 admission | 查日志；本地脚本应使用 environment `local` |
 | `GOLDEN_REQUIRES_APPROVAL` | GOLDEN 未人工批准 | 看板批准精确 revision，再读 case set |
+| `GATE_REJECTED` / 409（审批） | 使用了 Agent token、自批，或 proposal fingerprint 已变化 | 改用独立 reviewer token，重新打开详情并复核 |
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
 | `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |
@@ -273,13 +278,13 @@ mvn -f resource-gateway-examples/pom.xml \
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务图、H2 持久化、资源目录、人工批准服务、零外呼模拟、baseline 和发布服务贯穿余额查询。它不会访问真实上游，也不能替代生产身份提供方、真实 PostgreSQL 迁移和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、baseline 和发布服务贯穿余额查询。它不会访问真实上游，也不能替代生产身份提供方、真实 PostgreSQL 和发布责任人的验收证据。
 
 ## 9. 完成判据
 
 1. Codex `/mcp` 显示四个最小权限 server 已连接。
 2. API binding 来自 capability discovery 和 contract，而非 Agent 猜测。
-3. GOLDEN Oracle 经人工批准，执行的是 ACTIVE 持久用例。
+3. GOLDEN Oracle 经不同 HUMAN actor 打开详情并批准；Codex 使用 WORKLOAD token，执行的是 ACTIVE 持久用例。
 4. RED 通过；GREEN baseline 为 `GO` 且业务指纹稳定。
 5. RED/GREEN 的 `realExternalCalls` 都是 `0`。
 6. 人工签署精确绑定当前 revision、goldenSetId、evidenceFingerprint。
