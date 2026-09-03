@@ -8,6 +8,7 @@ LOG_DIR="${ROOT_DIR}/target/example-logs"
 
 GRAPH_ENGINE_PORT="${GRAPH_ENGINE_PORT:-8080}"
 RESOURCE_GATEWAY_PORT="${RESOURCE_GATEWAY_PORT:-8081}"
+RESOURCE_GATEWAY_ADDRESS="${RESOURCE_GATEWAY_ADDRESS:-127.0.0.1}"
 STARTUP_TIMEOUT="${STARTUP_TIMEOUT:-120}"
 JAVA_BIN="${JAVA_BIN:-java}"
 RG_API_RESOURCE_AUTHORING_ENABLED="${RG_API_RESOURCE_AUTHORING_ENABLED:-true}"
@@ -33,6 +34,7 @@ Usage:
 Environment:
   GRAPH_ENGINE_PORT       default: 8080
   RESOURCE_GATEWAY_PORT   default: 8081
+  RESOURCE_GATEWAY_ADDRESS default: 127.0.0.1 (loopback-only demo safety)
   STARTUP_TIMEOUT         default: 120
   JAVA_BIN                default: java
   MVN                     default: /opt/apache-maven-3.9.16/bin/mvn when present, otherwise mvn
@@ -328,7 +330,8 @@ start_service() {
                 export RG_REUSABLE_FLOW_AUTHORING_ENABLED
                 export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED
                 export RG_INTEGRATION_ENVIRONMENT_ID
-                nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" "--server.port=${port}" > "${log}" 2>&1 &
+                nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" \
+                    "--server.address=${RESOURCE_GATEWAY_ADDRESS}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"
             )
             ;;

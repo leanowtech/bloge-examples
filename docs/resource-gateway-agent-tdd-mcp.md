@@ -30,7 +30,7 @@ RESOURCE_GATEWAY_PORT=8081 \
 ./scripts/example-services.sh status resource-gateway
 ```
 
-启动脚本会管理 PID、日志、端口和 readiness，并默认设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。
+启动脚本会管理 PID、日志、端口和 readiness，默认绑定 `127.0.0.1`，并设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。只有在已配置正式身份提供方、网络访问控制和 TLS 后，才可用 `RESOURCE_GATEWAY_ADDRESS`（或 `SERVER_ADDRESS`）开放非 loopback 地址。
 
 - MCP：`http://localhost:8081/mcp`
 - 人工看板：`http://localhost:8081/agent-tdd.html`

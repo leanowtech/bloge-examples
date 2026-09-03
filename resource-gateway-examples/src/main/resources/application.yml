@@ -3,6 +3,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 server:
+  # Example/demo identities use documented local credentials, so the safe default is loopback-only.
+  address: ${SERVER_ADDRESS:127.0.0.1}
   port: 8080
 
 spring:

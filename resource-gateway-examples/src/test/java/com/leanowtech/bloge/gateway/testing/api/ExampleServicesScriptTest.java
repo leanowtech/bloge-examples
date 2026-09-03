@@ -25,10 +25,12 @@ class ExampleServicesScriptTest {
                 "RG_REUSABLE_FLOW_AUTHORING_ENABLED=\"${RG_REUSABLE_FLOW_AUTHORING_ENABLED:-true}\"",
                 "RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=\"${RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED:-true}\"",
                 "RG_INTEGRATION_ENVIRONMENT_ID=\"${RG_INTEGRATION_ENVIRONMENT_ID:-local}\"",
+                "RESOURCE_GATEWAY_ADDRESS=\"${RESOURCE_GATEWAY_ADDRESS:-127.0.0.1}\"",
                 "export RG_API_RESOURCE_AUTHORING_ENABLED",
                 "export RG_REUSABLE_FLOW_AUTHORING_ENABLED",
                 "export RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED",
-                "export RG_INTEGRATION_ENVIRONMENT_ID");
+                "export RG_INTEGRATION_ENVIRONMENT_ID",
+                "--server.address=${RESOURCE_GATEWAY_ADDRESS}");
 
         Process process = new ProcessBuilder("bash", SCRIPT.toString(), "--help")
                 .redirectErrorStream(true)
@@ -40,6 +42,7 @@ class ExampleServicesScriptTest {
                         "RG_API_RESOURCE_AUTHORING_ENABLED default: true",
                         "RG_REUSABLE_FLOW_AUTHORING_ENABLED default: true",
                         "RG_INTEGRATION_ENVIRONMENT_ID default: local",
+                        "RESOURCE_GATEWAY_ADDRESS default: 127.0.0.1",
                         "Set either variable to false to disable that authoring surface");
     }
 
