@@ -68,6 +68,10 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
 
+依赖桩行为统一编译到现有测试执行内核，不会回退到真实依赖：`RETURN` 返回固定值；`ERROR` 注入稳定错误；`DELAY` 和 `TIMEOUT` 使用 `afterMillis`（1–60000）及逻辑时钟；`REPLAY` 要求精确的 `bloge-replay:<id>@<revision>#sha256:<fingerprint>` 和本轮冻结的 `value`；`OBSERVE` 只观察本地确定性 delegate，必须提供 `value`；`MUST_NOT_CALL` 在节点被调用时失败。REPLAY 的内联值只用于零外呼模拟，证据保持非认证状态。
+
+决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。
+
 `rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
 ## 4. bindingRef 与 goldenSetId
@@ -129,5 +133,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 4. 对 `LIBRARY_NOT_FOUND`，检查显式 `libraryRefs` 和 `runtime.bindingRef` 是否存在于当前 catalog。
 5. 对 `GOLDEN_REQUIRES_APPROVAL`，在看板批准目标 revision 后重新读取 case set。
 6. 对 `PUBLISH_GATE_NOT_MET`，调用 `rg.readiness.get`，按 `remainingLimitations` 逐项处理。
+7. 对依赖行为的 `SCHEMA_NONCONFORMANT`，检查 `afterMillis`、精确 `replayRef`、REPLAY/OBSERVE 的冻结 `value`。
 
 排查期间不要记录 Bearer credential、fixture material 或业务响应体。

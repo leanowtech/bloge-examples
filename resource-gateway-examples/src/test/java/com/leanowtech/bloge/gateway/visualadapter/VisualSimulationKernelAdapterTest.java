@@ -42,6 +42,60 @@ class VisualSimulationKernelAdapterTest {
     }
 
     @Test
+    void executesDelayWithLogicalTimeAndFixedOutput() {
+        VisualDslRunResponse response = adapter.execute(behaviorPlan(
+                new NodeFixture.DependencyBehavior(NodeFixture.DependencyBehaviorKind.DELAY,
+                        Map.of("approved", true), "", "", "", Duration.ofMillis(25), "")));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("approved", true));
+        assertThat(response.errors()).doesNotContain("VISUAL_SIMULATION_PLACEHOLDER_INVOKED");
+    }
+
+    @Test
+    void executesReplayFromRunFrozenValueWithoutCallingPlaceholder() {
+        String replayRef = "bloge-replay:agent-case@1#sha256:" + "a".repeat(64);
+        VisualDslRunResponse response = adapter.execute(behaviorPlan(
+                new NodeFixture.DependencyBehavior(NodeFixture.DependencyBehaviorKind.REPLAY,
+                        Map.of("approved", true), "", "", "", null, replayRef)));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("approved", true));
+        assertThat(response.nodeFidelity()).containsEntry("subject", "REPLAYED");
+    }
+
+    @Test
+    void observesOnlyTheLocalDeterministicDelegate() {
+        VisualDslRunResponse response = adapter.execute(behaviorPlan(
+                new NodeFixture.DependencyBehavior(NodeFixture.DependencyBehaviorKind.OBSERVE,
+                        Map.of("approved", true), "", "", "", null, "")));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("approved", true));
+        assertThat(response.errors()).doesNotContain("VISUAL_SIMULATION_PLACEHOLDER_INVOKED");
+    }
+
+    @Test
+    void injectedErrorTimeoutAndMustNotCallFailClosedAtTheSelectedNode() {
+        List<VisualDslRunResponse> responses = List.of(
+                adapter.execute(behaviorPlan(new NodeFixture.DependencyBehavior(
+                        NodeFixture.DependencyBehaviorKind.ERROR, null, "UPSTREAM_FAILED",
+                        "DEPENDENCY_ERROR", "simulated", null, ""))),
+                adapter.execute(behaviorPlan(new NodeFixture.DependencyBehavior(
+                        NodeFixture.DependencyBehaviorKind.TIMEOUT, null, "UPSTREAM_TIMEOUT",
+                        "TIMEOUT", "simulated", Duration.ofMillis(10), ""))),
+                adapter.execute(behaviorPlan(new NodeFixture.DependencyBehavior(
+                        NodeFixture.DependencyBehaviorKind.MUST_NOT_CALL, null, "MUST_NOT_CALL",
+                        "DENIED_INVOCATION", "forbidden", null, ""))));
+
+        assertThat(responses).allSatisfy(response -> {
+            assertThat(response.compiled()).isTrue();
+            assertThat(response.success()).isFalse();
+            assertThat(response.errors()).doesNotContain("VISUAL_SIMULATION_PLACEHOLDER_INVOKED");
+        });
+    }
+
+    @Test
     void highFidelityWithoutRuntimeFailsClosed() {
         VisualDslRunResponse response = adapter.execute(plan(
                 "graph resource { node subject : httpResource }", Map.of(), "subject", List.of(
@@ -265,6 +319,12 @@ class VisualSimulationKernelAdapterTest {
                                              String outputNode,
                                              List<VisualSimulationPlan.Standin> standins) {
         return new VisualSimulationPlan(dsl, context, outputNode, standins);
+    }
+
+    private static VisualSimulationPlan behaviorPlan(NodeFixture.DependencyBehavior behavior) {
+        return plan("graph behavior { node subject : dependency.lookup }", Map.of(), "subject",
+                List.of(new VisualSimulationPlan.Standin("subject", "dependency.lookup",
+                        behavior.value(), null, NodeFixture.ResourceFidelity.OUTPUT_LEVEL, behavior)));
     }
 
     private static VisualSimulationKernelAdapter resourceAdapter() {

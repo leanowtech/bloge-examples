@@ -106,8 +106,27 @@ public class ExecutionControlCompiler {
     public CompiledExecutionControl compileWithExecutionModeHints(
             Graph graph, FixtureBundle fixtureBundle, String authorizedPurpose,
             String targetFingerprint, ExecutionModeHints executionModeHints) {
+        return compileWithExecutionModeHints(graph, fixtureBundle, authorizedPurpose,
+                targetFingerprint, ResolvedReplayPayloads.empty(), executionModeHints);
+    }
+
+    /**
+     * Internal stage-zero entry for execution-mode hints plus an exact governed replay closure.
+     *
+     * @param graph frozen graph artifact
+     * @param fixtureBundle frozen fixture bundle
+     * @param authorizedPurpose server-minted purpose
+     * @param targetFingerprint selected artifact fingerprint
+     * @param replayPayloads exact run-frozen replay values
+     * @param executionModeHints server-owned execution-mode hints
+     * @return executable frozen control plan
+     */
+    public CompiledExecutionControl compileWithExecutionModeHints(
+            Graph graph, FixtureBundle fixtureBundle, String authorizedPurpose,
+            String targetFingerprint, ResolvedReplayPayloads replayPayloads,
+            ExecutionModeHints executionModeHints) {
         return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
-                targetFingerprint, ResolvedReplayPayloads.empty(), ResolvedTestSecrets.empty(),
+                targetFingerprint, replayPayloads, ResolvedTestSecrets.empty(),
                 null, null, null, ResolvedCorpusPayloads.empty(), Set.of(),
                 Objects.requireNonNull(executionModeHints, "executionModeHints"));
     }

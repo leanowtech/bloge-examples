@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehavior;
 
 /** Immutable visual-owned input for a generated DSL simulation. */
 public record VisualSimulationPlan(
@@ -25,7 +26,8 @@ public record VisualSimulationPlan(
             String rewrittenOperatorRef,
             Object output,
             Object expectedInput,
-            ResourceFidelity resourceFidelity
+            ResourceFidelity resourceFidelity,
+            DependencyBehavior dependencyBehavior
     ) {
         public Standin {
             originalNodeId = normalized(originalNodeId);
@@ -37,7 +39,13 @@ public record VisualSimulationPlan(
         public Standin(String originalNodeId, String rewrittenOperatorRef,
                        Object output, Object expectedInput) {
             this(originalNodeId, rewrittenOperatorRef, output, expectedInput,
-                    ResourceFidelity.OUTPUT_LEVEL);
+                    ResourceFidelity.OUTPUT_LEVEL, null);
+        }
+
+        /** Backward-compatible stand-in constructor without an advanced dependency behavior. */
+        public Standin(String originalNodeId, String rewrittenOperatorRef,
+                       Object output, Object expectedInput, ResourceFidelity resourceFidelity) {
+            this(originalNodeId, rewrittenOperatorRef, output, expectedInput, resourceFidelity, null);
         }
 
         /** Returns the optional input assertion without changing the wire shape. */

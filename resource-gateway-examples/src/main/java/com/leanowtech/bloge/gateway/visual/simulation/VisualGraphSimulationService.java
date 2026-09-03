@@ -325,7 +325,8 @@ public class VisualGraphSimulationService {
                                     fixture == null ? null : fixture.expectedInput(),
                                     fixture == null
                                             ? NodeFixture.ResourceFidelity.OUTPUT_LEVEL
-                                            : fixture.resourceFidelity());
+                                            : fixture.resourceFidelity(),
+                                    fixture == null ? null : fixture.dependencyBehavior());
                         })
                         .toList();
                 dynamic = runKernelWithTimeout(new VisualSimulationPlan(

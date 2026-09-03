@@ -15,10 +15,13 @@ import com.leanowtech.bloge.gateway.visual.importer.DslRewriteGateResult;
 import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehavior;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehaviorKind;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationResponse;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 
 import java.util.ArrayList;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -371,16 +374,70 @@ public final class AgentTddExecutionService {
         stubs.fields().forEachRemaining(entry -> {
             JsonNode value = entry.getValue();
             if (value.isObject() && value.has("behavior")) {
-                String behavior = optionalText(value, "behavior").toUpperCase(Locale.ROOT);
-                if (!"RETURN".equals(behavior)) {
-                    throw new AgentTddToolException(
-                            "GATE_REJECTED", "Only RETURN dependency behavior executes in this simulation path.");
-                }
-                value = value.get("value");
+                values.put(entry.getKey(), dependencyFixture(mapper, value));
+                return;
             }
             values.put(entry.getKey(), new NodeFixture(mapper.convertValue(value, Object.class)));
         });
         return values;
+    }
+
+    /**
+     * Validates and compiles one Agent TDD dependency behavior into a simulation fixture.
+     *
+     * <p>The compiler is intentionally fail-closed: time controls require a positive millisecond
+     * duration, replay requires both an exact governed reference and a run-frozen value, and
+     * OBSERVE receives only a local deterministic delegate. No behavior can fall through to a live
+     * operator.</p>
+     *
+     * @param mapper protocol mapper
+     * @param value behavior directive
+     * @return kernel-ready node fixture
+     */
+    static NodeFixture dependencyFixture(ObjectMapper mapper, JsonNode value) {
+        String rawKind = requiredText(value, "behavior").toUpperCase(Locale.ROOT);
+        DependencyBehaviorKind kind;
+        try {
+            kind = DependencyBehaviorKind.valueOf(rawKind);
+        } catch (IllegalArgumentException failure) {
+            throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "Unsupported dependency behavior.");
+        }
+        Object output = mapper.convertValue(value.get("value"), Object.class);
+        Duration after = null;
+        if (kind == DependencyBehaviorKind.DELAY || kind == DependencyBehaviorKind.TIMEOUT) {
+            long millis = value.path("afterMillis").canConvertToLong()
+                    ? value.path("afterMillis").asLong() : 0;
+            if (millis < 1 || millis > 60_000) {
+                throw new AgentTddToolException(
+                        "SCHEMA_NONCONFORMANT", "DELAY and TIMEOUT require afterMillis in 1..60000.");
+            }
+            after = Duration.ofMillis(millis);
+        }
+        String replayRef = optionalText(value, "replayRef");
+        if (kind == DependencyBehaviorKind.REPLAY) {
+            if (!value.has("value")) {
+                throw new AgentTddToolException(
+                        "SCHEMA_NONCONFORMANT", "REPLAY requires a run-frozen value.");
+            }
+            try {
+                com.leanowtech.bloge.gateway.testing.domain.ReplayPayloadRef.parse(replayRef);
+            } catch (IllegalArgumentException failure) {
+                throw new AgentTddToolException(
+                        "SCHEMA_NONCONFORMANT", "REPLAY requires an exact governed replayRef.");
+            }
+        }
+        if (kind == DependencyBehaviorKind.OBSERVE && !value.has("value")) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "OBSERVE requires a deterministic local delegate value.");
+        }
+        String errorCode = optionalText(value, "errorCode");
+        String errorType = optionalText(value, "errorType");
+        String errorMessage = optionalText(value, "errorMessage");
+        DependencyBehavior behavior = new DependencyBehavior(
+                kind, output, errorCode, errorType, errorMessage, after, replayRef);
+        Object expectedInput = mapper.convertValue(value.get("expectedInput"), Object.class);
+        return new NodeFixture(output, expectedInput, null,
+                NodeFixture.ResourceFidelity.OUTPUT_LEVEL, behavior);
     }
 
     private boolean expectedMatches(JsonNode expected, JsonNode actual) {

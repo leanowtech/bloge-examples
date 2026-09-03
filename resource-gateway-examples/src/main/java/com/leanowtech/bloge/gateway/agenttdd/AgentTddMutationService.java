@@ -202,21 +202,8 @@ public final class AgentTddMutationService {
             List<Map<String, Object>> proposed = new ArrayList<>();
             rowsNode.forEach(value -> {
                 ObjectNode row = normalizedRow(value);
-                String caseId = row.path("caseId").asText();
-                if ("GOLDEN".equals(row.path("category").asText())) {
-                    JsonNode expected = row.remove("expect");
-                    if (expected != null && !expected.isNull()) {
-                        ObjectNode proposal = mapper.createObjectNode();
-                        proposal.set("expect", expected);
-                        proposal.put("oracleOwner", requiredText(row, "oracleOwner"));
-                        proposal.put("status", "PENDING");
-                        row.set("proposedOracle", proposal);
-                        proposed.add(Map.of("caseId", caseId, "awaiting", "human-approval"));
-                    }
-                    row.put("lifecycle", "DRAFT");
-                    row.put("qualityState", "DESIGNED_NOT_RUN");
-                }
-                rows.put(caseId, row);
+                prepareForStorage(row, proposed);
+                rows.put(row.path("caseId").asText(), row);
             });
             int enumeratedCount = 0;
             if (arguments.path("enumerateFrom").isObject()) {
@@ -226,7 +213,10 @@ public final class AgentTddMutationService {
                 }
                 List<ObjectNode> generated = enumerator.enumerate(
                         requireScopedDraft(toolRef, identity), arguments.path("enumerateFrom"));
-                generated.forEach(row -> rows.put(row.path("caseId").asText(), row));
+                generated.forEach(row -> {
+                    prepareForStorage(row, proposed);
+                    rows.put(row.path("caseId").asText(), row);
+                });
                 enumeratedCount = generated.size();
             }
             data.put("caseSetRef", caseSetRef);
@@ -238,6 +228,25 @@ public final class AgentTddMutationService {
                     "rows", stored.data().path("rows"), "proposed", proposed,
                     "enumeratedCount", enumeratedCount);
         });
+    }
+
+    /** Converts every authored or generated GOLDEN Oracle into a human-owned pending proposal. */
+    private void prepareForStorage(ObjectNode row, List<Map<String, Object>> proposed) {
+        if (!"GOLDEN".equals(row.path("category").asText())) return;
+        String caseId = row.path("caseId").asText();
+        JsonNode expected = row.remove("expect");
+        if (expected != null && !expected.isNull()) {
+            ObjectNode proposal = mapper.createObjectNode();
+            proposal.set("expect", expected);
+            proposal.put("oracleOwner", requiredText(row, "oracleOwner"));
+            proposal.put("status", "PENDING");
+            row.set("proposedOracle", proposal);
+            proposed.add(Map.of("caseId", caseId, "awaiting", "human-approval"));
+        }
+        row.put("lifecycle", "DRAFT");
+        if (!"BLOCKED".equals(row.path("qualityState").asText())) {
+            row.put("qualityState", "DESIGNED_NOT_RUN");
+        }
     }
 
     /** Records a business-owned Oracle proposal without making it effective. */
@@ -280,6 +289,7 @@ public final class AgentTddMutationService {
             if (!BEHAVIORS.contains(behaviorKind)) {
                 throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "Unsupported dependency behavior.");
             }
+            AgentTddExecutionService.dependencyFixture(mapper, behavior);
             ObjectNode data = requiredAssetObject(identity, CASE_SET, caseSetRef);
             ObjectNode row = indexedRows(data.path("rows")).get(caseId);
             if (row == null) {

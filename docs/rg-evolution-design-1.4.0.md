@@ -289,7 +289,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 
 ## 7. 工程实施计划
 
-> 实现状态（2026-09-03）：W1–W5 已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；Agent overlay 和幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不作为运行完成证据。
+> 实现状态（2026-09-03）：W1–W7 已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；Agent overlay 和幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影；Appendix-D 枚举与七种依赖行为已接入共享测试内核。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不作为运行完成证据。
 
 一次性造通完整循环（查询→调整→编译→模拟→发布），分周推进，每步复用已有能力、只补 4.8 新件。
 
@@ -402,7 +402,8 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 ```json
 // in
 { "caseSetRef":"", "rows":[ {"caseId":"","category":"GOLDEN","given":{},"stubs":{},"expect":{}} ],
-  "enumerateFrom":{"decisionTableRef":"disputePolicy","mode":"per-rule|combinatorial","maxCases":500}, "idempotencyKey":"" }
+  "enumerateFrom":{"decisionTableRef":"disputePolicy","mode":"per-rule|combinatorial","maxCases":500,
+    "oracleOwner":"cx-policy-owner","authorSamples":{"opaqueInput":["sample-a","sample-b"]}}, "idempotencyKey":"" }
 // out.data
 { "caseSetRef":"", "rows":[], "proposed":[{"caseId":"","awaiting":"human-approval"}], "enumeratedCount":0 }
 // errors: COMBINATORIAL_CAP_EXCEEDED, GOLDEN_REQUIRES_APPROVAL, SCHEMA_NONCONFORMANT

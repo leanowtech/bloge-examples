@@ -15,7 +15,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjec
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
@@ -96,6 +98,28 @@ class AgentTddMutationServiceTest {
         assertThat(row.has("expect")).isFalse();
         assertThat(row.path("proposedOracle").path("status").asText()).isEqualTo("PENDING");
         assertThat(behavior.path("data").path("behavior").path("behavior").asText()).isEqualTo("RETURN");
+    }
+
+    @Test
+    void enumeratedGoldenConclusionAlsoRequiresHumanApproval() {
+        Fixture fixture = fixture();
+        fixture.drafts().save(decisionDraft());
+
+        JsonNode stored = invoke(fixture, "rg.scenario.upsertCases", mapper.valueToTree(Map.of(
+                "caseSetRef", "policy-cases", "toolRef", "policy-tool", "rows", List.of(),
+                "enumerateFrom", Map.of("decisionTableRef", "policy", "mode", "per-rule",
+                        "maxCases", 3, "oracleOwner", "pricing-owner"),
+                "idempotencyKey", "enumerate-1")));
+
+        assertThat(stored.path("ok").asBoolean()).as(stored.toPrettyString()).isTrue();
+        assertThat(stored.path("data").path("enumeratedCount").asInt()).isEqualTo(3);
+        assertThat(stored.path("data").path("proposed")).hasSize(1);
+        JsonNode golden = stored.path("data").path("rows").get(0);
+        assertThat(golden.path("category").asText()).isEqualTo("GOLDEN");
+        assertThat(golden.has("expect")).isFalse();
+        assertThat(golden.path("proposedOracle").path("expect").path("decision").asText())
+                .isEqualTo("WAIVE");
+        assertThat(golden.path("proposedOracle").path("status").asText()).isEqualTo("PENDING");
     }
 
     @Test
@@ -322,6 +346,18 @@ class AgentTddMutationServiceTest {
         return new IntegrationRequestContext(
                 "demo-tenant", "org-a", "project-a", "local", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_DRAFT_WRITE", "corr-1");
+    }
+
+    private static GraphDraft decisionDraft() {
+        return new GraphDraft(GraphDraft.SCHEMA_VERSION, "policy-tool", 1, "Policy",
+                "demo-tenant", "project-a", "local", GraphDraft.STATUS_DRAFT,
+                SchemaEnvelope.opaque(), SchemaEnvelope.opaque(),
+                List.of(new GraphDraft.DraftNode("policy", "bloge:decisionTable", "Policy",
+                        Map.of(), Map.of("rules", List.of(Map.of("id", "R1",
+                                "conditions", Map.of("seconds", "seconds <= 120"),
+                                "output", Map.of("decision", "WAIVE")))), null)),
+                List.of(), Map.of(), Map.of(), new GraphDraft.OutputSelection("policy", ""),
+                Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty());
     }
 
     private record Fixture(ResourceGatewayAgentTddTools tools,

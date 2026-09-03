@@ -19,6 +19,9 @@ promotion, immutable Tool publication, and a structure-only review board at
 `/agent-tdd.html`. See the
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
+Its scenario compiler covers the complete seven-behavior dependency vocabulary through the shared
+isolated testing kernel, and its deterministic decision-table enumerator implements the bounded
+comparison, range, membership, otherwise, and author-sampled opaque grammar.
 
 For the user-facing path from OpenAPI import through Default Fixture simulation,
 multi-API Tool composition, whole-Flow Fixture authoring, and automatic simulation,

@@ -14,7 +14,9 @@ import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.simulation.JsonSchemaSampleGenerator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualProductionAdmissionPolicy;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visualadapter.VisualSimulationKernelAdapter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -71,6 +73,36 @@ class AgentTddExecutionServiceTest {
                 .isEqualTo("RED_PASS");
         assertThat(response.path("data").path("cases").get(0).path("mockedNodeIds"))
                 .anySatisfy(node -> assertThat(node.asText()).isEqualTo("eligibility"));
+    }
+
+    @Test
+    void compilesDelayDependencyBehaviorIntoTheIsolatedTestingKernel() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        JsonNode arguments = mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
+                "cases", Map.of("rows", List.of(Map.of(
+                        "caseId", "delay-1", "given", Map.of("score", 720, "amount", 100),
+                        "stubs", Map.of("eligibility", Map.of(
+                                "behavior", "DELAY", "afterMillis", 5,
+                                "value", Map.of("eligible", true, "ruleId", "R1"))),
+                        "expect", Map.of("eligible", true, "ruleId", "R1"))))));
+
+        JsonNode result = mapper.valueToTree(fixture.tools().invoke("rg.simulate", arguments, identity()));
+
+        assertThat(result.path("data").path("cases").get(0).path("verdict").asText())
+                .isEqualTo("RED_PASS");
+        assertThat(result.path("data").path("realExternalCalls").asInt()).isZero();
+    }
+
+    @Test
+    void rejectsMalformedReplayBeforeGraphExecution() {
+        assertThatThrownBy(() -> AgentTddExecutionService.dependencyFixture(mapper,
+                mapper.valueToTree(Map.of("behavior", "REPLAY", "replayRef", "latest", "value", Map.of()))))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
     }
 
     @Test
@@ -255,7 +287,8 @@ class AgentTddExecutionServiceTest {
         DslImportService projection = new DslImportService(catalog, new OperatorLibraryValidator());
         VisualGraphSimulationService simulation = new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
-                new DynamicGatewayComposerVisualDslRunner(new DefaultOperatorRegistry()));
+                new DynamicGatewayComposerVisualDslRunner(new DefaultOperatorRegistry()),
+                new VisualSimulationKernelAdapter(mapper), VisualProductionAdmissionPolicy.nonProductionTest());
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
                 libraries, drafts, mapper, projection, simulation);

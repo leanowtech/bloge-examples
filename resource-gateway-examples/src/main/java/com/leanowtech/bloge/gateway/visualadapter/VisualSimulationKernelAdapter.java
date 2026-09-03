@@ -26,7 +26,10 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehavior;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.DependencyBehaviorKind;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -78,10 +81,21 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
 
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         AtomicInteger placeholderExecutions = new AtomicInteger();
-        for (String rewrittenOperatorRef : plan.standins().stream()
-                .map(VisualSimulationPlan.Standin::rewrittenOperatorRef)
-                .distinct().toList()) {
-            registry.registerRaw(rewrittenOperatorRef, placeholderOperator(placeholderExecutions));
+        for (Map.Entry<String, List<VisualSimulationPlan.Standin>> entry : plan.standins().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        VisualSimulationPlan.Standin::rewrittenOperatorRef,
+                        LinkedHashMap::new, java.util.stream.Collectors.toList())).entrySet()) {
+            List<VisualSimulationPlan.Standin> standins = entry.getValue();
+            boolean observed = standins.stream().anyMatch(VisualSimulationKernelAdapter::observesDelegate);
+            if (observed && standins.stream().anyMatch(standin -> !observesDelegate(standin))) {
+                return failure(outputNode, INVALID_INPUT_ERROR);
+            }
+            Object observedOutput = standins.getFirst().dependencyBehavior() == null
+                    ? standins.getFirst().output()
+                    : standins.getFirst().dependencyBehavior().value();
+            registry.registerRaw(entry.getKey(), observed
+                    ? localObservedOperator(observedOutput)
+                    : placeholderOperator(placeholderExecutions));
         }
 
         Graph graph;
@@ -94,7 +108,8 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                     .toList();
             bundle = new FixtureBundle(
                     FixtureBundle.SCHEMA_VERSION, "visual-simulation", 1,
-                    targetFingerprint, "INTERNAL", null, null, rules, List.of(), Map.of());
+                    targetFingerprint, "INTERNAL", requiresLogicalClock(plan) ? Instant.EPOCH : null,
+                    null, rules, List.of(), Map.of());
 
             ExecutionModeHints.Builder hints = ExecutionModeHints.builder();
             for (VisualSimulationPlan.Standin standin : plan.standins()) {
@@ -102,17 +117,19 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                     hints.descriptorProtocol(siteFor(standin), ruleId(standin));
                 } else if (standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL) {
                     hints.descriptorTransport(siteFor(standin), ruleId(standin));
-                } else {
+                } else if (standin.dependencyBehavior() == null
+                        || standin.dependencyBehavior().kind() == DependencyBehaviorKind.RETURN) {
                     hints.schemaStandin(siteFor(standin), ruleId(standin));
                 }
             }
+            ResolvedReplayPayloads resolvedReplay = replayPayloads(plan);
             var compiled = new ExecutionControlCompiler(registry, objectMapper)
                     .compileWithExecutionModeHints(
-                            graph, bundle, PURPOSE, targetFingerprint, hints.build());
+                            graph, bundle, PURPOSE, targetFingerprint, resolvedReplay, hints.build());
             TestExecutionRequest request = new TestExecutionRequest(
                     graph, new GraphContext(plan.businessContext()), bundle, PURPOSE,
                     targetFingerprint, TestExecutionRequest.FixtureSource.INLINE,
-                    Map.of(), false, ResolvedReplayPayloads.empty());
+                    Map.of(), false, resolvedReplay);
             TestExecutionResult result = new TestRunService(registry, objectMapper, resourceRuntime)
                     .executeCompiled(request, compiled);
             if (placeholderExecutions.get() != 0) {
@@ -139,11 +156,34 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         FixtureRule.Behavior behavior = behaviorFor(standin, resourceRuntime);
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, ruleId(standin), selector,
                 behavior,
-                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+                behavior.kind() == FixtureRule.BehaviorKind.DENY
+                        ? FixtureRule.Consumption.optionalOnce()
+                        : FixtureRule.Consumption.once(),
+                FixtureRule.SchemaCheck.strict());
     }
 
     private static FixtureRule.Behavior behaviorFor(
             VisualSimulationPlan.Standin standin, ResourceFixtureRuntime resourceRuntime) {
+        DependencyBehavior requested = standin.dependencyBehavior();
+        if (requested != null) {
+            if (standin.resourceFidelity() != ResourceFidelity.OUTPUT_LEVEL) {
+                throw new IllegalArgumentException("Advanced dependency behaviors require output-level fidelity");
+            }
+            return switch (requested.kind()) {
+                case RETURN -> FixtureRule.Behavior.returning(requested.value());
+                case ERROR -> FixtureRule.Behavior.throwing(
+                        defaulted(requested.errorCode(), "SIMULATED_DEPENDENCY_ERROR"),
+                        defaulted(requested.errorType(), "DEPENDENCY_ERROR"),
+                        requested.errorMessage());
+                case DELAY -> FixtureRule.Behavior.delayed(requiredAfter(requested), requested.value());
+                case TIMEOUT -> FixtureRule.Behavior.timeout(requiredAfter(requested),
+                        defaulted(requested.errorCode(), "TEST_TIMEOUT"), requested.errorMessage());
+                case REPLAY -> FixtureRule.Behavior.replaying(requested.replayRef());
+                case OBSERVE -> FixtureRule.Behavior.spy();
+                case MUST_NOT_CALL -> FixtureRule.Behavior.deny(
+                        defaulted(requested.errorCode(), "MUST_NOT_CALL"), requested.errorMessage());
+            };
+        }
         if (standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL) {
             return FixtureRule.Behavior.returning(standin.output());
         }
@@ -226,6 +266,63 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                 return SideEffectType.EXTERNAL_CALL;
             }
         };
+    }
+
+    private static Operator<Object, Object> localObservedOperator(Object output) {
+        return new Operator<>() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                return output;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.READ_ONLY;
+            }
+        };
+    }
+
+    private static boolean observesDelegate(VisualSimulationPlan.Standin standin) {
+        return standin.dependencyBehavior() != null
+                && standin.dependencyBehavior().kind() == DependencyBehaviorKind.OBSERVE;
+    }
+
+    private static boolean requiresLogicalClock(VisualSimulationPlan plan) {
+        return plan.standins().stream().map(VisualSimulationPlan.Standin::dependencyBehavior)
+                .filter(Objects::nonNull)
+                .anyMatch(behavior -> behavior.kind() == DependencyBehaviorKind.DELAY
+                        || behavior.kind() == DependencyBehaviorKind.TIMEOUT);
+    }
+
+    private ResolvedReplayPayloads replayPayloads(VisualSimulationPlan plan) {
+        Map<String, ResolvedReplayPayloads.Payload> resolved = new LinkedHashMap<>();
+        for (VisualSimulationPlan.Standin standin : plan.standins()) {
+            DependencyBehavior behavior = standin.dependencyBehavior();
+            if (behavior == null || behavior.kind() != DependencyBehaviorKind.REPLAY) continue;
+            try {
+                String json = objectMapper.writeValueAsString(behavior.value());
+                resolved.put(behavior.replayRef(), new ResolvedReplayPayloads.Payload(
+                        behavior.replayRef(), "INTERNAL", json, "visual-simulation",
+                        standin.originalNodeId(), 1, ProtocolFingerprint.ofText(plan.generatedDsl()),
+                        ProtocolFingerprint.ofText(json), Instant.parse("9999-12-31T23:59:59Z"),
+                        false, List.of("INLINE_SIMULATION_REPLAY")));
+            } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+                throw new IllegalArgumentException("Replay value is not JSON serializable", failure);
+            }
+        }
+        return new ResolvedReplayPayloads(resolved);
+    }
+
+    private static Duration requiredAfter(DependencyBehavior behavior) {
+        Duration after = behavior.after();
+        if (after == null || after.isNegative() || after.isZero()) {
+            throw new IllegalArgumentException("DELAY and TIMEOUT require a positive duration");
+        }
+        return after;
+    }
+
+    private static String defaulted(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static VisualDslRunResponse toVisualResponse(String outputNode, Graph graph,
