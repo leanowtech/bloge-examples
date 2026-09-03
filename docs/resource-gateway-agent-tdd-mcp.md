@@ -17,17 +17,16 @@
 
 ## 2. 启动本地服务
 
-前置条件：Java 25、Maven 3.9，以及本机 Maven 仓库中已安装的 BLOGE 依赖。在仓库根目录执行：
+前置条件：Java 25、Maven 3.9，以及本机 Maven 仓库中已安装的 BLOGE 依赖。先在专门运行 Resource Gateway 的 **终端 A** 中执行；不要从这个终端启动 Codex：
 
 ```bash
-export RG_MCP_TOKEN='replace-with-a-local-token'
-export RG_REVIEW_TOKEN='replace-with-a-different-reviewer-token'
-export RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true
-export RG_INTEGRATION_DEMO_TOKEN="$RG_MCP_TOKEN"
-export RG_INTEGRATION_DEMO_REVIEW_TOKEN="$RG_REVIEW_TOKEN"
-export RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,CORRECTNESS_FIXTURE_MATERIAL_WRITE'
+RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true \
+RG_INTEGRATION_DEMO_TOKEN='replace-with-a-local-agent-token' \
+RG_INTEGRATION_DEMO_REVIEW_TOKEN='replace-with-a-different-reviewer-token' \
+RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,CORRECTNESS_FIXTURE_MATERIAL_WRITE' \
+RESOURCE_GATEWAY_PORT=8081 \
+./scripts/start-examples.sh resource-gateway
 
-RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
 ./scripts/example-services.sh status resource-gateway
 ```
 
@@ -43,7 +42,7 @@ RESOURCE_GATEWAY_PORT=8081 ./scripts/start-examples.sh resource-gateway
 ./scripts/stop-examples.sh resource-gateway
 ```
 
-两个 token 必须不同。`RG_MCP_TOKEN` 映射到 `WORKLOAD` Agent；`RG_REVIEW_TOKEN` 映射到 `HUMAN` reviewer，且只允许 READ/GOVERNANCE。Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器。外部 PostgreSQL 必须先应用 `db/postgresql/V20260903_020__agent_tdd_runtime.sql`；只有嵌入式 H2 会自动建 Agent TDD 表，外部库缺 migration 时启动失败关闭。
+两个 token 必须不同。`RG_INTEGRATION_DEMO_TOKEN` 映射到 `WORKLOAD` Agent；`RG_INTEGRATION_DEMO_REVIEW_TOKEN` 映射到 `HUMAN` reviewer，且只允许 READ/GOVERNANCE。上面的 inline 环境只传给启动脚本，不会把 reviewer token 导出到父 Shell。Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器。外部 PostgreSQL 必须先应用 `db/postgresql/V20260903_020__agent_tdd_runtime.sql`；只有嵌入式 H2 会自动建 Agent TDD 表，外部库缺 migration 时启动失败关闭。
 
 ## 3. 把 MCP 配进 Codex
 
@@ -96,9 +95,17 @@ startup_timeout_sec = 10
 tool_timeout_sec = 120
 ```
 
-不要把 Bearer token 直接写进 TOML。确保启动 Codex 的进程能读取 `RG_MCP_TOKEN`，然后完全退出并重新打开 Codex。CLI 可从已经导出该变量的 Shell 启动；Desktop 应通过系统的安全环境注入方式把同名变量传给应用进程。
+不要把 Bearer token 直接写进 TOML。在独立的 **终端 B** 中只注入 Agent token，再从这里启动 Codex CLI：
 
-**绝对不要把 `RG_REVIEW_TOKEN` 传给 Codex、写进 `.codex/config.toml` 或粘进对话。** Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
+```bash
+export RG_MCP_TOKEN='replace-with-a-local-agent-token'
+unset RG_REVIEW_TOKEN RG_INTEGRATION_DEMO_REVIEW_TOKEN
+codex
+```
+
+Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_TOKEN`，然后完全退出并重新打开。不要从终端 A 启动 Desktop、CLI 或 IDE；也不要把 reviewer token 存进能被 Codex 进程继承的全局 Shell 配置。
+
+**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml` 或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 `replace-with-a-different-reviewer-token`；该值只保存在当前页面内存。Codex 的 governance server 只暴露 `fixture.promote` 和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
 
 检查配置：
 
@@ -155,7 +162,7 @@ graph codexWalletOps {
 
 ### 4.2 人工停点一：批准 Oracle
 
-打开 `http://localhost:8081/agent-tdd.html`，输入 **`RG_REVIEW_TOKEN`**，找到 `codex-wallet-cases-v1 / wallet-usd`，点击“查看详情并批准”。浏览器会先用 HUMAN 身份读取精确 revision 的 `intent/given/stubs/expect/owner/proposedBy`，显示确认框；逐项核对后再批准。
+打开 `http://localhost:8081/agent-tdd.html`，输入只由人工保管的 **reviewer token**，找到 `codex-wallet-cases-v1 / wallet-usd`，点击“查看详情并批准”。浏览器会先用 HUMAN 身份读取精确 revision 的 `intent/given/stubs/expect/owner/proposedBy`，显示确认框；逐项核对后再批准。
 
 看板列表仍是 `STRUCTURE_ONLY`；payload-bearing 详情只在人工治理端点按需读取，响应带 `no-store`，不会进入 MCP。批准同时绑定 `expectedRevision` 和详情的 `proposalFingerprint`；如果 Agent 在评审期间修改了用例，服务端会拒绝，必须刷新后重审。提议者与 reviewer 是同一 actor 时也会拒绝。
 
@@ -181,7 +188,7 @@ GREEN 表示“冻结的可执行绑定在批准用例和受控依赖下满足�
 
 ### 4.4 人工停点二：签署发布证据
 
-仍使用 **`RG_REVIEW_TOKEN`** 回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
+仍使用人工保管的 **reviewer token** 回到看板，找到 `codex-wallet-ops-v1` 的 `PUBLISH_SIGNOFF`。核对 `draftRevision`、`goldenSetId`、`evidenceFingerprint` 与 Agent 汇报完全一致。填写新的 `signoffRef`，例如 `wallet-ops-signoff-20260903-01`，再批准。
 
 签署不可变；同一个 `signoffRef` 不能覆盖使用。草稿、ACTIVE 用例、Oracle、stub、binding 或目标实现任何一项变化，旧 GREEN 和旧签署都会失效。
 
