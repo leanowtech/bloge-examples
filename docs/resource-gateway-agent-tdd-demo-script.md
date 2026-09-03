@@ -1,62 +1,71 @@
-# Resource Gateway Agent TDD 演示导演脚本
+# 用自然语言把取消费政策变成可信业务能力
 
-本文用于完成一次 12～15 分钟的现场演示。演示者在 Codex 中通过 MCP 发现业务能力、编排 Tool、提出 GOLDEN、完成 RED/GREEN、查看平台实景验证，并在两个人工停点后发布不可变产物。
+这是一份面向业务人员的现场演示导演脚本。主角是客服政策负责人小李。她不写代码，也不需要理解接口、Schema、binding、DSL 或 MCP 工具名称。她只负责讲清业务事实、数据来源、规则和标准答案，并在看板上完成两次人工把关。
 
-完整配置、字段说明和故障排查见 [在 Codex 中使用 Resource Gateway Agent TDD MCP](resource-gateway-agent-tdd-mcp.md)。本文只保留现场需要执行和讲解的内容。
+Codex 是小李的业务工具搭建助手。Codex 负责发现平台能力、生成技术契约和编排、处理诊断、执行验证并提交发布。现场只展示业务旅程、业务规则、覆盖盲区和上线门禁；技术结构默认收起。
 
-## 1. 演示目标
+完整的环境配置、安全边界和故障排查见 [在 Codex 中使用 Resource Gateway Agent TDD MCP](resource-gateway-agent-tdd-mcp.md)。
 
-演示结束时，观众应看到以下事实：
+## 1. 观众最终要看到什么
 
-1. Codex 先从 Resource Gateway 发现 API 和契约，不猜测 binding 或 Schema。
-2. Agent 可以编排 Tool 和提出业务用例，但不能批准自己的 Oracle。
-3. RED/GREEN 逻辑验证的 `realExternalCalls` 为 `0`。
-4. 逻辑 GREEN 后，平台自动执行受控的只读沙箱实景验证。
-5. 人工签署绑定当前 revision、GOLDEN、逻辑证据和实现证据。
-6. 所有门禁通过后，系统才创建 `EXECUTABLE` 发布物。
+演示回答一个问题：
 
-演示不是“Agent 自动操作生产系统”。真实外部写不在本流程中；实景验证只允许已登记、白名单内的只读沙箱资源。
+> 一个不写代码的客服政策负责人，能否只用业务语言，把“网约车取消费该不该减免”变成客服 AI 可调用、可验证、可追责的业务能力？
 
-## 2. 角色与屏幕
+完整旅程分为五幕：
 
-| 角色 | 使用界面 | 凭据 | 职责 |
-| --- | --- | --- | --- |
-| 演示者 / Agent 操作者 | Codex | WORKLOAD Agent token | 发现、编排、提议、RED/GREEN、读取证据、提交发布 |
-| 业务评审人 | 浏览器看板 | HUMAN reviewer token | 查看业务详情、批准 Oracle、签署发布证据 |
-| Resource Gateway | 终端 A | 启动时接收两类 token | 鉴权、持久化、执行门禁、实景验证和发布 |
+1. **说清世界观**：这件事需要哪些事实，可能产生哪些处置结果。
+2. **接入事实来源并提供样例**：每项事实从哪里来，典型数据是什么样。
+3. **口述业务规则**：Codex 自动落成编排，小李只核对业务流程和规则表。
+4. **给出标准案例**：系统用业务应然检验规则，暴露遗漏，并显示覆盖盲区。
+5. **确认真实可用后发布**：逻辑正确、沙箱数据源可接、负责人签署，三项同时成立才允许上线。
 
-推荐同时展示三个区域：
+演示重点不是“Agent 会写代码”，而是“业务人员始终掌握业务真相和上线决定，Agent 承担技术翻译与重复劳动”。
 
-- 左侧：Codex 任务。
-- 右上：`http://localhost:8081/agent-tdd.html`。
-- 右下：终端 A，显示服务状态和日志；不要展示 token。
+## 2. 角色和画面
 
-Reviewer token 只能由业务评审人在浏览器中输入。不要把 reviewer token 传给 Codex、写入配置文件、粘贴进对话或投屏展示。
+| 角色 | 现场动作 | 不需要理解的内容 |
+| --- | --- | --- |
+| 小李，客服政策负责人 | 与 Codex 对话；核对规则表、标准案例和覆盖盲区；批准业务应然；签署上线 | DSL、接口参数、Schema、节点和连线 |
+| Codex，业务工具搭建助手 | 理解业务意图；发现积木和数据源；生成并修正技术实现；执行验证；解释结果 | — |
+| 平台 | 保存旅程状态；执行零外呼验证；自动完成只读沙箱实景验证；守住发布门禁 | — |
+| 演示保障人员 | 会前启动服务、配置凭据和准备沙箱数据源；会后停服 | 不参与业务规则决策 |
 
-## 3. 演示前准备
+推荐投屏布局：
 
-### 3.1 启动 Resource Gateway
+- 左侧：小李与 Codex 的对话。
+- 右侧：业务旅程看板 `http://localhost:8081/agent-tdd.html`。
+- 终端和专家视图默认不投屏。只有排障时才切换。
 
-在仓库根目录打开专用的终端 A。不要从终端 A 启动 Codex。
+## 3. 演示前的后台准备
+
+本节由演示保障人员执行，不让小李操作，也不作为业务演示内容。
+
+### 3.1 准备四个只读沙箱事实来源
+
+演示环境必须预先提供以下业务来源：
+
+| 业务来源 | 能回答的问题 | 演示样例 |
+| --- | --- | --- |
+| 订单信息 | 谁取消、何时取消、收了多少费用、发生在哪座城市 | 乘客取消；下单后 90 秒；收取 8 元；上海 |
+| 责任判定 | 本次取消主要由谁负责 | 无乘客责任；可信度 98% |
+| 城市计费政策 | 当前城市允许的免费取消时长和费用上限 | 上海免费取消时长 120 秒；费用上限 20 元 |
+| 历史赔付与风险 | 历史减免次数及是否存在恶意申诉 | 历史减免 0 次；无恶意申诉 |
+
+四个来源必须满足以下条件：
+
+- 只读。
+- 运行在 `local`、`test` 或 `sandbox` 环境。
+- 主机已加入实景验证白名单。
+- 返回值与现场样例一致。
+
+当前仓库的默认演示数据源不等同于这组“取消费纠纷”素材。若未准备这四个沙箱来源，演示可以走完前四幕，但第五幕应当如实停在“真实来源尚未接齐”，不能把默认的用户资料示例冒充取消费业务闭环。
+
+### 3.2 启动 Resource Gateway
+
+在仓库根目录的专用终端中执行完整操作手册第 2 节的启动命令，然后检查：
 
 ```bash
-printf 'Local Agent token: '
-IFS= read -rs RG_AGENT_DEMO_TOKEN
-printf '\nLocal reviewer token: '
-IFS= read -rs RG_REVIEW_DEMO_TOKEN
-printf '\n'
-
-RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true \
-RG_INTEGRATION_DEMO_TOKEN="${RG_AGENT_DEMO_TOKEN}" \
-RG_INTEGRATION_DEMO_REVIEW_TOKEN="${RG_REVIEW_DEMO_TOKEN}" \
-RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE' \
-RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS='localhost,127.0.0.1' \
-RG_CORRECTNESS_AUTHORING_ENABLED=true \
-RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
-RESOURCE_GATEWAY_PORT=8081 \
-./scripts/start-examples.sh resource-gateway
-
-unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 ./scripts/example-services.sh status resource-gateway
 ```
 
@@ -66,198 +75,303 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 Resource Gateway: running
 ```
 
-启动脚本默认只监听 `127.0.0.1`。现场演示不要改成 `0.0.0.0`。
+### 3.3 准备 Codex 和人工看板
 
-### 3.2 检查 Codex MCP
+1. 只向 Codex 注入 Agent 凭据。
+2. 不要让 Codex 进程继承 reviewer 凭据。
+3. 在 Codex 中输入 `/mcp`，确认四个 Resource Gateway 连接均可用。
+4. 在浏览器打开 `http://localhost:8081/agent-tdd.html`。
+5. 业务评审人单独保管 reviewer 凭据，等到人工停点再输入。
 
-Codex 的项目级 MCP 配置使用仓库 `.codex/config.toml`。配置内容和 Agent token 注入步骤见完整操作手册第 3 节。
+如果任一项未准备好，不要开始正式演示。
 
-在只持有 Agent token 的终端 B 中检查：
+## 4. 开场：先约定人和 Agent 的分工
 
-```bash
-codex mcp list
-codex mcp get rg_read
-```
-
-在 Codex 中输入：
-
-```text
-/mcp
-```
-
-预期结果：`rg_read`、`rg_author`、`rg_execute`、`rg_govern` 均已连接。若未连接，不要开始正式演示。
-
-### 3.3 打开人工看板
-
-在普通浏览器中打开：
+小李在新的 Codex 任务中输入：
 
 ```text
-http://localhost:8081/agent-tdd.html
+你是我的业务工具搭建助手。
+
+我只负责告诉你业务目标、事实来源、业务规则和标准答案。请你使用已经连接好的业务工具平台，自行完成能力发现、技术设计、编排、检查和修正。
+
+和我沟通时请遵守这些约定：
+1. 只用业务语言解释你理解了什么、还缺什么、当前能不能继续。
+2. 不向我展示代码、接口参数、数据结构定义、内部标识或技术诊断原文。
+3. 需要选择时，只问我业务含义，不要让我替你做技术选择。
+4. 每完成一幕就停下来，先让我在业务看板核对，再继续下一幕。
+5. 不要替我批准标准答案，也不要替我签署上线。
+6. 不能确认的事实要明确说不知道，不要猜。
+
+如果你理解了，请用一句话复述我们的分工，然后等我提出业务目标。
 ```
 
-此时先不要输入 reviewer token。保留页面，等待第一个人工停点。
-
-## 4. 现场导演脚本
-
-### 第 0 幕：说明边界（约 1 分钟）
+Codex 应当说明：小李负责业务真相和上线决定；Codex 负责把业务意图翻译成平台可执行能力。
 
 演示者讲解：
 
-> 这次演示不是让 Agent 直接调用生产 API。Agent 负责发现、编排、提出业务用例和执行零外呼验证。业务 Oracle 与发布签署分别由人确认。逻辑 GREEN 后，只有平台内部身份能运行只读沙箱实景验证。
+> 从这一刻开始，小李不再充当低代码工程师。她不需要知道平台有哪些技术工具，也不负责写“更像机器能懂”的提示词。
 
-屏幕展示：Codex 的 `/mcp` 连接列表，以及看板空闲页面。
+## 5. 第一幕：小李说清业务世界观
 
-成功信号：四个最小权限 MCP server 均连接。
-
-### 第 1 幕：发现、编排和提出 GOLDEN（约 3 分钟）
-
-在新的 Codex 任务中粘贴以下提示词：
+### 小李这样说
 
 ```text
-请使用 rg_read 和 rg_author MCP 完成一次可演示的 Agent TDD 编排。所有 API、binding、端口和 Schema 都必须来自 MCP 返回，不要猜测。
+我是网约车业务的客服政策负责人。
 
-演示对象：
-- toolRef: demo-profile-ops-v1
-- caseSetRef: demo-profile-cases-v1
+我想把“取消费纠纷怎么处理”做成客服助手可以直接使用的业务能力。客服输入一个争议订单后，这个能力需要判断：取消费应当全额减免、维持原判，还是升级人工处理。
 
-执行步骤：
-1. 调用 rg.capability.list，找到 effect=READ_EXTERNAL 的 `user-service.getProfile`。
-2. 调用 rg.contract.get，读取它的真实 bindingRef、输入端口、输出端口和 Schema。
-3. 创建 Tool `demo-profile-ops-v1`，libraryRefs 显式传空数组。DSL 使用发现到的 bindingRef：
+做判断时至少要考虑四类事实：
+- 订单是谁取消的、取消发生在下单后多久、收了多少取消费、订单在哪座城市；
+- 这次取消主要由乘客、司机、平台还是其他原因负责；
+- 这座城市允许的免费取消时长和费用上限；
+- 乘客过去获得过多少次减免，以及是否存在疑似或确认的恶意申诉。
 
-graph demoProfileOps {
-  input { userId: String }
-  node profile : "resource:user-service.getProfile" {
-    input { params = { userId: ctx.userId } }
-  }
-  transform response {
-    name = profile.output.payload.name
-    tier = profile.output.payload.tier
-  }
-}
-
-4. 设置完整 Instruction，包含 name/title/description/whenToUse/inputs/outputs/errors。
-5. 创建 `demo-profile-cases-v1`，提出一条 GOLDEN：
-   - caseId: profile-premium
-   - given.userId: u-100
-   - profile stub payload: userId=u-100, name=Alice, tier=premium
-   - expect: name=Alice, tier=premium
-   - intent: 已批准的用户资料查询应返回业务方确认的姓名和等级
-   - oracleOwner: profile-ops
-6. 每个写操作使用新的、可读的 idempotencyKey。
-7. 调用 rg.scenario.listCases，确认用例等待人工审批，然后停止。
-
-不要执行 RED/GREEN，不要批准 Oracle，不要调用发布。最后只汇报 toolRef、draft revision、caseSetRef、case revision、当前 lifecycle 和下一项人工动作。
+现在先不要连接真实系统，也不要设计具体规则。请先把你理解的业务范围整理成一份“业务世界观草稿”，告诉我：有哪些事实、有哪些可能结论、还有没有含义不清的地方。
 ```
 
-演示者讲解：
+### Codex 应当完成
 
-> Agent 不是从提示词中获得接口结构。它先查询 Resource Gateway 的能力目录和契约，再把发现到的 binding 写入图。此时业务用例只是提案，还不能形成发布证据。
+- 把业务事实整理成“订单、责任、城市政策、历史风险”四组业务概念。
+- 把业务结果整理成“全额减免、维持原判、升级人工”。
+- 在平台中保存为“草稿世界观、待用例检验”。
+- 只向小李反馈业务摘要；不展示生成的契约、代码或内部标识。
 
-成功信号：
+### 小李在看板核对
 
-- Codex 显示 `demo-profile-ops-v1` 和 `demo-profile-cases-v1`。
-- `profile-premium` 仍等待人工 Oracle 审批。
-- Codex 停止执行，没有调用 RED、GREEN 或发布。
+打开「第 1 幕 · 你的世界观与可用积木」。确认右侧出现四组业务事实和三个业务结论。此时数据来源可以显示“仅契约”或“尚未接入”。
 
-### 第 2 幕：人工批准 Oracle（约 2 分钟）
+### 演示话术
 
-业务评审人执行：
+> 小李先定义业务世界里“有什么”，还没有讨论系统怎么实现。Codex 已经在后台形成了严谨契约，但业务看板只呈现她需要核对的概念。
 
-1. 在看板输入 reviewer token。
-2. 选择“加载”。
-3. 找到 `demo-profile-cases-v1 / profile-premium`。
-4. 选择“查看详情并批准”。
-5. 核对 `intent`、`given`、`stubs`、`expect`、`oracleOwner` 和 `proposedBy`。
-6. 确认浏览器提示。
+### 成功信号
 
-演示者讲解：
+- 看板能用业务名称展示四类事实。
+- 当前状态明确标记为“草稿世界观、待用例检验”。
+- Codex 没有要求小李提供接口、字段类型或代码。
 
-> 看板先按精确 revision 读取业务详情。批准动作同时绑定 proposal fingerprint。如果 Agent 在评审期间修改用例，批准会失败，评审人必须重新打开并核对。
+## 6. 第二幕：小李指出事实来源并提供样例
 
-成功信号：看板中的待审 Oracle 数量减少；Codex 再调用 `rg.scenario.listCases` 后看到 `lifecycle=ACTIVE`。
-
-不要让 Agent 代替人工调用审批 HTTP 接口。WORKLOAD 身份即使知道地址也会被拒绝。
-
-### 第 3 幕：RED、GREEN 和平台实景验证（约 3 分钟）
-
-继续在同一 Codex 任务中粘贴：
+### 小李这样说
 
 ```text
-继续 `demo-profile-ops-v1` 的 Agent TDD 流程：
+这四类事实在公司里都有明确来源：
 
-1. 调用 rg.scenario.listCases，确认 `profile-premium` 为 ACTIVE；否则停止。
-2. 调用 rg.simulate：side=RED，cases.caseSetRef=demo-profile-cases-v1，libraryRefs=[]。
-3. 要求 RED verdict=RED_PASS，且 realExternalCalls=0；不满足时只依据结构化 diagnostics 修复。
-4. RED 通过后调用 rg.tool.baseline：toolRef=demo-profile-ops-v1，caseSetRef=demo-profile-cases-v1，side=GREEN，rounds=3，libraryRefs=[]。
-5. 要求 status=GO、businessFingerprintStable=true、realExternalCalls=0。
-6. 检查 baseline.attestation，要求 status=ATTESTED、environment 为 local/test/sandbox、所有 case 的 oracleHeld=true、所有依赖的 allDependenciesCalled=true。
-7. 调用 rg.verdict.get 和 rg.readiness.get。
-8. 如果只剩 OWNER_SIGNOFF_ABSENT，停止等待人工签署。不要调用 rg.tool.publish。
+- 订单信息来自订单中心；
+- 责任判定来自责任认定服务；
+- 免费取消时长和费用上限来自城市计费政策；
+- 历史减免和恶意申诉信号来自客服赔付历史。
 
-最后只汇报：RED verdict、逻辑 realExternalCalls、baseline status、draftRevision、goldenSetId、evidenceFingerprint、attestation status/environment/realExternalCalls、implementationFingerprint 和下一项人工动作。不要展示业务 payload。
+请你先在平台现有能力中查找这些来源，能对应上的就接入。找不到时只告诉我缺少哪一类业务来源，以及应该找哪个系统负责人补齐；不要让我提供接口地址或技术定义。
+
+我先给一组典型样例：订单由乘客在下单 90 秒后取消，地点是上海，收取了 8 元取消费；责任判定为乘客无责，可信度 98%；上海免费取消时长为 120 秒，费用上限为 20 元；这名乘客过去没有获得过减免，也没有恶意申诉信号。
+
+请把这组样例保存为后续设计和验证可以复用的业务样例。完成后只告诉我：四类来源分别是否已接入、样例是否可用、还缺什么。
 ```
 
-演示者按以下顺序指出结果：
+### Codex 应当完成
 
-1. `RED_PASS` 证明测试能够识别未实现状态。
-2. GREEN baseline 为 `GO`，并且业务指纹在多轮执行中稳定。
-3. RED/GREEN 的 `realExternalCalls=0`，说明 Agent 验证没有外呼。
-4. `attestation.status=ATTESTED` 是平台随后生成的独立实景证据。
-5. `readiness.publishable=false` 是预期状态，因为还缺人工签署。
+- 自动发现并匹配四个沙箱事实来源。
+- 校验样例是否符合相应业务来源的约定。
+- 把样例保存为可复用验证数据。
+- 如果来源缺失，停止在第二幕并用业务名称报告缺口。
+- 不让小李选择请求方式、地址、认证方式、Schema 或内部绑定。
 
-如果 attestation 为 `FAILED` 或 `RECOVERY_REQUIRED`，不要修改结果或自动重试。跳到第 6 节的失败演示话术。
+### 小李在看板核对
 
-### 第 4 幕：人工签署发布证据（约 2 分钟）
+确认四个事实来源分别显示“已接入”，并能看到一组不暴露敏感内容的样例摘要。
 
-业务评审人在看板执行：
+### 演示话术
 
-1. 找到 `demo-profile-ops-v1`。
-2. 核对实景验证状态为 `ATTESTED`。
-3. 打开 `PUBLISH_SIGNOFF`。
-4. 将看板中的 `draftRevision`、`goldenSetId`、`evidenceFingerprint`、`implementationFingerprint` 与 Codex 汇报逐项比对。
-5. 输入 `signoffRef=demo-profile-signoff-v1`。
-6. 批准签署。
+> 小李说的是“这项事实归哪个业务系统负责”，不是“调用哪个接口”。Codex 负责在平台目录中找到实现；找不到时，问题回到明确的系统负责人，而不是把技术集成工作甩给业务人员。
 
-演示者讲解：
+### 成功信号
 
-> 这不是对 Tool 名称做一次永久授权。签署绑定当前草稿、当前 GOLDEN、逻辑证据和实景实现证据。任何一项发生漂移，旧签署都会失效。
+- 四个事实来源都显示“已接入”。
+- 样例显示为“可用于验证”。
+- 若有来源缺失，旅程停在第二幕，不带病进入规则设计。
 
-成功信号：Codex 调用 `rg.readiness.get` 后看到 `publishable=true`。
+## 7. 第三幕：小李口述规则，Codex 落成业务流程
 
-### 第 5 幕：受治理发布（约 2 分钟）
+这一幕故意遗漏“司机责任”规则。第四幕的标准案例会把遗漏暴露为业务待办。
 
-继续在同一 Codex 任务中粘贴：
+### 小李这样说
 
 ```text
-请完成 `demo-profile-ops-v1` 的受治理发布：
+请按下面的业务政策设计取消费处理规则：
 
-1. 调用 rg.readiness.get，确认 publishable=true。
-2. 核对当前 draftRevision、goldenSetId、evidenceFingerprint、attestation.implementationFingerprint 与人工签署一致。
-3. 任一项不一致或 remainingLimitations 非空时停止，并报告稳定原因码。
-4. 全部一致时调用 rg.tool.publish，signoffRef=demo-profile-signoff-v1，并使用新的 idempotencyKey。
-5. 再读取 readiness 和 verdict。
+1. 只要确认存在恶意申诉，就不要自动处理，直接升级人工。
+2. 没有恶意申诉时，如果乘客没有责任，并且仍在城市规定的免费取消时长内，就全额减免。
+3. 没有恶意申诉时，如果是乘客主动取消，但仍在免费取消时长内，也全额减免。
+4. 没有恶意申诉时，如果是乘客主动取消，并且已经超过免费取消时长，就维持原判。
+5. 其他没有说清楚的情况不要自动猜，升级人工。
 
-只汇报 publicationId、artifactKind、冻结 revision 和最终状态。不得绕过门禁，不得输出 token 或业务 payload。
+请你自行把这些规则落成可执行的业务流程。不要向我展示代码。完成后，请用一句白话说明整个处理流程，并把规则整理成业务表格让我核对。
 ```
+
+### Codex 应当完成
+
+- 自行生成并检查完整编排。
+- 自行处理技术诊断，直到技术结构有效。
+- 向看板投影一句业务流程摘要，例如“取订单、责任、城市政策和历史风险 → 汇成纠纷事实 → 按规则表判断 → 给出处置建议”。
+- 生成包含条件、结论和兜底规则的业务规则表。
+- 不向小李展示 DSL、节点、连线、binding 或编译诊断。
+
+### 小李在看板核对
+
+确认看板中的规则表包含：
+
+| 恶意申诉 | 责任方 | 是否在免费时长内 | 处理结果 |
+| --- | --- | --- | --- |
+| 已确认 | 任意 | 任意 | 升级人工 |
+| 未确认 | 无乘客责任 | 是 | 全额减免 |
+| 未确认 | 乘客 | 是 | 全额减免 |
+| 未确认 | 乘客 | 否 | 维持原判 |
+| 其他 | 其他 | 其他 | 升级人工 |
+
+### 演示话术
+
+> Codex 负责把口述政策变成可执行结构，小李只核对业务规则表。技术结构仍然保留在专家视图中，但不是业务把关的前提。
+
+### 成功信号
+
+- 看板显示白话流程，而不是节点清单。
+- 小李能逐行确认条件和结论。
+- 规则表中暂时没有“司机责任”的自动处理规则。
+
+## 8. 第四幕：标准案例把遗漏变成业务待办
+
+### 小李这样说
+
+```text
+我用几个实际争议来检验这套规则。以下结论都是业务标准答案，不能为了让现有规则通过而修改：
+
+1. 订单 O1：乘客在 90 秒时取消，乘客无责，上海免费时长 120 秒，没有恶意申诉。应当全额减免。
+2. 订单 O2：乘客在 200 秒时主动取消，乘客有责，上海免费时长 120 秒，没有恶意申诉。应当维持原判。
+3. 订单 O3：司机在 60 秒时取消，责任在司机，上海免费时长 120 秒，没有恶意申诉。乘客不应承担费用，应当全额减免，并记入司机侧处理通道。
+4. 订单 O4：乘客在 60 秒时取消，但已经确认存在恶意申诉。应当升级人工。
+5. 对免费时长边界也要检查：三种情况都由乘客主动取消、责任在乘客且没有恶意申诉；119 秒和 120 秒应当全额减免，121 秒应当维持原判。
+
+请把这些整理成待我确认的标准案例。先不要改变业务规则，也不要替我批准。等我在看板逐条确认后，再用安全方式检验当前规则，并把不符合标准答案的地方翻译成业务待办。
+```
+
+### 人工停点一：小李批准业务应然
+
+小李在看板执行：
+
+1. 打开每条待确认案例。
+2. 核对业务背景、事实来源、预期结果和负责人。
+3. 逐条批准。
+
+Codex 不能代替小李执行这一步。
+
+批准后，小李继续说：
+
+```text
+我已经逐条确认这些标准案例。现在请检验当前规则。
+
+不要连接真实业务系统。不要改动我确认过的标准答案。如果发现不一致，请告诉我是哪个业务场景没有被规则覆盖，以及应该补充什么政策。
+```
+
+### 预期的第一次结果
+
+系统应当指出：
+
+> “司机责任导致取消时，乘客应全额减免”的标准案例没有被当前规则正确覆盖。
 
 演示者讲解：
 
-> 发布物冻结的是通过门禁的 operator snapshot。后续 catalog 或 descriptor 变化不会让已发布 Tool 静默改用新实现。
+> 这条红色结果不是程序报错，而是一条可分派的业务待办。它说明小李第一次口述政策时漏掉了一个真实业务分支。标准答案保持不动，应该修规则，而不是改答案迎合实现。
 
-成功信号：
+### 小李补充政策
 
-- `artifactKind=EXECUTABLE`。
-- 返回 publication ID 和冻结 revision。
-- 没有未处理的 `remainingLimitations`。
+```text
+补充一条政策：没有恶意申诉时，只要取消责任在司机，乘客就不承担取消费，应当全额减免，并进入司机侧记账通道。
 
-### 第 6 幕：结束和停服（约 1 分钟）
+请修正规则，但不要修改已经批准的标准案例。修正后重新检验，并告诉我还有哪些事实组合没有被标准案例覆盖。请用业务语言列出最重要的盲区，不要只给一个覆盖数字。
+```
+
+### Codex 应当完成
+
+- 补上“司机责任 → 全额减免 → 司机侧通道”的规则。
+- 保持已批准的标准案例不变。
+- 重新执行零外呼验证。
+- 在看板显示已有覆盖、总事实空间和主要盲区。
+- 用业务语言解释剩余盲区，例如“平台责任且超过免费时长”“疑似恶意但未确认”。
+
+### 成功信号
+
+- O3 从红色业务待办变为通过。
+- 119、120、121 秒边界结论正确。
+- 逻辑验证没有访问真实系统。
+- 看板同时显示已覆盖组合和未覆盖组合，而不是只有用例数量。
+
+## 9. 第五幕：证明真实可接，再由小李签署上线
+
+### 小李这样说
+
+```text
+业务规则和标准案例已经确认。请继续完成上线前检查：
+
+1. 先确认同一批标准案例经过多轮检验仍得到稳定结果。
+2. 逻辑检查通过后，让平台自动确认四个只读沙箱来源是否真的能接通，真实数据是否仍能得到我批准的业务结论。
+3. 请把“规则是否正确”和“沙箱来源是否可用”分开汇报。
+4. 如果任何一项失败，就停止上线，并用业务语言告诉我应该由政策负责人、数据源负责人还是平台负责人处理。
+
+不要访问生产环境，不要触发任何写操作，也不要替我签署上线。
+```
+
+### Codex 应当向小李汇报
+
+业务汇报建议使用以下格式：
+
+```text
+业务规则：通过。标准案例多轮结果一致。
+真实接入：通过。四个只读沙箱来源均已调用，业务结论与标准答案一致。
+上线状态：还缺负责人签署。
+下一步：请在业务看板核对本次规则版本、标准案例和真实接入证明，然后签署。
+```
+
+不要向小李展示真实响应内容、认证材料或底层错误消息。
+
+### 人工停点二：小李签署上线
+
+小李在看板执行：
+
+1. 确认“业务规则已通过”。
+2. 确认“只读沙箱实景验证已通过”。
+3. 核对本次规则版本和标准案例没有变化。
+4. 输入业务签署编号，例如 `取消费政策演示-v1`。
+5. 批准上线签署。
+
+签署后，小李对 Codex 说：
+
+```text
+我已经在看板完成签署，签署编号是“取消费政策演示-v1”。
+
+请在确认规则、标准案例和真实接入证明都没有变化后发布。如果有任何变化就停止，不要沿用旧签署。发布完成后，只告诉我：能力名称、当前版本、是否已经可供客服助手使用，以及后续什么变化会让它重新进入审核。
+```
+
+### 预期结果
+
+Codex 应当用业务语言汇报：
+
+- “取消费纠纷处理”已经发布。
+- 当前发布版本已冻结。
+- 客服助手可以把它作为业务能力使用。
+- 规则、标准案例、数据来源或实现发生变化时，需要重新验证和签署。
+
+### 演示话术
+
+> 上线不是 Agent 自己决定的。平台先证明规则在标准案例上稳定，再证明沙箱真实可接，最后由小李对同一版本签署。任何内容发生变化，旧证据和旧签署都会失效。
+
+## 10. 结束演示
 
 演示者总结：
 
-> Agent 完成了发现、编排、测试和发布提交，但业务真相与发布责任仍由人确认。逻辑测试没有真实外呼；只读实景验证由平台身份在治理边界内完成。
+> 小李全程只做了五件业务工作：定义事实、指定来源、口述规则、批准标准答案、签署上线。Codex 承担了契约、编排、验证和发布提交。平台把业务正确性、真实接入和负责人签署锁成同一条证据链。
 
-在终端 A 执行：
+演示保障人员在仓库根目录执行：
 
 ```bash
 ./scripts/stop-examples.sh resource-gateway
@@ -270,82 +384,83 @@ graph demoProfileOps {
 Resource Gateway: stopped
 ```
 
-## 5. 演示成功判据
+## 11. 业务视角的成功判据
 
-| 检查点 | 必须看到的结果 |
+| 业务问题 | 现场必须看到的答案 |
 | --- | --- |
-| MCP 连接 | 四个最小权限 server 已连接 |
-| API 发现 | binding 和 Schema 来自 `rg.capability.list` / `rg.contract.get` |
-| Oracle | 不同 HUMAN actor 批准，case lifecycle 为 `ACTIVE` |
-| RED | `RED_PASS`，`realExternalCalls=0` |
-| GREEN | `status=GO`，`businessFingerprintStable=true`，`realExternalCalls=0` |
-| 实景验证 | `ATTESTED`，环境为 local/test/sandbox |
-| 发布前 | 人工签署前 `publishable=false`，签署后为 `true` |
-| 发布 | `artifactKind=EXECUTABLE` |
-| 清理 | `Resource Gateway: stopped` |
+| 小李是否需要写代码？ | 不需要。Codex 自行形成并修正技术实现 |
+| 小李能否看懂 Codex 的理解？ | 能。看板展示业务世界观、白话流程和规则表 |
+| 规则遗漏怎么发现？ | 标准案例 O3 形成“司机责任规则缺失”的业务待办 |
+| 标准答案会不会被 Agent 偷改？ | 不会。标准案例由小李逐条批准，修复时保持不变 |
+| 是否只显示一个模糊的覆盖率？ | 不是。看板列出已覆盖组合和具体盲区 |
+| 逻辑验证会不会误操作真实系统？ | 不会。规则验证使用样例，真实外呼为 0 |
+| 谁验证真实系统？ | 平台在逻辑通过后自动验证白名单内的只读沙箱来源 |
+| 谁决定上线？ | 小李核对业务与实景证据后签署，Codex 只能提交发布 |
+| 规则或数据源变化后会怎样？ | 旧证据和旧签署失效，重新进入验证与审核 |
 
-缺少任意一项时，不要把演示描述为完整闭环。
+缺少任意一项时，不要把现场结果描述为完整业务闭环。
 
-## 6. 失败时的演示话术与恢复
+## 12. 失败也要按业务语言解释
 
-### MCP 未连接
+### 某项事实来源未接入
 
-执行：
+Codex 应当说：
 
-```bash
-./scripts/example-services.sh status resource-gateway
-curl --fail http://localhost:8081/examples/gateway >/dev/null
-codex mcp list
-tail -80 target/example-logs/resource-gateway.log
-```
+> “城市计费政策”还没有可用来源，请由计费平台负责人完成接入。当前可以继续讨论规则，但不能进入真实可用性证明。
 
-演示话术：
+不要让小李填写 URL、请求方式或字段定义。
 
-> 当前失败发生在 Codex 与 MCP 的连接层，尚未进入业务编排。先保留证据并恢复连接，不跳过协议门禁。
+### 样例缺少必要信息
 
-恢复：确认 Agent token 对 Codex 可见，然后完全重启 Codex。不要把 reviewer token 注入 Codex。
+Codex 应当说：
 
-### Oracle 尚未批准
+> 这组订单样例缺少“取消发生在下单后多久”，因此暂时无法判断是否处于免费取消时长内。
 
-现象：`GOLDEN_REQUIRES_APPROVAL`。
+不要只抛出字段名或格式错误。
 
-演示话术：
+### 规则与标准答案不一致
 
-> 这是预期的失败关闭。Agent 提出的业务期望不能自动成为真相。
+Codex 应当说：
 
-恢复：业务评审人打开精确详情并批准。不要改成临时 rows 绕过持久用例。
+> 当前政策没有覆盖“司机责任导致取消”的场景，但标准答案要求乘客全额减免。需要政策负责人补充这一分支。
 
-### 实景验证失败
+不要建议修改标准答案来消除失败。
 
-现象：`ATTESTATION_EXECUTION_FAILED`、`ATTESTATION_ORACLE_MISMATCH` 或 `ATTESTATION_RECOVERY_REQUIRED`。
+### 沙箱实景验证失败
 
-演示话术：
+Codex 应当区分：
 
-> 逻辑 GREEN 与真实沙箱结果不一致，或者平台无法确认上一次请求是否已完成。发布门禁保持关闭。系统不会让 Agent 自动重试并制造重复外呼。
+- 来源不可达：交给数据源负责人。
+- 数据含义与约定不一致：交给数据源负责人和政策负责人共同确认。
+- 平台无法确认上次验证是否完成：交给平台负责人核对后，由人工在看板重试。
 
-恢复：由人工检查沙箱、descriptor 和 Oracle。只有 HUMAN reviewer 可以从看板确认重跑。演示现场不修改 Oracle 迎合当前实现。
+任何一种情况都必须保持上线门禁关闭。Codex 不得自行重试真实调用。
 
-### 发布被拒绝
+## 13. 演示保障人员的后台验收表
 
-现象：`PUBLISH_GATE_NOT_MET`。
+本节不投屏。它用于保证业务叙事背后确实有工程证据，而不是播放预制结果。
 
-执行：让 Codex 调用 `rg.readiness.get`，读取 `remainingLimitations`。
+| 业务幕次 | Codex 在后台应完成的技术动作 | 保障人员检查点 |
+| --- | --- | --- |
+| 1 世界观 | 查询平台积木；建立设计态业务契约 | 看板标记“草稿世界观、待用例检验” |
+| 2 来源与样例 | 发现或登记只读资源；校验并保存样例；补齐实现指向 | 四个来源均已接入；样例不暴露敏感值 |
+| 3 口述规则 | 生成编排；预览并根据诊断自行修正 | 看板有白话流程、规则矩阵；技术结构默认折叠 |
+| 4 标准案例 | 提议并等待人工批准；执行零外呼验证；修复司机责任规则；显示事实覆盖 | 第一次 O3 失败；修复后通过；真实外呼为 0；盲区可见 |
+| 5 发布 | 多轮稳定验证；平台自动只读实景验证；等待签署；提交不可变发布 | 逻辑通过、实景通过、负责人签署三门齐备；发布物可执行 |
 
-演示话术：
+保障人员不得用后台接口替代两个人工停点，也不得在实景验证失败时展示预制的成功截图。
 
-> 发布请求没有绕过缺失证据。系统返回的是稳定门禁原因，而不是把半完成草稿发布出去。
+## 14. 彩排停止条件
 
-恢复：只补齐 readiness 指出的当前证据。内容、用例或 binding 已变化时，重新执行 GREEN、实景验证和人工签署。
+正式演示前，出现以下任一情况就停止彩排并修复环境：
 
-## 7. 彩排建议
+- 四个取消费沙箱来源没有全部准备好。
+- Codex 仍要求小李提供 DSL、Schema、URL 或内部标识。
+- 看板不能显示四类业务事实、规则矩阵或事实覆盖盲区。
+- O3 没有先形成业务待办，或修复时标准答案被改写。
+- 逻辑验证发生真实外呼。
+- 实景验证访问生产环境、跟随到未批准主机或尝试写操作。
+- Agent 可以替小李批准标准案例或签署上线。
+- 停服后仍有 Resource Gateway 进程占用演示端口。
 
-正式演示前至少完成一次同机彩排：
-
-1. 使用与现场相同的 Java、Maven、Codex、Chrome 和 Chromedriver。
-2. 走完两个真实人工停点，不用 HTTP 请求代替浏览器审批。
-3. 确认 `user-service.getProfile` 出现在能力目录中。
-4. 确认 RED/GREEN `realExternalCalls=0`，attestation 为 `ATTESTED`。
-5. 完成发布后执行停服命令，并确认端口释放。
-6. 清理终端滚屏中的 token，演示时只保留必要状态和结构化证据。
-
-演示现场优先展示系统真实返回。不要预先制作“成功结果”截图替代实时门禁，也不要在失败时手工修改响应。
+只有全部停止条件都未触发，才进入正式演示。
