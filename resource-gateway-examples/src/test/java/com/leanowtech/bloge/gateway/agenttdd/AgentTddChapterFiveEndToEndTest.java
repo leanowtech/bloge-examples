@@ -77,14 +77,14 @@ class AgentTddChapterFiveEndToEndTest {
                 (com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService) null,
                 compiler, catalog, publications, mapper);
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
-                libraries, drafts, mapper, projection, simulation, states, authoring, catalog, workflow);
+                libraries, drafts, mapper, projection, simulation, states, authoring, workflow);
 
         assertOk(invoke(tools, "rg.library.upsert", Map.of(
                 "libraryYaml", library(false), "idempotencyKey", "library-red")));
         assertThat(libraries.find("cancel").orElseThrow().operators().getFirst().ports().inputs())
                 .extracting(OperatorDefinition.Port::name).containsExactly("orderId");
         JsonNode redCompose = invoke(tools, "rg.tool.compose", Map.of(
-                "toolRef", "cancel-tool", "graph", Map.of("sourceId", "cancel.bloge", "dsl", graph()),
+                "toolRef", "cancel-tool", "graph", Map.of("sourceId", "cancel.bloge", "dsl", graph(false)),
                 "libraryRefs", List.of("cancel"), "idempotencyKey", "compose-red"));
         assertThat(redCompose.path("data").path("speccing").asBoolean()).isTrue();
 
@@ -93,7 +93,7 @@ class AgentTddChapterFiveEndToEndTest {
                 "enumerateFrom", Map.of("decisionTableRef", "policy", "mode", "per-rule",
                         "maxCases", 10, "oracleOwner", "cx-policy"),
                 "idempotencyKey", "enumerate-policy"));
-        assertThat(enumerated.at("/data/enumeratedCount").asInt()).isGreaterThanOrEqualTo(2);
+        assertThat(enumerated.at("/data/enumeratedCount").asInt()).isPositive();
         assertThat(enumerated.at("/data/proposed")).isNotEmpty();
 
         JsonNode cases = invoke(tools, "rg.scenario.upsertCases", Map.of(
@@ -101,7 +101,7 @@ class AgentTddChapterFiveEndToEndTest {
                 "rows", List.of(Map.of("caseId", "g1", "category", "GOLDEN", "layer", "contract",
                         "given", Map.of("orderId", "o-1"),
                         "stubs", Map.of("lookup", Map.of("decision", "WAIVE_FULL")),
-                        "expect", Map.of("decision", "RETAIN"), "oracleOwner", "cx-policy"))));
+                        "expect", Map.of("decision", "WAIVE_FULL"), "oracleOwner", "cx-policy"))));
         long caseRevision = cases.path("data").path("revision").asLong();
         new AgentTddReviewService(states).approveOracle(
                 "cancel-golden", "g1", caseRevision, identity());
@@ -114,12 +114,11 @@ class AgentTddChapterFiveEndToEndTest {
         assertThat(invoke(tools, "rg.verdict.get", Map.of("toolRef", "cancel-tool"))
                 .at("/data/businessBacklog/0/caseId").asText()).isEqualTo("g1");
 
-        JsonNode repaired = invoke(tools, "rg.oracle.propose", Map.of(
-                "caseSetRef", "cancel-golden", "caseId", "g1",
-                "expect", Map.of("decision", "WAIVE_FULL"), "oracleOwner", "cx-policy",
-                "idempotencyKey", "repair-r4"));
-        new AgentTddReviewService(states).approveOracle(
-                "cancel-golden", "g1", repaired.at("/data/revision").asLong(), identity());
+        JsonNode r4Compose = invoke(tools, "rg.tool.compose", Map.of(
+                "toolRef", "cancel-tool", "graph", Map.of(
+                        "sourceId", "cancel.bloge", "dsl", graph(true)),
+                "libraryRefs", List.of("cancel"), "idempotencyKey", "compose-r4"));
+        assertThat(r4Compose.at("/data/speccing").asBoolean()).isTrue();
         JsonNode red = invoke(tools, "rg.simulate", Map.of(
                 "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"), "side", "RED",
                 "cases", Map.of("caseSetRef", "cancel-golden")));
@@ -132,7 +131,7 @@ class AgentTddChapterFiveEndToEndTest {
         assertOk(invoke(tools, "rg.library.upsert", Map.of(
                 "libraryYaml", library(true), "idempotencyKey", "library-green")));
         JsonNode greenCompose = invoke(tools, "rg.tool.compose", Map.of(
-                "toolRef", "cancel-tool", "graph", Map.of("sourceId", "cancel.bloge", "dsl", graph()),
+                "toolRef", "cancel-tool", "graph", Map.of("sourceId", "cancel.bloge", "dsl", graph(true)),
                 "libraryRefs", List.of("cancel"), "idempotencyKey", "compose-green"));
         assertOk(greenCompose);
         assertThat(greenCompose.path("data").path("speccing").asBoolean()).isFalse();
@@ -233,7 +232,10 @@ class AgentTddChapterFiveEndToEndTest {
                 """ + (bound ? "    runtime: { bindingRef: \"runtime:lookup\" }\n" : "");
     }
 
-    private static String graph() {
+    private static String graph(boolean includeR4) {
+        String r4 = includeR4
+                ? "    rule (decision: decision == \"WAIVE_FULL\") -> { decision: \"WAIVE_FULL\" }\n"
+                : "";
         return """
                 graph cancellation {
                   input { orderId: String }
@@ -244,7 +246,7 @@ class AgentTddChapterFiveEndToEndTest {
                   decision_table policy(
                     decision = lookup.output.decision
                   ) hit=first -> { decision: String } {
-                    rule (decision: decision == "WAIVE_FULL") -> { decision: "WAIVE_FULL" }
+                """ + r4 + """
                     otherwise -> { decision: "RETAIN" }
                   }
                   transform response { decision = policy.output.decision }

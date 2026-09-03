@@ -69,12 +69,26 @@ final class AgentTddRuntimeBindingResolver {
     static List<Map<String, String>> bindingIdentity(
             GraphDraft draft,
             Function<String, Optional<OperatorDefinition>> resolver) {
+        return bindingIdentity(draft, materialize(draft, resolver));
+    }
+
+    /**
+     * Captures binding identities from an already frozen executable projection.
+     *
+     * <p>This overload performs no catalog reads, so callers can fingerprint and execute or
+     * publish the exact same immutable projection without a target-replacement race.</p>
+     */
+    static List<Map<String, String>> bindingIdentity(GraphDraft draft, GraphDraft executable) {
         List<Map<String, String>> identities = new ArrayList<>();
         for (GraphDraft.DraftNode node : draft.nodes()) {
             OperatorDefinition contract = draft.operatorSnapshots().get(node.id());
             String bindingRef = bindingRef(contract);
             if (bindingRef.isBlank()) continue;
-            OperatorDefinition target = resolve(bindingRef, resolver);
+            OperatorDefinition target = executable.operatorSnapshots().get(node.id());
+            if (target == null) {
+                throw new AgentTddToolException(
+                        "LIBRARY_NOT_FOUND", "Frozen executable projection has no bound operator snapshot.");
+            }
             AgentTddMutationService.requireCompatibleBinding(contract, target);
             identities.add(Map.of(
                     "nodeId", node.id(),

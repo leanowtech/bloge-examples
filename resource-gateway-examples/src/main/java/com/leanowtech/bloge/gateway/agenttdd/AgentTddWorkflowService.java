@@ -171,6 +171,7 @@ public final class AgentTddWorkflowService {
                 throw new AgentTddToolException(
                         "SPECCING_NOT_EXECUTABLE", "A Tool with unbound library operators cannot be published.");
             }
+            GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
             JsonNode latest = states.find(scope(identity), VERDICT, toolRef)
                     .map(AgentTddStoredAsset::data)
                     .map(data -> data.path("latest"))
@@ -178,7 +179,7 @@ public final class AgentTddWorkflowService {
             String caseSetRef = latest.path("caseSetRef").asText();
             String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
             String currentEvidenceFingerprint = currentEvidenceFingerprint(
-                    toolRef, draft, identity, caseSetRef, "GREEN");
+                    toolRef, draft, executable, identity, caseSetRef, "GREEN");
             if (!"GREEN".equals(latest.path("side").asText())
                     || !"GO".equals(latest.path("status").asText()) || currentGoldenSetId.isBlank()
                     || !currentGoldenSetId.equals(latest.path("goldenSetId").asText())
@@ -196,7 +197,6 @@ public final class AgentTddWorkflowService {
                     || !currentEvidenceFingerprint.equals(signoff.path("evidenceFingerprint").asText())) {
                 throw gate("The owner signoff does not approve this Tool.");
             }
-            GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
             DslGenerationResult generation = runner.compile(executable);
             if (!generation.generated() || !generation.validation().valid()
                     || !generation.validation().actionReadiness().publishExecutableNow()) {
@@ -253,8 +253,9 @@ public final class AgentTddWorkflowService {
                 .map(AgentTddStoredAsset::data).map(data -> data.path("latest")).orElse(null);
         String caseSetRef = latest == null ? "" : latest.path("caseSetRef").asText();
         String currentGoldenSetId = currentGoldenSetId(toolRef, draft, identity, caseSetRef);
+        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, catalog::find);
         String currentEvidenceFingerprint = currentEvidenceFingerprint(
-                toolRef, draft, identity, caseSetRef, "GREEN");
+                toolRef, draft, executable, identity, caseSetRef, "GREEN");
         boolean green = latest != null && "GREEN".equals(latest.path("side").asText())
                 && "GO".equals(latest.path("status").asText())
                 && !currentGoldenSetId.isBlank()
@@ -332,6 +333,7 @@ public final class AgentTddWorkflowService {
 
     private String currentEvidenceFingerprint(String toolRef,
                                               GraphDraft draft,
+                                              GraphDraft executable,
                                               IntegrationRequestContext identity,
                                               String caseSetRef,
                                               String side) {
@@ -348,7 +350,7 @@ public final class AgentTddWorkflowService {
                 }).orElse(List.of());
         return rows.isEmpty() ? "" : AgentTddExecutionService.evidenceFingerprint(
                 mapper, toolRef, draft, rows, side,
-                AgentTddRuntimeBindingResolver.bindingIdentity(draft, catalog::find));
+                AgentTddRuntimeBindingResolver.bindingIdentity(draft, executable));
     }
 
     private ObjectNode mergedLayerMatrix(String toolRef,

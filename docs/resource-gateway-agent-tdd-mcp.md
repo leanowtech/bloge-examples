@@ -74,7 +74,7 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。
 
-`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
+`rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；两种证据源互斥，禁止在同一请求中并存，避免临时结果冒充持久用例并推进状态。服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
 持久化用例成功执行后，服务端把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`，但不改变其生命周期。该运营状态不进入证据语义指纹，因此状态推进不会使刚生成的证据自我失效。
 
@@ -82,7 +82,7 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 
 外部算子没有 `runtime.bindingRef` 时，Tool 状态为 `SPECCING`。此状态允许红侧模拟和 `rg.tool.publishSpec`，禁止绿侧发布。
 
-`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端把已批准绑定物化成临时可执行图。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
+`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端只读取一次目录并物化为不可变的临时可执行图，再从同一个对象计算证据指纹、执行/编译和冻结发布物，避免检查与使用之间的目标替换竞态。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
 
 DSL 中的 `node.output.field` 会按目录声明解析到真实输出端口；单字段输入同样绑定到真实命名端口，而不是固定写入 `inputs/output` 占位端口。这样，第 5 章这类标量命名端口契约能通过同一套导入、校验、模拟和发布链路。
 

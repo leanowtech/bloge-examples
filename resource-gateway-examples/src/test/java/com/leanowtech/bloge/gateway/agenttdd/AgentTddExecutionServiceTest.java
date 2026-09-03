@@ -283,6 +283,27 @@ class AgentTddExecutionServiceTest {
     }
 
     @Test
+    void rejectsInlineRowsCombinedWithADurableCaseSetIdentity() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(
+                new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                        "eligibility.bloge", eligibilityDsl(), List.of("risk"), List.of(),
+                        "test", Map.of())).draft();
+        fixture.drafts().save(draft.withIdentity("risk-tool", 0));
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), fixture.simulation(), mapper,
+                new InMemoryAgentTddStateRepository());
+
+        assertThatThrownBy(() -> service.simulate(mapper.valueToTree(Map.of(
+                "toolRef", "risk-tool", "libraryRefs", List.of("risk"), "side", "RED",
+                "cases", Map.of("caseSetRef", "golden-1", "rows", List.of(Map.of(
+                        "caseId", "g1", "given", Map.of(), "stubs", Map.of(),
+                        "expect", Map.of()))))), identity()))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
+                        assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+    }
+
+    @Test
     void baselineRejectsInlineRowsThatCouldBypassTheApprovedGoldenSet() {
         Fixture fixture = fixture();
         GraphDraft draft = fixture.projection().preview(new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(

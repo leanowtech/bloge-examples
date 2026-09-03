@@ -289,7 +289,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 
 ## 7. 工程实施计划
 
-> 实现状态（2026-09-03）：W1–W5 及贯穿门禁已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；严格输入/输出 Schema 与真实响应同步；Agent overlay 与原子幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影；Appendix-D 枚举和七种依赖行为已接入共享测试内核。第 5 章案例已有服务级端到端测试，覆盖“契约→编排→错误 GOLDEN 产生业务待办→R4 Oracle 修复/人工批准→RED→绑定→GREEN/READY→版本与目标实现绑定签署→目录漂移失效→重新基线→不可变发布”。新 goldenSetId 重开独立矩阵，旧线仍可按身份查询。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不替代运行证据。
+> 实现状态（2026-09-03）：W1–W5 及贯穿门禁已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；严格输入/输出 Schema 与真实响应同步；Agent overlay 与原子幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影；Appendix-D 枚举和七种依赖行为已接入共享测试内核。第 5 章案例已有服务级端到端测试，覆盖“契约→编排→业务 GOLDEN 独立批准→缺 R4 实现产生 RED_FAIL 业务待办→补 R4 规则消红→绑定→GREEN/READY→版本与目标实现绑定签署→目录漂移失效→重新基线→不可变发布”。新 goldenSetId 重开独立矩阵，旧线仍可按身份查询。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不替代运行证据。
 
 一次性造通完整循环（查询→调整→编译→模拟→发布），分周推进，每步复用已有能力、只补 4.8 新件。
 
@@ -350,9 +350,10 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 
 **共享信封**：会话初始化固定 `{tenant, env, workload}` 身份（带外建立，不逐调用传）；写工具入参含 `idempotencyKey: string`。统一响应：
 ```json
-{ "ok": true,  "data": {}, "diagnostics": [ {"severity":"error|warn|info","code":"","message":"","sourceSpan":{}} ] }
+{ "ok": true,  "data": {}, "diagnostics": [ {"level":"ERROR|WARNING|INFO","code":"","target":"","line":0,"column":0} ] }
 { "ok": false, "error": { "code":"", "message":"(无外部响应体/业务载荷)", "retryable": false, "details": {} } }
 ```
+诊断只保留稳定码和源码坐标；底层诊断 message/metadata 可能插入业务输入或实际值，因此不得进入 MCP 响应或持久化证据。
 **稳定错误码目录**：`UNAUTHENTICATED` / `FORBIDDEN_PURPOSE` / `DRAFT_NOT_FOUND` / `LIBRARY_NOT_FOUND` / `COMPILE_ERROR` / `GATE_REJECTED` / `SPECCING_NOT_EXECUTABLE`（设计态不可真跑/发布）/ `GOLDEN_REQUIRES_APPROVAL` / `IDEMPOTENCY_CONFLICT` / `SCHEMA_NONCONFORMANT` / `AMBIGUOUS_OUTPUT_PORT` / `RETENTION_POLICY_VIOLATION` / `EGRESS_NOT_ALLOWED` / `PUBLISH_GATE_NOT_MET` / `SIM_REAL_CALL_DETECTED`（模拟中检测到真实外呼，失败关闭）/ `COMBINATORIAL_CAP_EXCEEDED`。
 
 **代表性工具完整 in/out**（其余同信封，I/O 见 4.5）：

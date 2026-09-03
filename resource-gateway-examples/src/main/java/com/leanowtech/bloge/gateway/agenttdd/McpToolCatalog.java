@@ -242,6 +242,39 @@ public final class McpToolCatalog {
                 "line", integer(), "column", integer()), List.of("level", "code", "target"));
     }
 
+    private static Map<String, Object> honestVerdict() {
+        return structuredObject(props("dimensions", arrayOf(structuredObject(props(
+                "name", string(), "status", string(), "proves", string(),
+                "doesNotProve", string(), "limitation", string()), List.of("name", "status")))),
+                List.of("dimensions"));
+    }
+
+    private static Map<String, Object> counts() {
+        return structuredObject(props("pass", integer(), "fail", integer()), List.of("pass", "fail"));
+    }
+
+    private static Map<String, Object> executionLayerSummary() {
+        return structuredObject(props("unit", counts(), "contract", counts(),
+                "integration", counts(), "smoke", counts()), List.of());
+    }
+
+    private static Map<String, Object> verdictLayerMatrix() {
+        Map<String, Object> cell = structuredObject(
+                props("red", counts(), "green", counts()), List.of("red", "green"));
+        return structuredObject(props("unit", cell, "contract", cell,
+                "integration", cell, "smoke", cell), List.of());
+    }
+
+    private static Map<String, Object> executionCase() {
+        return structuredObject(props("caseId", string(), "layer", string(), "category", string(),
+                "oracleOwner", string(), "verdict", string(), "oracle", structuredObject(
+                        props("invariant", string(), "held", bool()), List.of("invariant", "held")),
+                "schemaConformant", bool(), "mockedNodeIds", stringArray(),
+                "realNodeIds", stringArray(), "diagnostics", arrayOf(diagnostic()),
+                "realExternalCalls", integer(), "reasonCode", string()),
+                List.of("caseId", "layer", "category", "verdict", "realExternalCalls"));
+    }
+
     private static Map<String, Object> error() {
         return structuredObject(props("code", string(), "message", string(), "retryable", bool(),
                 "details", businessObject()), List.of("code", "message"));
@@ -269,8 +302,8 @@ public final class McpToolCatalog {
                     "revision", integer(), "rows", caseRows()),
                     List.of("caseSetRef", "rows"));
             case "rg.verdict.get" -> structuredObject(props("toolRef", string(), "state", string(),
-                    "goldenSetId", string(), "byLayer", businessObject(),
-                    "businessBacklog", arrayOf(businessObject()), "honestVerdict", businessObject(),
+                    "goldenSetId", string(), "byLayer", verdictLayerMatrix(),
+                    "businessBacklog", arrayOf(businessObject()), "honestVerdict", honestVerdict(),
                     "baseline", businessObject(), "evidenceRef", string(), "latest", businessObject()),
                     List.of("toolRef", "state"));
             case "rg.evidence.get" -> structuredObject(props("toolRef", string(), "operation", string(),
@@ -278,34 +311,34 @@ public final class McpToolCatalog {
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
-                    "honestVerdict", businessObject()), List.of("libraryId", "version"));
+                    "honestVerdict", honestVerdict()), List.of("libraryId", "version"));
             case "rg.feature.compose", "rg.tool.compose" -> structuredObject(props("assetRef", string(),
                     "assetKind", string(), "revision", integer(), "speccing", bool(), "executable", bool(),
-                    "libraryRefs", stringArray(), "honestVerdict", businessObject()),
+                    "libraryRefs", stringArray(), "honestVerdict", honestVerdict()),
                     List.of("assetRef", "revision", "speccing", "executable"));
             case "rg.tool.setInstruction" -> structuredObject(props("toolRef", string(), "revision", integer(),
                     "instructionFingerprint", string(), "examplesDerivedFromGolden", bool(),
-                    "honestVerdict", businessObject()), List.of("toolRef", "revision"));
+                    "honestVerdict", honestVerdict()), List.of("toolRef", "revision"));
             case "rg.scenario.upsertCases" -> structuredObject(props("caseSetRef", string(), "revision", integer(),
                     "rows", caseRows(), "proposed", arrayOf(businessObject()), "enumeratedCount", integer(),
-                    "honestVerdict", businessObject()),
+                    "honestVerdict", honestVerdict()),
                     List.of("caseSetRef", "revision", "rows"));
             case "rg.oracle.propose" -> structuredObject(props("caseSetRef", string(), "caseId", string(),
                     "proposalStatus", string(), "revision", integer(), "awaiting", string(),
-                    "honestVerdict", businessObject()), List.of("caseSetRef", "caseId"));
+                    "honestVerdict", honestVerdict()), List.of("caseSetRef", "caseId"));
             case "rg.scenario.setDependencyBehavior" -> structuredObject(props("caseSetRef", string(),
                     "caseId", string(), "nodeId", string(), "behavior", behavior(), "revision", integer(),
-                    "honestVerdict", businessObject()),
+                    "honestVerdict", honestVerdict()),
                     List.of("caseSetRef", "caseId", "nodeId"));
             case "rg.dsl.preview", "rg.gate.check" -> structuredObject(props("accepted", bool(),
                     "compileAccepted", bool(), "rewriteGate", businessObject(), "speccing", bool(),
                     "executable", bool(), "libraryRefs", stringArray(), "projection", businessObject(),
-                    "honestVerdict", businessObject()), List.of("libraryRefs"));
+                    "honestVerdict", honestVerdict()), List.of("libraryRefs"));
             case "rg.feature.rehearse", "rg.simulate", "rg.tool.baseline" -> structuredObject(props(
                     "goldenSetId", string(), "evidenceFingerprint", string(), "draftRevision", integer(),
-                    "side", enumString("RED", "GREEN"), "byLayer", businessObject(),
-                    "cases", arrayOf(businessObject()), "realExternalCalls", integer(),
-                    "honestVerdict", businessObject(), "evidenceRef", string(), "status", string(),
+                    "side", enumString("RED", "GREEN"), "byLayer", executionLayerSummary(),
+                    "cases", arrayOf(executionCase()), "realExternalCalls", integer(),
+                    "honestVerdict", honestVerdict(), "evidenceRef", string(), "status", string(),
                     "caseSetRef", string(), "rounds", arrayOf(businessObject()),
                     "businessFingerprintStable", bool(), "remainingLimitations", stringArray()),
                     List.of("goldenSetId", "side", "realExternalCalls"));

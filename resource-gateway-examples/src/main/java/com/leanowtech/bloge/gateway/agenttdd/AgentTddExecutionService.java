@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
-import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
@@ -51,7 +50,6 @@ public final class AgentTddExecutionService {
     private final VisualGraphSimulationService simulation;
     private final ObjectMapper mapper;
     private final AgentTddStateRepository states;
-    private final VisualOperatorCatalog catalog;
 
     /** Creates the execution kernel from the same compiler and simulator used by the web surface. */
     public AgentTddExecutionService(OperatorLibraryRegistry libraries,
@@ -59,7 +57,7 @@ public final class AgentTddExecutionService {
                                     DslImportService projection,
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper) {
-        this(libraries, drafts, projection, simulation, mapper, null, null);
+        this(libraries, drafts, projection, simulation, mapper, null);
     }
 
     /** Creates the execution kernel with durable case-set resolution. */
@@ -69,24 +67,12 @@ public final class AgentTddExecutionService {
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper,
                                     AgentTddStateRepository states) {
-        this(libraries, drafts, projection, simulation, mapper, states, null);
-    }
-
-    /** Creates the execution kernel with durable cases and current runtime-binding identity. */
-    public AgentTddExecutionService(OperatorLibraryRegistry libraries,
-                                    GraphDraftRepository drafts,
-                                    DslImportService projection,
-                                    VisualGraphSimulationService simulation,
-                                    ObjectMapper mapper,
-                                    AgentTddStateRepository states,
-                                    VisualOperatorCatalog catalog) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.projection = Objects.requireNonNull(projection, "projection");
         this.simulation = Objects.requireNonNull(simulation, "simulation");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.states = states;
-        this.catalog = catalog;
     }
 
     /**
@@ -160,8 +146,10 @@ public final class AgentTddExecutionService {
         List<JsonNode> rows = caseRows(arguments, identity);
         List<String> caseIds = rows.stream().map(row -> requiredText(row, "caseId")).sorted().toList();
         String goldenSetId = goldenSetId(mapper, toolRef, draft, caseIds);
-        List<Map<String, String>> bindingIdentity = catalog == null ? List.of()
-                : AgentTddRuntimeBindingResolver.bindingIdentity(draft, catalog::find);
+        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(
+                draft, projection::resolveOperator);
+        List<Map<String, String>> bindingIdentity =
+                AgentTddRuntimeBindingResolver.bindingIdentity(draft, executable);
         String evidenceFingerprint = evidenceFingerprint(
                 mapper, toolRef, draft, rows, side, bindingIdentity);
         boolean greenBlocked = "GREEN".equals(side) && speccing(draft);
@@ -172,7 +160,7 @@ public final class AgentTddExecutionService {
         for (JsonNode row : rows) {
             Map<String, Object> result = greenBlocked
                     ? blockedCase(row)
-                    : executeCase(draft, row, side, arguments.path("adhocFixtures"));
+                    : executeCase(draft, executable, row, side, arguments.path("adhocFixtures"));
             results.add(result);
             String verdict = result.get("verdict").toString();
             if (verdict.endsWith("PASS")) passed++;
@@ -323,11 +311,14 @@ public final class AgentTddExecutionService {
     private List<JsonNode> caseRows(JsonNode arguments, IntegrationRequestContext identity) {
         JsonNode cases = arguments.path("cases");
         JsonNode rows = cases.path("rows");
+        String referencedCaseSet = optionalText(arguments, "caseSetRef");
+        if (referencedCaseSet.isBlank()) referencedCaseSet = optionalText(cases, "caseSetRef");
+        if (rows.isArray() && !rows.isEmpty() && !referencedCaseSet.isBlank()) {
+            throw new AgentTddToolException("SCHEMA_NONCONFORMANT",
+                    "cases.rows and caseSetRef are mutually exclusive evidence sources.");
+        }
         if ((!rows.isArray() || rows.isEmpty()) && states != null) {
-            String caseSetRef = optionalText(arguments, "caseSetRef");
-            if (caseSetRef.isBlank()) {
-                caseSetRef = optionalText(cases, "caseSetRef");
-            }
+            String caseSetRef = referencedCaseSet;
             if (!caseSetRef.isBlank()) {
                 AgentTddStoredAsset caseSet = states.find(
                                 AgentTddMutationService.scopeKey(identity), AgentTddMutationService.CASE_SET, caseSetRef)
@@ -368,6 +359,7 @@ public final class AgentTddExecutionService {
     }
 
     private Map<String, Object> executeCase(GraphDraft draft,
+                                            GraphDraft executable,
                                             JsonNode row,
                                             String side,
                                             JsonNode adhocFixtures) {
@@ -377,7 +369,7 @@ public final class AgentTddExecutionService {
                 throw new AgentTddToolException(
                         "GATE_REJECTED", "GREEN execution does not accept ad-hoc fixture overrides.");
             }
-            return executeGreenCase(draft, row);
+            return executeGreenCase(executable, row);
         }
         Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
         if (adhocFixtures.isArray()) {
@@ -407,10 +399,9 @@ public final class AgentTddExecutionService {
         return result;
     }
 
-    private Map<String, Object> executeGreenCase(GraphDraft draft, JsonNode row) {
+    private Map<String, Object> executeGreenCase(GraphDraft executable, JsonNode row) {
         Map<String, Object> given = objectMap(row.path("given"));
         Map<String, NodeFixture> fixtures = fixtures(row.path("stubs"));
-        GraphDraft executable = AgentTddRuntimeBindingResolver.materialize(draft, projection::resolveOperator);
         VisualGraphSimulationResponse response = simulation.simulate(executable, given, "", fixtures);
         boolean oracleHeld = response.success() && response.terminalOutputConforms()
                 && expectedMatches(row.path("expect"), mapper.valueToTree(response.output()));
