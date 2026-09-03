@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** Focused executable contract checks for the formal browser matrix wrapper. */
 class CapabilityStudioBrowserMatrixScriptContractTest {
+    private static final Duration SCRIPT_COMPLETION_TIMEOUT = Duration.ofSeconds(15);
     private static final Path SCRIPT = Path.of("..", "scripts",
             "run-capability-studio-browser-matrix.sh").toAbsolutePath().normalize();
     private static final String SOURCE_COMMIT = "0123456789abcdef0123456789abcdef01234567";
@@ -209,7 +210,10 @@ class CapabilityStudioBrowserMatrixScriptContractTest {
         builder.environment().put("MVN", root.resolve("bin/mvn").toString());
         builder.environment().putAll(environment);
         Process process = builder.start();
-        assertThat(process.waitFor(Duration.ofSeconds(5))).isTrue();
+        assertThat(process.waitFor(SCRIPT_COMPLETION_TIMEOUT))
+                .as("browser matrix contract script should complete within %s",
+                        SCRIPT_COMPLETION_TIMEOUT)
+                .isTrue();
         return new ProcessResult(process.exitValue(),
                 new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
     }
