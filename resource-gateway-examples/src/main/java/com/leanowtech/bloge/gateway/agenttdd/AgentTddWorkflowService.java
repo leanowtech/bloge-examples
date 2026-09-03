@@ -277,11 +277,9 @@ public final class AgentTddWorkflowService {
         String key = requiredText(arguments, "idempotencyKey");
         String fingerprint = com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
                 .fromCanonicalValue(mapper, arguments, MAX_BYTES);
-        var replay = states.replay(scope(identity), operation, key, fingerprint);
-        if (replay.isPresent()) return mapper.convertValue(replay.get(), OBJECT_MAP);
-        Map<String, Object> result = action.get();
-        states.record(scope(identity), operation, key, fingerprint, mapper.valueToTree(result));
-        return result;
+        JsonNode result = states.executeOnce(scope(identity), operation, key, fingerprint,
+                () -> mapper.valueToTree(action.get()));
+        return mapper.convertValue(result, OBJECT_MAP);
     }
 
     private GraphDraft draft(String toolRef, IntegrationRequestContext identity) {

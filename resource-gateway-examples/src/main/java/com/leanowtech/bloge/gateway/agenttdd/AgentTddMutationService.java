@@ -353,11 +353,9 @@ public final class AgentTddMutationService {
                                            Supplier<Map<String, Object>> action) {
         String key = requiredText(arguments, "idempotencyKey");
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, arguments, MAX_BYTES);
-        var replay = states.replay(scopeKey(identity), operation, key, fingerprint);
-        if (replay.isPresent()) return mapper.convertValue(replay.get(), OBJECT_MAP);
-        Map<String, Object> result = action.get();
-        states.record(scopeKey(identity), operation, key, fingerprint, mapper.valueToTree(result));
-        return result;
+        JsonNode result = states.executeOnce(scopeKey(identity), operation, key, fingerprint,
+                () -> mapper.valueToTree(action.get()));
+        return mapper.convertValue(result, OBJECT_MAP);
     }
 
     private GraphDraft compileGraph(JsonNode graph, List<String> refs) {

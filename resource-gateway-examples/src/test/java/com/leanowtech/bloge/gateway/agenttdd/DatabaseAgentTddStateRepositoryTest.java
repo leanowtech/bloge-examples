@@ -82,4 +82,15 @@ class DatabaseAgentTddStateRepositoryTest {
                     assertThat(current.data().path("status").asText()).isEqualTo("CHANGED");
                 });
     }
+
+    @Test
+    void executeOncePersistsTheBusinessResultAsTheExactReplay() {
+        var first = repository.executeOnce("tenant-a|test", "rg.tool.publish", "publish-1", "sha256:req",
+                () -> mapper.valueToTree(Map.of("publicationId", "pub-1")));
+        var replay = repository.executeOnce("tenant-a|test", "rg.tool.publish", "publish-1", "sha256:req",
+                () -> mapper.valueToTree(Map.of("publicationId", "must-not-run")));
+
+        assertThat(first).isEqualTo(replay);
+        assertThat(replay.path("publicationId").asText()).isEqualTo("pub-1");
+    }
 }

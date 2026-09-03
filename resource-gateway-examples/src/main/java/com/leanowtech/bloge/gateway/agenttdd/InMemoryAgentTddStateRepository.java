@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /** In-memory Agent TDD overlay store for focused tests and local composition. */
 public final class InMemoryAgentTddStateRepository implements AgentTddStateRepository {
@@ -81,6 +82,19 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
                     "The idempotency key was already used for different request material.");
         }
         idempotency.putIfAbsent(key, new IdempotencyEntry(requestFingerprint, response.deepCopy()));
+    }
+
+    @Override
+    public synchronized JsonNode executeOnce(String scopeKey,
+                                             String operation,
+                                             String idempotencyKey,
+                                             String requestFingerprint,
+                                             Supplier<JsonNode> action) {
+        Optional<JsonNode> replay = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (replay.isPresent()) return replay.get();
+        JsonNode response = action.get();
+        record(scopeKey, operation, idempotencyKey, requestFingerprint, response);
+        return response.deepCopy();
     }
 
     private static String assetKey(String scope, String kind, String ref) {

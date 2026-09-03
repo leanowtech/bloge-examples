@@ -98,6 +98,8 @@ GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bi
 
 Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`。revision 已变化时，原子 revision fence 拒绝批准；重新读取后再评审。签署记录精确绑定 Tool 草稿 revision、goldenSetId 和 GREEN evidenceFingerprint，任一内容变化都会使旧签署失效。
 
+所有 MCP 写工具通过状态库的 `executeOnce` 边界执行：服务端先原子占用 `{scope, operation, idempotencyKey}`，业务写与成功响应在同一事务内完成，再开放精确重放。相同键与相同请求只执行一次；不同请求材料或进行中的冲突失败关闭。内存实现也以同一临界区覆盖业务动作与响应记录。
+
 ## 6. 发布门禁
 
 `rg.tool.publish` 只在以下条件全部满足时创建既有 `VisualGraphPublication` 不可变发布物：

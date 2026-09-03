@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * JDBC-backed Agent TDD overlay and idempotency repository.
@@ -55,10 +56,12 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                     idempotency_key VARCHAR(255) NOT NULL,
                     request_fingerprint VARCHAR(255) NOT NULL,
                     response_json CLOB NOT NULL,
+                    completed BOOLEAN DEFAULT TRUE NOT NULL,
                     created_at VARCHAR(64) NOT NULL,
                     PRIMARY KEY (scope_key, operation, idempotency_key)
                 )
                 """);
+        jdbc.execute("ALTER TABLE agent_tdd_idempotency ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT TRUE NOT NULL");
     }
 
     @Override
@@ -137,7 +140,7 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         List<Replay> rows = jdbc.query("""
                         SELECT request_fingerprint, response_json
                           FROM agent_tdd_idempotency
-                         WHERE scope_key = ? AND operation = ? AND idempotency_key = ?
+                         WHERE scope_key = ? AND operation = ? AND idempotency_key = ? AND completed = TRUE
                         """, (rs, row) -> new Replay(rs.getString("request_fingerprint"),
                         read(rs.getString("response_json"))), scopeKey, operation, idempotencyKey);
         if (rows.isEmpty()) return Optional.empty();
@@ -159,10 +162,47 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
         if (existing.isPresent()) return;
         jdbc.update("""
                 INSERT INTO agent_tdd_idempotency
-                    (scope_key, operation, idempotency_key, request_fingerprint, response_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (scope_key, operation, idempotency_key, request_fingerprint, response_json, completed, created_at)
+                VALUES (?, ?, ?, ?, ?, TRUE, ?)
                 """, scopeKey, operation, idempotencyKey, requestFingerprint,
                 write(response), Instant.now().toString());
+    }
+
+    @Override
+    @Transactional
+    public JsonNode executeOnce(String scopeKey,
+                                String operation,
+                                String idempotencyKey,
+                                String requestFingerprint,
+                                Supplier<JsonNode> action) {
+        Optional<JsonNode> replay = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (replay.isPresent()) return replay.get();
+        try {
+            jdbc.update("""
+                    INSERT INTO agent_tdd_idempotency
+                        (scope_key, operation, idempotency_key, request_fingerprint,
+                         response_json, completed, created_at)
+                    VALUES (?, ?, ?, ?, ?, FALSE, ?)
+                    """, scopeKey, operation, idempotencyKey, requestFingerprint,
+                    "null", Instant.now().toString());
+        } catch (DuplicateKeyException conflict) {
+            Optional<JsonNode> completed = replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+            if (completed.isPresent()) return completed.get();
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The idempotency request is already in progress.");
+        }
+        JsonNode response = action.get();
+        int updated = jdbc.update("""
+                UPDATE agent_tdd_idempotency
+                   SET response_json = ?, completed = TRUE
+                 WHERE scope_key = ? AND operation = ? AND idempotency_key = ?
+                   AND request_fingerprint = ? AND completed = FALSE
+                """, write(response), scopeKey, operation, idempotencyKey, requestFingerprint);
+        if (updated != 1) {
+            throw new AgentTddToolException("IDEMPOTENCY_CONFLICT",
+                    "The idempotency reservation could not be completed.");
+        }
+        return response.deepCopy();
     }
 
     private JsonNode read(String value) {

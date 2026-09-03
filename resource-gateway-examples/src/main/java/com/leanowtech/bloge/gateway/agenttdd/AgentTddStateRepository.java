@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Durable store for Agent TDD overlays and exact idempotency responses.
@@ -49,4 +50,17 @@ public interface AgentTddStateRepository {
                 String idempotencyKey,
                 String requestFingerprint,
                 JsonNode response);
+
+    /**
+     * Executes one state-changing action and records its exact response as one atomic unit.
+     *
+     * <p>Concurrent callers using the same key and request fingerprint receive the committed
+     * response; different request material fails closed. Implementations must not expose a
+     * successful business write without its replay record.</p>
+     */
+    JsonNode executeOnce(String scopeKey,
+                         String operation,
+                         String idempotencyKey,
+                         String requestFingerprint,
+                         Supplier<JsonNode> action);
 }
