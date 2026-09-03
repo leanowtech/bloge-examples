@@ -73,6 +73,10 @@ class AgentTddMutationServiceTest {
         assertThat(fixture.libraries().find("shipping")).isPresent();
         assertThat(fixture.libraries().revisions("shipping")).hasSize(1);
         assertThat(first.path("data").path("operators").get(0).path("speccing").asBoolean()).isTrue();
+        assertThat(first.at("/data/honestVerdict/dimensions")).hasSize(4);
+        assertThat(first.at("/data/honestVerdict/dimensions/0/status").asText()).isEqualTo("PASS");
+        assertThat(first.at("/data/honestVerdict/dimensions/1/status").asText())
+                .isEqualTo("NOT_PROVEN");
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
@@ -61,7 +62,19 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring) {
-        this(libraries, drafts, mapper, projection, simulation, states, authoring, null);
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, null, null);
+    }
+
+    /** Compatibility constructor for callers that do not execute bound GREEN evidence. */
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, null, workflow);
     }
 
     /** Creates the Spring facade with zero-egress execution evidence and governed publication enabled. */
@@ -73,6 +86,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualGraphSimulationService simulation,
                                         AgentTddStateRepository states,
                                         AuthoringPreviewService authoring,
+                                        VisualOperatorCatalog catalog,
                                         AgentTddWorkflowService workflow) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
@@ -80,7 +94,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(
-                        libraries, drafts, projection, simulation, mapper, states);
+                        libraries, drafts, projection, simulation, mapper, states, catalog);
         this.mutations = states == null || authoring == null || projection == null
                 ? null
                 : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);

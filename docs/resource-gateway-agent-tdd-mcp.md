@@ -68,21 +68,27 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
 
+每个成功的 `DRAFT_WRITE`/Oracle 提议响应都带四维 `honestVerdict`。它只把服务端已接受并保存规范化材料记为 `contract-syntax=PASS`；业务正确性、依赖隔离和运行时治理保持 `NOT_PROVEN`，直到相应执行证据和人工门禁实际完成。
+
 依赖桩行为统一编译到现有测试执行内核，不会回退到真实依赖：`RETURN` 返回固定值；`ERROR` 注入稳定错误；`DELAY` 和 `TIMEOUT` 使用 `afterMillis`（1–60000）及逻辑时钟；`REPLAY` 要求精确的 `bloge-replay:<id>@<revision>#sha256:<fingerprint>` 和本轮冻结的 `value`；`OBSERVE` 只观察本地确定性 delegate，必须提供 `value`；`MUST_NOT_CALL` 在节点被调用时失败。REPLAY 的内联值只用于零外呼模拟，证据保持非认证状态。
 
 决策表枚举支持 `== != < <= > >=`、数值范围、`in {...}` 和 `otherwise`。`per-rule` 需要 `oracleOwner`，每条规则生成一个 GOLDEN 代表行，期望取自规则结论并自动进入人工批准提议；其余邻域值生成 BOUNDARY 行。不可解析谓词从 `authorSamples.<inputName>` 取确定性样本；没有样本时生成 `qualityState=BLOCKED` 的行。`combinatorial` 按字段和值排序后计算笛卡尔积，超过 `maxCases` 失败关闭。
 
 `rg.simulate` 和 `rg.feature.rehearse` 可在 `cases.caseSetRef` 中引用已保存的用例集，也可在 `cases.rows` 中传入临时行；服务端只执行引用用例集中的 `ACTIVE` 行，且每个执行行必须包含显式 `expect` Oracle。`rg.tool.baseline` 使用顶层 `caseSetRef`，忽略调用方附带的内联行，只运行该持久化用例集中的 `ACTIVE` 行。每次不同的执行结果都生成内容寻址的 `evidenceRef`，因此同一红绿线的失败与修复证据会分别保留；完全相同的结果仍保持确定性引用。
 
+持久化用例成功执行后，服务端把对应 `ACTIVE` 行的 `qualityState` 从 `DESIGNED_NOT_RUN` 推进为 `READY`，但不改变其生命周期。该运营状态不进入证据语义指纹，因此状态推进不会使刚生成的证据自我失效。
+
 ## 4. bindingRef 与 goldenSetId
 
 外部算子没有 `runtime.bindingRef` 时，Tool 状态为 `SPECCING`。此状态允许红侧模拟和 `rg.tool.publishSpec`，禁止绿侧发布。
 
-`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端把已批准绑定物化成临时可执行图，不改变受评审草稿及其证据指纹。
+`runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的算子原型、副作用、密钥要求，以及输入/输出端口的名称、必填性和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。持久化图继续使用库契约身份；GREEN 验证和发布编译时，服务端把已批准绑定物化成临时可执行图。证据指纹同时包含每个节点当前解析出的目标 operatorRef 和 target fingerprint；同一 `bindingRef` 被替换为新实现后，旧 GREEN 和旧签署立即失效。发布物冻结通过门禁的实际可执行目标，不依赖发布后的目录漂移。
 
 DSL 中的 `node.output.field` 会按目录声明解析到真实输出端口；单字段输入同样绑定到真实命名端口，而不是固定写入 `inputs/output` 占位端口。这样，第 5 章这类标量命名端口契约能通过同一套导入、校验、模拟和发布链路。
 
 `goldenSetId` 由 Tool 引用、Tool/算子契约指纹和排序后的 ACTIVE case ID 计算。实现绑定不参与契约指纹，因此红侧和绿侧保持同一身份；I/O 契约或用例集合变化时生成新身份。
+
+`rg.verdict.get` 默认返回当前线；传入 `{toolRef, goldenSetId}` 可读取已归档的旧线。新 `goldenSetId` 从空的 red/green 分层矩阵开始，不能继承上一组用例的通过数。
 
 GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId`，但只有在全部 `bindingRef` 已解析后才能运行。EXECUTE 权限不会调用这些真实 binding；外部依赖继续由用例中的受控行为替换，因此 `realExternalCalls=0` 是硬约束。GREEN 证明“绑定齐全的可执行图在受控依赖下符合业务 Oracle”，不证明真实集成健康或生产环境治理；后两项仍在诚实结论中标为未证明。
 
@@ -109,7 +115,7 @@ Oracle 和规格批准请求必须携带人工实际查看的 `expectedRevision`
 - 所有库算子均有可解析、schema 相容的 `runtime.bindingRef`。
 - 最新 baseline 为 `GO`，并与当前 ACTIVE 用例计算出的 `goldenSetId` 相同。
 - 最新 baseline 明确来自 `GREEN` 侧；`RED` baseline 即使稳定通过也不能解锁发布。
-- baseline 的 `draftRevision`、`evidenceFingerprint` 必须与当前草稿、ACTIVE 用例内容、Oracle、stub 和 binding 指纹一致。
+- baseline 的 `draftRevision`、`evidenceFingerprint` 必须与当前草稿、ACTIVE 用例内容、Oracle、stub、bindingRef 和当前目标实现指纹一致。
 - `signoffRef` 必须精确批准同一份 baseline；旧版本签署不能复用。
 - 既有 Visual Graph validator、lowering 和 BLOGE compiler 允许发布可执行制品。
 
@@ -123,7 +129,7 @@ Feature/Tool 草稿按租户和环境闭合。若其他作用域已经占用同�
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='com.leanowtech.bloge.gateway.agenttdd.*Test,GraphNodeFixturePromotionServiceTest' test
+  -Dtest='com.leanowtech.bloge.gateway.agenttdd.*Test,DslImportServiceTest,GraphNodeFixturePromotionServiceTest' test
 ```
 
 最终验证：

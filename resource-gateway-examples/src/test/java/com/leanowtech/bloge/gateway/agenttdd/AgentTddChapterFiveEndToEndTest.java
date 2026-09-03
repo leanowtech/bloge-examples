@@ -77,7 +77,7 @@ class AgentTddChapterFiveEndToEndTest {
                 (com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService) null,
                 compiler, catalog, publications, mapper);
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
-                libraries, drafts, mapper, projection, simulation, states, authoring, workflow);
+                libraries, drafts, mapper, projection, simulation, states, authoring, catalog, workflow);
 
         assertOk(invoke(tools, "rg.library.upsert", Map.of(
                 "libraryYaml", library(false), "idempotencyKey", "library-red")));
@@ -88,22 +88,46 @@ class AgentTddChapterFiveEndToEndTest {
                 "libraryRefs", List.of("cancel"), "idempotencyKey", "compose-red"));
         assertThat(redCompose.path("data").path("speccing").asBoolean()).isTrue();
 
+        JsonNode enumerated = invoke(tools, "rg.scenario.upsertCases", Map.of(
+                "caseSetRef", "cancel-boundaries", "toolRef", "cancel-tool", "rows", List.of(),
+                "enumerateFrom", Map.of("decisionTableRef", "policy", "mode", "per-rule",
+                        "maxCases", 10, "oracleOwner", "cx-policy"),
+                "idempotencyKey", "enumerate-policy"));
+        assertThat(enumerated.at("/data/enumeratedCount").asInt()).isGreaterThanOrEqualTo(2);
+        assertThat(enumerated.at("/data/proposed")).isNotEmpty();
+
         JsonNode cases = invoke(tools, "rg.scenario.upsertCases", Map.of(
                 "caseSetRef", "cancel-golden", "toolRef", "cancel-tool", "idempotencyKey", "cases-1",
                 "rows", List.of(Map.of("caseId", "g1", "category", "GOLDEN", "layer", "contract",
                         "given", Map.of("orderId", "o-1"),
                         "stubs", Map.of("lookup", Map.of("decision", "WAIVE_FULL")),
-                        "expect", Map.of("decision", "WAIVE_FULL"), "oracleOwner", "cx-policy"))));
+                        "expect", Map.of("decision", "RETAIN"), "oracleOwner", "cx-policy"))));
         long caseRevision = cases.path("data").path("revision").asLong();
         new AgentTddReviewService(states).approveOracle(
                 "cancel-golden", "g1", caseRevision, identity());
 
+        JsonNode failingRed = invoke(tools, "rg.simulate", Map.of(
+                "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"), "side", "RED",
+                "cases", Map.of("caseSetRef", "cancel-golden")));
+        assertThat(failingRed.at("/data/cases/0/verdict").asText())
+                .as(failingRed.toPrettyString()).isEqualTo("RED_FAIL");
+        assertThat(invoke(tools, "rg.verdict.get", Map.of("toolRef", "cancel-tool"))
+                .at("/data/businessBacklog/0/caseId").asText()).isEqualTo("g1");
+
+        JsonNode repaired = invoke(tools, "rg.oracle.propose", Map.of(
+                "caseSetRef", "cancel-golden", "caseId", "g1",
+                "expect", Map.of("decision", "WAIVE_FULL"), "oracleOwner", "cx-policy",
+                "idempotencyKey", "repair-r4"));
+        new AgentTddReviewService(states).approveOracle(
+                "cancel-golden", "g1", repaired.at("/data/revision").asLong(), identity());
         JsonNode red = invoke(tools, "rg.simulate", Map.of(
                 "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"), "side", "RED",
                 "cases", Map.of("caseSetRef", "cancel-golden")));
-        assertThat(red.path("data").path("cases").get(0).path("verdict").asText())
-                .as(red.toPrettyString()).isEqualTo("RED_PASS");
+        assertThat(red.at("/data/cases/0/verdict").asText()).as(red.toPrettyString())
+                .isEqualTo("RED_PASS");
         assertThat(red.path("data").path("realExternalCalls").asInt()).isZero();
+        assertThat(invoke(tools, "rg.scenario.listCases", Map.of("caseSetRef", "cancel-golden"))
+                .at("/data/rows/0/qualityState").asText()).isEqualTo("READY");
 
         assertOk(invoke(tools, "rg.library.upsert", Map.of(
                 "libraryYaml", library(true), "idempotencyKey", "library-green")));
@@ -124,8 +148,28 @@ class AgentTddChapterFiveEndToEndTest {
                 green.path("data").path("goldenSetId").asText(),
                 green.path("data").path("evidenceFingerprint").asText(), identity());
 
+        JsonNode ready = invoke(tools, "rg.readiness.get", Map.of("toolRef", "cancel-tool"));
+        assertThat(ready.at("/data/publishable").asBoolean()).as(ready.toPrettyString()).isTrue();
+
+        assertOk(invoke(tools, "rg.library.upsert", Map.of(
+                "libraryYaml", library(true).replace(
+                        "operatorVersion: 1.0.0", "operatorVersion: 1.0.1"),
+                "idempotencyKey", "library-target-drift")));
+        JsonNode drifted = invoke(tools, "rg.readiness.get", Map.of("toolRef", "cancel-tool"));
+        assertThat(drifted.at("/data/publishable").asBoolean()).isFalse();
+        assertThat(drifted.at("/data/remainingLimitations").toString())
+                .contains("GREEN_BASELINE_ABSENT", "OWNER_SIGNOFF_ABSENT");
+
+        green = invoke(tools, "rg.tool.baseline", Map.of(
+                "toolRef", "cancel-tool", "libraryRefs", List.of("cancel"),
+                "caseSetRef", "cancel-golden", "side", "GREEN", "rounds", 2));
+        new AgentTddReviewService(states).approveToolSignoff(
+                "cancel-tool", "owner-signoff-v2", green.at("/data/draftRevision").asLong(),
+                green.at("/data/goldenSetId").asText(),
+                green.at("/data/evidenceFingerprint").asText(), identity());
+
         JsonNode published = invoke(tools, "rg.tool.publish", Map.of(
-                "toolRef", "cancel-tool", "signoffRef", "owner-signoff",
+                "toolRef", "cancel-tool", "signoffRef", "owner-signoff-v2",
                 "idempotencyKey", "publish-1"));
 
         assertOk(published);
@@ -197,7 +241,13 @@ class AgentTddChapterFiveEndToEndTest {
                   node lookup : "cancel:lookup" {
                     input { orderId = ctx.orderId }
                   }
-                  transform response { decision = lookup.output.decision }
+                  decision_table policy(
+                    decision = lookup.output.decision
+                  ) hit=first -> { decision: String } {
+                    rule (decision: decision == "WAIVE_FULL") -> { decision: "WAIVE_FULL" }
+                    otherwise -> { decision: "RETAIN" }
+                  }
+                  transform response { decision = policy.output.decision }
                 }
                 """;
     }

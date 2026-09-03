@@ -40,6 +40,7 @@ import java.util.function.Supplier;
 public final class AgentTddWorkflowService {
     static final String EVIDENCE = "EVIDENCE";
     static final String VERDICT = "VERDICT";
+    static final String VERDICT_LINE = "VERDICT_LINE";
     static final String PUBLISH_SPEC = "PUBLISH_SPEC";
     static final String SIGNOFF = "SIGNOFF";
     private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() { };
@@ -88,6 +89,7 @@ public final class AgentTddWorkflowService {
                                               Map<String, Object> result,
                                               IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
+        markPassingCasesReady(arguments, result, identity);
         ObjectNode evidence = mapper.createObjectNode();
         evidence.put("toolRef", toolRef);
         evidence.put("operation", operation);
@@ -109,15 +111,22 @@ public final class AgentTddWorkflowService {
             verdict.set("baseline", mapper.valueToTree(result));
         }
         states.save(scope(identity), VERDICT, toolRef, verdict);
+        String goldenSetId = verdict.path("goldenSetId").asText();
+        if (!goldenSetId.isBlank()) {
+            states.save(scope(identity), VERDICT_LINE, verdictLineRef(toolRef, goldenSetId), verdict);
+        }
         LinkedHashMap<String, Object> response = new LinkedHashMap<>(result);
         response.put("evidenceRef", stored.assetRef());
         return Map.copyOf(response);
     }
 
-    /** Reads the latest red-to-green line for one Tool. */
+    /** Reads the current line, or an archived line when {@code goldenSetId} is supplied. */
     public Map<String, Object> verdict(JsonNode arguments, IntegrationRequestContext identity) {
         String toolRef = requiredText(arguments, "toolRef");
-        return states.find(scope(identity), VERDICT, toolRef)
+        String goldenSetId = arguments.path("goldenSetId").asText().trim();
+        String kind = goldenSetId.isBlank() ? VERDICT : VERDICT_LINE;
+        String ref = goldenSetId.isBlank() ? toolRef : verdictLineRef(toolRef, goldenSetId);
+        return states.find(scope(identity), kind, ref)
                 .map(AgentTddStoredAsset::data)
                 .map(value -> mapper.convertValue(value, OBJECT_MAP))
                 .orElseThrow(() -> new AgentTddToolException(
@@ -193,10 +202,10 @@ public final class AgentTddWorkflowService {
                     || !generation.validation().actionReadiness().publishExecutableNow()) {
                 throw gate("The authoritative visual compiler did not accept executable publication.");
             }
-            List<OperatorDefinition> snapshots = snapshots(draft);
+            List<OperatorDefinition> snapshots = snapshots(executable);
             VisualGraphPublication candidate = VisualGraphPublication.from(
-                    draft, snapshots, generation.validation(), generation,
-                    GraphDraftDependencyReport.from(draft, catalog),
+                    executable, snapshots, generation.validation(), generation,
+                    GraphDraftDependencyReport.from(executable, catalog),
                     VisualGraphPublication.PublicationMetadata.of(
                             identity.actorId(), "MCP_AGENT_TDD",
                             "Published after stable green baseline and owner signoff.", signoffRef));
@@ -338,14 +347,17 @@ public final class AgentTddWorkflowService {
                     return List.copyOf(active);
                 }).orElse(List.of());
         return rows.isEmpty() ? "" : AgentTddExecutionService.evidenceFingerprint(
-                mapper, toolRef, draft, rows, side);
+                mapper, toolRef, draft, rows, side,
+                AgentTddRuntimeBindingResolver.bindingIdentity(draft, catalog::find));
     }
 
     private ObjectNode mergedLayerMatrix(String toolRef,
                                          Map<String, Object> result,
                                          IntegrationRequestContext identity) {
+        String goldenSetId = Objects.toString(result.get("goldenSetId"), "");
         ObjectNode matrix = states.find(scope(identity), VERDICT, toolRef)
                 .map(AgentTddStoredAsset::data)
+                .filter(data -> goldenSetId.equals(data.path("goldenSetId").asText()))
                 .filter(data -> data.path("byLayer").isObject())
                 .map(data -> (ObjectNode) data.path("byLayer").deepCopy())
                 .orElseGet(mapper::createObjectNode);
@@ -362,6 +374,46 @@ public final class AgentTddWorkflowService {
             if (!cell.has(other)) cell.set(other, mapper.valueToTree(Map.of("pass", 0, "fail", 0)));
         }
         return matrix;
+    }
+
+    /** Advances successfully executed ACTIVE cases without changing their semantic evidence. */
+    private void markPassingCasesReady(JsonNode arguments,
+                                       Map<String, Object> result,
+                                       IntegrationRequestContext identity) {
+        String caseSetRef = Objects.toString(result.get("caseSetRef"), "").trim();
+        if (caseSetRef.isBlank()) caseSetRef = arguments.path("caseSetRef").asText().trim();
+        if (caseSetRef.isBlank()) caseSetRef = arguments.path("cases").path("caseSetRef").asText().trim();
+        if (caseSetRef.isBlank()) return;
+        String resolvedCaseSetRef = caseSetRef;
+        java.util.Set<String> passing = new java.util.LinkedHashSet<>();
+        JsonNode executed = mapper.valueToTree(result.getOrDefault("cases", List.of()));
+        executed.forEach(row -> {
+            if (row.path("verdict").asText().endsWith("PASS")) {
+                passing.add(row.path("caseId").asText());
+            }
+        });
+        if (passing.isEmpty()) return;
+        AgentTddStoredAsset current = states.find(
+                scope(identity), AgentTddMutationService.CASE_SET, resolvedCaseSetRef).orElse(null);
+        if (current == null) return;
+        ObjectNode data = (ObjectNode) current.data().deepCopy();
+        boolean[] changed = {false};
+        data.path("rows").forEach(row -> {
+            if (passing.contains(row.path("caseId").asText())
+                    && "ACTIVE".equals(row.path("lifecycle").asText())
+                    && !"READY".equals(row.path("qualityState").asText())) {
+                ((ObjectNode) row).put("qualityState", "READY");
+                changed[0] = true;
+            }
+        });
+        if (changed[0]) {
+            states.saveIfRevision(scope(identity), AgentTddMutationService.CASE_SET,
+                    resolvedCaseSetRef, current.revision(), data);
+        }
+    }
+
+    private static String verdictLineRef(String toolRef, String goldenSetId) {
+        return toolRef + ":" + goldenSetId;
     }
 
     private ArrayNode businessBacklog(Map<String, Object> result) {

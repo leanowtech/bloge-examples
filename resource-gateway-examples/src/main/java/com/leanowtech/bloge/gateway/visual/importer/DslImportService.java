@@ -577,7 +577,8 @@ public class DslImportService {
             state.bindingSpans.put("/nodes/" + nodeId + "/inputs/" + entry.getKey(),
                     DslSourceSpan.point(state.request.sourceId(), entry.getValue().line(),
                             entry.getValue().column(), "InputBinding"));
-            addDataEdgesFromExpression(state, entry.getValue(), nodeId, entry.getKey(), effectiveCatalog);
+            addDataEdgesFromExpression(state, entry.getValue(), nodeId, targetPort,
+                    targetPath, effectiveCatalog);
         }
         return bindings;
     }
@@ -617,11 +618,22 @@ public class DslImportService {
                                             String targetNodeId,
                                             String targetPath,
                                             EffectiveCatalog effectiveCatalog) {
+        addDataEdgesFromExpression(
+                state, expression, targetNodeId, "inputs", targetPath, effectiveCatalog);
+    }
+
+    /** Adds node-reference edges against the same resolved target endpoint used by the binding. */
+    private void addDataEdgesFromExpression(ProjectionState state,
+                                            Expression expression,
+                                            String targetNodeId,
+                                            String targetPort,
+                                            String targetPath,
+                                            EffectiveCatalog effectiveCatalog) {
         for (String sourceNodeId : collectNodeReferences(expression)) {
             String sourcePath = sourcePath(expression, sourceNodeId).orElse("");
             GraphDraft.Endpoint source = sourceEndpoint(
                     sourceNodeId, sourcePath, state, effectiveCatalog);
-            addEdge(state, "data", sourceNodeId, source.port(), source.path(), targetNodeId, "inputs",
+            addEdge(state, "data", sourceNodeId, source.port(), source.path(), targetNodeId, targetPort,
                     targetPath, "", DslSourceSpan.point(state.request.sourceId(), expression.line(),
                             expression.column(), expression.getClass().getSimpleName()));
         }

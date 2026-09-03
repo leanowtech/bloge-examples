@@ -38,7 +38,8 @@ import java.util.function.Supplier;
  *
  * <p>Libraries and graphs are committed to their existing canonical registries. Only Agent-facing
  * instructions, golden case tables and pending human proposals are placed in the Agent overlay
- * repository. Every successful result is persisted for exact idempotency replay.</p>
+ * repository. Every successful result is persisted for exact idempotency replay and carries an
+ * honest four-dimensional verdict that distinguishes accepted authoring from unproved behavior.</p>
  */
 public final class AgentTddMutationService {
     static final String CASE_SET = "CASE_SET";
@@ -354,8 +355,26 @@ public final class AgentTddMutationService {
         String key = requiredText(arguments, "idempotencyKey");
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, arguments, MAX_BYTES);
         JsonNode result = states.executeOnce(scopeKey(identity), operation, key, fingerprint,
-                () -> mapper.valueToTree(action.get()));
+                () -> mapper.valueToTree(withDraftVerdict(action.get())));
         return mapper.convertValue(result, OBJECT_MAP);
+    }
+
+    private static Map<String, Object> withDraftVerdict(Map<String, Object> result) {
+        LinkedHashMap<String, Object> enriched = new LinkedHashMap<>(result);
+        enriched.putIfAbsent("honestVerdict", Map.of("dimensions", List.of(
+                draftDimension("contract-syntax", "PASS",
+                        "The server accepted and stored canonical authoring material."),
+                draftDimension("business-correctness", "NOT_PROVEN",
+                        "Approved GOLDEN Oracle cases have not established the intended outcome."),
+                draftDimension("dependency-isolation", "NOT_PROVEN",
+                        "No zero-egress execution evidence was produced by this write."),
+                draftDimension("runtime-governance", "NOT_PROVEN",
+                        "No owner signoff or immutable publication was produced by this write."))));
+        return Map.copyOf(enriched);
+    }
+
+    private static Map<String, Object> draftDimension(String name, String status, String limitation) {
+        return Map.of("name", name, "status", status, "limitation", limitation);
     }
 
     private GraphDraft compileGraph(JsonNode graph, List<String> refs) {

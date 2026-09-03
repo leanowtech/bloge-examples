@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
@@ -50,6 +51,7 @@ public final class AgentTddExecutionService {
     private final VisualGraphSimulationService simulation;
     private final ObjectMapper mapper;
     private final AgentTddStateRepository states;
+    private final VisualOperatorCatalog catalog;
 
     /** Creates the execution kernel from the same compiler and simulator used by the web surface. */
     public AgentTddExecutionService(OperatorLibraryRegistry libraries,
@@ -57,7 +59,7 @@ public final class AgentTddExecutionService {
                                     DslImportService projection,
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper) {
-        this(libraries, drafts, projection, simulation, mapper, null);
+        this(libraries, drafts, projection, simulation, mapper, null, null);
     }
 
     /** Creates the execution kernel with durable case-set resolution. */
@@ -67,12 +69,24 @@ public final class AgentTddExecutionService {
                                     VisualGraphSimulationService simulation,
                                     ObjectMapper mapper,
                                     AgentTddStateRepository states) {
+        this(libraries, drafts, projection, simulation, mapper, states, null);
+    }
+
+    /** Creates the execution kernel with durable cases and current runtime-binding identity. */
+    public AgentTddExecutionService(OperatorLibraryRegistry libraries,
+                                    GraphDraftRepository drafts,
+                                    DslImportService projection,
+                                    VisualGraphSimulationService simulation,
+                                    ObjectMapper mapper,
+                                    AgentTddStateRepository states,
+                                    VisualOperatorCatalog catalog) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.projection = Objects.requireNonNull(projection, "projection");
         this.simulation = Objects.requireNonNull(simulation, "simulation");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.states = states;
+        this.catalog = catalog;
     }
 
     /**
@@ -122,7 +136,7 @@ public final class AgentTddExecutionService {
     }
 
     /**
-     * Runs cases through the isolated RED boundary or authoritative bound GREEN runtime.
+     * Runs cases through the isolated RED boundary or binding-ready zero-egress GREEN projection.
      *
      * @param arguments toolRef, explicit libraryRefs, side and case rows
      * @param identity trusted enterprise identity used for draft-scope closure
@@ -146,7 +160,10 @@ public final class AgentTddExecutionService {
         List<JsonNode> rows = caseRows(arguments, identity);
         List<String> caseIds = rows.stream().map(row -> requiredText(row, "caseId")).sorted().toList();
         String goldenSetId = goldenSetId(mapper, toolRef, draft, caseIds);
-        String evidenceFingerprint = evidenceFingerprint(mapper, toolRef, draft, rows, side);
+        List<Map<String, String>> bindingIdentity = catalog == null ? List.of()
+                : AgentTddRuntimeBindingResolver.bindingIdentity(draft, catalog::find);
+        String evidenceFingerprint = evidenceFingerprint(
+                mapper, toolRef, draft, rows, side, bindingIdentity);
         boolean greenBlocked = "GREEN".equals(side) && speccing(draft);
         List<Map<String, Object>> results = new ArrayList<>();
         int passed = 0;
@@ -585,17 +602,37 @@ public final class AgentTddExecutionService {
                                       GraphDraft draft,
                                       List<? extends JsonNode> rows,
                                       String side) {
+        return evidenceFingerprint(mapper, toolRef, draft, rows, side, List.of());
+    }
+
+    /** Fingerprints evidence with the current executable target behind every binding reference. */
+    static String evidenceFingerprint(ObjectMapper mapper,
+                                      String toolRef,
+                                      GraphDraft draft,
+                                      List<? extends JsonNode> rows,
+                                      String side,
+                                      List<Map<String, String>> runtimeBindings) {
         String implementationFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "draftRevision", draft.revision(),
                 "nodes", draft.nodes(),
                 "edges", draft.edges(),
-                "operatorFingerprints", draft.operatorFingerprints()), MAX_FINGERPRINT_BYTES);
+                "operatorFingerprints", draft.operatorFingerprints(),
+                "runtimeBindings", runtimeBindings), MAX_FINGERPRINT_BYTES);
         return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "toolRef", toolRef,
                 "side", side,
                 "contractFingerprint", contractFingerprint(mapper, draft),
                 "implementationFingerprint", implementationFingerprint,
-                "cases", rows), MAX_FINGERPRINT_BYTES);
+                "cases", semanticCases(rows)), MAX_FINGERPRINT_BYTES);
+    }
+
+    private static List<JsonNode> semanticCases(List<? extends JsonNode> rows) {
+        return rows.stream().map(row -> {
+            ObjectNode semantic = row.isObject() ? ((ObjectNode) row).deepCopy()
+                    : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+            semantic.remove(List.of("lifecycle", "qualityState", "proposedOracle"));
+            return (JsonNode) semantic;
+        }).toList();
     }
 
     static String contractFingerprint(ObjectMapper mapper, GraphDraft draft) {

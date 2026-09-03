@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,10 +46,54 @@ class McpToolCatalogTest {
         assertThat(((Map<?, ?>) functions.get("items")).get("type")).isEqualTo("object");
     }
 
+    @Test
+    void schemasDescribeStrictAuthoringAndEveryExecutionEnvelopeField() {
+        McpToolCatalog catalog = new McpToolCatalog();
+
+        Map<?, ?> instruction = properties(catalog.require("rg.tool.setInstruction").inputSchema(), "instruction");
+        assertThat(stringKeys(instruction)).contains(
+                "name", "title", "description", "whenToUse", "inputs", "outputs", "errors");
+        Map<?, ?> instructionSchema = schemaProperty(
+                catalog.require("rg.tool.setInstruction").inputSchema(), "instruction");
+        assertThat(((List<?>) instructionSchema.get("required")).stream().map(Object::toString).toList())
+                .containsExactlyInAnyOrder(
+                "name", "title", "description", "whenToUse", "inputs", "outputs", "errors");
+
+        Map<?, ?> baseline = dataProperties(catalog.require("rg.tool.baseline"));
+        assertThat(stringKeys(baseline)).contains(
+                "status", "caseSetRef", "rounds", "businessFingerprintStable",
+                "remainingLimitations", "evidenceRef", "honestVerdict");
+        assertThat(((Map<?, ?>) baseline.get("rounds")).get("type")).isEqualTo("array");
+
+        Map<?, ?> behavior = dataProperties(catalog.require("rg.scenario.setDependencyBehavior"));
+        assertThat(((Map<?, ?>) behavior.get("behavior")).get("type")).isEqualTo("object");
+        Map<?, ?> row = (Map<?, ?>) ((Map<?, ?>) dataProperties(
+                catalog.require("rg.scenario.listCases")).get("rows")).get("items");
+        assertThat(stringKeys((Map<?, ?>) row.get("properties"))).contains(
+                "lifecycle", "qualityState", "sourceRunRef");
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<?, ?> properties(Map<String, Object> schema, String property) {
-        Map<String, Object> values = (Map<String, Object>) schema.get("properties");
-        Map<String, Object> selected = (Map<String, Object>) values.get(property);
+        Map<String, Object> selected = (Map<String, Object>) schemaProperty(schema, property);
         return (Map<?, ?>) selected.get("properties");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<?, ?> schemaProperty(Map<String, Object> schema, String property) {
+        Map<String, Object> values = (Map<String, Object>) schema.get("properties");
+        return (Map<?, ?>) values.get(property);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<?, ?> dataProperties(McpToolDefinition definition) {
+        Map<String, Object> envelope = definition.outputSchema();
+        Map<String, Object> envelopeProperties = (Map<String, Object>) envelope.get("properties");
+        Map<String, Object> data = (Map<String, Object>) envelopeProperties.get("data");
+        return (Map<?, ?>) data.get("properties");
+    }
+
+    private static List<String> stringKeys(Map<?, ?> values) {
+        return values.keySet().stream().map(Object::toString).toList();
     }
 }

@@ -14,7 +14,7 @@
     "kind": "GRAPH_DRAFT",
     "id": "built-in:loanDecisionPolicy",
     "revision": 1,
-    "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+    "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
   },
   "sourceContractRef": {
     "kind": "CONTRACT",
@@ -26,13 +26,13 @@
     "kind": "CAPABILITY",
     "id": "graph:loanDecisionPolicy",
     "revision": 1,
-    "fingerprint": "sha256:bb48bad6ee6ad57ecc46f369a00f13cc3cb1af4db2b13cd83346f88ee8cfbfc7"
+    "fingerprint": "sha256:359464513051a3d0336282d66a3470e59368ace8f934b9d87b32ba595abb0e23"
   },
   "capabilityClosureRef": {
     "kind": "CAPABILITY_CLOSURE",
     "id": "graph:loanDecisionPolicy",
     "revision": 1,
-    "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+    "fingerprint": "sha256:f77796357c20b567548979c02e81b36f5c51a1479e15ea7875f8d805fb7015b5"
   },
   "discoveredTestSuiteRefs": [
     {
@@ -75,7 +75,7 @@
         "kind": "GRAPH_DRAFT",
         "id": "built-in:loanDecisionPolicy",
         "revision": 1,
-        "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
       }
     ],
     "proposalRefs": [],
@@ -105,13 +105,13 @@
           "kind": "CAPABILITY",
           "id": "graph:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:bb48bad6ee6ad57ecc46f369a00f13cc3cb1af4db2b13cd83346f88ee8cfbfc7"
+          "fingerprint": "sha256:359464513051a3d0336282d66a3470e59368ace8f934b9d87b32ba595abb0e23"
         },
         {
           "kind": "CAPABILITY_CLOSURE",
           "id": "graph:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+          "fingerprint": "sha256:f77796357c20b567548979c02e81b36f5c51a1479e15ea7875f8d805fb7015b5"
         },
         {
           "kind": "CONTRACT",
@@ -123,7 +123,7 @@
           "kind": "GRAPH_DRAFT",
           "id": "built-in:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+          "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
         },
         {
           "kind": "TEST_SUITE",
@@ -258,7 +258,7 @@
           "kind": "GRAPH_DRAFT",
           "id": "built-in:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+          "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
         }
       ]
     },
@@ -275,7 +275,7 @@
           "kind": "GRAPH_DRAFT",
           "id": "built-in:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+          "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
         }
       ]
     },
@@ -298,7 +298,7 @@
           "kind": "GRAPH_DRAFT",
           "id": "built-in:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+          "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
         }
       ]
     },
@@ -315,13 +315,13 @@
           "kind": "CAPABILITY_CLOSURE",
           "id": "graph:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+          "fingerprint": "sha256:f77796357c20b567548979c02e81b36f5c51a1479e15ea7875f8d805fb7015b5"
         },
         {
           "kind": "GRAPH_DRAFT",
           "id": "built-in:loanDecisionPolicy",
           "revision": 1,
-          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+          "fingerprint": "sha256:c50397217616fbd2fd481588bfa32bf0a9c14076f12013f7432882322c5d64c1"
         }
       ]
     },
@@ -411,5 +411,5 @@
     }
   ],
   "status": "BLOCKED",
-  "projectionFingerprint": "sha256:7484c8a3884d217c43463039eac8e11249f6a924fa08572206c45a9973effcf3"
+  "projectionFingerprint": "sha256:5390a30e392f46deb980e30c81c02bdca87e3d50c6ccc8d3aa002564be97c7a5"
 }

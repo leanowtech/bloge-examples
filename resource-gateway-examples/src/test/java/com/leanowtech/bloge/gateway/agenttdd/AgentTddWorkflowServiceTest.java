@@ -138,6 +138,45 @@ class AgentTddWorkflowServiceTest {
     }
 
     @Test
+    void startsANewMatrixForANewGoldenSetAndKeepsThePriorLineQueryable() {
+        service.recordEvidence("rg.simulate", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "goldenSetId", "sha256:line-a", "side", "GREEN",
+                "byLayer", Map.of("contract", Map.of("pass", 1, "fail", 0)),
+                "cases", List.of(), "realExternalCalls", 0), identity());
+        service.recordEvidence("rg.simulate", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "goldenSetId", "sha256:line-b", "side", "RED",
+                "byLayer", Map.of("contract", Map.of("pass", 0, "fail", 1)),
+                "cases", List.of(), "realExternalCalls", 0), identity());
+
+        JsonNode current = json(service.verdict(json(Map.of("toolRef", "risk-tool")), identity()));
+        JsonNode archived = json(service.verdict(json(Map.of(
+                "toolRef", "risk-tool", "goldenSetId", "sha256:line-a")), identity()));
+
+        assertThat(current.path("goldenSetId").asText()).isEqualTo("sha256:line-b");
+        assertThat(current.at("/byLayer/contract/green/pass").asInt()).isZero();
+        assertThat(archived.path("goldenSetId").asText()).isEqualTo("sha256:line-a");
+        assertThat(archived.at("/byLayer/contract/green/pass").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void marksPassingActiveDurableCasesReadyWithoutChangingTheirLifecycle() {
+        states.save(scope(), AgentTddMutationService.CASE_SET, "golden-1", json(Map.of(
+                "toolRef", "risk-tool", "rows", List.of(Map.of(
+                        "caseId", "g1", "lifecycle", "ACTIVE",
+                        "qualityState", "DESIGNED_NOT_RUN")))));
+
+        service.recordEvidence("rg.simulate", json(Map.of("toolRef", "risk-tool")), Map.of(
+                "goldenSetId", "sha256:ready", "caseSetRef", "golden-1", "side", "RED",
+                "cases", List.of(Map.of("caseId", "g1", "verdict", "RED_PASS")),
+                "realExternalCalls", 0), identity());
+
+        JsonNode row = states.find(scope(), AgentTddMutationService.CASE_SET, "golden-1")
+                .orElseThrow().data().path("rows").get(0);
+        assertThat(row.path("lifecycle").asText()).isEqualTo("ACTIVE");
+        assertThat(row.path("qualityState").asText()).isEqualTo("READY");
+    }
+
+    @Test
     void publishSpecIsPendingIdempotentAndRequiresExactRevisionForApproval() {
         JsonNode arguments = json(Map.of(
                 "toolRef", "risk-tool", "idempotencyKey", "spec-1"));

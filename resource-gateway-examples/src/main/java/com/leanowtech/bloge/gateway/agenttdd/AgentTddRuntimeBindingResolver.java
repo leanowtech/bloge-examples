@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +39,7 @@ final class AgentTddRuntimeBindingResolver {
                 nodes.add(node);
                 continue;
             }
-            OperatorDefinition target = resolver.apply(bindingRef)
-                    .or(() -> resolver.apply("resource:" + bindingRef))
-                    .orElseThrow(() -> new AgentTddToolException(
-                            "LIBRARY_NOT_FOUND", "runtime.bindingRef no longer resolves in the server catalog."));
+            OperatorDefinition target = resolve(bindingRef, resolver);
             AgentTddMutationService.requireCompatibleBinding(contract, target);
             changed = true;
             nodes.add(new GraphDraft.DraftNode(node.id(), target.operatorRef(), node.label(),
@@ -55,6 +53,46 @@ final class AgentTddRuntimeBindingResolver {
                 draft.inputSchema(), draft.outputSchema(), List.copyOf(nodes), draft.edges(),
                 draft.visualLayout(), draft.nodeFixtures(), draft.output(), Map.copyOf(fingerprints),
                 Map.copyOf(snapshots), draft.revisionMetadata());
+    }
+
+    /**
+     * Captures the current executable identity of every reviewed contract binding.
+     *
+     * <p>The catalog is mutable while an evidence/signoff pair is not. Including this sorted
+     * identity in the evidence subject makes target replacement invalidate the pair before
+     * publication can freeze a different implementation.</p>
+     *
+     * @param draft reviewed contract-addressed draft
+     * @param resolver current server catalog lookup
+     * @return canonical, node-sorted binding identities
+     */
+    static List<Map<String, String>> bindingIdentity(
+            GraphDraft draft,
+            Function<String, Optional<OperatorDefinition>> resolver) {
+        List<Map<String, String>> identities = new ArrayList<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            OperatorDefinition contract = draft.operatorSnapshots().get(node.id());
+            String bindingRef = bindingRef(contract);
+            if (bindingRef.isBlank()) continue;
+            OperatorDefinition target = resolve(bindingRef, resolver);
+            AgentTddMutationService.requireCompatibleBinding(contract, target);
+            identities.add(Map.of(
+                    "nodeId", node.id(),
+                    "bindingRef", bindingRef,
+                    "targetOperatorRef", target.operatorRef(),
+                    "targetFingerprint", target.fingerprint()));
+        }
+        identities.sort(Comparator.comparing(identity -> identity.get("nodeId")));
+        return List.copyOf(identities);
+    }
+
+    private static OperatorDefinition resolve(
+            String bindingRef,
+            Function<String, Optional<OperatorDefinition>> resolver) {
+        return resolver.apply(bindingRef)
+                .or(() -> resolver.apply("resource:" + bindingRef))
+                .orElseThrow(() -> new AgentTddToolException(
+                        "LIBRARY_NOT_FOUND", "runtime.bindingRef no longer resolves in the server catalog."));
     }
 
     private static String bindingRef(OperatorDefinition operator) {

@@ -88,7 +88,7 @@ RG 用**三层能力模型**组织工具，自下而上：
 **生命周期由意图/类别驱动，而非统一保留期**：GOLDEN/REGRESSION 走"长期资产"生命周期，临时点验用例走"短期可弃"，解决"把核心资产按 30 天统一删除"的错误（D11）。
 
 ### 4.4 红→绿闭环、测试金字塔、业务待办
-一套 golden 用例集有稳定身份 `goldenSetId`，绑定"哪个工具 + 哪份契约"。**红**：对**契约态（可视化草稿 + 设计态算子）**跑模拟，依赖用契约合成桩，通过=规格自洽、接得通，对 GOLDEN 还校验人写期望与契约形状一致，红**不证明真实行为**；**绿**：同一套对**已降级为可执行 `.bloge` 的真实实现**跑，依赖用真实绑定，通过=实现达标。关键是**同一 goldenSetId、同一批用例**从契约态走到实现态是一条身份连续、可见的线，契约或实现指纹变化则线重开。精确模型（goldenSetId 计算、漂移重开）见附录 C。
+一套 golden 用例集有稳定身份 `goldenSetId`，绑定"哪个工具 + 哪份契约"。**红**：对**契约态（可视化草稿 + 设计态算子）**跑模拟，依赖用契约合成桩，通过=规格自洽、接得通，对 GOLDEN 还校验人写期望与契约形状一致，红**不证明真实行为**；**绿**：同一套对**绑定齐全的可执行投影**跑零外呼模拟，依赖仍由批准用例控制，通过=实现绑定与纯图逻辑达标。关键是**同一 goldenSetId、同一批用例**从契约态走到实现态是一条身份连续、可见的线；契约或用例集合变化才重开 golden 线，当前目标实现指纹变化则保留该线但使旧证据与签署失效。精确模型（goldenSetId 计算、漂移重开）见附录 C。
 
 **测试金字塔分层**（每层映射 RG 已有能力）：**单元**（单算子/函数/决策表隔离）、**契约**（工具 I/O 签名 + 对依赖的调用符合依赖契约）、**集成**（多个已发布工具组合——一个已发布工具可作算子拖进更大图）、**冒烟**（端到端快速跑通）。红→绿因此按层聚合。
 
@@ -289,7 +289,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 
 ## 7. 工程实施计划
 
-> 实现状态（2026-09-03）：W1–W5 及贯穿门禁已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；Agent overlay 与原子幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影；Appendix-D 枚举和七种依赖行为已接入共享测试内核；第 5 章案例已有服务级端到端测试，覆盖“契约→编排→GOLDEN 人工批准→RED→绑定→GREEN→版本绑定签署→不可变发布”。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不替代运行证据。
+> 实现状态（2026-09-03）：W1–W5 及贯穿门禁已在 `resource-gateway-examples` 中完成。MCP 使用现代无状态请求头并保留 legacy initialize；严格输入/输出 Schema 与真实响应同步；Agent overlay 与原子幂等响应使用同一数据源持久化；Web 看板为 `STRUCTURE_ONLY` 投影；Appendix-D 枚举和七种依赖行为已接入共享测试内核。第 5 章案例已有服务级端到端测试，覆盖“契约→编排→错误 GOLDEN 产生业务待办→R4 Oracle 修复/人工批准→RED→绑定→GREEN/READY→版本与目标实现绑定签署→目录漂移失效→重新基线→不可变发布”。新 goldenSetId 重开独立矩阵，旧线仍可按身份查询。实际运行和运维步骤见 [`resource-gateway-agent-tdd-mcp.md`](resource-gateway-agent-tdd-mcp.md)。本文后续章节保留设计决策和可追溯依据，不替代运行证据。
 
 一次性造通完整循环（查询→调整→编译→模拟→发布），分周推进，每步复用已有能力、只补 4.8 新件。
 
@@ -395,7 +395,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 { "draftId":"", "nodeId":"fetchOrder", "outputPort":"payload",
   "fixtureId":"", "category":"", "retentionDays":0, "redactPaths":["/payload/feeCharged"], "idempotencyKey":"" }
 // out.data
-{ "fixtureId":"", "scope":"(服务端派生)", "schemaRef":"(服务端派生)", "sourceKind":"SCENARIO|SAMPLE", "lineageRef":"" }
+{ "fixtureId":"", "scope":"(服务端派生)", "schemaRef":{}, "sourceKind":"SCENARIO|SAMPLE", "lineageRef":{} }
 // errors: AMBIGUOUS_OUTPUT_PORT, SCHEMA_NONCONFORMANT, RETENTION_POLICY_VIOLATION, DRAFT_NOT_FOUND
 ```
 `rg.scenario.upsertCases`（DRAFT_WRITE；GOLDEN 行触发 PROPOSE）
@@ -424,7 +424,7 @@ Agent 调 `rg.readiness.get` 看发布门：绿全过 ✓、但"负责人签署"
 contractFingerprint = stableHash( 工具 I/O 契约 + 所有被引算子契约(archetype/input/output) )   // 不含 bindingRef 指向的实现
 goldenSetId         = stableHash( toolRef + contractFingerprint + sortedSet(caseIds) )
 ```
-实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线归档）。
+实现（bindingRef 目标）变化**不改** goldenSetId → 红→绿保持同一线，但旧 GREEN 证据与人工签署失效；契约变或用例集增删 → 新 goldenSetId → 线重开（旧线按 `{toolRef,goldenSetId}` 归档可查，矩阵不继承）。证据指纹另含草稿 revision、Oracle/stub 语义和每个 bindingRef 当前解析出的目标实现指纹；通过的 ACTIVE 行推进为 `qualityState=READY`，该运营状态不参与证据语义指纹。
 
 **工具实现就绪状态机**：
 ```

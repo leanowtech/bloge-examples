@@ -66,6 +66,57 @@ class DslImportServiceTest {
     }
 
     @Test
+    void connectsTwoLibraryNodesUsingTheirDeclaredNamedPorts() {
+        SchemaEnvelope scalar = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of("type", "string"));
+        OperatorDefinition lookup = namedPortOperator(
+                "cancel:lookup", "orderId", "decision", scalar);
+        OperatorDefinition persist = namedPortOperator(
+                "cancel:persist", "decision", "receipt", scalar);
+        DslImportService service = service(VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1", "cancel", "Cancellation", "1.0.0", "cx-ops",
+                "ACTIVE", List.of(lookup, persist))));
+
+        DslVisualProjection projection = service.preview(new DslImportPreviewRequest(
+                "cancel-chain.bloge", """
+                        graph cancellationChain {
+                          input { orderId: String }
+                          node lookup : "cancel:lookup" { input { orderId = ctx.orderId } }
+                          node persist : "cancel:persist" {
+                            input { decision = lookup.output.decision }
+                          }
+                          transform response { receipt = persist.output.receipt }
+                        }
+                        """, List.of("cancel"), List.of(), "preview", Map.of()));
+
+        GraphDraft.DraftNode node = projection.draft().nodes().stream()
+                .filter(value -> "persist".equals(value.id())).findFirst().orElseThrow();
+        assertThat(node.inputs().get("decision").targetPort()).isEqualTo("decision");
+        assertThat(node.inputs().get("decision").targetPath()).isEmpty();
+        assertThat(projection.draft().edges()).anySatisfy(edge -> {
+            assertThat(edge.source()).isEqualTo(new GraphDraft.Endpoint("lookup", "decision", ""));
+            assertThat(edge.target()).isEqualTo(new GraphDraft.Endpoint("persist", "decision", ""));
+        });
+        assertThat(projection.diagnostics()).noneMatch(VisualDiagnostic::error);
+    }
+
+    private static OperatorDefinition namedPortOperator(String ref,
+                                                        String input,
+                                                        String output,
+                                                        SchemaEnvelope schema) {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1", ref, "1.0.0",
+                new OperatorDefinition.Display(ref, ref, List.of("pure")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port(input, schema, true, input)),
+                        List.of(new OperatorDefinition.Port(output, schema, true, output))),
+                SchemaEnvelope.opaque(), OperatorDefinition.Capabilities.pure(),
+                OperatorDefinition.Policy.unrestricted(),
+                new OperatorDefinition.Lowering("design", "", Map.of()), List.of());
+    }
+
+    @Test
     void projectsDslWithInlineOperatorLibraryWithoutDependingOnSchemaOrigin() {
         DslImportService service = service(emptyCatalog());
 
