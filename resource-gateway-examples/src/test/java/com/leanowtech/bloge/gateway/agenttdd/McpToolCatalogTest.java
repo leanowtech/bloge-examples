@@ -76,6 +76,8 @@ class McpToolCatalogTest {
         Map<?, ?> enumeration = (Map<?, ?>) ((Map<?, ?>) row.get("properties")).get("enumeration");
         assertThat(stringKeys((Map<?, ?>) enumeration.get("properties"))).containsExactlyInAnyOrder(
                 "enumerationMode", "enumerationRule", "boundaryInput", "reason");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.contract.get")))).contains(
+                "bindingRef", "sourceKind", "runtimeState");
     }
 
     @Test

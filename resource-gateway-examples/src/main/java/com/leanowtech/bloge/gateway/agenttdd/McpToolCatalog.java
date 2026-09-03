@@ -319,7 +319,8 @@ public final class McpToolCatalog {
             case "rg.library.list" -> structuredObject(props("libraries", arrayOf(businessObject())), List.of("libraries"));
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
-                    "owner", string(), "speccing", bool(), "inputSchema", businessObject(),
+                    "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
+                    "speccing", bool(), "inputSchema", businessObject(),
                     "outputSchema", businessObject(), "revision", integer()),
                     List.of("assetRef", "kind"));
             case "rg.tool.getInstruction" -> structuredObject(props("toolRef", string(), "name", string(),
