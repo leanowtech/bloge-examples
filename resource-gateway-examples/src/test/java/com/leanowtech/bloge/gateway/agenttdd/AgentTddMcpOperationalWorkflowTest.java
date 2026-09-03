@@ -7,7 +7,17 @@ import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.openqa.selenium.Alert;
+import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -20,6 +30,10 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Comparator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -142,6 +156,67 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(published.at("/data/artifactKind").asText()).isEqualTo("EXECUTABLE");
     }
 
+    @Test
+    @Timeout(45)
+    void humanReviewerOpensExactOracleDetailAndApprovesItThroughTheBrowser() throws Exception {
+        String toolRef = "codex-wallet-browser-test";
+        String caseSetRef = "codex-wallet-browser-cases-test";
+        JsonNode capabilities = invoke("rg.capability.list", Map.of("kind", "API"), "AGENT_TDD_READ");
+        String bindingRef = java.util.stream.StreamSupport.stream(
+                        capabilities.at("/data/capabilities").spliterator(), false)
+                .map(value -> value.path("ref").asText())
+                .filter(value -> value.contains("wallet-service.getBalance"))
+                .findFirst().orElseThrow();
+        invoke("rg.tool.compose", Map.of(
+                "toolRef", toolRef,
+                "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", graph(bindingRef)),
+                "libraryRefs", List.of(),
+                "idempotencyKey", "compose-wallet-browser-test"), "AGENT_TDD_AUTHORING");
+        invoke("rg.scenario.upsertCases", Map.of(
+                "caseSetRef", caseSetRef,
+                "toolRef", toolRef,
+                "rows", List.of(Map.of(
+                        "caseId", "wallet-browser-usd",
+                        "category", "GOLDEN",
+                        "layer", "contract",
+                        "given", Map.of("userId", "browser-u-100"),
+                        "stubs", Map.of("wallet", Map.of(
+                                "payload", Map.of("amount", 125, "currency", "USD"))),
+                        "expect", Map.of("amount", 125, "currency", "USD"),
+                        "intent", "Browser reviewer confirms the exact governed wallet balance",
+                        "oracleOwner", "wallet-browser-ops")),
+                "idempotencyKey", "cases-wallet-browser-test"), "AGENT_TDD_AUTHORING");
+
+        WebDriver browser = newChromeDriverOrSkip();
+        try {
+            browser.manage().window().setSize(new Dimension(1280, 900));
+            WebDriverWait wait = new WebDriverWait(browser, Duration.ofSeconds(12));
+            browser.get("http://localhost:" + port + "/agent-tdd.html");
+            wait.until(ExpectedConditions.elementToBeClickable(By.id("token")))
+                    .sendKeys("bloge-reviewer-demo-token");
+            browser.findElement(By.id("load")).click();
+            By reviewButton = By.xpath("//div[contains(@class,'review') and contains(.,'"
+                    + caseSetRef + "')]/button");
+            wait.until(ExpectedConditions.elementToBeClickable(reviewButton)).click();
+
+            Alert confirmation = wait.until(ExpectedConditions.alertIsPresent());
+            assertThat(confirmation.getText())
+                    .contains("Browser reviewer confirms the exact governed wallet balance")
+                    .contains("browser-u-100")
+                    .contains("wallet-browser-ops")
+                    .contains("proposedBy")
+                    .contains("aneke-sync");
+            confirmation.accept();
+            wait.until(ExpectedConditions.textToBePresentInElementLocated(By.id("reviewCount"), "0"));
+        } finally {
+            browser.quit();
+        }
+
+        JsonNode cases = invoke("rg.scenario.listCases", Map.of("caseSetRef", caseSetRef),
+                "AGENT_TDD_READ");
+        assertThat(cases.at("/data/rows/0/lifecycle").asText()).isEqualTo("ACTIVE");
+    }
+
     /**
      * Exercises the same initialize, initialized notification and tool discovery sequence emitted
      * by a current Codex Streamable-HTTP client before it can call an Agent TDD tool.
@@ -229,6 +304,36 @@ class AgentTddMcpOperationalWorkflowTest {
         headers.set("X-Purpose", purpose);
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
+    }
+
+    /** Starts an actual local Chrome session while keeping offline builds deterministic. */
+    private static WebDriver newChromeDriverOrSkip() throws Exception {
+        Path chromeDriver = configuredChromeDriver();
+        Assumptions.assumeTrue(chromeDriver != null,
+                "ChromeDriver executable is unavailable for the Agent TDD board acceptance");
+        System.setProperty("webdriver.chrome.driver", chromeDriver.toString());
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--headless=new", "--disable-gpu", "--disable-dev-shm-usage",
+                "--no-sandbox", "--remote-debugging-pipe", "--window-size=1280,900");
+        Path macChrome = Path.of("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+        if (Files.isExecutable(macChrome)) {
+            options.setBinary(macChrome.toString());
+        }
+        return new ChromeDriver(options);
+    }
+
+    private static Path configuredChromeDriver() throws Exception {
+        String configured = System.getProperty("webdriver.chrome.driver", "").trim();
+        if (!configured.isBlank() && Files.isExecutable(Path.of(configured))) {
+            return Path.of(configured);
+        }
+        Path cache = Path.of(System.getProperty("user.home"), ".cache", "selenium", "chromedriver");
+        if (!Files.isDirectory(cache)) return null;
+        try (var paths = Files.find(cache, 4, (path, attributes) ->
+                attributes.isRegularFile() && "chromedriver".equals(path.getFileName().toString())
+                        && Files.isExecutable(path))) {
+            return paths.sorted(Comparator.reverseOrder()).findFirst().orElse(null);
+        }
     }
 
     private static String graph(String bindingRef) {
