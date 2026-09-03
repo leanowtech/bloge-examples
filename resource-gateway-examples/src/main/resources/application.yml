@@ -58,6 +58,10 @@ gateway:
   base-url: http://localhost:${server.port}/demo-upstream
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
+  agent-tdd:
+    attestation:
+      # Exact sandbox egress hosts. An empty list fails resource declaration and attestation closed.
+      allowed-hosts: ${RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS:localhost,127.0.0.1}
   testing:
     correctness:
       # Opt-in metadata-only Correctness Workspace. The versioned database migration must be

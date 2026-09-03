@@ -29,6 +29,9 @@ payload-free and returned with `no-store` rather than sampling fixtures or provi
 sample list reads only governed Fixture descriptors. `rg.fixture.provide` validates a supplied sample against
 one exact operator output port, then server-derives its Fixture id, scope, schema reference, retention and
 SAMPLE lineage; the MCP response never echoes the sample value.
+Agent TDD resource declaration and sandbox attestation share an exact-host egress policy configured by
+`RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`. It rejects wildcard/suffix matching, user-info, authority templates,
+non-HTTP schemes and an empty allowlist; the local default admits only `localhost` and `127.0.0.1`.
 The local demo resolves distinct WORKLOAD and HUMAN credentials; proposals persist proposer identity and
 fingerprint, approval enforces maker-checker separation, and Codex never receives the reviewer credential.
 The application and repository launcher bind the demo to `127.0.0.1` by default; only an explicitly hardened
