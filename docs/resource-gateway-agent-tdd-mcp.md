@@ -63,7 +63,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 1. 使用 `rg.capability.list`、`rg.library.get/list`、`rg.contract.get`、`rg.tool.getInstruction`、`rg.scenario.listCases`、`rg.verdict.get` 和 `rg.evidence.get` 查询状态。
 2. 使用 `rg.library.upsert`、`rg.feature.compose`、`rg.tool.compose`、`rg.tool.setInstruction` 和场景工具修改草稿。写操作必须带 `idempotencyKey`；同一 key 携带不同请求时返回 `IDEMPOTENCY_CONFLICT`。
 3. 使用 `rg.dsl.preview` 和 `rg.gate.check` 编译。`libraryRefs` 必须显式提供，编译器不会从全局目录猜测依赖。
-4. 使用 `rg.simulate`、`rg.feature.rehearse` 和 `rg.tool.baseline` 验证。模拟边界真实执行纯逻辑节点，并用 stand-in 替换 operator 调用；返回的 `realExternalCalls` 必须为 `0`。
+4. 使用 `rg.simulate`、`rg.feature.rehearse` 和 `rg.tool.baseline` 验证。RED 在模拟边界真实执行纯逻辑节点，并用 stand-in 替换 operator 调用，`realExternalCalls` 必须为 `0`；所有 binding 就绪后的 GREEN 走 `VisualGraphRunService` 真实运行路径，不应用 RED stub，并报告按契约分类的外部绑定调用次数。
 5. 使用 `rg.fixture.promote`、`rg.tool.publishSpec`、`rg.readiness.get` 和 `rg.tool.publish` 完成治理与发布。
 
 GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 变为 `ACTIVE`，并成为 Tool 示例和 baseline 输入。Tool 契约变化时，既有 `ACTIVE` 行自动变为 `STALE`，旧的绿色证据不能继续通过发布门禁。
@@ -81,6 +81,8 @@ GOLDEN 行由 Agent 提议。业务负责人批准后，行状态才从 `DRAFT` 
 `runtime.bindingRef` 必须解析到当前服务端 operator catalog。Resource Gateway 校验绑定目标的输入、输出端口数量和 JSON Schema；不匹配时返回 `SCHEMA_NONCONFORMANT`。绑定成功后，图快照使用目标的可执行 lowering，但继续保留库契约身份。
 
 `goldenSetId` 由 Tool 引用、Tool/算子契约指纹和排序后的 ACTIVE case ID 计算。实现绑定不参与契约指纹，因此红侧和绿侧保持同一身份；I/O 契约或用例集合变化时生成新身份。
+
+GREEN 用同一批 ACTIVE 用例和同一 `goldenSetId` 调用真实 binding；用例中的 `stubs` 只属于 RED，GREEN 结果通过 `ignoredFixtureNodeIds` 明示其未被应用。GREEN 运行可能访问真实资源，调用方应只在受控 test/staging 环境及相应网络治理下执行；响应中的 `realExternalCalls` 是按算子契约类别和运行 attempt 计算的应用级证据，不等同于部署级 egress 监控。
 
 `rg.fixture.promote` 必须显式指定 `outputPort`。返回的 `sourceKind` 由服务端捕获证据派生：存在与当前草稿、节点、算子和输出一致的有效模拟捕获时为 `SCENARIO`，否则为 `SAMPLE`；客户端不能自行声明该来源。
 

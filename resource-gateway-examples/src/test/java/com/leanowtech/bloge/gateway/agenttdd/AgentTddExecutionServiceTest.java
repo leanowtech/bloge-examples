@@ -17,6 +17,8 @@ import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationServi
 import com.leanowtech.bloge.gateway.visual.simulation.VisualProductionAdmissionPolicy;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visualadapter.VisualSimulationKernelAdapter;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -24,6 +26,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /** Verifies library-aware compilation and the zero-egress red-side execution seam. */
 class AgentTddExecutionServiceTest {
@@ -103,6 +109,49 @@ class AgentTddExecutionServiceTest {
                 mapper.valueToTree(Map.of("behavior", "REPLAY", "replayRef", "latest", "value", Map.of()))))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->
                         assertThat(failure.code()).isEqualTo("SCHEMA_NONCONFORMANT"));
+    }
+
+    @Test
+    void greenExecutesAuthoritativeRuntimeAndDoesNotApplyRedFixtures() {
+        Fixture fixture = fixture();
+        GraphDraft draft = fixture.projection().preview(
+                new com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest(
+                        "green.bloge", """
+                        graph green {
+                          input { value: String }
+                          transform result { value = ctx.value }
+                        }
+                        """, List.of(), List.of(), "test", Map.of())).draft()
+                .withIdentity("green-tool", 0);
+        draft = fixture.drafts().save(draft);
+        VisualGraphSimulationService redSimulation = mock(VisualGraphSimulationService.class);
+        VisualGraphRunService runtime = mock(VisualGraphRunService.class);
+        VisualGraphRunResponse response = mock(VisualGraphRunResponse.class);
+        when(response.success()).thenReturn(true);
+        when(response.validated()).thenReturn(true);
+        when(response.compiled()).thenReturn(true);
+        when(response.output()).thenReturn(Map.of("value", "bound"));
+        when(response.statusMap()).thenReturn(Map.of("result", "COMPLETED"));
+        when(response.diagnostics()).thenReturn(List.of());
+        when(response.nodeAttempts()).thenReturn(Map.of());
+        when(runtime.run(draft, Map.of("value", "bound"), "")).thenReturn(response);
+        AgentTddExecutionService service = new AgentTddExecutionService(
+                fixture.libraries(), fixture.drafts(), fixture.projection(), redSimulation,
+                mapper, null, runtime);
+
+        Map<String, Object> result = service.simulate(mapper.valueToTree(Map.of(
+                "toolRef", "green-tool", "libraryRefs", List.of(), "side", "GREEN",
+                "cases", Map.of("rows", List.of(Map.of(
+                        "caseId", "g1", "given", Map.of("value", "bound"),
+                        "stubs", Map.of("dependency", Map.of("value", "red-only")),
+                        "expect", Map.of("value", "bound")))))), identity());
+
+        assertThat(result.get("cases")).asList().singleElement()
+                .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+                .containsEntry("verdict", "GREEN_PASS")
+                .containsEntry("ignoredFixtureNodeIds", List.of("dependency"));
+        verify(runtime).run(draft, Map.of("value", "bound"), "");
+        verifyNoInteractions(redSimulation);
     }
 
     @Test
