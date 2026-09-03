@@ -75,6 +75,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Fallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Clock;
@@ -285,6 +286,7 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
      * It does not authorize review, approval, or activation.</p>
      */
     @Bean
+    @Fallback
     @ConditionalOnBean(VisualOperatorCatalog.class)
     @ConditionalOnMissingBean
     FixtureSchemaSource visualOperatorFixtureSchemaSource(
@@ -299,6 +301,7 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
      * approval, activation, and revocation attempt remains denied.</p>
      */
     @Bean
+    @Fallback
     @ConditionalOnMissingBean
     FixtureReviewAuthorizer failClosedFixtureReviewAuthorizer() {
         return FixtureReviewAuthorizer.denyAll();
