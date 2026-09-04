@@ -61,7 +61,7 @@ final class DslReferenceBundleLoader {
         }
         List<BundleExample> examples = java.util.stream.StreamSupport
                 .stream(root.path("examples").spliterator(), false)
-                .map(DslReferenceBundleLoader::example)
+                .map(node -> example(mapper, node))
                 .toList();
         ensureUnique(examples.stream().map(BundleExample::exampleId).toList(), "example");
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, root, MAX_STATIC_BUNDLE_BYTES);
@@ -83,13 +83,20 @@ final class DslReferenceBundleLoader {
         return new DslReferenceSnapshot.Topic(topicId, title, rules, strings(node.path("exampleRefs")));
     }
 
-    private static BundleExample example(JsonNode node) {
+    private static BundleExample example(ObjectMapper mapper, JsonNode node) {
         String source = requiredSafeText(node, "source");
         if (source.length() > 32 * 1024) {
             throw new IllegalStateException("Packaged DSL reference example is too large");
         }
-        return new BundleExample(requiredSafeText(node, "exampleId"), requiredSafeText(node, "intent"),
-                source, strings(node.path("assertions")), strings(node.path("requiredOperatorRefs")));
+        String exampleId = requiredSafeText(node, "exampleId");
+        String intent = requiredSafeText(node, "intent");
+        List<String> assertions = strings(node.path("assertions"));
+        List<String> requiredOperatorRefs = strings(node.path("requiredOperatorRefs"));
+        String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, java.util.Map.of(
+                "exampleId", exampleId, "intent", intent, "source", source,
+                "assertions", assertions, "requiredOperatorRefs", requiredOperatorRefs),
+                MAX_STATIC_BUNDLE_BYTES);
+        return new BundleExample(exampleId, intent, source, assertions, requiredOperatorRefs, fingerprint);
     }
 
     private static String requiredSafeText(JsonNode node, String field) {
@@ -144,7 +151,8 @@ final class DslReferenceBundleLoader {
             String intent,
             String source,
             List<String> assertions,
-            List<String> requiredOperatorRefs
+            List<String> requiredOperatorRefs,
+            String fingerprint
     ) {
         BundleExample {
             assertions = List.copyOf(assertions);

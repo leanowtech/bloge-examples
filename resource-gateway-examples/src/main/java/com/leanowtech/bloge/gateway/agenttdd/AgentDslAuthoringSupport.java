@@ -121,7 +121,8 @@ public final class AgentDslAuthoringSupport {
                 .sorted(Comparator.comparing(DslReferenceBundleLoader.BundleExample::exampleId))
                 .limit(MAX_EXAMPLES + 1L)
                 .map(example -> new DslReferenceSnapshot.Example(
-                        example.exampleId(), example.intent(), example.source(), example.assertions()))
+                        example.exampleId(), example.intent(), example.source(), example.assertions(),
+                        example.fingerprint()))
                 .toList()
                 : List.of();
         if (examples.size() > MAX_EXAMPLES) throw tooLarge();

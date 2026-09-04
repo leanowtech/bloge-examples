@@ -15,7 +15,8 @@ import java.util.Set;
 /** Projects authoring contracts while removing runtime locations and author-controlled prose. */
 final class DslContractLens {
     private static final Set<String> SAFE_SCHEMA_KEYS = Set.of(
-            "type", "properties", "required", "items", "additionalProperties", "oneOf", "anyOf", "allOf",
+            "$ref", "$defs", "definitions", "type", "properties", "required", "items",
+            "additionalProperties", "oneOf", "anyOf", "allOf",
             "not", "enum", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength",
             "maxLength", "minItems", "maxItems", "uniqueItems", "minProperties", "maxProperties");
     private static final int MAX_FINGERPRINT_BYTES = 512 * 1024;
@@ -78,13 +79,18 @@ final class DslContractLens {
         source.forEach((rawKey, rawValue) -> {
             String key = String.valueOf(rawKey);
             if (!SAFE_SCHEMA_KEYS.contains(key)) return;
-            if ("properties".equals(key) && rawValue instanceof Map<?, ?> properties) {
+            if (("properties".equals(key) || "$defs".equals(key) || "definitions".equals(key))
+                    && rawValue instanceof Map<?, ?> properties) {
                 LinkedHashMap<String, Object> safeProperties = new LinkedHashMap<>();
                 properties.entrySet().stream().sorted(Map.Entry.comparingByKey(
                                 java.util.Comparator.comparing(String::valueOf)))
                         .forEach(entry -> safeProperties.put(String.valueOf(entry.getKey()),
                                 entry.getValue() instanceof Map<?, ?> nested ? schemaMap(nested) : Map.of()));
                 result.put(key, Map.copyOf(safeProperties));
+            } else if ("$ref".equals(key)) {
+                if (rawValue instanceof String ref && ref.startsWith("#/")) {
+                    result.put(key, ref);
+                }
             } else {
                 result.put(key, schemaValue(rawValue));
             }

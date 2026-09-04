@@ -3,10 +3,21 @@
   "languageVersion": "bloge-dsl-0.8.9-RC2",
   "compilerProfile": "resource-gateway-graph-authoring-v1",
   "supportedRootKinds": ["graph"],
-  "defaultTopics": ["graph", "node", "bindings", "transform", "decision-table"],
+  "defaultTopics": [
+    "graph-root",
+    "node-declaration",
+    "node-bindings",
+    "types-and-nullability",
+    "transform",
+    "decision-table",
+    "execution-controls",
+    "functions",
+    "round-trip",
+    "common-errors"
+  ],
   "topics": [
     {
-      "topicId": "graph",
+      "topicId": "graph-root",
       "title": "Graph root",
       "rules": [
         {"ruleId": "GRAPH_ONLY", "summary": "Use exactly one graph root; session and state_machine are not accepted by Resource Gateway authoring."},
@@ -15,46 +26,114 @@
       "exampleRefs": ["graph-transform-minimal"]
     },
     {
-      "topicId": "node",
-      "title": "Operator node",
+      "topicId": "node-declaration",
+      "title": "Operator node declaration",
       "rules": [
         {"ruleId": "VISIBLE_OPERATOR", "summary": "Declare each operator node as node name : operatorRef and use only references returned by this snapshot."},
-        {"ruleId": "NODE_BODY", "summary": "Place input, output, dependency, timeout and retry declarations inside the node body."}
+        {"ruleId": "NODE_BODY", "summary": "Place input, output, dependency, timeout and retry declarations inside the node body."},
+        {"ruleId": "DESIGN_ONLY", "summary": "An operator whose bindingState is DESIGN_ONLY can express intent but cannot support executable or publication claims until a governed runtime binding exists."}
       ],
-      "exampleRefs": ["graph-resource-transform-minimal"]
+      "exampleRefs": ["graph-resource-transform-minimal", "graph-design-only-operator"]
     },
     {
-      "topicId": "bindings",
-      "title": "Input and output bindings",
+      "topicId": "node-bindings",
+      "title": "Named input and output bindings",
       "rules": [
         {"ruleId": "INPUT_ASSIGNMENT", "summary": "Assign each named input from ctx or an upstream node output inside an input block."},
-        {"ruleId": "DECLARED_PORTS", "summary": "Use only input and output port names returned in the selected operator contracts."}
+        {"ruleId": "DECLARED_PORTS", "summary": "Use only input and output port names returned in the selected operator contracts; never invent a generic input or output name."},
+        {"ruleId": "UPSTREAM_OUTPUT", "summary": "Read an upstream named output as nodeName.output.portName and preserve the schema carried by that port."}
       ],
-      "exampleRefs": ["graph-resource-transform-minimal"]
+      "exampleRefs": ["graph-resource-transform-minimal", "graph-named-ports"]
+    },
+    {
+      "topicId": "types-and-nullability",
+      "title": "Types, collections and nullability",
+      "rules": [
+        {"ruleId": "SCALAR_TYPES", "summary": "Use String, Int, Number and Boolean for scalar declarations; a question mark marks an optional value."},
+        {"ruleId": "NAMED_SCHEMA", "summary": "Declare reusable object shapes with schema and reference the schema name from typed outputs or transform fields."},
+        {"ruleId": "COLLECTION_VALUES", "summary": "Use array literals for collection values and only collection functions returned in the current function contracts."}
+      ],
+      "exampleRefs": ["graph-nullable-collection-schema"]
     },
     {
       "topicId": "transform",
       "title": "Pure transform",
       "rules": [
-        {"ruleId": "TRANSFORM_FIELDS", "summary": "Declare each output field as name = expression; optional type annotations precede the equals sign."}
+        {"ruleId": "TRANSFORM_FIELDS", "summary": "Declare each output field as name = expression; an optional type annotation precedes the equals sign."},
+        {"ruleId": "PURE_FUNCTIONS_ONLY", "summary": "Transform expressions may use only deterministic functions in the current function contracts; runtime effects are not allowed."}
       ],
-      "exampleRefs": ["graph-transform-minimal"]
+      "exampleRefs": ["graph-transform-minimal", "graph-nullable-collection-schema"]
     },
     {
       "topicId": "decision-table",
       "title": "Decision table",
       "rules": [
         {"ruleId": "DECISION_INPUTS", "summary": "Name every decision input and declare a structured result type."},
-        {"ruleId": "UNIQUE_WITH_OTHERWISE", "summary": "For hit=unique, keep rules non-overlapping and include an otherwise rule when inputs are not exhaustive."}
+        {"ruleId": "UNIQUE_WITH_OTHERWISE", "summary": "For hit=unique, keep rules non-overlapping and include an otherwise rule when inputs are not exhaustive."},
+        {"ruleId": "BOUNDARY_VALUES", "summary": "Represent adjacent policy boundaries explicitly; for a threshold at 120, verify 119, 120 and 121 as separate GOLDEN cases."}
       ],
-      "exampleRefs": ["graph-decision-minimal", "graph-four-resource-decision"]
+      "exampleRefs": ["graph-decision-minimal", "graph-decision-boundaries", "graph-four-resource-decision"]
+    },
+    {
+      "topicId": "execution-controls",
+      "title": "Execution controls",
+      "rules": [
+        {"ruleId": "DEPENDENCIES", "summary": "Use depends_on only for an explicit ordering dependency that is not already implied by a data binding."},
+        {"ruleId": "BOUNDED_RETRY", "summary": "Use finite timeout and retry controls; retry requires attempts, backoff and a supported strategy."},
+        {"ruleId": "EFFECT_FROM_CONTRACT", "summary": "Treat effect and bindingState in the operator contract as authoritative; preview does not prove live execution readiness."}
+      ],
+      "exampleRefs": ["graph-named-ports"]
+    },
+    {
+      "topicId": "functions",
+      "title": "Built-in functions",
+      "rules": [
+        {"ruleId": "CURRENT_SIGNATURE", "summary": "Call only functions and signatures returned in this authoring context; do not infer a function from general BLOGE documentation."},
+        {"ruleId": "NULL_FALLBACK", "summary": "Use a returned null-handling function such as coalesce only when its current signature accepts the supplied value types."}
+      ],
+      "exampleRefs": ["graph-nullable-collection-schema"]
+    },
+    {
+      "topicId": "round-trip",
+      "title": "Round-trip constraints",
+      "rules": [
+        {"ruleId": "SAME_SOURCE", "summary": "Preview, gate and compose the same source under the same authoring context and receipt fingerprints."},
+        {"ruleId": "SUPPORTED_ONLY", "summary": "Compose only when roundTrip.status is SUPPORTED; do not repair semantic drift by editing the server projection."}
+      ],
+      "exampleRefs": ["graph-transform-minimal", "graph-resource-transform-minimal"]
+    },
+    {
+      "topicId": "common-errors",
+      "title": "Common correction patterns",
+      "rules": [
+        {"ruleId": "UNKNOWN_CONSTRUCT", "summary": "When a parser diagnostic names an expected construct, change only the indicated syntax and preview again."},
+        {"ruleId": "UNKNOWN_OPERATOR_OR_PORT", "summary": "Choose only a visible compatible contract or a declared named port; never guess from a similar display name."},
+        {"ruleId": "STOP_RULE", "summary": "Stop after three repair rounds or two identical blocking diagnostic fingerprints and report the prescribed non-technical next action."}
+      ],
+      "exampleRefs": ["graph-transform-minimal"]
+    },
+    {
+      "topicId": "graph",
+      "title": "Compatibility alias for graph-root",
+      "rules": [{"ruleId": "USE_GRAPH_ROOT", "summary": "Use topic graph-root for the current authoritative graph-root rules."}],
+      "exampleRefs": ["graph-transform-minimal"]
+    },
+    {
+      "topicId": "node",
+      "title": "Compatibility alias for node-declaration",
+      "rules": [{"ruleId": "USE_NODE_DECLARATION", "summary": "Use topic node-declaration for the current authoritative node rules."}],
+      "exampleRefs": ["graph-resource-transform-minimal"]
+    },
+    {
+      "topicId": "bindings",
+      "title": "Compatibility alias for node-bindings",
+      "rules": [{"ruleId": "USE_NODE_BINDINGS", "summary": "Use topic node-bindings for the current authoritative binding rules."}],
+      "exampleRefs": ["graph-resource-transform-minimal", "graph-named-ports"]
     },
     {
       "topicId": "effects",
-      "title": "Effects and execution claims",
-      "rules": [
-        {"ruleId": "EFFECT_FROM_CONTRACT", "summary": "Treat the effect and bindingState in the operator contract as authoritative; preview does not prove live execution readiness."}
-      ],
+      "title": "Compatibility alias for execution-controls",
+      "rules": [{"ruleId": "USE_EXECUTION_CONTROLS", "summary": "Use topic execution-controls for current effect and runtime-readiness rules."}],
       "exampleRefs": []
     }
   ],
@@ -74,10 +153,31 @@
       "requiredOperatorRefs": ["httpResource", "bloge:transform"]
     },
     {
+      "exampleId": "graph-named-ports",
+      "intent": "Bind declared resource ports and apply bounded execution controls",
+      "source": "graph namedPortsExample {\n  node lookup : httpResource {\n    input {\n      resourceId = ctx.resourceId\n      params = {}\n    }\n  }\n  transform result {\n    payload = lookup.output.payload\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED", "NAMED_PORTS"],
+      "requiredOperatorRefs": ["httpResource", "bloge:transform"]
+    },
+    {
+      "exampleId": "graph-nullable-collection-schema",
+      "intent": "Shape a named result with an optional field and a collection value",
+      "source": "graph typedShapeExample {\n  schema Profile {\n    name: String\n    note: String?\n  }\n  transform result {\n    profile: Profile = { name: ctx.name, note: ctx.note }\n    labels = [coalesce(ctx.label, \"standard\")]\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED", "NAMED_SCHEMA", "NULLABLE", "COLLECTION"],
+      "requiredOperatorRefs": ["bloge:transform"]
+    },
+    {
       "exampleId": "graph-decision-minimal",
       "intent": "Evaluate an explicit rule matrix with a safe fallback",
       "source": "graph decisionExample {\n  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {\n    rule (score: score >= 120) -> { decision: \"accept\" }\n    otherwise -> { decision: \"review\" }\n  }\n}",
       "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
+      "requiredOperatorRefs": ["bloge:decisionTable"]
+    },
+    {
+      "exampleId": "graph-decision-boundaries",
+      "intent": "Make the adjacent 119, 120 and 121 policy boundary explicit",
+      "source": "graph boundaryExample {\n  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {\n    rule (score: score < 120) -> { decision: \"below\" }\n    rule (score: score == 120) -> { decision: \"at\" }\n    rule (score: score > 120) -> { decision: \"above\" }\n    otherwise -> { decision: \"review\" }\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED", "BOUNDARIES_119_120_121"],
       "requiredOperatorRefs": ["bloge:decisionTable"]
     },
     {
@@ -86,6 +186,13 @@
       "source": "graph cancelPolicyExample {\n  node order : httpResource {\n    input {\n      resourceId = ctx.orderResourceId\n      params = {}\n    }\n  }\n  node liability : httpResource {\n    input {\n      resourceId = ctx.liabilityResourceId\n      params = {}\n    }\n  }\n  node cityPolicy : httpResource {\n    input {\n      resourceId = ctx.cityPolicyResourceId\n      params = {}\n    }\n  }\n  node history : httpResource {\n    input {\n      resourceId = ctx.historyResourceId\n      params = {}\n    }\n  }\n  decision_table policy(malicious = ctx.malicious, responsibility = ctx.responsibility) hit=unique -> { decision: String } {\n    rule (malicious: malicious == true) -> { decision: \"MANUAL_REVIEW\" }\n    rule (malicious: malicious == false, responsibility: responsibility == \"DRIVER\") -> { decision: \"WAIVE_FULL\" }\n    otherwise -> { decision: \"RETAIN\" }\n  }\n  transform facts {\n    orderPayload = order.output.payload\n    liabilityPayload = liability.output.payload\n    cityPolicyPayload = cityPolicy.output.payload\n    historyPayload = history.output.payload\n  }\n}",
       "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
       "requiredOperatorRefs": ["httpResource", "bloge:transform", "bloge:decisionTable"]
+    },
+    {
+      "exampleId": "graph-design-only-operator",
+      "intent": "Express a policy intent while preserving that its operator is not executable yet",
+      "source": "graph designOnlyExample {\n  node assess : \"risk:eligibility\" {\n    input {\n      score = ctx.score\n      amount = ctx.amount\n    }\n  }\n  transform result {\n    eligible = assess.output.eligible\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_DEFERRED_DESIGN_ONLY", "DESIGN_ONLY_NOT_EXECUTABLE"],
+      "requiredOperatorRefs": ["risk:eligibility", "bloge:transform"]
     }
   ]
 }

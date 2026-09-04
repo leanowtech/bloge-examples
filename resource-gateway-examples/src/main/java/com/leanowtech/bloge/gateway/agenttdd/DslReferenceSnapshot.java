@@ -56,7 +56,13 @@ public record DslReferenceSnapshot(
     public record FunctionContract(String name, String signature, String contractFingerprint) { }
 
     /** Server-owned example certified for the current language and visible contract set. */
-    public record Example(String exampleId, String intent, String source, List<String> assertions) { }
+    public record Example(
+            String exampleId,
+            String intent,
+            String source,
+            List<String> assertions,
+            String exampleFingerprint
+    ) { }
 
     /** Hard limits used to reject rather than silently truncate reference material. */
     public record Limits(

@@ -137,6 +137,11 @@ class McpToolCatalogTest {
                 "contractFingerprint", "bindingState");
         assertThat(stringKeys((Map<?, ?>) operator.get("properties")))
                 .doesNotContain("urlTemplate", "description", "examples", "diagnostics", "lowering");
+        Map<?, ?> example = (Map<?, ?>) ((Map<?, ?>) data.get("examples")).get("items");
+        assertThat(stringKeys((Map<?, ?>) example.get("properties"))).containsExactlyInAnyOrder(
+                "exampleId", "intent", "source", "assertions", "exampleFingerprint");
+        assertThat(((List<?>) example.get("required")).stream().map(Object::toString).toList())
+                .contains("exampleFingerprint");
     }
 
     @Test

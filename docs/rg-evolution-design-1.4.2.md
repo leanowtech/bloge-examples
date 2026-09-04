@@ -368,7 +368,7 @@ functionName + signatureFingerprint (sorted)
 ```json
 {
   "libraryRefs": ["ride-policy"],
-  "topics": ["graph", "node", "bindings", "decision-table"],
+  "topics": ["graph-root", "node-declaration", "node-bindings", "decision-table"],
   "operatorRefs": [
     "resource:ride-order.get",
     "bloge:transform",
@@ -750,31 +750,26 @@ Agent 停止时对业务人员只说明业务影响，例如“平台暂时无�
 
 ### 12.1 运行时参考包
 
-在 `resource-gateway-examples` 增加版本化资源包，例如：
+在 `resource-gateway-examples` 增加版本化资源包。当前使用单一原子 JSON 包，避免 manifest、topic 和 example
+分文件更新时产生半版本：
 
 ```text
 src/main/resources/agent-tdd/dsl-reference/v1/
-├── manifest.yaml
-├── topics/
-│   ├── graph-root.yaml
-│   ├── node-bindings.yaml
-│   ├── decision-table.yaml
-│   └── common-errors.yaml
-└── examples/
-    ├── minimal-transform.bloge
-    └── resource-decision-table.bloge
+└── bundle.json
 ```
 
-`manifest.yaml` 明确：reference schema version、要求的 BLOGE language/compiler version、supported root kinds、topic 顺序、example assertions。运行时只读取这个经过构建认证的包，不读取任意工作区 Markdown。
+`bundle.json` 同时声明 reference schema version、要求的 BLOGE language/compiler version、supported root kinds、
+默认 topic 顺序、rules、example source、assertions 和 required operator refs。Loader 在启动时一次读取、校验唯一性和
+大小并计算 bundle fingerprint；运行时只读取这个经过构建认证的包，不读取任意工作区 Markdown。
 
 ### 12.2 文档与运行时包的关系
 
 `docs/ai/bloge-dsl-syntax-reference.md` 保持人类可读的完整参考；运行时包是 Agent 线上参考。两者不得靠人工记忆同步：
 
-- 共享的 topic/rule/example id 由 manifest 管理；
+- 共享的 topic/rule/example id 由 versioned bundle 管理；
 - 文档引用这些稳定 id；
 - 构建测试验证所有运行时 examples 在当前编译器和 RG profile 下 `COMPILES`；声明 round-trip 的示例还必须通过语义指纹检查；
-- 文档中标记为 RG-supported 的 fenced examples 也进入抽取式认证；
+- 文档同步测试验证人类参考包含全部稳定 topic id；示例只在 bundle 中维护一份 source，避免 Markdown fence 成为第二份可漂移副本；
 - 参考包声明的 language/compiler version 与运行依赖不匹配时，应用启动失败关闭，而不是发布陈旧参考。
 
 ### 12.3 动态 contract 不复制进静态包
@@ -785,17 +780,15 @@ operator ports、config schema、effect、archetype、function signature 和 bin
 
 operator title、description 和库作者文案都视为**不可信数据**，不得拼进 `initialize.instructions` 或标记成“系统指令”。reference 工具优先返回结构化 contract；若返回 description，必须放在明确的 data 字段、限制长度并做控制字符规范化。示例只能来自平台签入并认证的参考包，不能从任意租户文档自动提升为 few-shot。
 
-### 12.5 动态 operator 示例
+### 12.5 条件 operator 示例
 
-静态示例只能可靠引用平台内建 operator。需要展示“一个企业资源算子如何连接 transform/decision table”时，使用带类型槽位的 certified template：
+本版本不做自由动态模板替换。每个静态示例声明精确 `requiredOperatorRefs`，只在当前不可变上下文包含全部同名
+授权 contract 时返回；构建认证使用 canonical test operator 验证语法。这样不会把一个碰巧端口相似但语义不同的企业
+operator 填入示例。`graph-design-only-operator` 还明确声明 `ROUND_TRIP_DEFERRED_DESIGN_ONLY` 和
+`DESIGN_ONLY_NOT_EXECUTABLE`，用于教 Agent 区分“能表达意图”和“可执行”。
 
-1. template 在构建时用 canonical test operator 编译；
-2. 运行时只从当前不可变上下文选择满足 required effect/ports/types 的已授权 operator；
-3. 使用 AST/结构化 renderer 填槽，不做自由字符串拼接；
-4. 对物化后的示例再次执行 PARSE 到 ROUND_TRIP；
-5. 任一阶段失败就不返回该示例，并产生服务端健康告警，不能把未认证示例交给 Agent。
-
-template 不填入租户样例值、URL、credential 或 operator description。这样既能给 Agent 真实调用形态，又不会把一份写死的 demo ref 冒充当前企业契约。
+若未来需要把任意企业 operator 物化进示例，必须另行引入 typed AST renderer、effect/ports/types 兼容匹配并对物化结果
+重跑 PARSE 到 ROUND_TRIP；在这些能力落地前不得做字符串槽位替换。
 
 ---
 
@@ -1000,7 +993,7 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 | `agenttdd/DslAuthoringCompiler.java` | 分阶段编译与 receipt |
 | `agenttdd/DslSafeDiagnosticRegistry.java` | code、摘要、允许字段和 fix hints |
 | `visual/importer/DslImportService.java` | 新增消费 parsed AST + immutable catalog 的投影入口 |
-| `src/main/resources/agent-tdd/dsl-reference/v1/` | manifest、topics 和 certified examples |
+| `src/main/resources/agent-tdd/dsl-reference/v1/bundle.json` | 原子 version manifest、topics 和 certified examples |
 | `src/test/.../agenttdd/` | 参考、诊断、漂移、泄漏和收敛测试 |
 | `AgentTddMcpOperationalWorkflowTest.java` | 真实 HTTP 生命周期和真实 Codex/浏览器认证支点 |
 

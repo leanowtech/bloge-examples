@@ -16,6 +16,12 @@ Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.
 
 `session` 和 `state_machine` 仍属于 BLOGE 语言，但不在当前 Agent TDD authoring profile 中。不要把本文件整篇复制进提示词，也不要用它覆盖 MCP 返回的当前作用域参考。
 
+运行时参考包用以下稳定 topic id 组织本页中受支持的知识：`graph-root`、`node-declaration`、
+`node-bindings`、`types-and-nullability`、`transform`、`decision-table`、`execution-controls`、
+`functions`、`round-trip`、`common-errors`。`graph`、`node`、`bindings`、`effects` 仅为旧请求的兼容别名；
+新 Agent 应使用前述稳定 id。示例 source 只在服务端 versioned bundle 中维护，并以 `exampleFingerprint` 标识，
+避免本文与线上示例形成两份会漂移的代码。
+
 ---
 
 ## File Structure

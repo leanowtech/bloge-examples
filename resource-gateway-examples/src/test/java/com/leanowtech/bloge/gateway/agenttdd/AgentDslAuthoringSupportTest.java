@@ -120,6 +120,24 @@ class AgentDslAuthoringSupportTest {
     }
 
     @Test
+    void contractLensPreservesOnlyLocalSchemaReferencesAndTheirDefinitions() {
+        SchemaEnvelope schema = new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                "type", "object",
+                "$defs", Map.of("Node", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "next", Map.of("$ref", "#/$defs/Node"),
+                                "remote", Map.of("$ref", "https://secret.internal/schema")))),
+                "properties", Map.of("root", Map.of("$ref", "#/$defs/Node"))));
+
+        Map<String, Object> projected = new DslContractLens(mapper).schema(schema);
+        String json = mapper.valueToTree(projected).toString();
+
+        assertThat(json).contains("$defs", "#/\u0024defs/Node");
+        assertThat(json).doesNotContain("https://", "secret.internal");
+    }
+
+    @Test
     void rejectsUnknownDisabledAndOversizedReferenceRequestsWithoutCatalogDisclosure() {
         AgentDslAuthoringSupport support = support(List.of(), List.of());
 
@@ -171,6 +189,7 @@ class AgentDslAuthoringSupportTest {
         DslReferenceSnapshot.Example example = reference.examples().stream()
                 .filter(value -> value.exampleId().equals("graph-transform-minimal"))
                 .findFirst().orElseThrow();
+        assertThat(example.exampleFingerprint()).startsWith("sha256:");
         DslPreviewReceipt accepted = support.preview(new DslPreviewRequest(
                 example.exampleId(), example.source(), List.of(),
                 reference.authoringContextFingerprint()), identity("project-a"));

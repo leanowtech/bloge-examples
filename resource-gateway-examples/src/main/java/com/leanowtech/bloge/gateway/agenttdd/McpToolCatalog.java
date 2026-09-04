@@ -397,7 +397,8 @@ public final class McpToolCatalog {
                 List.of("name", "signature", "contractFingerprint"));
         Map<String, Object> example = structuredObject(props(
                 "exampleId", string(), "intent", string(), "source", string(),
-                "assertions", stringArray()), List.of("exampleId", "intent", "source", "assertions"));
+                "assertions", stringArray(), "exampleFingerprint", string()),
+                List.of("exampleId", "intent", "source", "assertions", "exampleFingerprint"));
         Map<String, Object> limits = structuredObject(props(
                 "maxTopics", integer(), "maxOperatorRefs", integer(), "maxFunctions", integer(),
                 "maxExamples", integer(), "maxResponseBytes", integer()),
