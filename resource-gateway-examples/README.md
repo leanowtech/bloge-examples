@@ -5653,7 +5653,15 @@ depth, missing exits, and incomplete instruction bindings, and lowers an accepte
 the production DSL importer into exactly `scenarioCall -> instructionCall`. Scenario evaluation is
 pure. During simulation, WRITE instructions return a contract-shaped stub and cannot reach the
 dispatch channel; the integration contract fixes `realExternalCalls` at zero. Feature collection
-and trusted runtime invocation are deliberately outside this authoring phase.
+and trusted runtime invocation remain outside the pure graph. `rg.solution.getContract` returns the
+collection plan. Platform-owned values are produced by a uniquely resolved
+`FeatureEvaluationAdapter`, then protected by a five-minute HS256 token bound to Feature ref,
+input/value fingerprints, and the exact tenant/project/environment scope. Interactive values must
+carry `source=USER`. `rg.solution.invoke` verifies every envelope before entering the graph. Local
+demos use one process-local key; replicated or restart-stable environments must set
+`RG_FEATURE_TOKEN_ACTIVE_KEY_ID` and `RG_FEATURE_TOKEN_KEY_RING` from a secret manager. The key-ring
+format is comma-separated `keyId=base64(32-or-more-byte-secret)` and may retain verify-only keys
+during rotation.
 
 1. Start the demo and open `http://localhost:8080/author/`.
 2. Load one of the built-in complex canvas examples. Its graph Contract and table cases are

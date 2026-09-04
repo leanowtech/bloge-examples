@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.FeatureEvaluationBackend;
+import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
+import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -14,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPrevie
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
@@ -138,7 +142,6 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     }
 
     /** Creates the Spring facade with payload-free Agent authoring telemetry. */
-    @Autowired
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper,
@@ -151,6 +154,50 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AgentTddResourceDeclarationService declarations,
                                         AgentTddAttestationService attestations,
                                         AgentTddAuthoringTelemetry telemetry) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
+                catalog, declarations, attestations, telemetry,
+                (FeatureEvaluationBackend) null,
+                (InstructionDispatchChannel) null,
+                (FeatureTokenKeyProvider) null);
+    }
+
+    /** Creates the Spring facade with optional Feature and Instruction runtime adapters. */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow,
+                                        VisualOperatorCatalog catalog,
+                                        AgentTddResourceDeclarationService declarations,
+                                        AgentTddAttestationService attestations,
+                                        AgentTddAuthoringTelemetry telemetry,
+                                        ObjectProvider<FeatureEvaluationBackend> featureBackends,
+                                        ObjectProvider<InstructionDispatchChannel> instructionChannels,
+                                        ObjectProvider<FeatureTokenKeyProvider> tokenKeys) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
+                catalog, declarations, attestations, telemetry,
+                featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique());
+    }
+
+    private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                         GraphDraftRepository drafts,
+                                         ObjectMapper mapper,
+                                         DslImportService projection,
+                                         VisualGraphSimulationService simulation,
+                                         AgentTddStateRepository states,
+                                         AuthoringPreviewService authoring,
+                                         AgentTddWorkflowService workflow,
+                                         VisualOperatorCatalog catalog,
+                                         AgentTddResourceDeclarationService declarations,
+                                         AgentTddAttestationService attestations,
+                                         AgentTddAuthoringTelemetry telemetry,
+                                         FeatureEvaluationBackend featureBackend,
+                                         InstructionDispatchChannel instructionChannel,
+                                         FeatureTokenKeyProvider tokenKeys) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -168,7 +215,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
-        this.solutionTools = states == null ? null : new SolutionAgentTools(states, mapper, projection);
+        this.solutionTools = states == null ? null : new SolutionAgentTools(
+                states, mapper, projection, featureBackend, instructionChannel, tokenKeys);
     }
 
     /**
@@ -204,11 +252,16 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                             optionalStringList(safeArguments, "operatorRefs"),
                             safeArguments.path("includeExamples").asBoolean(false)), identity));
             case "rg.feature.define" -> executionSuccess(solutionTools().defineFeature(safeArguments, identity));
+            case "rg.feature.evaluate" -> executionSuccess(solutionTools().evaluateFeature(safeArguments, identity));
             case "rg.scenario.define" -> executionSuccess(solutionTools().defineScenario(safeArguments, identity));
             case "rg.instruction.define" -> executionSuccess(
                     solutionTools().defineInstruction(safeArguments, identity));
             case "rg.solution.compose" -> executionSuccess(
                     solutionTools().composeSolution(safeArguments, identity));
+            case "rg.solution.getContract" -> executionSuccess(
+                    solutionTools().getSolutionContract(safeArguments, identity));
+            case "rg.solution.invoke" -> executionSuccess(
+                    solutionTools().invokeSolution(safeArguments, identity));
             case "rg.readiness.get" -> workflow == null
                     ? readiness(safeArguments, identity)
                     : executionSuccess(workflow.readiness(safeArguments, identity));
@@ -690,6 +743,15 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "LIBRARY_NOT_FOUND" -> "A referenced library or runtime binding was not found.";
             case "RESOURCE_NOT_REGISTERED" -> "A referenced resource must be declared before composition.";
             case "REFERENCE_UNRESOLVED" -> "A referenced solution entity is unavailable in this scope.";
+            case "FEATURE_TOKEN_INVALID" -> "The Feature evaluation token is invalid.";
+            case "USE_NATIVE_INTERACTION" -> "Collect this Feature through its declared user interaction.";
+            case "FEATURE_BINDING_REQUIRED" -> "The Feature evaluation binding is unavailable.";
+            case "FEATURE_EVALUATOR_UNAVAILABLE" -> "The Feature evaluation runtime is unavailable.";
+            case "FEATURE_EVALUATION_FAILED" -> "Feature evaluation failed.";
+            case "FEATURE_INPUT_INVALID" -> "Feature evaluation inputs do not match the contract.";
+            case "FEATURE_OUTPUT_INVALID" -> "Feature evaluation output does not match the contract.";
+            case "SOLUTION_INPUT_INVALID" -> "The Solution input envelope is invalid.";
+            case "INSTRUCTION_BINDING_UNAVAILABLE" -> "The Instruction runtime binding is unavailable.";
             case "SCENARIO_OUTLET_UNRESOLVED" -> "A scenario outlet is not declared by the solution.";
             case "SCENARIO_TREE_CYCLE" -> "The scenario tree contains a cycle.";
             case "SCENARIO_TREE_TOO_DEEP" -> "The scenario tree exceeds the configured depth.";

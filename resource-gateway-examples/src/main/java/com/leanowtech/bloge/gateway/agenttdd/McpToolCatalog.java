@@ -48,6 +48,11 @@ public final class McpToolCatalog {
                 McpToolImpact.DRAFT_WRITE,
                 props("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));
+        values.add(tool("rg.feature.evaluate", "Evaluate feature",
+                "Evaluate one platform-owned Feature and issue a short-lived bound proof.",
+                McpToolImpact.EXECUTE,
+                props("featureRef", string(), "inputs", businessObject()),
+                List.of("featureRef", "inputs")));
         values.add(tool("rg.scenario.define", "Define scenario",
                 "Validate and store one complete unique-hit business decision contract.",
                 McpToolImpact.DRAFT_WRITE,
@@ -65,6 +70,14 @@ public final class McpToolCatalog {
                 props("solutionYaml", string(), "authoringContextFingerprint", string(),
                         "idempotencyKey", string()),
                 List.of("solutionYaml", "authoringContextFingerprint", "idempotencyKey")));
+        values.add(tool("rg.solution.getContract", "Get solution contract",
+                "Read the Feature collection plan for one pure Solution.",
+                McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
+        values.add(tool("rg.solution.invoke", "Invoke solution",
+                "Verify collected Feature proofs and invoke one pure Solution.",
+                McpToolImpact.EXECUTE,
+                props("solutionRef", string(), "inputs", businessObject()),
+                List.of("solutionRef", "inputs")));
 
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
                 McpToolImpact.DRAFT_WRITE,
@@ -527,9 +540,19 @@ public final class McpToolCatalog {
                     "honestVerdict", honestVerdict()),
                     List.of("featureId", "evaluationKind", "determinism", "speccing",
                             "revision", "contractFingerprint", "honestVerdict"));
+            case "rg.feature.evaluate" -> structuredObject(props(
+                    "featureRef", string(), "value", anyJson(), "evaluationToken", string(),
+                    "evaluationKind", enumString("API", "DAG", "MODEL", "INSTRUCTION_RESULT")),
+                    List.of("featureRef", "value", "evaluationToken", "evaluationKind"));
             case "rg.scenario.define" -> scenarioDefinitionOutput();
             case "rg.instruction.define" -> instructionDefinitionOutput();
             case "rg.solution.compose" -> solutionCompositionOutput();
+            case "rg.solution.getContract" -> solutionContractOutput();
+            case "rg.solution.invoke" -> structuredObject(props(
+                    "result", anyJson(), "reasoning", string(), "instructionRef", string(),
+                    "rulePath", stringArray(), "verifiedFeatureCount", integer()),
+                    List.of("result", "reasoning", "instructionRef", "rulePath",
+                            "verifiedFeatureCount"));
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
@@ -631,5 +654,19 @@ public final class McpToolCatalog {
                         "pureFunctionProjection", "precompiled", "graphNodeCount",
                         "speccing", "authoringContextFingerprint",
                         "revision", "contractFingerprint", "honestVerdict"));
+    }
+
+    private static Map<String, Object> solutionContractOutput() {
+        Map<String, Object> input = structuredObject(props(
+                "name", string(), "featureRef", string(), "evaluationKind",
+                enumString("API", "DAG", "MODEL", "INSTRUCTION_RESULT",
+                        "USER_CONVERSATION", "USER_COMPONENT"),
+                "determinism", enumString("DETERMINISTIC", "NON_DETERMINISTIC", "INTERACTIVE"),
+                "evaluationInputs", businessObject(), "output", businessObject()),
+                List.of("name", "featureRef", "evaluationKind", "determinism",
+                        "evaluationInputs", "output"));
+        return structuredObject(props(
+                "solutionRef", string(), "problem", string(), "inputs", arrayOf(input),
+                "output", businessObject()), List.of("solutionRef", "problem", "inputs", "output"));
     }
 }

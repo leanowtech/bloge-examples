@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(31);
+        assertThat(response.path("result").path("tools")).hasSize(34);
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
@@ -71,7 +71,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(31);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(34);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -117,6 +117,51 @@ class McpProtocolControllerTest {
                 .path("realExternalCalls").asInt()).isZero();
         assertThat(response.path("result").path("content").get(0).path("type").asText()).isEqualTo("text");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_EXECUTE);
+    }
+
+    @Test
+    void validatesFeatureTrustAndSolutionRuntimeResponsesAgainstStrictSchemas() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), any(IntegrationOperation.class))).thenReturn(identity());
+        McpToolInvoker invoker = (name, arguments, identity) -> Map.of(
+                "ok", true,
+                "data", switch (name) {
+                    case "rg.feature.evaluate" -> Map.of(
+                            "featureRef", "responsibility.party", "value", "none",
+                            "evaluationToken", "a.b.c", "evaluationKind", "API");
+                    case "rg.solution.getContract" -> Map.of(
+                            "solutionRef", "sol:cancel", "problem", "Resolve a dispute.",
+                            "inputs", List.of(Map.of(
+                                    "name", "party", "featureRef", "responsibility.party",
+                                    "evaluationKind", "API", "determinism", "DETERMINISTIC",
+                                    "evaluationInputs", Map.of("orderId", "string"),
+                                    "output", Map.of("type", "string"))),
+                            "output", Map.of("result", "structured", "reasoning", "required"));
+                    case "rg.solution.invoke" -> Map.of(
+                            "result", Map.of("decision", "UPHELD"), "reasoning", "rule R1",
+                            "instructionRef", "ins:uphold", "rulePath", List.of("R1"),
+                            "verifiedFeatureCount", 1);
+                    default -> throw new IllegalArgumentException();
+                },
+                "diagnostics", List.of());
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, invoker);
+
+        JsonNode evaluated = controller.exchange(request(91, "tools/call", Map.of(
+                "name", "rg.feature.evaluate", "arguments", Map.of(
+                        "featureRef", "responsibility.party", "inputs", Map.of("orderId", "O-1")))),
+                modernHeaders("tools/call", "rg.feature.evaluate")).getBody();
+        JsonNode contract = controller.exchange(request(92, "tools/call", Map.of(
+                "name", "rg.solution.getContract", "arguments", Map.of("solutionRef", "sol:cancel"))),
+                modernHeaders("tools/call", "rg.solution.getContract")).getBody();
+        JsonNode invoked = controller.exchange(request(93, "tools/call", Map.of(
+                "name", "rg.solution.invoke", "arguments", Map.of(
+                        "solutionRef", "sol:cancel", "inputs", Map.of("party", Map.of("value", "none"))))),
+                modernHeaders("tools/call", "rg.solution.invoke")).getBody();
+
+        assertThat(evaluated.path("result").path("isError").asBoolean()).isFalse();
+        assertThat(contract.path("result").path("isError").asBoolean()).isFalse();
+        assertThat(invoked.path("result").path("isError").asBoolean()).isFalse();
     }
 
     @Test

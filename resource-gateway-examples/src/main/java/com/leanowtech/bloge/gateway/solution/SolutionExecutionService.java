@@ -46,6 +46,23 @@ public final class SolutionExecutionService {
      * @return result, explanation, decision path and zero-egress evidence
      */
     public ExecutionResult simulate(String scopeKey, String solutionRef, JsonNode featureValues) {
+        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.SIMULATE);
+    }
+
+    /**
+     * Runs a trusted runtime invocation. READ instructions may use the governed dispatch channel;
+     * WRITE instructions remain unavailable until the independent WRITE_EXEC boundary authorizes
+     * execution and reconciliation.
+     */
+    public ExecutionResult invoke(String scopeKey, String solutionRef, JsonNode featureValues) {
+        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.RUNTIME);
+    }
+
+    private ExecutionResult execute(
+            String scopeKey,
+            String solutionRef,
+            JsonNode featureValues,
+            SolutionExecutionAuthority.Mode mode) {
         SolutionContract solution;
         try {
             solution = registry.requireSolution(scopeKey, solutionRef);
@@ -61,7 +78,7 @@ public final class SolutionExecutionService {
         Map<String, Object> values = mapper.convertValue(featureValues, OBJECT_MAP);
         GraphContext graph = new GraphContext(values);
         graph.put(SolutionExecutionAuthority.CONTEXT_KEY,
-                SolutionExecutionAuthority.issue(scopeKey, SolutionExecutionAuthority.Mode.SIMULATE));
+                SolutionExecutionAuthority.issue(scopeKey, mode));
         OperatorContext decideContext = new OperatorContext("decide", solution.solutionRef(), graph, 0);
         Map<String, Object> outcome;
         try {

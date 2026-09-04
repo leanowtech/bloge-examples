@@ -3,9 +3,16 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.FeatureContract;
+import com.leanowtech.bloge.gateway.solution.InMemoryFeatureTokenKeyProvider;
+import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.ScenarioContract;
+import com.leanowtech.bloge.gateway.solution.SolutionContract;
+import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -204,6 +211,58 @@ class SolutionAgentToolsTest {
                 .hasMessage("Referenced solution entity is unavailable.")
                 .hasMessageNotContaining("private.customer.segment")
                 .hasMessageNotContaining("project-a");
+    }
+
+    @Test
+    void exposesFeatureEvaluationContractAndTrustedSolutionInvocation() {
+        byte[] secret = new byte[32];
+        java.util.Arrays.fill(secret, (byte) 9);
+        SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
+        String scope = "tenant-a|org-a|project-a|test|sg";
+        registry.upsertFeature(scope, new FeatureContract(
+                "responsibility.party", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "resource:party", "", ""));
+        registry.upsertFeature(scope, new FeatureContract(
+                "dispute.orderSelected", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.USER_COMPONENT, FeatureContract.Determinism.INTERACTIVE,
+                mapper.createObjectNode(), "", "order-picker-v1", ""));
+        registry.upsertInstruction(scope, new InstructionContract(
+                "ins:uphold", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of("result", Map.of("type", "object"), "reasoning", "required")),
+                InstructionContract.Effect.READ, "operator:uphold", null));
+        registry.upsertScenario(scope, new ScenarioContract(
+                "scn:root", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
+                List.of(new ScenarioContract.Rule("R1", mapper.valueToTree(Map.of()),
+                        new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                                "ins:uphold", Map.of("orderId", "orderId"), ""))),
+                new ScenarioContract.Outlet(ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+        registry.upsertSolution(scope, new SolutionContract(
+                "sol:cancel", "Resolve cancellation dispute.",
+                Map.of("party", "responsibility.party", "orderId", "dispute.orderSelected"),
+                "scn:root", List.of("ins:uphold"), "caseSet:cancel"), false);
+        SolutionAgentTools runtime = new SolutionAgentTools(states, mapper, null,
+                (feature, inputs, context) -> mapper.valueToTree("none"),
+                (instruction, values, context) -> Map.of(
+                        "result", Map.of("decision", "UPHELD"), "reasoning", "rule R1"),
+                new InMemoryFeatureTokenKeyProvider("k1", Map.of("k1", secret)));
+        IntegrationRequestContext identity = identity("project-a");
+
+        Map<String, Object> evaluated = runtime.evaluateFeature(mapper.valueToTree(Map.of(
+                "featureRef", "responsibility.party", "inputs", Map.of("orderId", "O-1"))), identity);
+        Map<String, Object> contract = runtime.getSolutionContract(
+                mapper.valueToTree(Map.of("solutionRef", "sol:cancel")), identity);
+        Map<String, Object> invoked = runtime.invokeSolution(mapper.valueToTree(Map.of(
+                "solutionRef", "sol:cancel", "inputs", Map.of(
+                        "party", Map.of("value", "none", "inputs", Map.of("orderId", "O-1"),
+                                "evaluationToken", evaluated.get("evaluationToken")),
+                        "orderId", Map.of("value", "O-1", "source", "USER")))), identity);
+
+        assertThat(evaluated).containsEntry("evaluationKind", "API");
+        assertThat(evaluated.get("evaluationToken").toString().split("\\.")).hasSize(3);
+        assertThat((List<?>) contract.get("inputs")).hasSize(2);
+        assertThat(invoked).containsEntry("reasoning", "rule R1")
+                .containsEntry("verifiedFeatureCount", 1);
     }
 
     private void defineStringFeature(

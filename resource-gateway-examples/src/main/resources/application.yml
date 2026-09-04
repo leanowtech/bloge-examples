@@ -59,6 +59,12 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   agent-tdd:
+    feature-token:
+      # Empty values create an ephemeral single-process demo key. Replicas and stable environments
+      # must inject the same rotation-aware key ring from a secret manager.
+      active-key-id: ${RG_FEATURE_TOKEN_ACTIVE_KEY_ID:}
+      # Comma-separated keyId=base64(HMAC-key), minimum 32 decoded bytes.
+      key-ring: ${RG_FEATURE_TOKEN_KEY_RING:}
     mcp-limits:
       # Per authenticated tenant/project/environment/actor. Preview and gate share one bucket.
       common-per-minute: ${RG_AGENT_TDD_MCP_COMMON_PER_MINUTE:120}

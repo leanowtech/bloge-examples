@@ -55,6 +55,8 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 
 上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 需要把样例加密后存入受治理的 Fixture 仓库。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它，并在每次读取前重新收紧为 `0600`。`target/example-secrets` 目录或 key 路径若是符号链接，或者不是预期的普通目录/文件，启动会失败关闭。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
 
+本地单进程未配置 Feature token 密钥时，RG 会在内存中生成一代临时 HMAC key，重启后旧 token 自然失效。多副本、需要跨重启稳定或生产部署必须通过密钥管理系统注入 `RG_FEATURE_TOKEN_ACTIVE_KEY_ID` 和 `RG_FEATURE_TOKEN_KEY_RING`；后者为逗号分隔的 `keyId=base64(至少 32 字节)`，旧 key 可在最大 token TTL 之后再移除。不完整或弱密钥配置会使启动失败关闭，密钥不得写入手册、shell history 或 Codex 配置。
+
 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 是精确主机名白名单，不接受通配符、URL 或域名后缀。资源声明和后续实景验证只允许 HTTP/HTTPS，且拒绝 user-info、可变主机模板和未配置主机。实景验证会双次解析目标，拒绝空结果、变化结果、混合公私地址、loopback、link-local、site-local、multicast、unspecified 和 IPv6 unique-local；执行每条标准案例前还会核对解析结果没有变化。显式配置的 `localhost` 和 `127.0.0.1` 仅作为本地沙箱例外。空白名单表示全部拒绝。
 
 四个 `RG_AGENT_TDD_MCP_*` 参数控制每个已认证 tenant/project/environment/actor 的 MCP 请求。所有工具共用每分钟 120 次的总桶；DSL 参考每分钟 60 次；preview 与 gate 合计每分钟 30 次、最多 4 个并发。限额在工具分派前执行，不影响人工 reviewer 的 HTTP 看板。
@@ -258,6 +260,12 @@ Feature、Scenario、Instruction、Solution 的服务端权威约束和可编译
 场景树做引用、无环、深度和指令绑定校验，然后降级为固定的
 `scenarioCall -> instructionCall` 纯函数图。模拟期的 WRITE 指令只生成结构化桩结果，
 不进入真实派发通道。
+
+运行时先调 `rg.solution.getContract`。对 API/DAG/MODEL/INSTRUCTION_RESULT 类输入，Codex 必须
+使用 `rg.feature.evaluate` 返回的原值和 `evaluationToken`；不得改值、换输入或跨项目复用 token。
+USER_COMPONENT/USER_CONVERSATION 不调求值工具，而是采集用户明确选择并向
+`rg.solution.invoke` 传 `source=USER`。确定性特征缺 token 或任一绑定不匹配时，服务端统一返回
+`FEATURE_TOKEN_INVALID`，Codex 应重新求值，不应猜测哪个校验字段失败。
 
 ### 5.2 用例与 Oracle
 

@@ -17,7 +17,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(31);
+        assertThat(catalog.all()).hasSize(34);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -27,9 +27,12 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.resource.declare").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.feature.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.feature.evaluate").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.scenario.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.instruction.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.solution.compose").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.solution.getContract").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.solution.invoke").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
         assertThat(catalog.all()).extracting(definition -> definition.impact().operation())
                 .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST);

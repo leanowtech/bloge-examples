@@ -5,7 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
+import com.leanowtech.bloge.gateway.solution.FeatureEvaluationBackend;
+import com.leanowtech.bloge.gateway.solution.FeatureEvaluationService;
+import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
+import com.leanowtech.bloge.gateway.solution.FeatureValueTokenService;
+import com.leanowtech.bloge.gateway.solution.InMemoryFeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.SolutionAuthoringDecoder;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
@@ -13,6 +19,8 @@ import com.leanowtech.bloge.gateway.solution.ScenarioTreeValidator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionLowering;
+import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
+import com.leanowtech.bloge.gateway.solution.SolutionInvocationService;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -38,6 +46,8 @@ public final class SolutionAgentTools {
     private final SolutionAuthoringDecoder decoder;
     private final SolutionEntityRegistry registry;
     private final SolutionLowering lowering;
+    private final FeatureEvaluationService featureEvaluation;
+    private final SolutionInvocationService invocation;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
     public SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper) {
@@ -47,11 +57,78 @@ public final class SolutionAgentTools {
     /** Creates the production boundary with server BLOGE precompilation enabled. */
     public SolutionAgentTools(
             AgentTddStateRepository states, ObjectMapper mapper, DslImportService importer) {
+        this(states, mapper, importer, null, null, null);
+    }
+
+    /** Creates a fully wired authoring and runtime boundary with explicit governed adapters. */
+    public SolutionAgentTools(
+            AgentTddStateRepository states,
+            ObjectMapper mapper,
+            DslImportService importer,
+            FeatureEvaluationBackend featureBackend,
+            InstructionDispatchChannel instructionChannel,
+            FeatureTokenKeyProvider tokenKeys) {
         this.states = Objects.requireNonNull(states, "states");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decoder = new SolutionAuthoringDecoder();
         this.registry = new SolutionEntityRegistry(states, mapper);
         this.lowering = importer == null ? null : new SolutionLowering(registry, importer);
+        FeatureTokenKeyProvider safeKeys = tokenKeys == null
+                ? InMemoryFeatureTokenKeyProvider.ephemeral() : tokenKeys;
+        FeatureValueTokenService tokens = new FeatureValueTokenService(
+                mapper, safeKeys, java.time.Clock.systemUTC(), new java.security.SecureRandom());
+        FeatureEvaluationBackend safeBackend = featureBackend == null
+                ? (feature, inputs, identity) -> {
+                    throw new SolutionContractException(
+                            "FEATURE_EVALUATOR_UNAVAILABLE", "Feature evaluation is unavailable.");
+                } : featureBackend;
+        InstructionDispatchChannel safeChannel = instructionChannel == null
+                ? (instruction, values, context) -> {
+                    throw new SolutionContractException(
+                            "INSTRUCTION_BINDING_UNAVAILABLE", "Instruction execution is unavailable.");
+                } : instructionChannel;
+        this.featureEvaluation = new FeatureEvaluationService(registry, safeBackend, tokens);
+        this.invocation = new SolutionInvocationService(registry, tokens,
+                new SolutionExecutionService(registry, mapper, safeChannel), mapper);
+    }
+
+    /** Evaluates a platform-owned Feature and returns a short-lived proof for Solution invocation. */
+    public Map<String, Object> evaluateFeature(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        String featureRef = requiredText(arguments, "featureRef");
+        JsonNode inputs = requiredObject(arguments, "inputs");
+        try {
+            FeatureEvaluationService.EvaluationResult result = featureEvaluation.evaluate(
+                    AgentTddMutationService.scopeKey(identity), featureRef, inputs, identity);
+            return Map.of("featureRef", featureRef, "value", result.value(),
+                    "evaluationToken", result.evaluationToken(),
+                    "evaluationKind", result.evaluationKind());
+        } catch (SolutionContractException failure) {
+            throw new AgentTddToolException(failure.code(), failure.getMessage());
+        }
+    }
+
+    /** Returns the collection plan for a Solution without executing or collecting any Feature. */
+    public Map<String, Object> getSolutionContract(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        try {
+            return mapper.convertValue(invocation.contract(
+                    AgentTddMutationService.scopeKey(identity), requiredText(arguments, "solutionRef")),
+                    OBJECT_MAP);
+        } catch (SolutionContractException failure) {
+            throw new AgentTddToolException(failure.code(), failure.getMessage());
+        }
+    }
+
+    /** Verifies Feature proofs and invokes one pure Solution with no hidden feature collection. */
+    public Map<String, Object> invokeSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        try {
+            return mapper.convertValue(invocation.invoke(AgentTddMutationService.scopeKey(identity),
+                    requiredText(arguments, "solutionRef"), requiredObject(arguments, "inputs")), OBJECT_MAP);
+        } catch (SolutionContractException failure) {
+            throw new AgentTddToolException(failure.code(), failure.getMessage());
+        }
     }
 
     /**
@@ -293,5 +370,12 @@ public final class SolutionAgentTools {
             throw new AgentTddToolException("SCHEMA_NONCONFORMANT", field + " is required.");
         }
         return arguments.path(field).asText().trim();
+    }
+
+    private static JsonNode requiredObject(JsonNode arguments, String field) {
+        if (arguments == null || !arguments.path(field).isObject()) {
+            throw new AgentTddToolException("SCHEMA_NONCONFORMANT", field + " is required.");
+        }
+        return arguments.path(field).deepCopy();
     }
 }
