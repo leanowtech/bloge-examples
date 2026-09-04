@@ -4343,6 +4343,7 @@ class VisualAuthoringBrowserDomTest {
         publishVisualDraft(wait);
         String publicationId = valueOf(By.id("publication-select"));
         assertThat(publicationId).isNotBlank();
+        selectByValue(wait, By.id("operator-palette-library"), "");
         setControlValue(driver.findElement(By.id("operator-palette-search")), "");
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("#operator-palette [data-operator-type='publication:" + publicationId + "']")
@@ -7934,6 +7935,9 @@ class VisualAuthoringBrowserDomTest {
 
     private void dragOperatorToCanvas(WebDriverWait wait, String searchText, String operatorType,
                                       String expectedNodeId, int xOffset, int yOffset) {
+        // Import intentionally focuses the newest library so a server-windowed catalog cannot
+        // hide it. Cross-library authoring must therefore return to the all-libraries view first.
+        selectByValue(wait, By.id("operator-palette-library"), "");
         WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
         search.clear();
         search.sendKeys(searchText);
