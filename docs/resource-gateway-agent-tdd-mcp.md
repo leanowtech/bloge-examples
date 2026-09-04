@@ -383,7 +383,8 @@ profile 只允许执行解析后的 Codex 二进制，禁止该进程 fork/exec�
 checkout、原始 Codex home、worktrees/memories 与私有 trace，且禁止写入隔离 home、运行临时目录和
 trace 文件描述符之外的位置。认证所需 `auth.json` 被单独复制到一次性 `CODEX_HOME`，用户配置和
 其他状态不会进入子进程。脚本同时显式禁用 shell、unified exec、code-mode host、apps、browser、
-computer-use、multi-agent、plugins、remote-plugin、skill-search 和文件/图像工具；认证器再对所有
+computer-use、multi-agent、plugins、remote-plugin、skill-search 和文件/图像工具；Codex 内部的
+code-mode host 只负责组织已配置 MCP 调用，仍受外层 fork/exec 禁令约束，且拿不到 shell/unified-exec；认证器再对所有
 非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
 否则 Codex 在处理 `-C` 之前读取继承的仓库 cwd，就会被系统正确拒绝而无法启动。
 

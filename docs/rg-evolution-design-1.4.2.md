@@ -1333,8 +1333,9 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
    配置和规则，只得到 WORKLOAD token。Codex 内层为 `read-only`；macOS 外层 `sandbox-exec` profile
    只允许执行当前解析出的 Codex 二进制，禁止 fork/exec，禁止读取仓库、Git common checkout、原始
    Codex 状态、worktrees/memories 和私有 trace，禁止向受控临时目录外写入。shell、unified exec、
-   code-mode host、apps、browser、computer-use、multi-agent、plugins、remote-plugin、skill-search 和
-   文件/图像工具均被显式禁用；
+   apps、browser、computer-use、multi-agent、plugins、remote-plugin、skill-search 和文件/图像工具均
+   被显式禁用；内部 code-mode host 仅组织已配置 MCP 调用，仍受外层 fork/exec 禁令约束，且没有
+   shell/unified-exec 能力；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
 3. 安全化 trace 实际记录 `capability.list × 2 → contract.get → dsl.reference.get(失败) →

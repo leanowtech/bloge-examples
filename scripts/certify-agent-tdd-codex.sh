@@ -196,9 +196,10 @@ fi
 SERVICE_PID=$!
 
 verify_runtime_identity() {
-    kill -0 "${SERVICE_PID}" 2>/dev/null \
-        && curl --fail --silent --show-error --max-time 3 "${RG_INSTANCE_ENDPOINT}" \
-        | python3 -c '
+    local actual_identity
+    kill -0 "${SERVICE_PID}" 2>/dev/null || return 1
+    actual_identity="$(curl --fail --silent --max-time 3 "${RG_INSTANCE_ENDPOINT}")" || return 1
+    python3 -c '
 import json
 import sys
 actual = json.load(sys.stdin)
@@ -209,7 +210,7 @@ expected = {
     "jarSha256": sys.argv[3],
 }
 raise SystemExit(0 if actual == expected else 1)
-' "${INSTANCE_NONCE}" "${REPOSITORY_COMMIT}" "${JAR_SHA256}"
+' "${INSTANCE_NONCE}" "${REPOSITORY_COMMIT}" "${JAR_SHA256}" <<< "${actual_identity}"
 }
 
 SERVICE_READY=false
@@ -257,7 +258,7 @@ CODEX_ARGS=(
     --disable apps --disable in_app_browser --disable multi_agent --disable multi_agent_v2
     --disable plugins --disable remote_plugin --disable skill_search
     --disable browser_use --disable browser_use_external --disable computer_use
-    --disable code_mode_host --disable hooks --disable image_generation --disable memories
+    --disable hooks --disable image_generation --disable memories
     --disable shell_snapshot --disable shell_tool --disable unified_exec
     --disable view_image --disable workspace_dependencies --disable standalone_web_search
     --disable tool_suggest --disable skill_mcp_dependency_install --disable enable_mcp_apps
