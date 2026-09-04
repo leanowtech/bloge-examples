@@ -1211,12 +1211,13 @@ v1.4.2 只有同时满足以下条件才算完成：
 
 ## 22. 评审时需要明确拍板的问题
 
-以下四项需在开始实现前确认，其余按本文默认方案推进：
+以下五项需在开始实现前确认，其余按本文默认方案推进：
 
 1. **BLOGE 主仓前置**：现有 parser/compiler 是否已有足够稳定的结构化 code/span；若没有，是否接受先发布一个正式诊断 SPI 版本？本文建议接受，拒绝 RG 解析自由文本。
 2. **MCP transport**：v1.4.2 先只交付 `rg.dsl.reference.get`，还是同时增加 MCP resources？本文建议只交付工具，resources 留适配位。
 3. **强制上下文时点**：是否允许一个发布版本的宽限期？本文建议同一版本内分提交迁移，但最终发布即 required，不留下永久兼容开关。
 4. **邻接安全范围**：DNS rebinding 与 controller 级 rate/quota 是否作为 v1.4.2 release gate？本文建议纳入 S5；它们与 DSL 主模块解耦，但属于本轮已知安全/协议债，完成后再宣布版本落地。
+5. **MCP compose 收紧**：是否接受 Agent TDD MCP 只提升通过 gate 的 DSL envelope，不再接受客户端任意 `GraphDraft`？本文建议接受；内部 visual API 继续支持自己的草稿模型，MCP 不保留可绕过 authoring receipt 的旁路。
 
 若以上决策被接受，实施优先级为：**结构化诊断前置 → reference 权威面 → 安全诊断 → 快照绑定的完整 preview/gate → Codex/浏览器产品认证 → 邻接安全收尾**。
 
