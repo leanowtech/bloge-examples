@@ -2,6 +2,8 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成世界观与积木发现、资源登记、样例提供、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、平台实景验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
+业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.2 会在 MCP 初始化说明中要求 Codex 先读取当前 DSL 参考，再自行生成、预览和修正实现；通过检查后，服务端才允许保存同一份候选。
+
 需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。
 
 完整流程有两个人工停点。Agent 不能批准自己提出的业务 Oracle，也不能替人签署发布；这两步必须用独立的人工 reviewer 凭据在 Resource Gateway 看板中完成。服务端会校验 actor type、提议者与批准者分离，以及人实际打开的 proposal fingerprint。
@@ -35,6 +37,10 @@ RG_INTEGRATION_DEMO_TOKEN="${RG_AGENT_DEMO_TOKEN}" \
 RG_INTEGRATION_DEMO_REVIEW_TOKEN="${RG_REVIEW_DEMO_TOKEN}" \
 RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE' \
 RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS='localhost,127.0.0.1' \
+RG_AGENT_TDD_MCP_COMMON_PER_MINUTE=120 \
+RG_AGENT_TDD_MCP_REFERENCE_PER_MINUTE=60 \
+RG_AGENT_TDD_MCP_AUTHORING_PER_MINUTE=30 \
+RG_AGENT_TDD_MCP_AUTHORING_CONCURRENCY=4 \
 RG_CORRECTNESS_AUTHORING_ENABLED=true \
 RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
 RESOURCE_GATEWAY_PORT=8081 \
@@ -49,7 +55,9 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 
 上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 需要把样例加密后存入受治理的 Fixture 仓库。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它，并在每次读取前重新收紧为 `0600`。`target/example-secrets` 目录或 key 路径若是符号链接，或者不是预期的普通目录/文件，启动会失败关闭。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
 
-`RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 是精确主机名白名单，不接受通配符、URL 或域名后缀。资源声明和后续实景验证只允许 HTTP/HTTPS，且拒绝 user-info、可变主机模板和未配置主机。空值表示全部拒绝。
+`RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS` 是精确主机名白名单，不接受通配符、URL 或域名后缀。资源声明和后续实景验证只允许 HTTP/HTTPS，且拒绝 user-info、可变主机模板和未配置主机。实景验证会双次解析目标，拒绝空结果、变化结果、混合公私地址、loopback、link-local、site-local、multicast、unspecified 和 IPv6 unique-local；执行每条标准案例前还会核对解析结果没有变化。显式配置的 `localhost` 和 `127.0.0.1` 仅作为本地沙箱例外。空白名单表示全部拒绝。
+
+四个 `RG_AGENT_TDD_MCP_*` 参数控制每个已认证 tenant/project/environment/actor 的 MCP 请求。所有工具共用每分钟 120 次的总桶；DSL 参考每分钟 60 次；preview 与 gate 合计每分钟 30 次、最多 4 个并发。限额在工具分派前执行，不影响人工 reviewer 的 HTTP 看板。
 
 - MCP：`http://localhost:8081/mcp`
 - 人工看板：`http://localhost:8081/agent-tdd.html`
@@ -83,7 +91,7 @@ http_headers = { "X-Purpose" = "AGENT_TDD_READ" }
 enabled_tools = [
   "rg.capability.list", "rg.library.get", "rg.library.list",
   "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
-  "rg.verdict.get", "rg.evidence.get", "rg.dsl.preview",
+  "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get", "rg.dsl.preview",
   "rg.gate.check", "rg.readiness.get"
 ]
 required = true
@@ -158,41 +166,25 @@ test -n "${RG_MCP_TOKEN:-}" && echo 'RG_MCP_TOKEN is visible'
 tail -80 target/example-logs/resource-gateway.log
 ```
 
-## 4. 完整示例：编排用户资料查询 Tool
+## 4. 完整示例：用业务语言创建用户资料查询能力
 
-示例使用内置 `user-service.getProfile` API。它与本地 demo upstream 的真实响应结构一致，因此可直接完成逻辑验证和实景验证。闭环分三段提示词，中间由人完成两次评审。不要把三段合成“全自动发布”。
+示例使用本地已有的用户资料来源。它与本地 demo upstream 的真实响应结构一致，因此可直接完成逻辑验证和实景验证。闭环分三段提示词，中间由人完成两次评审。不要把三段合成“全自动发布”。
 
 ### 4.1 第一段：发现、编排、提出 GOLDEN
 
 在新的 Codex 任务中粘贴：
 
 ```text
-请使用 rg_read 和 rg_author MCP 完成下面工作，所有事实以 MCP 返回为准，不要猜测：
+请把“按用户编号查询用户姓名和会员等级”做成客服助手可用的业务能力。
 
-1. 调用 rg.capability.list，选择 runtimeState 可用于治理评审、effect=READ_EXTERNAL 的用户资料查询 API `user-service.getProfile`。
-2. 调用 rg.contract.get 读取它的真实输入输出端口和 schema。
-3. 创建 Tool `codex-profile-ops-v1`。DSL 必须引用发现到的 bindingRef，不要直接写 httpResource：
+用户资料由公司现有的用户资料服务负责。请在已经连接的平台中自行查找可用的只读来源；如果找不到，只告诉我应该找哪类系统负责人，不要让我填写接口地址或数据结构。
 
-graph codexProfileOps {
-  input { userId: String }
-  node profile : "resource:user-service.getProfile" {
-    input { params = { userId: ctx.userId } }
-  }
-  transform response {
-    name = profile.output.payload.name
-    tier = profile.output.payload.tier
-  }
-}
+这项能力接收一个用户编号，返回用户姓名和会员等级。典型案例是：查询用户 u-100 时，资料来源返回 Alice，会员等级为 premium；能力也应返回 Alice 和 premium。请把它整理成待我确认的标准案例。
 
-4. libraryRefs 显式传空数组。每个写操作使用独立、可读且本轮稳定的 idempotencyKey。
-5. 设置完整 Instruction：name/title/description/whenToUse/inputs/outputs/errors 都不能缺失。
-6. 创建 caseSet `codex-profile-cases-v1`，提出 GOLDEN 行 `profile-premium`：given.userId=u-100；profile stub 返回 payload.userId=u-100、payload.name=Alice、payload.tier=premium；expect 为 name=Alice、tier=premium；oracleOwner=profile-ops。
-7. 调用 rg.scenario.listCases 确认该行等待人工 Oracle 审批，然后停止。不要执行 RED/GREEN，不要替人批准。
-
-最后只汇报 toolRef、draft revision、caseSetRef、case revision、待办人工动作和稳定错误码，不展示业务 payload。
+请自行完成技术设计和检查，不要向我展示代码、DSL、Schema、节点、端口或内部标识。完成后只用业务语言告诉我：资料来源是否匹配、能力草稿是否有效、标准案例是否已提交，以及我接下来需要在看板完成什么。不要替我批准标准案例，也不要开始发布。
 ```
 
-预期：Tool 草稿已保存；`honestVerdict` 只证明契约语法，业务正确性仍是 `NOT_PROVEN`；GOLDEN 尚不能进入 baseline。同一 idempotencyKey 携带不同内容会返回 `IDEMPOTENCY_CONFLICT`。
+预期：能力草稿已保存；技术结构已通过 authoring 检查，但业务正确性仍未证明；标准案例等待人工确认，不能进入基线验证。Codex 后台必须完成 capability/contract discovery → DSL reference → preview/revise → gate → compose；业务人员不需要看到这些步骤。
 
 ### 4.2 人工停点一：批准 Oracle
 
@@ -207,16 +199,15 @@ graph codexProfileOps {
 继续在同一任务中粘贴：
 
 ```text
-继续 `codex-profile-ops-v1` 的 Agent TDD 流程：
+我已经在看板确认了用户资料的标准案例。请继续做上线前验证：
 
-1. 读取 `codex-profile-cases-v1`，确认 `profile-premium` 已 ACTIVE；否则停止。
-2. 用 side=RED、cases.caseSetRef=codex-profile-cases-v1 调用 rg.simulate。要求 verdict=RED_PASS 且 realExternalCalls=0。
-3. RED 不满足时，只根据 diagnostics.code/target/line/column 修复草稿或用例，然后重跑；不要猜测隐藏 payload。
-4. RED 通过后，用 side=GREEN、caseSetRef=codex-profile-cases-v1、rounds=3 调用 rg.tool.baseline。要求 status=GO、businessFingerprintStable=true、realExternalCalls=0；平台会紧接着自动实景验证。
-5. 检查 baseline.attestation：必须为 status=ATTESTED，environment 必须是 local/test/sandbox，所有 cases 的 oracleHeld/allDependenciesCalled 为 true。只汇报结构化计数和指纹，不索取或展示真实响应。
-6. 调用 rg.verdict.get 和 rg.readiness.get。要求 gates.runtimeAttestation=true；若还有非人工缺口，按 remainingLimitations 修复逻辑 GREEN。实景验证为 FAILED 时停止，并请人工 reviewer 在看板确认后重跑；Codex 不调用恢复端点。若只剩 OWNER_SIGNOFF_ABSENT，停止等待人工签署。
+1. 先证明当前实现不是无论输入什么都给出同一个答案。
+2. 再用我批准的标准案例做多轮逻辑检查。逻辑检查不能访问真实资料来源。
+3. 逻辑检查稳定通过后，让平台自动确认本地只读资料来源确实可接，并再次核对业务结果。
+4. 把“业务规则是否通过”和“真实来源是否可用”分开汇报。如果失败，请说明应该由业务负责人、资料来源负责人还是平台负责人处理。
+5. 如果只缺负责人签署，就停下来等我操作看板。
 
-最后只汇报 draftRevision、goldenSetId、evidenceFingerprint、baseline status、逻辑 realExternalCalls、attestation status/environment/realExternalCalls 和下一项人工动作。不要调用 rg.tool.publish。
+不要展示真实用户资料、认证信息、内部指纹或技术诊断原文，不要替我签署，也不要发布。
 ```
 
 GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满足业务 Oracle”，自身不产生真实外部请求。`ATTESTED` 是另一份证据：平台把同一批 ACTIVE GOLDEN 的依赖换成当前冻结的真实只读 descriptor，在精确 host 白名单内执行，并再次核对 Oracle。生产 HTTP client 不跟随 3xx 重定向；重定向响应交给图逻辑处理，不会把已批准请求或认证头转发到第二个未批准主机。证据绑定 tool、draft revision、goldenSetId、case-set revision、契约、实现和 GREEN evidence fingerprint；任一项漂移都会使它失效。
@@ -234,14 +225,11 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 继续粘贴：
 
 ```text
-请完成 `codex-profile-ops-v1` 的受治理发布：
+我已经在看板完成上线签署，签署编号是 `profile-ops-signoff-20260904-01`。
 
-1. 调用 rg.readiness.get，确认 publishable=true，且当前 draftRevision、goldenSetId、evidenceFingerprint、attestation.implementationFingerprint 与人工签署一致。
-2. 若不一致或仍有 remainingLimitations，停止并列出稳定原因码。
-3. 一致时调用 rg.tool.publish，signoffRef=`profile-ops-signoff-20260904-01`，使用新的 idempotencyKey。
-4. 再读取 readiness/verdict，汇报 publicationId、artifactKind、冻结 revision 和最终状态。
+请确认业务实现、标准案例、逻辑验证和真实来源证明从签署后都没有变化。全部一致时再发布；任何一项变化都必须停止，不能沿用旧签署。
 
-不得绕过门禁，不得自行调用真实业务 API 或实景恢复 HTTP 端点，不得输出 token 或业务 payload。
+发布完成后，只告诉我能力名称、是否已可供客服助手使用，以及以后哪些变化会让它重新进入验证和审核。不要输出认证信息、真实用户资料或内部技术材料。
 ```
 
 预期 `artifactKind=EXECUTABLE`。发布物冻结通过门禁的 operator snapshot，不会在发布后静默跟随 catalog 漂移。
@@ -250,11 +238,16 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 ### 5.1 DSL 与契约
 
-- 先 `rg.capability.list`，再 `rg.contract.get`，最后写 DSL。
-- API 节点使用发现到的 `bindingRef`，例如 `resource:user-service.getProfile`；不要绕过契约直接写 `httpResource`。
-- `libraryRefs` 必须显式传入，空依赖也是 `[]`。
-- BLOGE DSL 字段按换行分隔，不要仿 JSON 在字段末尾加逗号。
-- Resource payload 使用 `node.output.payload.field`；命名端口会按目录解析。
+这些规则由 Codex 在后台执行，不是业务人员的输入要求：
+
+1. Codex 先调用 `rg.capability.list` 和 `rg.contract.get`，确认业务来源与真实契约。
+2. Codex 调用 `rg.dsl.reference.get`，显式传入 `libraryRefs`；空依赖也是 `[]`。
+3. Codex 只使用返回的 graph 语法、可见 operator/function contract、certified examples 和 `authoringContextFingerprint` 生成 DSL。
+4. Codex 对同一份 source 执行 preview。收到 `AGENT_CAN_REVISE` 时，按安全摘要、reference refs 和 fix hints 修正；最多修正三轮。同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
+5. preview 接受后，Codex 对同一份 source 执行 gate。`HUMAN_OR_PLATFORM_REQUIRED` 或 `PLATFORM_MAINTAINER` 不能靠猜测继续。
+6. compose 必须提交 gate 接受的原 source、`authoringContextFingerprint` 和 `authoringReceiptFingerprint`。服务端会在同一 mutation 中重跑编译并比较 receipt；source A 的 receipt 不能保存 source B。
+
+业务人员只核对业务流程、规则表和标准案例。不要为了绕过失败而让业务人员提供 DSL。
 
 ### 5.2 用例与 Oracle
 
@@ -276,13 +269,14 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 ### 5.4 证据和隐私
 
-MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案、metadata、generated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
+DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`code`、`phase`、`span`、`safeSummary`、`expectedKinds`、`referenceRefs`、受限 `fixHints`、`resolutionClass` 和 `diagnosticFingerprint`。兼容字段 `target/line/column` 暂时保留。底层异常文案、metadata、source fragment、regenerated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
 
 ### 5.5 实景验证边界
 
 - 只接受 `local`、`test`、`sandbox` 环境；`prod` 失败关闭。
 - 只执行 descriptor-backed 的 `READ_EXTERNAL`。HTTP `GET`、`HEAD`、`OPTIONS` 可进入验证；外部写一律返回 `WRITE_EFFECT_NOT_ALLOWED`。
 - host 必须精确命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`。不支持通配符、后缀匹配、URL user-info、非 HTTP(S) 或 host 模板。
+- 平台在规划实景验证时连续解析两次目标，并在每条案例执行前再次核对同一地址集合。DNS 失败、答案变化、混合公私地址和非公网地址均失败关闭；只有显式 `localhost` 或 `127.0.0.1` 保留本地沙箱例外。
 - catalog operator snapshot、resource descriptor 和 GREEN 身份分别冻结；HTTP 算子在发送前复核执行期 descriptor，注册表并发替换会让本次运行失败，不能把旧批准用于新地址。
 - `realExternalCalls` 只统计通过全部发送前检查后进入 HTTP transport 的 `HTTP_TRANSPORT_DISPATCHED` 事件。节点开始、重试或 fallback 本身不算真实调用。
 - 自动验证不在 MCP `tools/list` 中。异常重跑只能由 HUMAN/USER 在看板确认，服务端重新读取当前 GREEN，调用方不能提交 rows、binding 或 URL。
@@ -300,6 +294,9 @@ MCP diagnostics 只包含 `level/code/target/line/column`。底层异常文案�
 | `GATE_REJECTED` / 409（审批） | 使用了 Agent token、自批，或 proposal fingerprint 已变化 | 改用独立 reviewer token，重新打开详情并复核 |
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
 | `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
+| `DSL_AUTHORING_CONTEXT_REQUIRED` / `DSL_AUTHORING_CONTEXT_STALE` | 未先读取 DSL 参考，或目录在生成期间变化 | 重新调用 `rg.dsl.reference.get`，不要复用旧 fingerprint |
+| `DSL_PREVIEW_TIMEOUT` / `DSL_PREVIEW_CAPACITY_EXCEEDED` | 候选超出 5 秒预算，或预览容量暂时耗尽 | 缩小候选；按退避策略重试，不要无限循环 |
+| JSON-RPC `-32029` / `-32030` | 单身份速率或 authoring 并发超过上限 | 停止批量重试，等待当前分钟窗口或在容量评审后调整配置 |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |
 | `ATTESTATION_ENVIRONMENT_NOT_ALLOWED` | 环境不是 local/test/sandbox | 切换到受控沙箱；不能放宽到 prod |
 | `WRITE_EFFECT_NOT_ALLOWED` / `EGRESS_NOT_ALLOWED` | 依赖是写操作、未登记或 host 未精确放行 | 建只读沙箱资源或修正精确白名单；不要让 Agent 绕过 |
@@ -331,7 +328,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='AgentTddMcpOperationalWorkflowTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
+  -Dtest='AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslReferenceBundleCertificationTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
   test
 
 mvn -f resource-gateway-examples/pom.xml clean verify
@@ -342,7 +339,7 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 ## 9. 完成判据
 
 1. Codex `/mcp` 显示四个最小权限 server 已连接。
-2. API binding 来自 capability discovery 和 contract，而非 Agent 猜测。
+2. API binding 来自 capability discovery 和 contract，而非 Agent 猜测；DSL 来自当前 `rg.dsl.reference.get` 上下文，不是业务人员手写。
 3. GOLDEN Oracle 经不同 HUMAN actor 打开详情并批准；Codex 使用 WORKLOAD token，执行的是 ACTIVE 持久用例。
 4. RED 通过；GREEN baseline 为 `GO` 且业务指纹稳定。
 5. RED/GREEN 的 `realExternalCalls` 都是 `0`。
@@ -350,5 +347,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 7. 人工签署精确绑定当前 revision、goldenSetId、evidenceFingerprint、implementationFingerprint。
 8. readiness 的 `greenBaseline/runtimeAttestation/ownerSignoff` 全为 true 后，才创建 `EXECUTABLE` 发布物。
 9. 内容、case set、catalog binding、实现或 descriptor 漂移会使旧实景证据/旧签署失效，或在发送前失败关闭。
+10. Trace 能证明 DSL authoring 按 reference → preview/revise → gate → compose 执行；source、context 和 receipt 精确绑定。
 
 Codex 的 MCP 配置与管理方式以 [OpenAI Codex MCP 官方文档](https://learn.chatgpt.com/docs/extend/mcp) 为准；本文聚焦本仓库的工具、用途和治理顺序。

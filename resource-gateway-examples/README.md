@@ -12,7 +12,7 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
-Resource Gateway 1.4 also exposes an authenticated, stateless MCP Agent TDD surface at
+Resource Gateway 1.4.2 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
 cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board with separately authenticated
@@ -20,6 +20,15 @@ no-store review details at
 `/agent-tdd.html`. See the
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
+The 27-tool catalog now includes `rg.dsl.reference.get`. Codex first receives a scoped, versioned,
+graph-only and payload-free syntax/contract/example snapshot, then previews and gates the exact source
+against that immutable authoring context. Compose accepts the DSL envelope plus its context and receipt
+fingerprints rather than trusting a client-authored `GraphDraft`; the mutation reruns the production
+parser/compiler/linter/projection pipeline and persists only the matching server projection. Business users
+state intent, rules and expected outcomes; they are not asked to write DSL or interpret compiler prose.
+Preview is bounded to 512 KiB, 5 seconds, 25 diagnostics per phase and 100 total. Per authenticated identity,
+MCP defaults to 120 total calls/minute, 60 reference calls/minute, and 30 shared preview/gate calls/minute
+with four concurrent authoring calls; the `RG_AGENT_TDD_MCP_*` settings may lower those limits.
 The board derives each Tool's position and next business action along the five-act journey from
 existing readiness and case-set facts; it does not create a second workflow state or perform extra reads.
 Decision-table nodes are projected as business-readable rule matrices with a fixed prose flow summary;
@@ -48,6 +57,9 @@ closed until a sandbox substitute and reconciliation contract exist.
 Agent TDD resource declaration and sandbox attestation share an exact-host egress policy configured by
 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`. It rejects wildcard/suffix matching, user-info, authority templates,
 non-HTTP schemes and an empty allowlist; the local default admits only `localhost` and `127.0.0.1`.
+Attestation resolves the admitted host twice, rejects empty, changing, mixed public/private and non-routable
+answers, and checks the exact address set again before each case. Explicit `localhost` and `127.0.0.1` entries
+remain local-sandbox exceptions; a different hostname that resolves to a private or loopback address is rejected.
 After a durable logical GREEN, the platform-only `AGENT_TDD_ATTEST` boundary automatically runs the same
 approved ACTIVE cases against frozen, descriptor-backed `READ_EXTERNAL` dependencies. It is not an MCP tool:
 WORKLOAD callers cannot choose real inputs, bindings, URLs, or execution mode. Production environments and

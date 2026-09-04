@@ -3,6 +3,19 @@
 Concise machine-readable reference for AI/LLM code generation.
 Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.0.
 
+## Resource Gateway Agent TDD 支持范围
+
+本文是仓库内的完整语法资料，不是远程 Agent 的运行时权威输入。Resource Gateway 1.4.2 只向 Agent TDD 开放 `graph` 根类型。Codex 必须先调用 `rg.dsl.reference.get`，以返回的 `languageVersion`、`compilerProfile`、topics、可见 operator/function contracts、certified examples 和 `authoringContextFingerprint` 为准。不同 tenant、project、environment 或 `libraryRefs` 的参考不能混用。
+
+业务人员不需要阅读或编写 DSL。Codex 根据业务意图生成候选后，应按以下顺序在后台处理：
+
+1. 用同一 `authoringContextFingerprint` 调用 `rg.dsl.preview`。
+2. 只根据 payload-free `authoringDiagnostics` 修正；最多三轮。同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
+3. preview 接受后，对同一 source 调用 `rg.gate.check`。
+4. compose 时提交同一 source、context fingerprint 和 receipt fingerprint。服务端会重新编译并拒绝 source/context/receipt 不一致的请求。
+
+`session` 和 `state_machine` 仍属于 BLOGE 语言，但不在当前 Agent TDD authoring profile 中。不要把本文件整篇复制进提示词，也不要用它覆盖 MCP 返回的当前作用域参考。
+
 ---
 
 ## File Structure
