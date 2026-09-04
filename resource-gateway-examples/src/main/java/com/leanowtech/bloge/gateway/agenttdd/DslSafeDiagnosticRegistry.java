@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.lint.LintDiagnostic;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -230,14 +231,22 @@ final class DslSafeDiagnosticRegistry {
                                     List<String> expected, List<String> references,
                                     List<DslAuthoringDiagnostic.FixHint> fixes, String resolution,
                                     boolean retryable, boolean blocking) {
-        Map<String, Object> material = Map.of(
-                "level", level, "phase", phase, "code", code, "target", target,
-                "span", span, "expectedKinds", expected, "referenceRefs", references,
-                "fixHints", fixes, "resolutionClass", resolution, "retryable", retryable);
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("level", level);
+        material.put("phase", phase);
+        material.put("code", code);
+        material.put("target", target);
+        material.put("span", span);
+        material.put("expectedKinds", expected);
+        material.put("referenceRefs", references);
+        material.put("fixHints", fixes);
+        material.put("resolutionClass", resolution);
+        material.put("blocking", blocking);
+        material.put("retryable", retryable);
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, material,
                 MAX_FINGERPRINT_BYTES);
         return new MappedDiagnostic(new DslAuthoringDiagnostic(level, phase, code, target, span,
-                summary, expected, references, fixes, resolution, retryable, fingerprint), blocking);
+                summary, expected, references, fixes, resolution, blocking, retryable, fingerprint), blocking);
     }
 
     private static DslAuthoringDiagnostic.Span span(int line, int column) {

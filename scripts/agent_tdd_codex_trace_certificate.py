@@ -167,7 +167,7 @@ def blocking_fingerprints(call: dict[str, Any]) -> tuple[str, ...]:
     fingerprints = sorted({
         diagnostic.get("diagnosticFingerprint")
         for diagnostic in diagnostics
-        if isinstance(diagnostic, dict) and diagnostic.get("level") == "ERROR"
+        if isinstance(diagnostic, dict) and diagnostic.get("blocking") is True
         and isinstance(diagnostic.get("diagnosticFingerprint"), str)
         and diagnostic["diagnosticFingerprint"].startswith("sha256:")
     })

@@ -244,7 +244,7 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 2. Codex 调用 `rg.dsl.reference.get`，显式传入 `libraryRefs`；空依赖也是 `[]`。
 3. 如果业务描述允许产生实质不同的业务结果，Codex 必须在生成 DSL 前报告 `BUSINESS_CLARIFICATION_REQUIRED`，只问一个业务问题，不得自行选择，也不得向业务人员解释 DSL、schema 或 operator。
 4. Codex 只使用返回的 graph 语法、可见 operator/function contract、certified examples 和 `authoringContextFingerprint` 生成 DSL。
-5. Codex 对同一份 source 执行 preview。服务端会先把投影绑定回当前认证的 tenant/project/environment 再校验项目级 operator；收到 `AGENT_CAN_REVISE` 时，按安全摘要、reference refs 和 fix hints 修正。目录真实变化会使上下文指纹变化并要求重新取参考；最多修正三轮，同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
+5. Codex 对同一份 source 执行 preview。服务端会先把投影绑定回当前认证的 tenant/project/environment 再校验项目级 operator；收到 `AGENT_CAN_REVISE` 时，按安全摘要、reference refs 和 fix hints 修正。`blocking=true` 是能否继续的权威事实，不能因为 `level=WARNING` 就忽略；目录真实变化会使上下文指纹变化并要求重新取参考。最多修正三轮，同一组 blocking `diagnosticFingerprint` 连续出现两次时停止；`DSL_OPERATOR_NOT_FOUND` 后不能只刷新参考再原样提交。
 6. preview 接受后，Codex 对同一份 source 执行 gate。`HUMAN_OR_PLATFORM_REQUIRED` 或 `PLATFORM_MAINTAINER` 不能靠猜测继续。
 7. compose 必须提交 gate 接受的原 source、`authoringContextFingerprint` 和 `authoringReceiptFingerprint`。服务端会在同一 mutation 中重跑编译并比较 receipt；source A 的 receipt 不能保存 source B。
 8. 创建该工具的持久 GOLDEN case set 时，Codex 必须使用 compose 返回的 `toolRef` 建立归属；不得创建没有工具归属的标准案例集。

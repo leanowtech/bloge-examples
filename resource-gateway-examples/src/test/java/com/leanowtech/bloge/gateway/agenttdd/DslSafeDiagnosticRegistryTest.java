@@ -96,6 +96,7 @@ class DslSafeDiagnosticRegistryTest {
         assertThat(mapped.diagnostic().code()).isEqualTo("DSL_EFFECT_NOT_ALLOWED");
         assertThat(mapped.diagnostic().phase()).isEqualTo("SEMANTIC_COMPILE");
         assertThat(mapped.diagnostic().resolutionClass()).isEqualTo("HUMAN_OR_PLATFORM_REQUIRED");
+        assertThat(mapped.diagnostic().blocking()).isTrue();
         assertThat(mapped.diagnostic().fixHints()).isEmpty();
         assertThat(mapper.valueToTree(mapped.diagnostic()).toString())
                 .doesNotContain("sensitive", "private-write", "not-public");
@@ -125,7 +126,7 @@ class DslSafeDiagnosticRegistryTest {
             String level, String phase, String code, int line, boolean blocking) {
         return new DslSafeDiagnosticRegistry.MappedDiagnostic(new DslAuthoringDiagnostic(
                 level, phase, code, "", new DslAuthoringDiagnostic.Span(true, line, 1, line, 1),
-                "Safe summary", List.of(), List.of(), List.of(), "AGENT_CAN_REVISE", false,
+                "Safe summary", List.of(), List.of(), List.of(), "AGENT_CAN_REVISE", blocking, false,
                 "sha256:" + "a".repeat(64)), blocking);
     }
 
@@ -142,5 +143,6 @@ class DslSafeDiagnosticRegistryTest {
         assertThat(mapped.diagnostic().phase()).isEqualTo(phase);
         assertThat(mapped.diagnostic().resolutionClass()).isEqualTo(resolution);
         assertThat(mapped.blocking()).isEqualTo(blocking);
+        assertThat(mapped.diagnostic().blocking()).isEqualTo(blocking);
     }
 }

@@ -616,6 +616,7 @@ mutation 内部顺序固定为：
     }
   ],
   "resolutionClass": "AGENT_CAN_REVISE",
+  "blocking": true,
   "retryable": true,
   "diagnosticFingerprint": "..."
 }
@@ -633,6 +634,7 @@ mutation 内部顺序固定为：
 - 服务器可见、已授权的 operator/function reference；
 - 类型种类，如 `STRING`、`INTEGER`、`OBJECT`，不含 schema 中的业务示例；
 - 固定 reference anchor 和 fix kind。
+- 明确的 `blocking` 布尔值；它是阶段接受事实，与展示级别 `level` 正交；
 
 禁止：
 
@@ -690,7 +692,7 @@ mutation 内部顺序固定为：
 为防止异常 DSL 产生海量诊断：
 
 - 每阶段和总数都有硬上限；
-- blocking ERROR 优先，其次 WARNING、INFO；
+- `blocking=true` 优先，其次按 ERROR、WARNING、INFO；WARNING 也可能阻断，例如目录中不存在的 operator；
 - 同 code + target + span 去重；
 - 截断时返回 `diagnosticSummary.truncated=true`；`total` 和各阶段计数表示去重后的原始总量，不能只报告保留下来的行数；
 - 截断不改变 `technicalAcceptance`，也不把剩余错误视为通过。
@@ -727,7 +729,7 @@ stateDiagram-v2
 3. 每次 preview/gate 回传 `authoringContextFingerprint`；
 4. `REFETCH_REFERENCE` 时先刷新参考，不在旧上下文上猜；
 5. `REVISE` 时只按结构化 diagnostic 和 reference ref 修技术问题；
-6. 同一 diagnostic fingerprint 连续两次或总计三轮仍未通过时停止；
+6. 以 `blocking=true` 选出阻断项；同一 blocking fingerprint 集连续两次或总计三轮仍未通过时停止，不能用 `level=WARNING` 忽略阻断；
 7. `BUSINESS_CLARIFICATION_REQUIRED` 只用业务语言向用户问含义；
 8. `PLATFORM_DEFECT` 停止自动修正，报告稳定 code 和 phase；
 9. 不向业务人员展示 DSL、schema、operator ref 或诊断原文，除非对方主动进入专家模式；

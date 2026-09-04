@@ -15,6 +15,7 @@ import java.util.List;
  * @param referenceRefs anchors in the server reference response
  * @param fixHints deterministic fixes or authorized contract candidates
  * @param resolutionClass whether an Agent can revise or a platform/human must intervene
+ * @param blocking whether this diagnostic prevents the current candidate from being accepted
  * @param retryable whether an unchanged request may become valid after refreshing external context
  * @param diagnosticFingerprint content address used for bounded repair-loop detection
  */
@@ -29,6 +30,7 @@ public record DslAuthoringDiagnostic(
         List<String> referenceRefs,
         List<FixHint> fixHints,
         String resolutionClass,
+        boolean blocking,
         boolean retryable,
         String diagnosticFingerprint
 ) {

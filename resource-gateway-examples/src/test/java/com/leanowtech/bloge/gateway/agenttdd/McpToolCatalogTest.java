@@ -163,7 +163,8 @@ class McpToolCatalogTest {
         Map<?, ?> diagnostic = (Map<?, ?>) ((Map<?, ?>) previewData.get("authoringDiagnostics")).get("items");
         assertThat(stringKeys((Map<?, ?>) diagnostic.get("properties"))).containsExactlyInAnyOrder(
                 "level", "phase", "code", "target", "span", "safeSummary", "expectedKinds",
-                "referenceRefs", "fixHints", "resolutionClass", "retryable", "diagnosticFingerprint");
+                "referenceRefs", "fixHints", "resolutionClass", "blocking", "retryable",
+                "diagnosticFingerprint");
         assertThat(stringKeys((Map<?, ?>) diagnostic.get("properties")))
                 .doesNotContain("message", "metadata", "source", "generatedDsl");
         Map<?, ?> projection = (Map<?, ?>) previewData.get("projection");

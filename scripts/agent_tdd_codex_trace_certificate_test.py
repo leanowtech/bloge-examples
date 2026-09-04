@@ -153,7 +153,8 @@ class TraceCertificateTest(unittest.TestCase):
             if item.get("tool") == "rg.dsl.preview":
                 item["result"]["structured_content"]["data"]["accepted"] = False
                 item["result"]["structured_content"]["data"]["authoringDiagnostics"] = [{
-                    "level": "ERROR", "diagnosticFingerprint": "sha256:" + "c" * 64,
+                    "level": "WARNING", "blocking": True,
+                    "diagnosticFingerprint": "sha256:" + "c" * 64,
                 }]
 
         with self.assertRaisesRegex(MODULE.CertificationFailure, "required successful tool call"):
@@ -184,7 +185,8 @@ class TraceCertificateTest(unittest.TestCase):
         accepted_index = next(index for index, event in enumerate(events)
                               if event.get("item", {}).get("tool") == "rg.dsl.preview")
         context = events[accepted_index]["item"]["arguments"]["authoringContextFingerprint"]
-        diagnostic = {"level": "ERROR", "diagnosticFingerprint": "sha256:" + "c" * 64}
+        diagnostic = {"level": "WARNING", "blocking": True,
+                      "diagnosticFingerprint": "sha256:" + "c" * 64}
         rejected = completed_call("rg_read", "rg.dsl.preview", {
             "source": "graph broken {}", "libraryRefs": [], "authoringContextFingerprint": context,
         }, {"accepted": False, "authoringDiagnostics": [diagnostic]})

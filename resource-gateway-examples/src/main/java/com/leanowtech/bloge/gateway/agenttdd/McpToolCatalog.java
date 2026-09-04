@@ -329,10 +329,10 @@ public final class McpToolCatalog {
                 "expectedKinds", stringArray(), "referenceRefs", stringArray(),
                 "fixHints", arrayOf(fixHint), "resolutionClass", enumString(
                         "AGENT_CAN_REVISE", "HUMAN_OR_PLATFORM_REQUIRED", "PLATFORM_MAINTAINER"),
-                "retryable", bool(), "diagnosticFingerprint", string()),
+                "blocking", bool(), "retryable", bool(), "diagnosticFingerprint", string()),
                 List.of("level", "phase", "code", "target", "span", "safeSummary",
                         "expectedKinds", "referenceRefs", "fixHints", "resolutionClass",
-                        "retryable", "diagnosticFingerprint"));
+                        "blocking", "retryable", "diagnosticFingerprint"));
         Map<String, Object> projection = structuredObject(props(
                 "schemaVersion", string(), "status", enumString("PROJECTED", "REPAIR_REQUIRED"),
                 "nodeCount", integer(), "edgeCount", integer(), "unsupportedSyntaxCount", integer(),
