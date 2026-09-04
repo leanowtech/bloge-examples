@@ -340,10 +340,13 @@ curl --fail-with-body http://localhost:8081/mcp \
 ```
 
 脚本不接受外部 Agent/reviewer token，也不复用已经运行的服务。它先拒绝脏工作区和被占用的
-认证端口（默认 `18081`），生成两份一次性凭据，先执行 `clean package`、再从当前
-HEAD 构建并启动 loopback RG，因此 Git 忽略的旧 `target/classes` 不能混入认证 JAR；退出时无论
-成功失败都停止该进程。随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 对仓库的读写，
-并在临时只读目录启动一个全新、不读用户配置与规则的 Codex，只提供四个 HTTP MCP 连接和一段
+认证端口（默认 `18081`），生成两份一次性凭据，先执行 `clean package`，再直接启动当前
+HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证进程。脚本只记录和停止自己
+创建的 PID，不调用可复用既有进程的通用启动器。服务同时返回一次性实例随机量、提交号和 JAR
+SHA-256；脚本在 Codex 调用前后都精确核对，证书只保留随机量指纹和非敏感构建身份。
+随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 派生任何进程、读取仓库/原始 Codex
+状态和私有 trace，以及写入一次性运行目录之外的位置。Codex 使用只复制 `auth.json` 的隔离目录，
+在临时只读工作目录启动，不读用户配置与规则，只提供四个 HTTP MCP 连接和一段
 业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义，
 不要求 Agent 执行僵化的工具仪式：依赖行为和待审批 Oracle 可在提交标准案例时一并写入，
 也可通过专用操作补充。最终必须证明以下事实：
@@ -355,15 +358,16 @@ HEAD 构建并启动 loopback RG，因此 Git 忽略的旧 `target/classes` 不�
 - Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
 - trace 中的外部动作只能是已配置 MCP 调用；出现 shell、文件修改、Web 搜索或任何
   未识别的 action item 时，认证失败关闭；
-- 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到同一工具按顺序从失败或 `accepted=false` 到成功；
+- 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到 preview/gate 成功返回 `accepted=false` 和阻断诊断指纹，随后同一工具接受修正候选；参考查询重试或 MCP 传输失败不能充数；
 - preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
 认证提示词用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动
 contract-first 行为；不会把 `rg.contract.get`、MCP 参数或其他实现术语交给业务人员。
 
 默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
-可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，外层 sandbox
-也拒绝子进程直接读写该目录，只由父进程预先打开的 stdout 文件描述符接收 trace；结束时删除；
+可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理；外层 sandbox
+仅允许 Codex 通过父进程预先打开的 stdout 文件描述符写该 trace，不允许读取它，也不允许启动
+shell 或其他子进程绕过边界；结束时删除；
 仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中
 比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言和使用一次性随机密钥生成的
 HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
@@ -373,13 +377,14 @@ HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系
 [`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`](schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json)。
 
 脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
-认证依赖 macOS `sandbox-exec` 提供操作系统级仓库隔离；不具备等价隔离能力的平台必须失败关闭，
-不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。为避免两个 Seatbelt 实例嵌套失败，
-该受控子进程把 Codex 内层 sandbox 设为 `danger-full-access`；安全边界是已先做读取负测的外层 profile，
-它拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace 的 read/write；
-Codex 鉴权仍需要读取自身的运行元数据，因此脚本不伪称拒绝整个 `CODEX_HOME`，而是显式禁用
-apps、browser、multi-agent、plugins、remote-plugin 和 skill-search；认证器另外
-对所有非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
+认证依赖 macOS `sandbox-exec` 提供操作系统级隔离；不具备等价隔离能力的平台必须失败关闭，
+不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。Codex 内层使用 `read-only`；权威外层
+profile 只允许执行解析后的 Codex 二进制，禁止该进程 fork/exec，禁止读取当前仓库、Git common
+checkout、原始 Codex home、worktrees/memories 与私有 trace，且禁止写入隔离 home、运行临时目录和
+trace 文件描述符之外的位置。认证所需 `auth.json` 被单独复制到一次性 `CODEX_HOME`，用户配置和
+其他状态不会进入子进程。脚本同时显式禁用 shell、unified exec、code-mode host、apps、browser、
+computer-use、multi-agent、plugins、remote-plugin、skill-search 和文件/图像工具；认证器再对所有
+非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
 否则 Codex 在处理 `-C` 之前读取继承的仓库 cwd，就会被系统正确拒绝而无法启动。
 
 ### 8.2 自动回归

@@ -41,6 +41,16 @@ class AgentTddCodexCertificationArtifactTest {
                 .isEqualTo("rg.agentTddCodexCertification.v1");
         assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
         assertThat(certificate.path("repositoryCommit").asText()).matches("[0-9a-f]{40}");
+        assertThat(certificate.at("/runtimeIdentity/schemaVersion").asText())
+                .isEqualTo("rg.agentTddCertificationInstance.v1");
+        assertThat(certificate.at("/runtimeIdentity/instanceNonceFingerprint").asText())
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(certificate.at("/runtimeIdentity/repositoryCommit").asText())
+                .isEqualTo(certificate.path("repositoryCommit").asText());
+        assertThat(certificate.at("/runtimeIdentity/jarSha256").asText())
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(certificate.at("/runtimeIdentity/processOwnershipVerified").asBoolean()).isTrue();
+        assertThat(certificate.at("/runtimeIdentity/verifiedBeforeAndAfterTurn").asBoolean()).isTrue();
         assertThat(certificate.path("certificateFingerprint").asText())
                 .matches("sha256:[0-9a-f]{64}");
         assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
@@ -56,6 +66,7 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/assertions/finalSummaryBusinessOnly").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/boundedRepairPolicyRespected").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/sameCandidateReceiptAndAssets").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/spawnedRuntimeIdentityVerified").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/selfRepairOrFirstPassAccepted").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/selfRepairObserved").asBoolean()
                 || certificate.at("/assertions/firstPassAccepted").asBoolean()).isTrue();
@@ -87,17 +98,21 @@ class AgentTddCodexCertificationArtifactTest {
         String prompt = script.substring(promptStart, script.indexOf("\nEOF\n", promptStart));
 
         assertThat(script).contains(
-                "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox danger-full-access",
-                "--disable apps", "--disable plugins", "--disable skill_search",
+                "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox read-only",
+                "--disable apps", "--disable plugins", "--disable skill_search", "--disable shell_tool",
+                "--disable unified_exec", "--disable browser_use", "--disable computer_use",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
                 "repository_is_clean", "ls-files --others --exclude-standard",
                 "clean package -DskipTests", "cd \"${WORKSPACE_DIR}\"",
-                "did not protect the private trace", "did not deny the Codex memory store",
+                "(deny process-exec)", "(deny process-fork)", "(deny file-write*)",
+                "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
-                "example-services.sh\" start resource-gateway",
-                "example-services.sh\" stop resource-gateway",
-                "openssl rand -hex 32");
+                "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
+                "exec env", "SERVICE_PID=$!", "openssl rand -hex 32");
+        assertThat(script).doesNotContain(
+                "--sandbox danger-full-access", "example-services.sh\" start resource-gateway",
+                "example-services.sh\" stop resource-gateway");
         assertThat(prompt).contains(
                 "按用户编号查询用户姓名和会员等级", "公开的输入信息和返回信息说明",
                 "不能只根据来源名称猜测", "什么时候使用", "待我确认的标准案例",
@@ -115,7 +130,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 11 tests", "OK");
+        assertThat(output).contains("Ran 12 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

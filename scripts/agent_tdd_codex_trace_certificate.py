@@ -352,6 +352,12 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     first_pass = bool(preview_calls) and stage_accepted(preview_calls[0], "rg.dsl.preview")
     if not (self_repair or first_pass):
         raise CertificationFailure("Codex neither repaired a rejected preview nor passed its first preview")
+    runtime_nonce = required_text(metadata.get("runtimeInstanceNonce"), "runtime instance nonce")
+    runtime_jar = required_text(metadata.get("runtimeJarSha256"), "runtime JAR digest")
+    if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce):
+        raise CertificationFailure("runtime instance nonce has an invalid format")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_jar):
+        raise CertificationFailure("runtime JAR digest has an invalid format")
     safe_calls = [
         {"ordinal": index + 1, "server": call["server"], "tool": call["tool"], "status": call["status"]}
         for index, call in enumerate(calls)
@@ -361,6 +367,15 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         "certifiedAt": metadata["certifiedAt"],
         "repositoryCommit": metadata["repositoryCommit"],
         "codexVersion": metadata["codexVersion"],
+        "runtimeIdentity": {
+            "schemaVersion": "rg.agentTddCertificationInstance.v1",
+            "instanceNonceFingerprint": "sha256:" + hashlib.sha256(
+                runtime_nonce.encode("utf-8")).hexdigest(),
+            "repositoryCommit": metadata["repositoryCommit"],
+            "jarSha256": runtime_jar,
+            "processOwnershipVerified": True,
+            "verifiedBeforeAndAfterTurn": True,
+        },
         "transport": {
             "kind": "HTTP_MCP",
             "endpointClass": "LOOPBACK",
@@ -388,6 +403,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "boundedRepairPolicyRespected": True,
             "sameCandidateReceiptAndAssets": True,
             "rawArgumentsResultsAndMessagesOmitted": True,
+            "spawnedRuntimeIdentityVerified": True,
         },
         "result": "CERTIFIED",
     }
@@ -403,6 +419,8 @@ def main() -> int:
     parser.add_argument("--codex-version", required=True)
     parser.add_argument("--certified-at", default=datetime.now(timezone.utc).isoformat())
     parser.add_argument("--exit-code", required=True, type=int)
+    parser.add_argument("--runtime-instance-nonce", required=True)
+    parser.add_argument("--runtime-jar-sha256", required=True)
     arguments = parser.parse_args()
     try:
         certificate = certify(arguments.trace, {
@@ -410,6 +428,8 @@ def main() -> int:
             "codexVersion": arguments.codex_version,
             "certifiedAt": arguments.certified_at,
             "exitCode": arguments.exit_code,
+            "runtimeInstanceNonce": arguments.runtime_instance_nonce,
+            "runtimeJarSha256": arguments.runtime_jar_sha256,
         })
     except (CertificationFailure, OSError) as failure:
         print(f"Certification failed: {failure}", file=sys.stderr)

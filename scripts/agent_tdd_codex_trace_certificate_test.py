@@ -111,6 +111,8 @@ class TraceCertificateTest(unittest.TestCase):
             "codexVersion": "codex-cli test",
             "certifiedAt": "2026-09-04T00:00:00Z",
             "exitCode": 0,
+            "runtimeInstanceNonce": "d" * 32,
+            "runtimeJarSha256": "sha256:" + "e" * 64,
         })
 
         serialized = json.dumps(certificate, ensure_ascii=False)
@@ -140,6 +142,8 @@ class TraceCertificateTest(unittest.TestCase):
             "codexVersion": "codex-cli test",
             "certifiedAt": "2026-09-04T00:00:00Z",
             "exitCode": 0,
+            "runtimeInstanceNonce": "d" * 32,
+            "runtimeJarSha256": "sha256:" + "e" * 64,
         })
 
         self.assertFalse(certificate["assertions"]["selfRepairObserved"])
@@ -306,6 +310,8 @@ class TraceCertificateTest(unittest.TestCase):
             "codexVersion": "codex-cli test",
             "certifiedAt": "2026-09-04T00:00:00Z",
             "exitCode": 0,
+            "runtimeInstanceNonce": "d" * 32,
+            "runtimeJarSha256": "sha256:" + "e" * 64,
         })
 
         self.assertTrue(certificate["assertions"]["onlyMcpExternalActionsObserved"])

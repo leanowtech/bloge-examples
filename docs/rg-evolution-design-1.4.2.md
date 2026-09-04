@@ -1325,21 +1325,23 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对干净 commit `95adb71d2` 完成认证；认证从
 该提交自举，没有复用前一提交或当前机器上碰巧运行的 RG：
 
-1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，先
-   `clean package` 清除 Git 忽略的旧 classes，再从固定 HEAD 构建、启动并最终停止 loopback RG；
-   Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
-   下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token。Codex
-   内层 sandbox 设为 `danger-full-access` 以避免嵌套 Seatbelt；权威外层 profile 已先用仓库读取负测
-   证明有效，并继续拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace
-   的 read/write；鉴权必需的 Codex 运行元数据保持可读，但 apps、browser、multi-agent、plugins、
-   remote-plugin 和 skill-search 功能被显式禁用。外层 sandbox 启动前先切换到临时 cwd，避免进程在处理
-   Codex `-C` 参数前触碰继承的仓库目录；
+1. `certify-agent-tdd-codex.sh` 拒绝脏工作区和占用端口，自行生成一次性双身份，先
+   `clean package` 清除 Git 忽略的旧 classes，再直接启动该 JAR。脚本只持有并停止本次创建的 PID，
+   不经可能复用旧进程的通用启动器；RG 暴露仅在本次启动参数开启的认证实例身份，包含随机 nonce、
+   固定 HEAD 和 JAR SHA-256，脚本在 Codex 前后精确核对，证书仅保留 nonce 指纹；
+   Codex 从隔离且只含 `auth.json` 的一次性 home 与临时 cwd 运行 `codex exec --ephemeral`，忽略用户
+   配置和规则，只得到 WORKLOAD token。Codex 内层为 `read-only`；macOS 外层 `sandbox-exec` profile
+   只允许执行当前解析出的 Codex 二进制，禁止 fork/exec，禁止读取仓库、Git common checkout、原始
+   Codex 状态、worktrees/memories 和私有 trace，禁止向受控临时目录外写入。shell、unified exec、
+   code-mode host、apps、browser、computer-use、multi-agent、plugins、remote-plugin、skill-search 和
+   文件/图像工具均被显式禁用；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
 3. 安全化 trace 实际记录 `capability.list × 2 → contract.get → dsl.reference.get(失败) →
    dsl.reference.get(成功) → dsl.preview × 2 → dsl.reference.get(成功) → dsl.preview → gate.check →
    tool.compose → setInstruction → upsertCases → setDependencyBehavior → oracle.propose → listCases →
-   contract.get`；第三次 preview 被接受，认证记录了同一 reference 工具的有序失败到成功修正；
+   contract.get`；第三次 preview 被接受。只有带阻断诊断指纹的 preview/gate 拒绝随后被同一工具
+   接受，才可证明 DSL 自修复；reference 重试和 MCP 失败不再计入该断言；
    用例写入后的依赖行为、业务 Oracle 和回读也属于同一 Tool/CaseSet/case 链，没有伪称首次通过；
 4. 认证器不再拼接任意历史成功调用：它要求 preview/gate 的 `accepted=true`，逐项比较 reference、
    preview、gate 与 compose 的 source、library refs、context 和 receipt，再比较 compose、instruction、

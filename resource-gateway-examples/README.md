@@ -21,9 +21,10 @@ no-store review details at
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
 The repeatable [real Codex certification script](../scripts/certify-agent-tdd-codex.sh) requires a
-clean commit, performs a clean package, owns a fresh loopback RG process with ephemeral credentials, and runs Codex
-under OS denials covering the checkout, sibling Codex worktrees/memories, and the private trace, while non-MCP Codex
-features are explicitly disabled. The reducer rejects
+clean commit, performs a clean package, starts that exact JAR as an owned loopback process with ephemeral credentials,
+and verifies a one-run nonce plus the commit and JAR digest before and after Codex. Codex receives an isolated auth-only
+home; the OS policy denies child-process execution, repository/private-state reads, and writes outside its disposable
+runtime while non-MCP features are explicitly disabled. The reducer rejects
 every non-MCP action and correlates only post-upsert evidence for one accepted candidate through Tool and CaseSet
 creation, then emits a payload-free certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at

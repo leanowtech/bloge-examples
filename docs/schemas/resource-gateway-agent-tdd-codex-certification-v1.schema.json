@@ -9,6 +9,7 @@
     "certifiedAt",
     "repositoryCommit",
     "codexVersion",
+    "runtimeIdentity",
     "transport",
     "journey",
     "correlation",
@@ -21,6 +22,26 @@
     "certifiedAt": { "type": "string", "format": "date-time" },
     "repositoryCommit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
     "codexVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runtimeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "instanceNonceFingerprint",
+        "repositoryCommit",
+        "jarSha256",
+        "processOwnershipVerified",
+        "verifiedBeforeAndAfterTurn"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "rg.agentTddCertificationInstance.v1" },
+        "instanceNonceFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "repositoryCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "jarSha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "processOwnershipVerified": { "const": true },
+        "verifiedBeforeAndAfterTurn": { "const": true }
+      }
+    },
     "transport": {
       "type": "object",
       "additionalProperties": false,
@@ -120,7 +141,8 @@
         "selfRepairOrFirstPassAccepted",
         "boundedRepairPolicyRespected",
         "sameCandidateReceiptAndAssets",
-        "rawArgumentsResultsAndMessagesOmitted"
+        "rawArgumentsResultsAndMessagesOmitted",
+        "spawnedRuntimeIdentityVerified"
       ],
       "properties": {
         "codexTurnCompleted": { "const": true },
@@ -136,7 +158,8 @@
         "selfRepairOrFirstPassAccepted": { "const": true },
         "boundedRepairPolicyRespected": { "const": true },
         "sameCandidateReceiptAndAssets": { "const": true },
-        "rawArgumentsResultsAndMessagesOmitted": { "const": true }
+        "rawArgumentsResultsAndMessagesOmitted": { "const": true },
+        "spawnedRuntimeIdentityVerified": { "const": true }
       }
     },
     "result": { "const": "CERTIFIED" },
