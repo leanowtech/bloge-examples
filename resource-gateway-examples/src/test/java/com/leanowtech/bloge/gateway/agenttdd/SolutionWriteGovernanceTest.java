@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Proves design-only handoff, controlled WRITE reconciliation and immutable Solution gates. */
 class SolutionWriteGovernanceTest {
@@ -90,6 +93,17 @@ class SolutionWriteGovernanceTest {
     }
 
     @Test
+    void commitRejectsAReceiptNotIssuedForTheCurrentSolutionSourceAndContext() {
+        SolutionGovernanceService governance = new SolutionGovernanceService(states, registry, mapper);
+
+        assertThatThrownBy(() -> governance.commit(
+                "sol:cancel", "sha256:not-the-authoring-receipt", authorIdentity()))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
     void refusesAgentOrProductionWriteAuthorityAndReportsMismatch() {
         SolutionWriteExecutionRunner runner = runner(adapter(Map.of("decision", "UPHELD")));
 
@@ -111,12 +125,13 @@ class SolutionWriteGovernanceTest {
         runner.execute("sol:cancel", writeIdentity("test"));
         SolutionGovernanceService governance = new SolutionGovernanceService(states, registry, mapper);
         Map<String, Object> proposal = governance.commit(
-                "sol:cancel", "sha256:receipt-1", authorIdentity());
+                "sol:cancel", registry.requireSolutionAuthoringReceipt(SCOPE, "sol:cancel"), authorIdentity());
         Map<String, Object> readiness = governance.readiness("sol:cancel", readIdentity());
         governance.approve("sol:cancel", "signoff:owner-1",
                 ((Number) readiness.get("solutionRevision")).longValue(),
                 readiness.get("goldenSetId").toString(),
                 readiness.get("evidenceFingerprint").toString(),
+                readiness.get("implementationFingerprint").toString(),
                 proposal.get("proposalFingerprint").toString(), humanIdentity());
 
         assertThat(governance.publish(
@@ -128,6 +143,45 @@ class SolutionWriteGovernanceTest {
                 "scn:root", List.of("ins:refund"), "caseSet:cancel"), false);
         assertThatThrownBy(() -> governance.publish(
                 "sol:cancel", "signoff:owner-1", humanIdentity()))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
+    void bindingDriftInvalidatesBothReconciliationAndOwnerSignoff() {
+        runner(adapter(Map.of("decision", "WAIVED")))
+                .execute("sol:cancel", writeIdentity("test"));
+        SolutionGovernanceService governance = new SolutionGovernanceService(states, registry, mapper);
+        Map<String, Object> proposal = governance.commit(
+                "sol:cancel", registry.requireSolutionAuthoringReceipt(SCOPE, "sol:cancel"), authorIdentity());
+        Map<String, Object> readyToReview = governance.readiness("sol:cancel", readIdentity());
+        governance.approve("sol:cancel", "signoff:implementation-1",
+                ((Number) readyToReview.get("solutionRevision")).longValue(),
+                readyToReview.get("goldenSetId").toString(),
+                readyToReview.get("evidenceFingerprint").toString(),
+                readyToReview.get("implementationFingerprint").toString(),
+                proposal.get("proposalFingerprint").toString(), humanIdentity());
+
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of(
+                        "result", Map.of("type", Map.of("fields", Map.of(
+                                "decision", Map.of("enum", List.of("WAIVED"))))),
+                        "reasoning", "required")),
+                InstructionContract.Effect.WRITE, "operator:refund-v2",
+                new InstructionContract.WriteGovernance(
+                        "refund-service", "orderId", "recon:refund-v1")));
+
+        Map<String, Object> afterDrift = governance.readiness("sol:cancel", readIdentity());
+        assertThat(afterDrift.get("publishable")).isEqualTo(false);
+        assertThat(afterDrift.get("implementationFingerprint"))
+                .isNotEqualTo(readyToReview.get("implementationFingerprint"));
+        Map<?, ?> gates = (Map<?, ?>) afterDrift.get("gates");
+        assertThat(gates.get("writeReconciled")).isEqualTo(false);
+        assertThat(gates.get("ownerSignoff")).isEqualTo(false);
+        assertThatThrownBy(() -> governance.publish(
+                "sol:cancel", "signoff:implementation-1", humanIdentity()))
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(failure -> ((AgentTddToolException) failure).code())
                 .isEqualTo("GATE_REJECTED");
@@ -153,6 +207,36 @@ class SolutionWriteGovernanceTest {
         assertThat(items.path(0).path("effect").asText()).isEqualTo("WRITE");
         assertThat(items.path(0).path("reconciliationKey").asText()).isEqualTo("orderId");
         assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void boardProjectsSolutionPerformanceAndAnExactPendingOwnerDecision() {
+        runner(adapter(Map.of("decision", "WAIVED")))
+                .execute("sol:cancel", writeIdentity("test"));
+        SolutionGovernanceService governance = new SolutionGovernanceService(states, registry, mapper);
+        governance.commit("sol:cancel",
+                registry.requireSolutionAuthoringReceipt(SCOPE, "sol:cancel"), authorIdentity());
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        when(drafts.all()).thenReturn(List.of());
+
+        Map<String, Object> board = new AgentTddBoardService(
+                drafts, states, mock(AgentTddWorkflowService.class), mapper).board(readIdentity());
+
+        Map<?, ?> solution = (Map<?, ?>) ((List<?>) board.get("solutions")).getFirst();
+        assertThat(solution.get("solutionRef")).isEqualTo("sol:cancel");
+        assertThat(solution.get("problem")).isEqualTo("Resolve cancellation dispute.");
+        assertThat(solution.get("performance").toString()).contains("R1", "ins:refund");
+        assertThat(solution.get("scenario").toString()).contains("party", "none", "ins:refund");
+        assertThat(solution.get("instructions").toString())
+                .contains("WRITE", "BOUND", "refund-service");
+        assertThat(solution.get("writeReconciliation").toString()).contains("RECONCILED");
+        Map<?, ?> review = (Map<?, ?>) ((List<?>) board.get("pendingReviews")).getFirst();
+        assertThat(review.get("kind")).isEqualTo("SOLUTION_SIGNOFF");
+        List<String> reviewKeys = review.keySet().stream().map(Object::toString).toList();
+        assertThat(reviewKeys).contains(
+                "solutionRevision", "goldenSetId", "evidenceFingerprint",
+                "implementationFingerprint", "proposalFingerprint");
+        assertThat(reviewKeys).doesNotContain("contract", "given", "expect");
     }
 
     private SolutionWriteExecutionRunner runner(ReconciliationAdapter adapter) {

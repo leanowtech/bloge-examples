@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -99,6 +100,24 @@ class SolutionTestingServiceTest {
                 .isEqualTo("GOLDEN_REQUIRES_APPROVAL");
     }
 
+    @Test
+    void derivesPayloadFreePerformanceFromTheLatestEvidence() {
+        storeCases("ACTIVE", Map.of("result", Map.of("decision", "UPHELD")));
+        testing.baseline(SCOPE, "sol:cancel", "caseSet:cancel", "RED");
+
+        Map<String, Object> performance = new SolutionPerformanceService(states)
+                .performance("sol:cancel", readIdentity());
+
+        assertThat(performance).containsEntry("totalCases", 1)
+                .containsEntry("escalationRate", 0.0d);
+        assertThat(((List<?>) performance.get("redGolden")).stream().map(Object::toString).toList())
+                .containsExactly("g1");
+        assertThat(performance.get("hitDistribution").toString()).contains("R1", "count=1");
+        assertThat(performance.get("dispositionDistribution").toString())
+                .contains("ins:refund", "count=1");
+        assertThat(performance.toString()).doesNotContain("UPHELD", "party=none", "O-1");
+    }
+
     private void storeCases(String lifecycle, Map<String, Object> expect) {
         ObjectNode data = mapper.createObjectNode();
         data.put("caseSetRef", "caseSet:cancel");
@@ -109,5 +128,10 @@ class SolutionTestingServiceTest {
                 "given", Map.of("party", "none", "orderId", "O-1"),
                 "stubs", Map.of(), "expect", expect))));
         states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", data);
+    }
+
+    private static IntegrationRequestContext readIdentity() {
+        return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "sg",
+                "WORKLOAD", "agent-1", "", "AGENT_TDD_READ", "corr-1");
     }
 }

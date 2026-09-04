@@ -102,6 +102,18 @@ public final class SolutionEntityRegistry {
             com.leanowtech.bloge.gateway.visual.draft.GraphDraft loweredDraft) {
         String contractFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 mapper, contract.contractIdentity(), MAX_BYTES);
+        return upsertSolution(scopeKey, contract, speccing, loweredDraft, contractFingerprint);
+    }
+
+    /** Stores a Solution together with the exact server-issued authoring receipt it may commit. */
+    public RegisteredEntity upsertSolution(
+            String scopeKey,
+            SolutionContract contract,
+            boolean speccing,
+            com.leanowtech.bloge.gateway.visual.draft.GraphDraft loweredDraft,
+            String authoringReceiptFingerprint) {
+        String contractFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, contract.contractIdentity(), MAX_BYTES);
         ObjectNode data = mapper.createObjectNode();
         data.put("schemaVersion", "bloge.solutionContract.v1");
         data.put("entityKind", "SOLUTION");
@@ -109,6 +121,8 @@ public final class SolutionEntityRegistry {
         data.set("contract", mapper.valueToTree(contract));
         data.put("contractFingerprint", contractFingerprint);
         data.put("speccing", speccing);
+        data.put("authoringReceiptFingerprint", Objects.requireNonNull(
+                authoringReceiptFingerprint, "authoringReceiptFingerprint"));
         if (loweredDraft != null) data.set("loweredDraft", mapper.valueToTree(loweredDraft));
         AgentTddStoredAsset stored = states.save(scopeKey, SOLUTION, contract.solutionRef(), data);
         return new RegisteredEntity(
@@ -147,6 +161,16 @@ public final class SolutionEntityRegistry {
         return new RegisteredEntity("SOLUTION", solutionRef, asset.revision(),
                 data.path("contractFingerprint").asText(), data.path("speccing").asBoolean(),
                 data.path("contract"));
+    }
+
+    /** Resolves the only authoring receipt accepted when the current Solution is committed. */
+    public String requireSolutionAuthoringReceipt(String scopeKey, String solutionRef) {
+        String receipt = states.find(scopeKey, SOLUTION, solutionRef)
+                .map(AgentTddStoredAsset::data)
+                .map(data -> data.path("authoringReceiptFingerprint").asText())
+                .orElse("");
+        if (receipt.isBlank()) throw new EntityUnavailableException();
+        return receipt;
     }
 
     private <T> T require(String scopeKey, String kind, String ref, Class<T> type) {

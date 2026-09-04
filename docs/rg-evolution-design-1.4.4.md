@@ -408,8 +408,8 @@ responsibility.party: { output:{type:{enum:[passenger,driver,platform,none]}}, e
 | P2 纯函数编译与场景树 | 已完成 | `SolutionLowering` 将解法固定降级为 `scenarioCall → instructionCall` 两算子 GraphDraft，并经生产 `DslImportService` 预编译；全树 DFS 校验引用、无环、深度上限与指令绑定；纯求值器支持嵌套场景、`otherwise` 和唯一命中；WRITE 指令在 SIMULATE 中结构化桩化，零外呼集成测证明 `realExternalCalls=0`；`solution-authoring` 参考包已含四实体约束和完整片段示例 | 特征采集、签名 token 与运行时调用归 P3 |
 | P3 特征求值与信任 token | 已完成 | `FeatureEvaluationDispatcher` 按 API/DAG/MODEL/INSTRUCTION_RESULT 的 kind 和版本化引用唯一分派，缺失或多重声明失败关闭；交互特征返回 `USE_NATIVE_INTERACTION`；三段 HS256 token 仅含 feature/input/value 指纹、精确 scope、iat/ttl/nonce/kid，支持 active + verify-only 轮换，使用常量时间验签；`rg.solution.getContract` 暴露采集计划，`rg.solution.invoke` 对平台值逐项验签、对交互值强制 `source=USER`；篡改、过期、错 scope/错值/错输入/未知 kid 及轮换窗口均有测试 | token nonce 的写副作用重放防护与 WRITE_EXEC 同归 P5 |
 | P4 测试金字塔与 GOLDEN | 已完成 | Feature 求值器/指令算子有独立单元测试；`rg.scenario.test` 对钉定特征值校验命中规则、出口和绑定；Solution 可作为现有 case-set 的 scope 内归属主体，GOLDEN 仍经独立 HUMAN/USER maker-checker 批准；`rg.solution.baseline` 只执行 ACTIVE GOLDEN，以 case-set revision 和 Solution revision 双锁保证证据原子性，持久化绑定指纹、分层统计、业务待办，GREEN 通过行推进 READY；WRITE 桩从输出契约确定合成且 `realExternalCalls=0` | 真实 WRITE 验收及对账证据归 P5；看板绩效投影归 P6 |
-| P5 写交接与对账 | 已完成 | 设计态 WRITE 由 `rg.engineering.handoff` 聚合输入/输出/下游/对账键/适配器/GOLDEN，且不授予执行权；`AGENT_TDD_WRITE_EXEC` 不进入 MCP 目录并仅允许 local/test/sandbox；真实写前用独立事务持久预留，重复调用精确回放，未完成预留返回恢复态；每次写后由精确下游 `ReconciliationAdapter` 读回并只持久化 expected/observed 指纹与 match；`rg.solution.commit/readiness/publish` 将 GREEN、实现 binding、当前对账和独立 owner signoff 绑定到 Solution revision、contract fingerprint、goldenSetId 与 evidence fingerprint，任一漂移使旧签署失效；聚焦测试覆盖零外呼交接、专用途/生产拒绝、match/mismatch、精确重放和签署不可复用 | 看板的 Solution 审阅入口与运营表现投影归 P6 |
-| P6 看板与真实认证 | 待实施 | — | 四实体业务看板、表现视图、十步 HTTP/Codex/浏览器无跳过认证 |
+| P5 写交接与对账 | 已完成 | 设计态 WRITE 由 `rg.engineering.handoff` 聚合输入/输出/下游/对账键/适配器/GOLDEN，且不授予执行权；`AGENT_TDD_WRITE_EXEC` 不进入 MCP 目录并仅允许 local/test/sandbox；真实写前用独立事务持久预留，重复调用精确回放，未完成预留返回恢复态；每次写后由精确下游 `ReconciliationAdapter` 读回并只持久化 expected/observed 指纹与 match；`rg.solution.commit/readiness/publish` 将 GREEN、当前 Instruction binding 的实现指纹、对账和独立 owner signoff 绑定到 Solution revision、contract fingerprint、goldenSetId 与 evidence fingerprint，任一漂移使旧对账和旧签署同时失效；commit 只接受 compose 持久化的服务端 authoring receipt，不能由客户端自填；聚焦测试覆盖零外呼交接、专用途/生产拒绝、match/mismatch、精确重放、伪造 receipt 拒绝和契约/实现漂移后签署不可复用 | 无 |
+| P6 看板与真实认证 | 已完成 | 看板新增四实体 Solution 卡片，业务问题、输入事实、场景、指令、GOLDEN、工程交接、写对账、四门 readiness 和运营表现同屏，payload-bearing 详情只经 HUMAN no-store endpoint 打开；`rg.solution.performance` 只投影规则命中、处置、升级率和红色 GOLDEN；真实 `AgentTddMcpOperationalWorkflowTest` 从 initialize/initialized/tools-list 开始，经 HTTP `/mcp` 完成实体定义、设计态交接、工程 binding、人工 Oracle、GREEN、平台 WRITE_EXEC 对账、Chrome 打开详情并签署、readiness 和 publication，5 个场景均 `skipped=0` | 外部真实 Codex 认证仍是部署验收，不以仓内测试冒充生产 Agent/身份提供方证明 |
 
 ## 附录，更细粒度的实施方案参考
 
@@ -802,19 +802,20 @@ enabled_tools=["rg.solution.publish"]
 { "ok":true, "data":{ "solutionRef":"sol:cancel-dispute","revision":1,
   "inputContract":{"party":"enum","withinFree":"boolean","abuse":"enum","orderId":"string","feeCharged":"number"},
   "scenarioTreeValid":true, "speccing":true,
-  "authoringContextFingerprint":"sha256:ctx-1" }, "diagnostics":[] }
+  "authoringContextFingerprint":"sha256:ctx-1",
+  "authoringReceiptFingerprint":"sha256:rcpt-1" }, "diagnostics":[] }
 ```
 
-**步7 写 DSL 加预编译**
+**步7 服务端预编译与修正**
 提示词:
 ```
-用 rg_author,为 scn:cancel-dispute 与 sol:cancel-dispute 生成 bloge DSL(graph),逐个 rg.dsl.preview,带 authoringContextFingerprint=sha256:ctx-1。错误按 diagnostics 的 code/span 改,最多三轮。不展示源码给业务人。
+检查 rg.solution.compose 的 scenarioTreeValid、precompiled、graphNodeCount、speccing 和 honestVerdict。若服务端返回稳定 diagnostic code，只修改对应的 Feature/Scenario/Instruction/Solution 文档并重新组合，最多三轮；不要让业务人员编写 graph DSL。
 ```
-`rg.dsl.preview` 期望响应(通过):
+`rg.solution.compose` 的服务端预编译期望响应(通过):
 ```json
-{ "ok":true, "data":{ "authoringContext":{"fingerprint":"sha256:ctx-1","status":"CURRENT"},
-  "stages":[{"phase":"CONTEXT","status":"PASS"},{"phase":"PARSE","status":"PASS"},{"phase":"RESOLVE","status":"PASS"},{"phase":"TYPE_CHECK","status":"PASS"},{"phase":"SEMANTIC_COMPILE","status":"PASS"},{"phase":"LINT","status":"PASS"},{"phase":"PROJECT","status":"PASS"},{"phase":"ROUND_TRIP","status":"PASS"}],
-  "technicalAcceptance":"ACCEPTED","nextAction":"CONTINUE_TO_REWRITE_GATE","authoringReceiptFingerprint":"sha256:rcpt-1" }, "diagnostics":[] }
+{ "ok":true, "data":{ "scenarioTreeValid":true,"precompiled":true,"graphNodeCount":2,
+  "speccing":true,"authoringReceiptFingerprint":"sha256:rcpt-1",
+  "honestVerdict":{"syntax":"VALID","bindings":"PARTIAL","execution":"NOT_RUN","operations":"NOT_RUN"} }, "diagnostics":[] }
 ```
 
 **步8 补桩加分层测试**
@@ -839,7 +840,7 @@ enabled_tools=["rg.solution.publish"]
 **步9 提交加工程交接**
 提示词:
 ```
-用 rg_author:rg.solution.commit(带 authoringReceiptFingerprint=sha256:rcpt-1);rg.engineering.handoff。汇报 handoffId 与设计态写指令清单。
+用 rg_author:rg.solution.commit(带第6步服务端返回的 authoringReceiptFingerprint);rg.engineering.handoff。汇报 handoffId 与设计态写指令清单。不得自造 receipt。
 ```
 `rg.engineering.handoff` 期望响应:
 ```json
@@ -852,8 +853,9 @@ enabled_tools=["rg.solution.publish"]
 **步10 发布(工程实现后)**
 工程补 bindingRef → `rg.solution.baseline side=GREEN` → 平台受控写执行加对账(独立通道)→ `rg.solution.readiness`。`readiness` 期望响应:
 ```json
-{ "ok":true, "data":{ "solutionRef":"sol:cancel-dispute","state":"IMPLEMENTED","publishable":true,
-  "gates":{"logicGreen":true,"writeReconciled":true,"ownerSignoff":true},"remainingLimitations":[] }, "diagnostics":[] }
+{ "ok":true, "data":{ "solutionRef":"sol:cancel-dispute","state":"READY","publishable":true,
+  "implementationFingerprint":"sha256:impl-1",
+  "gates":{"logicGreen":true,"implementationBound":true,"writeReconciled":true,"ownerSignoff":true},"remainingLimitations":[] }, "diagnostics":[] }
 ```
 人工停点②:看板核对逻辑绿加写对账加签署 → `rg.solution.publish{solutionRef,signoffRef}` → `{"ok":true,"data":{"publicationId":"pub-1"}}`。
 

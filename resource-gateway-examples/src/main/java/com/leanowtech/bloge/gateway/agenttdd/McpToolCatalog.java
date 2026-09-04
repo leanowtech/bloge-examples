@@ -103,6 +103,9 @@ public final class McpToolCatalog {
         values.add(tool("rg.solution.readiness", "Get solution readiness",
                 "Read current logic, binding, reconciliation and owner-signoff gates.",
                 McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
+        values.add(tool("rg.solution.performance", "Get solution performance",
+                "Read payload-free rule, disposition, escalation and red-GOLDEN signals.",
+                McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
         values.add(tool("rg.solution.publish", "Publish solution",
                 "Publish one immutable Solution after every exact governance gate passes.",
                 McpToolImpact.GOVERNED_WRITE,
@@ -606,6 +609,7 @@ public final class McpToolCatalog {
                     List.of("solutionRef", "proposalStatus", "revision", "proposalFingerprint", "awaiting"));
             case "rg.engineering.handoff" -> engineeringHandoffOutput();
             case "rg.solution.readiness" -> solutionReadinessOutput();
+            case "rg.solution.performance" -> solutionPerformanceOutput();
             case "rg.solution.publish" -> structuredObject(props(
                     "solutionRef", string(), "publicationId", string(),
                     "artifactKind", enumString("SOLUTION"), "goldenSetId", string(),
@@ -706,11 +710,12 @@ public final class McpToolCatalog {
                 "scenarioTreeValid", bool(), "pureFunctionProjection", projection,
                 "precompiled", bool(), "graphNodeCount", integer(),
                 "speccing", bool(), "authoringContextFingerprint", string(),
+                "authoringReceiptFingerprint", string(),
                 "revision", integer(), "contractFingerprint", string(),
                 "honestVerdict", honestVerdict()),
                 List.of("solutionRef", "inputContract", "scenarioTreeValid",
                         "pureFunctionProjection", "precompiled", "graphNodeCount",
-                        "speccing", "authoringContextFingerprint",
+                        "speccing", "authoringContextFingerprint", "authoringReceiptFingerprint",
                         "revision", "contractFingerprint", "honestVerdict"));
     }
 
@@ -759,10 +764,26 @@ public final class McpToolCatalog {
                 "solutionRef", string(), "state", enumString("READY", "BLOCKED"),
                 "publishable", bool(), "solutionRevision", integer(),
                 "solutionContractFingerprint", string(), "goldenSetId", string(),
-                "evidenceFingerprint", string(), "gates", gates,
+                "evidenceFingerprint", string(), "implementationFingerprint", string(), "gates", gates,
                 "remainingLimitations", stringArray()),
                 List.of("solutionRef", "state", "publishable", "solutionRevision",
                         "solutionContractFingerprint", "goldenSetId", "evidenceFingerprint",
+                        "implementationFingerprint",
                         "gates", "remainingLimitations"));
+    }
+
+    private static Map<String, Object> solutionPerformanceOutput() {
+        Map<String, Object> hit = structuredObject(props(
+                "ruleId", string(), "count", integer(), "share", Map.of("type", "number")),
+                List.of("ruleId", "count", "share"));
+        Map<String, Object> disposition = structuredObject(props(
+                "instructionRef", string(), "count", integer(), "share", Map.of("type", "number")),
+                List.of("instructionRef", "count", "share"));
+        return structuredObject(props(
+                "solutionRef", string(), "evidenceFingerprint", string(), "totalCases", integer(),
+                "hitDistribution", arrayOf(hit), "dispositionDistribution", arrayOf(disposition),
+                "escalationRate", Map.of("type", "number"), "redGolden", stringArray()),
+                List.of("solutionRef", "evidenceFingerprint", "totalCases", "hitDistribution",
+                        "dispositionDistribution", "escalationRate", "redGolden"));
     }
 }

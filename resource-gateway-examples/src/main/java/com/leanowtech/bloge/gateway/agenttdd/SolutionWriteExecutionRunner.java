@@ -99,23 +99,34 @@ public final class SolutionWriteExecutionRunner {
                 .filter(asset -> asset.revision() == evidence.data().path("caseSetRevision").asLong(-1))
                 .orElseThrow(() -> new AgentTddToolException(
                         "GATE_REJECTED", "The GREEN case set is stale."));
+        SolutionContract contract;
+        try {
+            contract = registry.requireSolution(scope, solutionRef);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
+        }
+        String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
+                registry, mapper, scope, contract);
         String requestFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "solutionRevision", solution.revision(),
                 "solutionContractFingerprint", solution.contractFingerprint(),
                 "evidenceFingerprint", evidence.fingerprint(),
+                "implementationFingerprint", implementationFingerprint,
                 "caseSetRevision", caseSet.revision(),
                 "environment", platformIdentity.environmentId()), MAX_BYTES);
         AgentTddStateRepository.ExternalExecutionReservation reservation =
                 states.reserveExternalExecution(scope, OPERATION, requestFingerprint, requestFingerprint);
         if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.IN_PROGRESS) {
-            return recovery(solutionRef, evidence, solution, platformIdentity.environmentId());
+            return recovery(solutionRef, evidence, solution, implementationFingerprint,
+                    platformIdentity.environmentId());
         }
         if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.COMPLETED) {
             return persistAndConvert(scope, solutionRef, reservation.response());
         }
         JsonNode completed = states.completeExternalExecution(scope, OPERATION,
                 requestFingerprint, requestFingerprint,
-                run(scope, solutionRef, caseSet, evidence, solution, platformIdentity));
+                run(scope, solutionRef, caseSet, evidence, solution,
+                        implementationFingerprint, platformIdentity));
         return persistAndConvert(scope, solutionRef, completed);
     }
 
@@ -125,6 +136,7 @@ public final class SolutionWriteExecutionRunner {
             AgentTddStoredAsset caseSet,
             AgentTddStoredAsset evidence,
             SolutionEntityRegistry.RegisteredEntity registered,
+            String implementationFingerprint,
             IntegrationRequestContext identity) {
         SolutionContract solution;
         try {
@@ -176,6 +188,7 @@ public final class SolutionWriteExecutionRunner {
         response.put("evidenceFingerprint", evidence.fingerprint());
         response.put("solutionRevision", registered.revision());
         response.put("solutionContractFingerprint", registered.contractFingerprint());
+        response.put("implementationFingerprint", implementationFingerprint);
         response.put("environmentId", identity.environmentId());
         response.put("status", reconciled ? "RECONCILED" : "MISMATCH");
         response.put("attestedBy", "system:write-exec-runner");
@@ -193,13 +206,20 @@ public final class SolutionWriteExecutionRunner {
             String solutionRef,
             AgentTddStoredAsset evidence,
             SolutionEntityRegistry.RegisteredEntity solution,
+            String implementationFingerprint,
             String environmentId) {
-        return Map.of("solutionRef", solutionRef, "goldenSetId",
-                evidence.data().path("goldenSetId").asText(), "evidenceFingerprint", evidence.fingerprint(),
-                "solutionRevision", solution.revision(), "solutionContractFingerprint",
-                solution.contractFingerprint(), "environmentId", environmentId,
-                "status", "RECOVERY_REQUIRED",
-                "attestedBy", "system:write-exec-runner", "writeCount", 0, "cases", List.of());
+        return Map.ofEntries(
+                Map.entry("solutionRef", solutionRef),
+                Map.entry("goldenSetId", evidence.data().path("goldenSetId").asText()),
+                Map.entry("evidenceFingerprint", evidence.fingerprint()),
+                Map.entry("solutionRevision", solution.revision()),
+                Map.entry("solutionContractFingerprint", solution.contractFingerprint()),
+                Map.entry("implementationFingerprint", implementationFingerprint),
+                Map.entry("environmentId", environmentId),
+                Map.entry("status", "RECOVERY_REQUIRED"),
+                Map.entry("attestedBy", "system:write-exec-runner"),
+                Map.entry("writeCount", 0),
+                Map.entry("cases", List.of()));
     }
 
     private SolutionEntityRegistry.RegisteredEntity registered(String scope, String solutionRef) {

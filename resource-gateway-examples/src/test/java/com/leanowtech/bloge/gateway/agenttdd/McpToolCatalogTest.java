@@ -17,7 +17,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(40);
+        assertThat(catalog.all()).hasSize(41);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -38,6 +38,7 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.solution.commit").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.engineering.handoff").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.solution.readiness").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.solution.performance").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.solution.publish").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
         assertThat(catalog.all()).extracting(definition -> definition.impact().operation())

@@ -186,6 +186,7 @@ class SolutionAgentToolsTest {
                 .containsEntry("speccing", false)
                 .containsEntry("authoringContextFingerprint", "sha256:ctx-1")
                 .containsEntry("revision", 1L);
+        assertThat(result.get("authoringReceiptFingerprint").toString()).startsWith("sha256:");
         assertThat(((Map<?, ?>) result.get("inputContract")).keySet().stream()
                 .map(Object::toString).toList()).containsExactlyInAnyOrder("party", "withinFree");
         assertThat(((Map<?, ?>) result.get("pureFunctionProjection")).get("pure")).isEqualTo(true);

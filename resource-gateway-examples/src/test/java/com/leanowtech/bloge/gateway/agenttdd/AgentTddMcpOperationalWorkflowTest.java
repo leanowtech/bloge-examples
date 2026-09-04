@@ -6,6 +6,9 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
+import com.leanowtech.bloge.gateway.solution.ReconciliationAdapter;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +27,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
@@ -31,6 +35,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,6 +62,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                         + "agent-tdd-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "spring.datasource.url=jdbc:h2:mem:agent-tdd-mcp-ops;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })
+@Import(AgentTddMcpOperationalWorkflowTest.SolutionRuntimeTestConfiguration.class)
 class AgentTddMcpOperationalWorkflowTest {
     private static final String TOOL_REF = "codex-profile-ops-test";
     private static final String CASE_SET_REF = "codex-profile-cases-test";
@@ -71,6 +78,9 @@ class AgentTddMcpOperationalWorkflowTest {
 
     @Autowired
     private TestRestTemplate http;
+
+    @Autowired
+    private SolutionWriteExecutionRunner solutionWrites;
 
     @LocalServerPort
     private int port;
@@ -416,6 +426,141 @@ class AgentTddMcpOperationalWorkflowTest {
         }
     }
 
+    @Test
+    @Timeout(45)
+    void solutionJourneyRunsThroughRealMcpWriteReconciliationAndBrowserSignoff() throws Exception {
+        String solutionRef = "sol:cancel-browser-ops";
+        String scenarioRef = "scn:cancel-browser-ops";
+        String instructionRef = "ins:waive-browser-ops";
+        String caseSetRef = "caseSet:cancel-browser-ops";
+        negotiateCodexLifecycle();
+
+        JsonNode initial = invoke("rg.solution.performance", Map.of("solutionRef", solutionRef));
+        assertThat(initial.at("/data/totalCases").asInt()).isZero();
+
+        invoke("rg.feature.define", Map.of(
+                "featureYaml", """
+                        dispute.party.browser:
+                          output: { type: { enum: [none, driver] } }
+                          evaluationKind: USER_COMPONENT
+                          determinism: INTERACTIVE
+                          componentRef: party-picker-v1
+                        """,
+                "idempotencyKey", "feature-party-browser-ops"), "AGENT_TDD_AUTHORING");
+        invoke("rg.feature.define", Map.of(
+                "featureYaml", """
+                        dispute.order.browser:
+                          output: { type: string }
+                          evaluationKind: USER_COMPONENT
+                          determinism: INTERACTIVE
+                          componentRef: order-picker-v1
+                        """,
+                "idempotencyKey", "feature-order-browser-ops"), "AGENT_TDD_AUTHORING");
+        invoke("rg.instruction.define", Map.of(
+                "instructionYaml", solutionInstruction(instructionRef, ""),
+                "idempotencyKey", "instruction-design-browser-ops"), "AGENT_TDD_AUTHORING");
+        invoke("rg.scenario.define", Map.of(
+                "scenarioYaml", solutionScenario(scenarioRef, instructionRef),
+                "libraryRefs", List.of(),
+                "idempotencyKey", "scenario-browser-ops"), "AGENT_TDD_AUTHORING");
+        JsonNode composed = invoke("rg.solution.compose", Map.of(
+                "solutionYaml", solutionContract(solutionRef, scenarioRef, instructionRef, caseSetRef),
+                "authoringContextFingerprint", "sha256:solution-browser-context",
+                "idempotencyKey", "solution-compose-browser-ops"), "AGENT_TDD_AUTHORING");
+        assertThat(composed.at("/data/speccing").asBoolean()).isTrue();
+        assertThat(composed.at("/data/authoringReceiptFingerprint").asText()).startsWith("sha256:");
+
+        JsonNode handoff = invoke("rg.engineering.handoff", Map.of(
+                "solutionRef", solutionRef, "idempotencyKey", "handoff-browser-ops"),
+                "AGENT_TDD_AUTHORING");
+        assertThat(handoff.at("/data/items/0/state").asText()).isEqualTo("DESIGN_ONLY");
+
+        invoke("rg.instruction.define", Map.of(
+                "instructionYaml", solutionInstruction(instructionRef, "operator:refund-browser-v1"),
+                "idempotencyKey", "instruction-binding-browser-ops"), "AGENT_TDD_AUTHORING");
+        JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
+                "caseSetRef", caseSetRef,
+                "toolRef", solutionRef,
+                "rows", List.of(Map.of(
+                        "caseId", "cancel-none-browser",
+                        "category", "GOLDEN",
+                        "layer", "integration",
+                        "given", Map.of("party", "none", "orderId", "O-browser-1"),
+                        "stubs", Map.of(),
+                        "expect", Map.of("result", Map.of("decision", "WAIVED")),
+                        "intent", "无责乘客应免除取消费，并能按订单核对退款结果",
+                        "oracleOwner", "customer-experience-owner")),
+                "idempotencyKey", "cases-solution-browser-ops"), "AGENT_TDD_AUTHORING");
+        JsonNode oracle = reviewGet("/api/agent-tdd/reviews/oracles/" + caseSetRef
+                + "/cancel-none-browser?expectedRevision=" + cases.at("/data/revision").asLong());
+        reviewPost("/api/agent-tdd/reviews/oracles/" + caseSetRef
+                + "/cancel-none-browser/approve", Map.of(
+                "expectedRevision", cases.at("/data/revision").asLong(),
+                "proposalFingerprint", oracle.path("proposalFingerprint").asText()));
+
+        JsonNode green = invoke("rg.solution.baseline", Map.of(
+                "solutionRef", solutionRef, "caseSetRef", caseSetRef, "side", "GREEN"),
+                "AGENT_TDD_EXECUTION");
+        assertThat(green.at("/data/status").asText()).isEqualTo("GO");
+        assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
+        JsonNode proposal = invoke("rg.solution.commit", Map.of(
+                "solutionRef", solutionRef,
+                "authoringReceiptFingerprint", composed.at("/data/authoringReceiptFingerprint").asText(),
+                "idempotencyKey", "commit-solution-browser-ops"), "AGENT_TDD_AUTHORING");
+        assertThat(proposal.at("/data/proposalStatus").asText()).isEqualTo("PENDING");
+
+        Map<String, Object> reconciled = solutionWrites.execute(solutionRef,
+                new IntegrationRequestContext(
+                        "tenant-a", "knowledge-governance", "tool-studio", "test", "local",
+                        "PLATFORM", "solution-write-runner", "", "AGENT_TDD_WRITE_EXEC", "corr-browser"));
+        assertThat(reconciled).containsEntry("status", "RECONCILED").containsEntry("writeCount", 1);
+
+        JsonNode board = agentGet("/api/agent-tdd/board");
+        assertThat(solutionCard(board, solutionRef).path("problem").asText())
+                .isEqualTo("Resolve a cancellation dispute consistently.");
+        assertThat(board.path("pendingReviews")).anySatisfy(review -> {
+            assertThat(review.path("kind").asText()).isEqualTo("SOLUTION_SIGNOFF");
+            assertThat(review.path("implementationFingerprint").asText()).startsWith("sha256:");
+        });
+
+        WebDriver browser = newChromeDriverOrSkip();
+        try {
+            WebDriverWait wait = new WebDriverWait(browser, Duration.ofSeconds(12));
+            browser.get("http://localhost:" + port + "/agent-tdd.html");
+            wait.until(ExpectedConditions.elementToBeClickable(By.id("token")))
+                    .sendKeys("bloge-reviewer-demo-token");
+            browser.findElement(By.id("load")).click();
+            By button = By.xpath("//div[contains(@class,'review') and contains(.,'"
+                    + solutionRef + "')]/button");
+            wait.until(ExpectedConditions.elementToBeClickable(button)).click();
+            Alert confirmation = wait.until(ExpectedConditions.alertIsPresent());
+            assertThat(confirmation.getText())
+                    .contains("Resolve a cancellation dispute consistently")
+                    .contains("writeReconciliation")
+                    .contains("implementationFingerprint");
+            confirmation.accept();
+            Alert signoffPrompt = wait.until(ExpectedConditions.alertIsPresent());
+            signoffPrompt.sendKeys("solution-change-browser-1");
+            signoffPrompt.accept();
+            wait.until(ExpectedConditions.stalenessOf(
+                    browser.findElement(By.xpath("//div[contains(@class,'review') and contains(.,'"
+                            + solutionRef + "')]"))));
+        } finally {
+            browser.quit();
+        }
+
+        JsonNode readiness = invoke("rg.solution.readiness", Map.of("solutionRef", solutionRef));
+        assertThat(readiness.at("/data/publishable").asBoolean()).isTrue();
+        assertThat(readiness.at("/data/gates/writeReconciled").asBoolean()).isTrue();
+        JsonNode published = invoke("rg.solution.publish", Map.of(
+                "solutionRef", solutionRef,
+                "signoffRef", "solution-change-browser-1",
+                "idempotencyKey", "publish-solution-browser-ops"), "AGENT_TDD_GOVERNANCE");
+        assertThat(published.at("/data/artifactKind").asText()).isEqualTo("SOLUTION");
+        assertThat(invoke("rg.solution.performance", Map.of("solutionRef", solutionRef))
+                .at("/data/totalCases").asInt()).isEqualTo(1);
+    }
+
     /**
      * Exercises the same initialize, initialized notification and tool discovery sequence emitted
      * by a current Codex Streamable-HTTP client before it can call an Agent TDD tool.
@@ -519,6 +664,75 @@ class AgentTddMcpOperationalWorkflowTest {
         return java.util.stream.StreamSupport.stream(board.path("tools").spliterator(), false)
                 .filter(card -> toolRef.equals(card.path("toolRef").asText()))
                 .findFirst().orElseThrow();
+    }
+
+    private static JsonNode solutionCard(JsonNode board, String solutionRef) {
+        return java.util.stream.StreamSupport.stream(board.path("solutions").spliterator(), false)
+                .filter(card -> solutionRef.equals(card.path("solutionRef").asText()))
+                .findFirst().orElseThrow();
+    }
+
+    private static String solutionInstruction(String instructionRef, String bindingRef) {
+        String binding = bindingRef.isBlank() ? "" : "  bindingRef: '" + bindingRef + "'\n";
+        return """
+                %s:
+                  inputs: { orderId: string }
+                  output:
+                    result: { type: { fields: { decision: { enum: [WAIVED] } } } }
+                    reasoning: required
+                  effect: WRITE
+                %s  writeGovernance:
+                    downstreamSystem: refund-service
+                    reconciliationKey: orderId
+                    reconciliationAdapterRef: recon:refund-browser-v1
+                """.formatted(instructionRef, binding);
+    }
+
+    private static String solutionScenario(String scenarioRef, String instructionRef) {
+        return """
+                %s:
+                  inputs: [party]
+                  hitPolicy: unique
+                  rules:
+                    - ruleId: R1
+                      when: { party: { eq: none } }
+                      outlet: { kind: INSTRUCTION, ref: '%s', bind: { orderId: orderId } }
+                  otherwise: { kind: TERMINAL, terminalKind: ESCALATE }
+                """.formatted(scenarioRef, instructionRef);
+    }
+
+    private static String solutionContract(
+            String solutionRef, String scenarioRef, String instructionRef, String caseSetRef) {
+        return """
+                %s:
+                  problem: Resolve a cancellation dispute consistently.
+                  inputs:
+                    party: dispute.party.browser
+                    orderId: dispute.order.browser
+                  scenarioTree: { root: '%s' }
+                  instructions: ['%s']
+                  golden: '%s'
+                """.formatted(solutionRef, scenarioRef, instructionRef, caseSetRef);
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class SolutionRuntimeTestConfiguration {
+        @Bean
+        InstructionDispatchChannel solutionInstructionChannel() {
+            return (instruction, values, context) -> Map.of(
+                    "result", Map.of("decision", "WAIVED"), "reasoning", "matched rule R1");
+        }
+
+        @Bean
+        ReconciliationAdapter solutionReconciliationAdapter() {
+            return new ReconciliationAdapter() {
+                @Override public String adapterRef() { return "recon:refund-browser-v1"; }
+                @Override public String downstreamSystem() { return "refund-service"; }
+                @Override public ObservedEffect observe(String reconciliationKey, JsonNode inputs) {
+                    return new ObservedEffect(reconciliationKey, Map.of("decision", "WAIVED"));
+                }
+            };
+        }
     }
 
     private void assertSemanticallyEquivalentSchemas(JsonNode authoredNode, JsonNode runtimeNode) {

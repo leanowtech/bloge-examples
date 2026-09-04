@@ -49,6 +49,7 @@ public final class SolutionAgentTools {
     private final FeatureEvaluationService featureEvaluation;
     private final SolutionInvocationService invocation;
     private final SolutionTestingService testing;
+    private final SolutionPerformanceService performance;
     private final EngineeringHandoffService handoffs;
     private final SolutionGovernanceService governance;
 
@@ -94,6 +95,7 @@ public final class SolutionAgentTools {
         this.invocation = new SolutionInvocationService(registry, tokens,
                 new SolutionExecutionService(registry, mapper, safeChannel), mapper);
         this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
+        this.performance = new SolutionPerformanceService(states);
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
         this.governance = new SolutionGovernanceService(states, registry, mapper);
     }
@@ -115,6 +117,11 @@ public final class SolutionAgentTools {
     public Map<String, Object> readinessSolution(JsonNode arguments, IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
         return governance.readiness(requiredText(arguments, "solutionRef"), identity);
+    }
+
+    /** Returns payload-free rule, disposition, escalation and red-GOLDEN operating signals. */
+    public Map<String, Object> performanceSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        return performance.performance(requiredText(arguments, "solutionRef"), identity);
     }
 
     /** Publishes an immutable Solution only through the separately governed purpose. */
@@ -300,9 +307,15 @@ public final class SolutionAgentTools {
         } catch (SolutionContractException failure) {
             throw new AgentTddToolException(failure.code(), failure.getMessage());
         }
+        String authoringReceiptFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, Map.of(
+                        "solutionSourceFingerprint", VisualBundleFingerprint.fromCanonicalValue(
+                                mapper, source, MAX_BYTES),
+                        "authoringContextFingerprint", contextFingerprint,
+                        "contractIdentity", contract.contractIdentity()), MAX_BYTES);
         SolutionEntityRegistry.RegisteredEntity stored =
                 registry.upsertSolution(scopeKey, contract, speccing,
-                        lowered == null ? null : lowered.draft());
+                        lowered == null ? null : lowered.draft(), authoringReceiptFingerprint);
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("solutionRef", stored.ref());
         result.put("inputContract", Map.copyOf(inputs));
@@ -315,6 +328,7 @@ public final class SolutionAgentTools {
                 "operators", List.of("bloge:scenarioCall", "bloge:instructionCall")));
         result.put("speccing", stored.speccing());
         result.put("authoringContextFingerprint", contextFingerprint);
+        result.put("authoringReceiptFingerprint", authoringReceiptFingerprint);
         result.put("revision", stored.revision());
         result.put("contractFingerprint", stored.contractFingerprint());
         result.put("honestVerdict", draftVerdict("Solution"));

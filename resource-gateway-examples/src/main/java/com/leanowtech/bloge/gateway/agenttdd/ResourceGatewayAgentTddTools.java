@@ -272,6 +272,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     solutionTools().handoffSolution(safeArguments, identity));
             case "rg.solution.readiness" -> executionSuccess(
                     solutionTools().readinessSolution(safeArguments, identity));
+            case "rg.solution.performance" -> executionSuccess(
+                    solutionTools().performanceSolution(safeArguments, identity));
             case "rg.solution.publish" -> executionSuccess(
                     solutionTools().publishSolution(safeArguments, identity));
             case "rg.readiness.get" -> workflow == null

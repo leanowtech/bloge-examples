@@ -55,11 +55,21 @@ public final class SolutionGovernanceService {
         requirePurpose(identity, IntegrationOperation.AGENT_TDD_PROPOSE);
         String scope = AgentTddMutationService.scopeKey(identity);
         SolutionEntityRegistry.RegisteredEntity solution = registered(scope, solutionRef);
+        String suppliedReceipt = required(authoringReceiptFingerprint);
+        try {
+            if (!registry.requireSolutionAuthoringReceipt(scope, solutionRef).equals(suppliedReceipt)) {
+                throw new AgentTddToolException(
+                        "GATE_REJECTED", "The Solution authoring receipt is not current.");
+            }
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The Solution authoring receipt is unavailable.");
+        }
         ObjectNode data = mapper.createObjectNode();
         data.put("solutionRef", solutionRef);
         data.put("solutionRevision", solution.revision());
         data.put("solutionContractFingerprint", solution.contractFingerprint());
-        data.put("authoringReceiptFingerprint", required(authoringReceiptFingerprint));
+        data.put("authoringReceiptFingerprint", suppliedReceipt);
         data.put("proposalStatus", "PENDING");
         data.put("proposedBy", identity.actorId());
         data.put("proposedAt", Instant.now().toString());
@@ -83,6 +93,7 @@ public final class SolutionGovernanceService {
             long solutionRevision,
             String goldenSetId,
             String evidenceFingerprint,
+            String implementationFingerprint,
             String proposalFingerprint,
             IntegrationRequestContext identity) {
         requirePurpose(identity, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
@@ -104,7 +115,8 @@ public final class SolutionGovernanceService {
                 || !proposal.data().path("solutionContractFingerprint").asText()
                         .equals(line.solutionContractFingerprint)
                 || !line.goldenSetId.equals(required(goldenSetId))
-                || !line.evidenceFingerprint.equals(required(evidenceFingerprint))) {
+                || !line.evidenceFingerprint.equals(required(evidenceFingerprint))
+                || !line.implementationFingerprint.equals(required(implementationFingerprint))) {
             throw new AgentTddToolException(
                     "GATE_REJECTED", "The reviewed Solution evidence is no longer current.");
         }
@@ -115,6 +127,7 @@ public final class SolutionGovernanceService {
         data.put("solutionContractFingerprint", line.solutionContractFingerprint);
         data.put("goldenSetId", line.goldenSetId);
         data.put("evidenceFingerprint", line.evidenceFingerprint);
+        data.put("implementationFingerprint", line.implementationFingerprint);
         data.put("proposalFingerprint", proposalFingerprint);
         data.put("status", "APPROVED");
         data.put("approvedBy", identity.actorId());
@@ -127,6 +140,46 @@ public final class SolutionGovernanceService {
         requirePurpose(identity, IntegrationOperation.AGENT_TDD_READ);
         Readiness line = assess(AgentTddMutationService.scopeKey(identity), solutionRef, null);
         return line.projection();
+    }
+
+    /**
+     * Opens the exact payload-bearing Solution proposal for a separately authenticated reviewer.
+     *
+     * <p>The response is only used by the no-store web review endpoint and is never advertised as
+     * an MCP tool. Approval must echo the returned proposal and evidence coordinates.</p>
+     */
+    public Map<String, Object> review(
+            String solutionRef, long expectedProposalRevision, IntegrationRequestContext identity) {
+        requirePurpose(identity, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+        requireHuman(identity);
+        String scope = AgentTddMutationService.scopeKey(identity);
+        AgentTddStoredAsset proposal = states.find(scope, COMMIT, solutionRef)
+                .filter(asset -> asset.revision() == expectedProposalRevision)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "GATE_REJECTED", "The Solution proposal changed after it was opened."));
+        if (!"PENDING".equals(proposal.data().path("proposalStatus").asText())) {
+            throw new AgentTddToolException("GATE_REJECTED", "The Solution proposal is not pending.");
+        }
+        SolutionEntityRegistry.RegisteredEntity registered = registered(scope, solutionRef);
+        if (registered.revision() != proposal.data().path("solutionRevision").asLong(-1)
+                || !registered.contractFingerprint().equals(
+                        proposal.data().path("solutionContractFingerprint").asText())) {
+            throw new AgentTddToolException("GATE_REJECTED", "The proposed Solution is no longer current.");
+        }
+        LinkedHashMap<String, Object> response = new LinkedHashMap<>();
+        response.put("solutionRef", solutionRef);
+        response.put("proposalRevision", proposal.revision());
+        response.put("proposalFingerprint", proposal.data().path("proposalFingerprint").asText());
+        response.put("proposedBy", proposal.data().path("proposedBy").asText());
+        response.put("solutionRevision", registered.revision());
+        response.put("solutionContractFingerprint", registered.contractFingerprint());
+        response.put("contract", registered.contract().deepCopy());
+        response.put("readiness", assess(scope, solutionRef, null).projection());
+        states.find(scope, EngineeringHandoffService.HANDOFF, solutionRef)
+                .ifPresent(asset -> response.put("engineeringHandoff", asset.data().deepCopy()));
+        states.find(scope, SolutionWriteExecutionRunner.RECONCILIATION, solutionRef)
+                .ifPresent(asset -> response.put("writeReconciliation", asset.data().deepCopy()));
+        return Map.copyOf(response);
     }
 
     /** Publishes one immutable Solution only when the supplied signoff matches every live gate. */
@@ -145,6 +198,7 @@ public final class SolutionGovernanceService {
                         "solutionRevision", line.solutionRevision,
                         "goldenSetId", line.goldenSetId,
                         "evidenceFingerprint", line.evidenceFingerprint,
+                        "implementationFingerprint", line.implementationFingerprint,
                         "signoffRef", signoffRef), MAX_BYTES)
                 .substring("sha256:".length(), "sha256:".length() + 24);
         ObjectNode data = mapper.createObjectNode();
@@ -154,6 +208,7 @@ public final class SolutionGovernanceService {
         data.put("solutionContractFingerprint", line.solutionContractFingerprint);
         data.put("goldenSetId", line.goldenSetId);
         data.put("evidenceFingerprint", line.evidenceFingerprint);
+        data.put("implementationFingerprint", line.implementationFingerprint);
         data.put("signoffRef", signoffRef);
         data.put("publishedBy", identity.actorId());
         data.put("publishedAt", Instant.now().toString());
@@ -182,6 +237,7 @@ public final class SolutionGovernanceService {
                 implementationBound = false;
             }
         }
+        String implementationFingerprint = implementationFingerprint(scope, solution);
         AgentTddStoredAsset evidence = states.find(scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
                 .orElse(null);
         boolean logicGreen = evidence != null
@@ -203,6 +259,8 @@ public final class SolutionGovernanceService {
                     .filter(value -> registered.revision() == value.path("solutionRevision").asLong(-1))
                     .filter(value -> registered.contractFingerprint().equals(
                             value.path("solutionContractFingerprint").asText()))
+                    .filter(value -> implementationFingerprint.equals(
+                            value.path("implementationFingerprint").asText()))
                     .isPresent();
         }
         java.util.function.Predicate<AgentTddStoredAsset> currentSignoff = signoff ->
@@ -212,12 +270,14 @@ public final class SolutionGovernanceService {
                         && registered.contractFingerprint().equals(
                                 signoff.data().path("solutionContractFingerprint").asText())
                         && goldenSetId.equals(signoff.data().path("goldenSetId").asText())
-                        && evidenceFingerprint.equals(signoff.data().path("evidenceFingerprint").asText());
+                        && evidenceFingerprint.equals(signoff.data().path("evidenceFingerprint").asText())
+                        && implementationFingerprint.equals(
+                                signoff.data().path("implementationFingerprint").asText());
         boolean ownerSignoff = requestedSignoffRef == null || requestedSignoffRef.isBlank()
                 ? states.list(scope, SIGNOFF).stream().anyMatch(currentSignoff)
                 : states.find(scope, SIGNOFF, requestedSignoffRef).filter(currentSignoff).isPresent();
         return new Readiness(solutionRef, registered.revision(), registered.contractFingerprint(),
-                goldenSetId, evidenceFingerprint, logicGreen, implementationBound,
+                goldenSetId, evidenceFingerprint, implementationFingerprint, logicGreen, implementationBound,
                 writeReconciled, ownerSignoff);
     }
 
@@ -226,6 +286,14 @@ public final class SolutionGovernanceService {
             return registry.requireRegisteredSolution(scope, required(solutionRef));
         } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
             throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
+        }
+    }
+
+    private String implementationFingerprint(String scope, SolutionContract solution) {
+        try {
+            return SolutionImplementationIdentity.fingerprint(registry, mapper, scope, solution);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            return "";
         }
     }
 
@@ -257,6 +325,7 @@ public final class SolutionGovernanceService {
             String solutionContractFingerprint,
             String goldenSetId,
             String evidenceFingerprint,
+            String implementationFingerprint,
             boolean logicGreen,
             boolean implementationBound,
             boolean writeReconciled,
@@ -283,6 +352,7 @@ public final class SolutionGovernanceService {
                     "solutionContractFingerprint", solutionContractFingerprint,
                     "goldenSetId", goldenSetId,
                     "evidenceFingerprint", evidenceFingerprint,
+                    "implementationFingerprint", implementationFingerprint,
                     "gates", Map.copyOf(gates),
                     "remainingLimitations", List.copyOf(remaining));
         }

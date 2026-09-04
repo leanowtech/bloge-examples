@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.ScenarioContract;
+import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -24,6 +27,9 @@ public final class AgentTddBoardService {
     private final AgentTddStateRepository states;
     private final AgentTddWorkflowService workflow;
     private final ObjectMapper mapper;
+    private final SolutionGovernanceService solutionGovernance;
+    private final SolutionPerformanceService solutionPerformance;
+    private final SolutionEntityRegistry solutionRegistry;
 
     /** Creates the board projection from authoritative drafts and durable Agent overlays. */
     public AgentTddBoardService(GraphDraftRepository drafts,
@@ -34,6 +40,9 @@ public final class AgentTddBoardService {
         this.states = Objects.requireNonNull(states, "states");
         this.workflow = Objects.requireNonNull(workflow, "workflow");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.solutionRegistry = new SolutionEntityRegistry(states, mapper);
+        this.solutionGovernance = new SolutionGovernanceService(states, solutionRegistry, mapper);
+        this.solutionPerformance = new SolutionPerformanceService(states);
     }
 
     /** Returns scoped Tool readiness cards and pending human decisions without fixture payloads. */
@@ -46,6 +55,10 @@ public final class AgentTddBoardService {
                 .map(draft -> toolCard(draft, scope, identity))
                 .toList();
         List<Map<String, Object>> reviews = new ArrayList<>();
+        List<Map<String, Object>> solutions = states.list(scope,
+                        com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry.SOLUTION).stream()
+                .map(asset -> solutionCard(asset, identity))
+                .toList();
         states.list(scope, AgentTddMutationService.CASE_SET).forEach(asset ->
                 asset.data().path("rows").forEach(row -> {
                     if ("PENDING".equals(row.path("proposedOracle").path("status").asText())) {
@@ -65,10 +78,112 @@ public final class AgentTddBoardService {
                 .filter(tool -> gate(tool, "greenBaseline") && gate(tool, "runtimeAttestation")
                         && !gate(tool, "ownerSignoff"))
                 .forEach(tool -> pendingSignoff(scope, tool).ifPresent(reviews::add));
+        states.list(scope, SolutionGovernanceService.COMMIT).stream()
+                .filter(asset -> "PENDING".equals(asset.data().path("proposalStatus").asText()))
+                .forEach(asset -> pendingSolutionSignoff(asset, identity).ifPresent(reviews::add));
         reviews.sort(Comparator.comparing(row -> row.get("kind") + ":" + row.get("assetRef")));
-        return Map.of("tools", tools, "pendingReviews", reviews,
-                "evidenceCount", states.list(scope, AgentTddWorkflowService.EVIDENCE).size(),
+        return Map.of("tools", tools, "solutions", solutions, "pendingReviews", reviews,
+                "evidenceCount", states.list(scope, AgentTddWorkflowService.EVIDENCE).size()
+                        + states.list(scope, SolutionTestingService.SOLUTION_EVIDENCE).size(),
                 "payloadPolicy", "STRUCTURE_ONLY");
+    }
+
+    /** Projects one Solution in business terms without exposing case or runtime payloads. */
+    private Map<String, Object> solutionCard(
+            AgentTddStoredAsset asset, IntegrationRequestContext identity) {
+        JsonNode contract = asset.data().path("contract");
+        Map<String, Object> readiness = solutionGovernance.readiness(asset.assetRef(), identity);
+        LinkedHashMap<String, Object> card = new LinkedHashMap<>(readiness);
+        card.put("problem", contract.path("problem").asText());
+        card.put("inputFeatures", contract.path("inputs").fieldNames().hasNext()
+                ? mapper.convertValue(contract.path("inputs"), Map.class) : Map.of());
+        card.put("rootScenarioRef", contract.path("rootScenarioRef").asText());
+        card.put("instructionRefs", mapper.convertValue(
+                contract.path("instructions"), List.class));
+        card.put("scenario", scenarioProjection(asset.scopeKey(), contract.path("rootScenarioRef").asText()));
+        card.put("instructions", instructionProjections(asset.scopeKey(), contract.path("instructions")));
+        card.put("goldenRef", contract.path("goldenRef").asText());
+        card.put("performance", solutionPerformance.performance(asset.assetRef(), identity));
+        states.find(asset.scopeKey(), EngineeringHandoffService.HANDOFF, asset.assetRef())
+                .ifPresent(handoff -> card.put("engineeringHandoff", Map.of(
+                        "handoffId", handoff.data().path("handoffId").asText(),
+                        "status", handoff.data().path("status").asText(),
+                        "itemCount", handoff.data().path("items").size())));
+        states.find(asset.scopeKey(), SolutionWriteExecutionRunner.RECONCILIATION, asset.assetRef())
+                .ifPresent(reconciliation -> card.put("writeReconciliation", Map.of(
+                        "status", reconciliation.data().path("status").asText(),
+                        "writeCount", reconciliation.data().path("writeCount").asInt(),
+                        "environmentId", reconciliation.data().path("environmentId").asText())));
+        return Map.copyOf(card);
+    }
+
+    /** Projects one current rule table as author-owned business conditions and dispositions. */
+    private Map<String, Object> scenarioProjection(String scope, String scenarioRef) {
+        try {
+            ScenarioContract scenario = solutionRegistry.requireScenario(scope, scenarioRef);
+            List<Map<String, Object>> rules = scenario.rules().stream().map(rule -> Map.of(
+                    "ruleId", (Object) rule.ruleId(),
+                    "when", mapper.convertValue(rule.when(), Map.class),
+                    "outletKind", rule.outlet().kind().name(),
+                    "outletRef", rule.outlet().ref())).toList();
+            return Map.of("scenarioRef", scenario.scenarioRef(),
+                    "hitPolicy", scenario.hitPolicy().name(),
+                    "inputs", scenario.inputs(),
+                    "rules", rules,
+                    "otherwise", Map.of(
+                            "outletKind", scenario.otherwise().kind().name(),
+                            "outletRef", scenario.otherwise().ref(),
+                            "terminalKind", scenario.otherwise().terminalKind()));
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            return Map.of("scenarioRef", scenarioRef, "status", "UNAVAILABLE");
+        }
+    }
+
+    /** Projects current Instruction effects and design state without exposing runtime values. */
+    private List<Map<String, Object>> instructionProjections(String scope, JsonNode refs) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        refs.forEach(ref -> {
+            try {
+                InstructionContract instruction = solutionRegistry.requireInstruction(scope, ref.asText());
+                LinkedHashMap<String, Object> item = new LinkedHashMap<>();
+                item.put("instructionRef", instruction.instructionRef());
+                item.put("effect", instruction.effect().name());
+                item.put("state", instruction.speccing() ? "DESIGN_ONLY" : "BOUND");
+                item.put("reasoningRequired", "required".equals(
+                        instruction.output().path("reasoning").asText()));
+                if (instruction.writeGovernance() != null) {
+                    item.put("downstreamSystem", instruction.writeGovernance().downstreamSystem());
+                    item.put("reconciliationKey", instruction.writeGovernance().reconciliationKey());
+                }
+                result.add(Map.copyOf(item));
+            } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+                result.add(Map.of("instructionRef", ref.asText(), "state", "UNAVAILABLE"));
+            }
+        });
+        return List.copyOf(result);
+    }
+
+    private java.util.Optional<Map<String, Object>> pendingSolutionSignoff(
+            AgentTddStoredAsset proposal, IntegrationRequestContext identity) {
+        Map<String, Object> readiness = solutionGovernance.readiness(proposal.assetRef(), identity);
+        Object rawGates = readiness.get("gates");
+        if (!(rawGates instanceof Map<?, ?> gates)
+                || !Boolean.TRUE.equals(gates.get("logicGreen"))
+                || !Boolean.TRUE.equals(gates.get("implementationBound"))
+                || !Boolean.TRUE.equals(gates.get("writeReconciled"))
+                || Boolean.TRUE.equals(gates.get("ownerSignoff"))) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(Map.of(
+                "kind", "SOLUTION_SIGNOFF",
+                "assetRef", proposal.assetRef(),
+                "revision", proposal.revision(),
+                "solutionRevision", readiness.get("solutionRevision"),
+                "goldenSetId", readiness.get("goldenSetId"),
+                "evidenceFingerprint", readiness.get("evidenceFingerprint"),
+                "implementationFingerprint", readiness.get("implementationFingerprint"),
+                "proposalFingerprint", proposal.data().path("proposalFingerprint").asText(),
+                "owner", "solution-owner"));
     }
 
     /**

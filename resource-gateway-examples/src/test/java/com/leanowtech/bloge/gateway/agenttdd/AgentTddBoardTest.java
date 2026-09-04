@@ -329,6 +329,40 @@ class AgentTddBoardTest {
     }
 
     @Test
+    void solutionReviewIsNoStoreAndApprovalUsesExactCoordinates() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        SolutionGovernanceService governance = mock(SolutionGovernanceService.class);
+        HttpHeaders headers = new HttpHeaders();
+        when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE))
+                .thenReturn(identity());
+        when(governance.review("sol:cancel", 3, identity())).thenReturn(Map.of(
+                "solutionRef", "sol:cancel", "proposalRevision", 3,
+                "proposalFingerprint", "sha256:proposal", "contract", Map.of("problem", "Cancel")));
+        when(governance.approve("sol:cancel", "change-42", 7,
+                "sha256:golden", "sha256:evidence", "sha256:implementation",
+                "sha256:proposal", identity()))
+                .thenReturn(new AgentTddStoredAsset(scope(), SolutionGovernanceService.SIGNOFF,
+                        "change-42", 1, "sha256:signoff", mapper.createObjectNode(),
+                        java.time.Instant.EPOCH));
+        AgentTddBoardController controller = new AgentTddBoardController(
+                authenticator, mock(AgentTddBoardService.class),
+                mock(AgentTddLibraryOverviewService.class), mock(AgentTddReviewService.class),
+                null, governance);
+
+        var opened = controller.solutionReview("sol:cancel", 3, headers);
+        var approved = controller.approveSolutionSignoff("sol:cancel", "change-42",
+                new AgentTddBoardController.SolutionSignoffRequest(
+                        7, "sha256:golden", "sha256:evidence", "sha256:implementation",
+                        "sha256:proposal"), headers);
+
+        assertThat(opened.getHeaders().getCacheControl()).isEqualTo("no-store");
+        assertThat(opened.getBody()).containsEntry("proposalRevision", 3);
+        assertThat(approved).containsEntry("status", "APPROVED").containsEntry("revision", 1L);
+        verify(authenticator, times(2)).authenticate(
+                headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
+    }
+
+    @Test
     void libraryOverviewIsAnAuthenticatedNonCacheableHttpProjection() throws Exception {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         AgentTddLibraryOverviewService overview = mock(AgentTddLibraryOverviewService.class);

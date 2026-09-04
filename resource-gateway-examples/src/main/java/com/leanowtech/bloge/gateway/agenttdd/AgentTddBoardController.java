@@ -29,27 +29,39 @@ public final class AgentTddBoardController {
     private final AgentTddLibraryOverviewService libraryOverview;
     private final AgentTddReviewService reviews;
     private final AgentTddAttestationService attestations;
+    private final SolutionGovernanceService solutionGovernance;
 
     /** Creates the board boundary with existing integration authentication and audit. */
     public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
                                    AgentTddBoardService board,
                                    AgentTddLibraryOverviewService libraryOverview,
                                    AgentTddReviewService reviews) {
-        this(authenticator, board, libraryOverview, reviews, null);
+        this(authenticator, board, libraryOverview, reviews, null, null);
     }
 
     /** Creates the production board including the human-only attestation recovery entry. */
-    @Autowired
     public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
                                    AgentTddBoardService board,
                                    AgentTddLibraryOverviewService libraryOverview,
                                    AgentTddReviewService reviews,
                                    AgentTddAttestationService attestations) {
+        this(authenticator, board, libraryOverview, reviews, attestations, null);
+    }
+
+    /** Creates the complete production board including Solution review and signoff. */
+    @Autowired
+    public AgentTddBoardController(IntegrationRequestAuthenticator authenticator,
+                                   AgentTddBoardService board,
+                                   AgentTddLibraryOverviewService libraryOverview,
+                                   AgentTddReviewService reviews,
+                                   AgentTddAttestationService attestations,
+                                   SolutionGovernanceService solutionGovernance) {
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.board = Objects.requireNonNull(board, "board");
         this.libraryOverview = Objects.requireNonNull(libraryOverview, "libraryOverview");
         this.reviews = Objects.requireNonNull(reviews, "reviews");
         this.attestations = attestations;
+        this.solutionGovernance = solutionGovernance;
     }
 
     /** Returns the structure-only scoped board. */
@@ -125,6 +137,32 @@ public final class AgentTddBoardController {
         return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
     }
 
+    /** Opens the exact Solution proposal, structure and current evidence for human review. */
+    @GetMapping("/reviews/solutions/{solutionRef}")
+    public ResponseEntity<Map<String, Object>> solutionReview(
+            @PathVariable String solutionRef,
+            @RequestParam long expectedRevision,
+            @RequestHeader HttpHeaders headers) {
+        Map<String, Object> body = solutionGovernance().review(solutionRef, expectedRevision,
+                authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache").body(body);
+    }
+
+    /** Signs one exact Solution proposal and GREEN/reconciliation evidence line. */
+    @PostMapping("/reviews/solutions/{solutionRef}/signoffs/{signoffRef}/approve")
+    public Map<String, Object> approveSolutionSignoff(
+            @PathVariable String solutionRef,
+            @PathVariable String signoffRef,
+            @RequestBody SolutionSignoffRequest request,
+            @RequestHeader HttpHeaders headers) {
+        AgentTddStoredAsset stored = solutionGovernance().approve(solutionRef, signoffRef,
+                request.solutionRevision(), request.goldenSetId(), request.evidenceFingerprint(),
+                request.implementationFingerprint(), request.proposalFingerprint(),
+                authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE));
+        return Map.of("assetRef", stored.assetRef(), "revision", stored.revision(), "status", "APPROVED");
+    }
+
     /** Re-runs the current payload-free sandbox attestation after explicit human confirmation. */
     @PostMapping("/attestations/{toolRef}/rerun")
     public Map<String, Object> rerunAttestation(@PathVariable String toolRef,
@@ -147,6 +185,13 @@ public final class AgentTddBoardController {
         return authenticator.authenticate(headers, operation);
     }
 
+    private SolutionGovernanceService solutionGovernance() {
+        if (solutionGovernance == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "Solution governance is unavailable.");
+        }
+        return solutionGovernance;
+    }
+
     /** @param expectedRevision exact revision visible to the human reviewer */
     public record RevisionRequest(long expectedRevision, String proposalFingerprint) { }
 
@@ -155,4 +200,11 @@ public final class AgentTddBoardController {
                                  String goldenSetId,
                                  String evidenceFingerprint,
                                  String implementationFingerprint) { }
+
+    /** Exact Solution proposal and GREEN line reviewed before owner approval. */
+    public record SolutionSignoffRequest(long solutionRevision,
+                                         String goldenSetId,
+                                         String evidenceFingerprint,
+                                         String implementationFingerprint,
+                                         String proposalFingerprint) { }
 }

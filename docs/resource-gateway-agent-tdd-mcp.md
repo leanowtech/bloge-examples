@@ -95,7 +95,7 @@ enabled_tools = [
   "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
   "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get", "rg.dsl.preview",
   "rg.gate.check", "rg.readiness.get", "rg.solution.getContract",
-  "rg.solution.readiness"
+  "rg.solution.readiness", "rg.solution.performance"
 ]
 required = true
 startup_timeout_sec = 10
@@ -288,13 +288,15 @@ WRITE Instruction 在 GREEN baseline 中始终使用服务端从输出契约合�
 `AGENT_TDD_WRITE_EXEC` 身份执行当前 GREEN 线；这个用途不在 MCP 目录，也绝不能配置给 Codex。
 平台在第一次真实写之前提交持久 reservation，崩溃后返回 `RECOVERY_REQUIRED`，不会自动重试可能
 已经发生的副作用。每次写后必须由同一下游的精确 `ReconciliationAdapter` 按业务键读回；只有
-`status=RECONCILED` 且 `goldenSetId`、GREEN `evidenceFingerprint`、Solution revision 和 contract
-fingerprint 全部仍一致，`rg.solution.readiness.gates.writeReconciled` 才为 true。
+`status=RECONCILED` 且 `goldenSetId`、GREEN `evidenceFingerprint`、Solution revision、contract
+fingerprint 和当前 Instruction binding 的 `implementationFingerprint` 全部仍一致，
+`rg.solution.readiness.gates.writeReconciled` 才为 true。
 
-Solution 发布按以下顺序：Codex 用 `rg.solution.commit` 提交当前 authoring receipt；人工 owner 在
+Solution 发布按以下顺序：Codex 用 `rg.solution.commit` 提交 `rg.solution.compose` 服务端返回的当前
+authoring receipt；伪造或旧 receipt 会被拒绝。人工 owner 在
 看板打开同一提案和 GREEN/对账坐标后签署；Codex 再读取 `rg.solution.readiness`。只有
 `logicGreen`、`implementationBound`、`writeReconciled` 和 `ownerSignoff` 全绿时，才允许
-`rg.solution.publish` 生成不可变 publication。Solution、GOLDEN、证据或 binding 任一变化都会使旧签署失效。
+`rg.solution.publish` 生成不可变 publication。Solution、GOLDEN、证据或 binding 任一变化都会使旧对账和旧签署失效。
 - 只有持久 `caseSetRef` 中的 `ACTIVE` 行能推进 READY 并形成发布证据。
 - 每个执行行必须有显式 `expect`。实现不能反过来修改 Oracle 以迎合结果。
 - 执行后的并发用例修改会让 READY、evidence、verdict 和 line 一起回滚。
@@ -450,7 +452,7 @@ python3 -m unittest scripts/agent_tdd_codex_trace_certificate_test.py
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务，贯穿用户资料查询。浏览器步骤在本机同时具备 Chrome 和兼容 Chromedriver 时执行；正式验收必须确认该测试 `skipped=0`，否则只能算后端覆盖。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务，贯穿用户资料查询。它还以 Solution 路径从 MCP lifecycle 开始，完成四实体定义、设计态工程交接、binding、GREEN、平台专用 WRITE 执行与对账、Chrome 打开 exact proposal 并输入 signoffRef、readiness 和发布；正式验收必须确认该类 5 个测试全部执行且 `skipped=0`。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 

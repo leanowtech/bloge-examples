@@ -33,7 +33,7 @@ business flow plus a decision table with at least two reviewable branches before
 certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
-The 40-tool catalog includes `rg.dsl.reference.get` plus the four-entity solution authoring
+The 41-tool catalog includes `rg.dsl.reference.get` plus the four-entity solution authoring
 operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
 `rg.solution.compose`. Each mutation uses the existing exact-response idempotency authority and
 stores canonical revisions within the authenticated tenant/project/environment scope. Solution
@@ -49,8 +49,10 @@ Solution WRITE effects remain contract-shaped stubs during GREEN baselines. Unbo
 payload-free engineering handoffs; the platform-only `AGENT_TDD_WRITE_EXEC` purpose is absent from MCP,
 restricted to sandbox environments, durably reserved before execution, and followed by an exact downstream
 reconciliation adapter read. Solution publication binds logic GREEN, implementation binding, reconciliation,
-and independent owner signoff to the current Solution revision, contract fingerprint, GOLDEN set, and evidence
-fingerprint, so an old signoff cannot authorize changed behavior.
+and independent owner signoff to the current Solution revision, contract fingerprint, GOLDEN set, evidence
+fingerprint, and current Instruction implementation fingerprint, so an old reconciliation or signoff cannot
+authorize a changed binding. Compose persists a server-issued authoring receipt, and commit rejects invented or
+stale receipt values.
 The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
 for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
 an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.
