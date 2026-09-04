@@ -47,6 +47,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "rg.capability.list", "rg.contract.get", "rg.dsl.reference.get", "rg.dsl.preview",
                 "rg.gate.check", "rg.tool.compose", "rg.tool.setInstruction", "rg.scenario.upsertCases");
         assertThat(certificate.at("/assertions/requiredAuthoringOrder").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/onlyMcpExternalActionsObserved").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/caseSetBoundToTool").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/dependencyBehaviorDefined").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/businessOracleProposed").asBoolean()).isTrue();
@@ -89,8 +90,9 @@ class AgentTddCodexCertificationArtifactTest {
                 "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox danger-full-access",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
-                "git -C \"${ROOT_DIR}\" diff --quiet", "ls-files --others --exclude-standard",
-                "cd \"${PRIVATE_DIR}\"",
+                "repository_is_clean", "ls-files --others --exclude-standard",
+                "clean package -DskipTests", "cd \"${WORKSPACE_DIR}\"",
+                "did not protect the private trace", "did not deny the Codex memory store",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "example-services.sh\" start resource-gateway",
                 "example-services.sh\" stop resource-gateway",
@@ -112,7 +114,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 8 tests", "OK");
+        assertThat(output).contains("Ran 10 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

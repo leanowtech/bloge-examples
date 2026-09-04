@@ -39,6 +39,7 @@ TECHNICAL_FINAL_PATTERN = re.compile(
     r"(?i)\b(?:dsl|schema|binding|operator|toolref|casesetref|fingerprint|mcp|json)\b"
     r"|代码|编译器?|节点|端口|指纹|内部标识"
 )
+PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list"}
 
 
 class CertificationFailure(RuntimeError):
@@ -91,7 +92,13 @@ def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
             if event.get("type") == "turn.completed":
                 completed = True
             item = event.get("item")
-            if event.get("type") != "item.completed" or not isinstance(item, dict):
+            event_type = str(event.get("type", ""))
+            if event_type.startswith("item.") and isinstance(item, dict):
+                item_type = str(item.get("type", ""))
+                if item_type != "mcp_tool_call" and item_type not in PASSIVE_TRACE_ITEMS:
+                    raise CertificationFailure(
+                        f"trace contains a non-MCP action item: {item_type or 'unknown'}")
+            if event_type != "item.completed" or not isinstance(item, dict):
                 continue
             if item.get("type") == "agent_message" and isinstance(item.get("text"), str):
                 final_message = item["text"]
@@ -217,6 +224,7 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
     compose = selected["rg.tool.compose"]
     instruction = selected["rg.tool.setInstruction"]
     upsert = selected["rg.scenario.upsertCases"]
+    upsert_position = positions[REQUIRED_SEQUENCE.index("rg.scenario.upsertCases")]
 
     context = required_text(reference["data"].get("authoringContextFingerprint"), "reference context")
     preview_context = required_text(preview["arguments"].get("authoringContextFingerprint"), "preview context")
@@ -261,7 +269,8 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
     if not case_ids:
         raise CertificationFailure("stored CaseSet has no cases")
 
-    matching_lists = [call for call in calls if call["tool"] == "rg.scenario.listCases" and call["successful"]
+    matching_lists = [call for index, call in enumerate(calls) if index > upsert_position
+                      and call["tool"] == "rg.scenario.listCases" and call["successful"]
                       and call["arguments"].get("caseSetRef") == case_set_ref
                       and call["data"].get("caseSetRef") == case_set_ref
                       and call["data"].get("toolRef") == tool_ref]
@@ -275,8 +284,9 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
 
     dependency_cases = {
         call["arguments"].get("caseId")
-        for call in calls
-        if call["tool"] == "rg.scenario.setDependencyBehavior" and call["successful"]
+        for index, call in enumerate(calls)
+        if index > upsert_position
+        and call["tool"] == "rg.scenario.setDependencyBehavior" and call["successful"]
         and call["arguments"].get("caseSetRef") == case_set_ref
         and call["data"].get("caseSetRef") == case_set_ref
         and call["arguments"].get("caseId") == call["data"].get("caseId")
@@ -293,8 +303,9 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
     }
     cases_with_oracle.update({
         call["arguments"].get("caseId")
-        for call in calls
-        if call["tool"] == "rg.oracle.propose" and call["successful"]
+        for index, call in enumerate(calls)
+        if index > upsert_position
+        and call["tool"] == "rg.oracle.propose" and call["successful"]
         and call["arguments"].get("caseSetRef") == case_set_ref
         and call["data"].get("caseSetRef") == case_set_ref
         and call["arguments"].get("caseId") == call["data"].get("caseId")
@@ -365,6 +376,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         "correlation": correlation,
         "assertions": {
             "codexTurnCompleted": True,
+            "onlyMcpExternalActionsObserved": True,
             "requiredAuthoringOrder": True,
             "caseSetBoundToTool": True,
             "dependencyBehaviorDefined": True,

@@ -340,7 +340,8 @@ curl --fail-with-body http://localhost:8081/mcp \
 ```
 
 脚本不接受外部 Agent/reviewer token，也不复用已经运行的服务。它先拒绝脏工作区和被占用的
-认证端口（默认 `18081`），生成两份一次性凭据，从当前 HEAD 构建并启动 loopback RG；退出时无论
+认证端口（默认 `18081`），生成两份一次性凭据，先执行 `clean package`、再从当前
+HEAD 构建并启动 loopback RG，因此 Git 忽略的旧 `target/classes` 不能混入认证 JAR；退出时无论
 成功失败都停止该进程。随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 对仓库的读写，
 并在临时只读目录启动一个全新、不读用户配置与规则的 Codex，只提供四个 HTTP MCP 连接和一段
 业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义，
@@ -349,8 +350,11 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 - Codex 先发现业务能力与契约，再获取 DSL 参考，且只有 `accepted=true` 的 preview/gate 才计为通过；
 - preview、gate、compose 的 source、library refs、context 与 receipt 完全一致；
-- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与同一案例；
+- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与同一案例，
+  且回读、补充依赖和 Oracle 证据必须发生在本次 upsert 之后；
 - Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
+- trace 中的外部动作只能是已配置 MCP 调用；出现 shell、文件修改、Web 搜索或任何
+  未识别的 action item 时，认证失败关闭；
 - 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到同一工具按顺序从失败或 `accepted=false` 到成功；
 - preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
@@ -358,7 +362,8 @@ curl --fail-with-body http://localhost:8081/mcp \
 contract-first 行为；不会把 `rg.contract.get`、MCP 参数或其他实现术语交给业务人员。
 
 默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
-可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，并在结束时删除；
+可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，外层 sandbox
+也拒绝子进程直接读写该目录，只由父进程预先打开的 stdout 文件描述符接收 trace；结束时删除；
 仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中
 比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言和使用一次性随机密钥生成的
 HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
@@ -371,7 +376,8 @@ HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系
 认证依赖 macOS `sandbox-exec` 提供操作系统级仓库隔离；不具备等价隔离能力的平台必须失败关闭，
 不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。为避免两个 Seatbelt 实例嵌套失败，
 该受控子进程把 Codex 内层 sandbox 设为 `danger-full-access`；安全边界是已先做读取负测的外层 profile，
-它仍明确拒绝整个当前仓库的 read/write。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
+它拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace 的 read/write；认证器另外
+对所有非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
 否则 Codex 在处理 `-C` 之前读取继承的仓库 cwd，就会被系统正确拒绝而无法启动。
 
 ### 8.2 自动回归

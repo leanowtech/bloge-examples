@@ -108,6 +108,7 @@
       "additionalProperties": false,
       "required": [
         "codexTurnCompleted",
+        "onlyMcpExternalActionsObserved",
         "requiredAuthoringOrder",
         "caseSetBoundToTool",
         "dependencyBehaviorDefined",
@@ -123,6 +124,7 @@
       ],
       "properties": {
         "codexTurnCompleted": { "const": true },
+        "onlyMcpExternalActionsObserved": { "const": true },
         "requiredAuthoringOrder": { "const": true },
         "caseSetBoundToTool": { "const": true },
         "dependencyBehaviorDefined": { "const": true },

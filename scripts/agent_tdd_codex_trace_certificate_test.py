@@ -232,6 +232,38 @@ class TraceCertificateTest(unittest.TestCase):
                 "exitCode": 0,
             })
 
+    def test_rejects_case_evidence_observed_before_the_current_upsert(self) -> None:
+        events = self.happy_events()
+        list_index = next(index for index, event in enumerate(events)
+                          if event.get("item", {}).get("tool") == "rg.scenario.listCases")
+        list_event = events.pop(list_index)
+        upsert_index = next(index for index, event in enumerate(events)
+                            if event.get("item", {}).get("tool") == "rg.scenario.upsertCases")
+        events.insert(upsert_index, list_event)
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "not read back"):
+            MODULE.certify(self.write_trace(events), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+            })
+
+    def test_rejects_any_non_mcp_action_from_the_codex_trace(self) -> None:
+        events = self.happy_events()
+        events.insert(1, {
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "cat private-file"},
+        })
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "non-MCP action"):
+            MODULE.certify(self.write_trace(events), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+            })
+
 
 if __name__ == "__main__":
     unittest.main()

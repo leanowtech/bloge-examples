@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_BIN="${CODEX_BIN:-codex}"
+MVN_BIN="${MVN:-mvn}"
 RG_CERT_PORT="${RG_CERT_PORT:-18081}"
 RG_MCP_ENDPOINT="http://127.0.0.1:${RG_CERT_PORT}/mcp"
 OUTPUT_FILE="${1:-${ROOT_DIR}/resource-gateway-examples/target/agent-tdd-codex-certification.json}"
@@ -28,13 +29,17 @@ if ! [[ "${RG_CERT_PORT}" =~ ^[0-9]+$ ]] || [ "${RG_CERT_PORT}" -lt 1024 ] \
     echo "RG_CERT_PORT must be an unprivileged TCP port." >&2
     exit 1
 fi
-if ! git -C "${ROOT_DIR}" diff --quiet \
-        || ! git -C "${ROOT_DIR}" diff --cached --quiet \
-        || [ -n "$(git -C "${ROOT_DIR}" ls-files --others --exclude-standard)" ]; then
+repository_is_clean() {
+    git -C "${ROOT_DIR}" diff --quiet \
+        && git -C "${ROOT_DIR}" diff --cached --quiet \
+        && [ -z "$(git -C "${ROOT_DIR}" ls-files --others --exclude-standard)" ]
+}
+
+if ! repository_is_clean; then
     echo "Certification requires a clean committed worktree." >&2
     exit 1
 fi
-for command in "${CODEX_BIN}" curl git python3 openssl sandbox-exec; do
+for command in "${CODEX_BIN}" "${MVN_BIN}" curl git python3 openssl sandbox-exec; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "Required command is unavailable: ${command}" >&2
         exit 1
@@ -51,13 +56,16 @@ if "${ROOT_DIR}/scripts/example-services.sh" status resource-gateway 2>/dev/null
 fi
 
 PRIVATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rg-codex-cert.XXXXXX")"
+PRIVATE_DIR="$(cd "${PRIVATE_DIR}" && pwd -P)"
+WORKSPACE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rg-codex-workspace.XXXXXX")"
+WORKSPACE_DIR="$(cd "${WORKSPACE_DIR}" && pwd -P)"
 chmod 700 "${PRIVATE_DIR}"
 TRACE_FILE="${PRIVATE_DIR}/trace.jsonl"
-FINAL_FILE="${PRIVATE_DIR}/final.txt"
 PROMPT_FILE="${PRIVATE_DIR}/prompt.txt"
-WORKSPACE_DIR="${PRIVATE_DIR}/workspace"
 SANDBOX_PROFILE="${PRIVATE_DIR}/repository-deny.sb"
-mkdir -p "${WORKSPACE_DIR}" "$(dirname "${OUTPUT_FILE}")"
+touch "${TRACE_FILE}"
+chmod 600 "${TRACE_FILE}"
+mkdir -p "$(dirname "${OUTPUT_FILE}")"
 chmod 500 "${WORKSPACE_DIR}"
 umask 077
 TEMP_OUTPUT=""
@@ -84,10 +92,27 @@ cleanup() {
     else
         rm -rf "${PRIVATE_DIR}"
     fi
+    chmod 700 "${WORKSPACE_DIR}" 2>/dev/null || true
+    rm -rf "${WORKSPACE_DIR}"
 }
 trap cleanup EXIT
 
-if [[ "${ROOT_DIR}" == *'"'* ]]; then
+COMMON_GIT_DIR="$(git -C "${ROOT_DIR}" rev-parse --path-format=absolute --git-common-dir)"
+COMMON_REPOSITORY="$(dirname "${COMMON_GIT_DIR}")"
+EXTRA_DENY_RULES=""
+MEMORY_PROBE=""
+if [[ "${ROOT_DIR}" == */worktrees/* ]]; then
+    CODEX_DATA_ROOT="${ROOT_DIR%%/worktrees/*}"
+    EXTRA_DENY_RULES="
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/worktrees\"))
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/memories\"))"
+    MEMORY_PROBE="${CODEX_DATA_ROOT}/memories/MEMORY.md"
+fi
+if [ "${COMMON_REPOSITORY}" != "${ROOT_DIR}" ]; then
+    EXTRA_DENY_RULES="${EXTRA_DENY_RULES}
+(deny file-read* file-write* (subpath \"${COMMON_REPOSITORY}\"))"
+fi
+if [[ "${ROOT_DIR}${PRIVATE_DIR}${COMMON_REPOSITORY}${CODEX_DATA_ROOT:-}" == *'"'* ]]; then
     echo "Repository paths containing a quote cannot be represented in the macOS sandbox profile." >&2
     exit 1
 fi
@@ -96,6 +121,8 @@ cat > "${SANDBOX_PROFILE}" <<EOF
 (allow default)
 (deny file-read* (subpath "${ROOT_DIR}"))
 (deny file-write* (subpath "${ROOT_DIR}"))
+(deny file-read* file-write* (subpath "${PRIVATE_DIR}"))
+${EXTRA_DENY_RULES}
 EOF
 if ! sandbox-exec -f "${SANDBOX_PROFILE}" /usr/bin/true; then
     echo "macOS repository-isolation sandbox is unavailable." >&2
@@ -105,6 +132,18 @@ if sandbox-exec -f "${SANDBOX_PROFILE}" /bin/cat "${ROOT_DIR}/AGENTS.md" >/dev/n
     echo "macOS sandbox did not deny repository reads." >&2
     exit 1
 fi
+if sandbox-exec -f "${SANDBOX_PROFILE}" /bin/cat "${TRACE_FILE}" >/dev/null 2>&1; then
+    echo "macOS sandbox did not protect the private trace." >&2
+    exit 1
+fi
+if [ -n "${MEMORY_PROBE}" ] && [ -f "${MEMORY_PROBE}" ] \
+        && sandbox-exec -f "${SANDBOX_PROFILE}" /bin/cat "${MEMORY_PROBE}" >/dev/null 2>&1; then
+    echo "macOS sandbox did not deny the Codex memory store." >&2
+    exit 1
+fi
+
+REPOSITORY_COMMIT="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+"${MVN_BIN}" -f "${ROOT_DIR}/resource-gateway-examples/pom.xml" clean package -DskipTests
 
 SERVICE_OWNED=true
 RG_INTEGRATION_DEMO_TOKEN="${AGENT_TOKEN}" \
@@ -132,7 +171,6 @@ cat > "${PROMPT_FILE}" <<EOF
 EOF
 
 CODEX_VERSION="$(${CODEX_BIN} --version | head -1)"
-REPOSITORY_COMMIT="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
 CERTIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 CODEX_ARGS=(
@@ -143,7 +181,7 @@ if [ -n "${CODEX_MODEL:-}" ]; then
 fi
 CODEX_ARGS+=(
     --ephemeral --json --ignore-user-config --ignore-rules --skip-git-repo-check
-    --sandbox danger-full-access -C "${WORKSPACE_DIR}" -o "${FINAL_FILE}"
+    --sandbox danger-full-access -C "${WORKSPACE_DIR}"
     -c "mcp_servers.rg_read.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_read.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ"}'
@@ -169,7 +207,7 @@ CODEX_ARGS+=(
 
 set +e
 (
-    cd "${PRIVATE_DIR}"
+    cd "${WORKSPACE_DIR}"
     sandbox-exec -f "${SANDBOX_PROFILE}" \
         "${CODEX_BIN}" "${CODEX_ARGS[@]}"
 ) < "${PROMPT_FILE}" > "${TRACE_FILE}"
@@ -177,9 +215,8 @@ CODEX_EXIT=$?
 set -e
 
 if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
-        || ! git -C "${ROOT_DIR}" diff --quiet \
-        || ! git -C "${ROOT_DIR}" diff --cached --quiet; then
-    echo "Repository commit or tracked files changed during certification." >&2
+        || ! repository_is_clean; then
+    echo "Repository commit, tracked files or untracked sources changed during certification." >&2
     exit 1
 fi
 

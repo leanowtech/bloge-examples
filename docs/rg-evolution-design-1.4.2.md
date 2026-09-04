@@ -1325,11 +1325,13 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对干净 commit `ae2c5b26b` 完成认证；认证从
 该提交自举，没有复用前一提交或当前机器上碰巧运行的 RG：
 
-1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，从固定
-   HEAD 构建、启动并最终停止 loopback RG；Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
+1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，先
+   `clean package` 清除 Git 忽略的旧 classes，再从固定 HEAD 构建、启动并最终停止 loopback RG；
+   Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
    下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token。Codex
    内层 sandbox 设为 `danger-full-access` 以避免嵌套 Seatbelt；权威外层 profile 已先用仓库读取负测
-   证明有效，并继续拒绝仓库 read/write；外层 sandbox 启动前先切换到临时 cwd，避免进程在处理
+   证明有效，并继续拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace
+   的 read/write；外层 sandbox 启动前先切换到临时 cwd，避免进程在处理
    Codex `-C` 参数前触碰继承的仓库目录；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
@@ -1339,9 +1341,11 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
    有序失败到成功修正，且没有伪称首次通过；
 4. 认证器不再拼接任意历史成功调用：它要求 preview/gate 的 `accepted=true`，逐项比较 reference、
    preview、gate 与 compose 的 source、library refs、context 和 receipt，再比较 compose、instruction、
-   upsert、dependency behavior 与 listCases 的 Tool、CaseSet 和 case 归属；只有同一案例同时具备 stub
-   与 proposed Oracle 才通过；
-5. Codex 没有调用 execute 或 governance server，在人工 GOLDEN 批准前停下，最终只用业务语言
+   upsert、dependency behavior 与 listCases 的 Tool、CaseSet 和 case 归属；回读和补充证据必须在本次
+   upsert 之后，且只有同一案例同时具备 stub 与 proposed Oracle 才通过；
+5. trace 如出现 shell、文件修改、Web 搜索或任何未识别的非 MCP action item，认证立即
+   失败关闭；私有 trace 目录对 Codex 本身不可读写，避免子进程篡改审计输入；
+6. Codex 没有调用 execute 或 governance server，在人工 GOLDEN 批准前停下，最终只用业务语言
    报告资料来源、草稿、标准案例和人工待办。
 
 原始 JSONL 只在 `0700` 临时目录以 `0600` 权限处理，默认在结束时删除；认证器只输出
