@@ -4,6 +4,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.dsl.ast.AstNode;
 import com.leanowtech.bloge.dsl.ast.Expression;
 import com.leanowtech.bloge.dsl.compiler.DslCompiler;
+import com.leanowtech.bloge.dsl.parser.ParseException;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -65,7 +66,8 @@ public class DslImportService {
         AstNode root = parseAst(normalizeVisualImportSource(normalized.dsl()), state);
         if (root == null) {
             state.diagnostics.add(new VisualDiagnostic("ERROR", "visual.dslImport.parseFailed",
-                    "BLOGE DSL could not be parsed: " + state.parseFailureMessage, "/dsl", -1, -1,
+                    "BLOGE DSL could not be parsed: " + state.parseFailureMessage, "/dsl",
+                    state.parseFailureLine, state.parseFailureColumn,
                     Map.of("sourceId", normalized.sourceId())));
             GraphDraft draft = emptyDraft("dslImport", normalized);
             return new DslVisualProjection(DslVisualProjection.SCHEMA_VERSION, normalized.sourceId(), draft,
@@ -200,6 +202,10 @@ public class DslImportService {
             if (state != null) {
                 state.parseFailureMessage = ex.getMessage() == null ? ex.getClass().getSimpleName()
                         : ex.getMessage();
+                if (ex instanceof ParseException parseFailure) {
+                    state.parseFailureLine = Math.max(0, parseFailure.line());
+                    state.parseFailureColumn = Math.max(0, parseFailure.column());
+                }
             }
             return null;
         }
@@ -274,7 +280,8 @@ public class DslImportService {
         if (!(generatedRoot instanceof AstNode.GraphDef generatedGraph)) {
             VisualDiagnostic diagnostic = new VisualDiagnostic("ERROR", "visual.dslImport.roundTripParseFailed",
                     "Generated BLOGE DSL could not be parsed: " + generatedState.parseFailureMessage,
-                    "/roundTrip/generatedDsl", -1, -1, Map.of("sourceId", sourceRequest.sourceId()));
+                    "/roundTrip/generatedDsl", generatedState.parseFailureLine,
+                    generatedState.parseFailureColumn, Map.of("sourceId", sourceRequest.sourceId()));
             return DslRoundTripSummary.partial(
                     "Generated DSL could not be parsed back into a graph definition.",
                     generation.dsl(), sourceFingerprint, "", List.of(diagnostic));
@@ -1584,6 +1591,8 @@ public class DslImportService {
         private final Set<String> referencedFunctionNames = new LinkedHashSet<>();
         private final Set<String> expressionOutputTargets = new LinkedHashSet<>();
         private String parseFailureMessage = "";
+        private int parseFailureLine;
+        private int parseFailureColumn;
 
         private ProjectionState(DslImportPreviewRequest request) {
             this.request = request;

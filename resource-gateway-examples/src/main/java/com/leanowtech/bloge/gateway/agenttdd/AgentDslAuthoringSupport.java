@@ -32,6 +32,7 @@ public final class AgentDslAuthoringSupport {
     private final DslReferenceBundleLoader.Bundle bundle;
     private final DslAuthoringContextResolver contexts;
     private final DslContractLens lens;
+    private final DslAuthoringCompiler compiler;
 
     /**
      * Creates the support boundary over the authoritative scoped catalog and library registry.
@@ -47,6 +48,7 @@ public final class AgentDslAuthoringSupport {
         this.bundle = new DslReferenceBundleLoader(mapper).bundle();
         this.contexts = new DslAuthoringContextResolver(catalog, libraries, mapper, bundle);
         this.lens = new DslContractLens(mapper);
+        this.compiler = new DslAuthoringCompiler(mapper);
     }
 
     /**
@@ -121,6 +123,30 @@ public final class AgentDslAuthoringSupport {
      */
     public DslAuthoringContext resolveContext(List<String> libraryRefs, IntegrationRequestContext identity) {
         return contexts.resolve(libraryRefs, identity);
+    }
+
+    /**
+     * Compiles one candidate against the exact context previously returned by
+     * {@link #reference(DslReferenceRequest, IntegrationRequestContext)}.
+     *
+     * @param request candidate source and authoring-context fingerprint
+     * @param identity authenticated tenant, project and environment
+     * @return bounded payload-free authoring receipt
+     */
+    public DslPreviewReceipt preview(DslPreviewRequest request, IntegrationRequestContext identity) {
+        Objects.requireNonNull(request, "request");
+        if (request.authoringContextFingerprint().isBlank()) {
+            throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_REQUIRED",
+                    "Fetch the current DSL reference before previewing source.",
+                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"));
+        }
+        DslAuthoringContext context = contexts.resolve(request.libraryRefs(), identity);
+        if (!context.fingerprint().equals(request.authoringContextFingerprint())) {
+            throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_STALE",
+                    "The DSL authoring context changed after the reference was fetched.",
+                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"));
+        }
+        return compiler.preview(request, context);
     }
 
     private static List<String> normalize(List<String> values, int maximum) {

@@ -87,6 +87,160 @@ class AgentDslAuthoringSupportTest {
                 .isEqualTo("DSL_REFERENCE_TOO_LARGE");
     }
 
+    @Test
+    void returnsSafeParseGuidanceThenAcceptsTheCorrectedCandidate() {
+        OperatorDefinition transform = operator(
+                "bloge:transform", "", OperatorDefinition.Policy.unrestricted());
+        AgentDslAuthoringSupport support = support(List.of(transform), List.of());
+        DslReferenceSnapshot reference = support.reference(
+                new DslReferenceRequest(List.of(), List.of(), List.of(), true), identity("project-a"));
+
+        DslPreviewReceipt rejected = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph broken { transform result { value = ctx.token }",
+                List.of(), reference.authoringContextFingerprint()), identity("project-a"));
+
+        assertThat(rejected.technicalAcceptance()).isEqualTo("REVISE");
+        assertThat(rejected.stages()).extracting(DslPreviewReceipt.Stage::phase, DslPreviewReceipt.Stage::status)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("CONTEXT", "PASS"),
+                        org.assertj.core.groups.Tuple.tuple("PARSE", "FAIL"),
+                        org.assertj.core.groups.Tuple.tuple("RESOLVE", "NOT_RUN"),
+                        org.assertj.core.groups.Tuple.tuple("TYPE_CHECK", "NOT_RUN"),
+                        org.assertj.core.groups.Tuple.tuple("SEMANTIC_COMPILE", "NOT_RUN"),
+                        org.assertj.core.groups.Tuple.tuple("LINT", "NOT_RUN"),
+                        org.assertj.core.groups.Tuple.tuple("PROJECT", "NOT_RUN"),
+                        org.assertj.core.groups.Tuple.tuple("ROUND_TRIP", "NOT_RUN"));
+        assertThat(rejected.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.phase()).isEqualTo("PARSE");
+            assertThat(diagnostic.code()).isEqualTo("DSL_PARSE_EXPECTED_CONSTRUCT");
+            assertThat(diagnostic.safeSummary()).doesNotContain("token", "broken", "ctx");
+            assertThat(diagnostic.referenceRefs()).contains("topic:graph");
+            assertThat(diagnostic.resolutionClass()).isEqualTo("AGENT_CAN_REVISE");
+        });
+
+        DslReferenceSnapshot.Example example = reference.examples().stream()
+                .filter(value -> value.exampleId().equals("graph-transform-minimal"))
+                .findFirst().orElseThrow();
+        DslPreviewReceipt accepted = support.preview(new DslPreviewRequest(
+                example.exampleId(), example.source(), List.of(),
+                reference.authoringContextFingerprint()), identity("project-a"));
+
+        assertThat(accepted.accepted()).isTrue();
+        assertThat(accepted.technicalAcceptance()).isEqualTo("ACCEPTED");
+        assertThat(accepted.stages()).extracting(DslPreviewReceipt.Stage::status)
+                .containsOnly("PASS");
+        assertThat(accepted.authoringReceiptFingerprint()).startsWith("sha256:");
+    }
+
+    @Test
+    void suggestsOnlyVisibleOperatorsAndNeverEchoesRejectedSourceOrLowerMessages() {
+        OperatorDefinition transform = operator(
+                "bloge:transform", "", OperatorDefinition.Policy.unrestricted());
+        OperatorDefinition hidden = operator("secret:operator", "secret-library",
+                OperatorDefinition.Policy.unrestricted());
+        AgentDslAuthoringSupport support = support(List.of(transform, hidden), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph candidate { node lookup : \"bloge:tranform\" { } } // token=secret-value",
+                List.of(), context), identity("project-a"));
+
+        DslAuthoringDiagnostic diagnostic = receipt.authoringDiagnostics().stream()
+                .filter(value -> value.code().equals("DSL_OPERATOR_NOT_FOUND"))
+                .findFirst().orElseThrow();
+        assertThat(diagnostic.phase()).isEqualTo("RESOLVE");
+        assertThat(diagnostic.fixHints()).extracting(DslAuthoringDiagnostic.FixHint::candidate)
+                .contains("bloge:transform")
+                .doesNotContain("secret:operator");
+        assertThat(mapper.valueToTree(receipt).toString())
+                .doesNotContain("tranform", "secret-value", "secret:operator", "token=");
+    }
+
+    @Test
+    void mapsDecisionTableLintRulesWithoutPassingThroughRuleMessages() {
+        AgentDslAuthoringSupport support = support(List.of(
+                operator("bloge:decisionTable", "", OperatorDefinition.Policy.unrestricted())), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+        String source = """
+                graph policyGraph {
+                  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {
+                    rule (score: score >= 100) -> { decision: "review-secret" }
+                    rule (score: score >= 120) -> { decision: "accept-secret" }
+                  }
+                }
+                """;
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "policy.bloge", source, List.of(), context), identity("project-a"));
+
+        assertThat(receipt.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_DECISION_UNIQUE_OVERLAP", "DSL_DECISION_OTHERWISE_REQUIRED");
+        assertThat(mapper.valueToTree(receipt).toString())
+                .doesNotContain("review-secret", "accept-secret", "policyGraph");
+    }
+
+    @Test
+    void rejectsMissingAndStaleContextBeforeCompilingAnySource() {
+        AgentDslAuthoringSupport support = support(List.of(
+                operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted())), List.of());
+
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "payload-marker", List.of(), ""), identity("project-a")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(error -> ((AgentTddToolException) error).code())
+                .isEqualTo("DSL_AUTHORING_CONTEXT_REQUIRED");
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "payload-marker", List.of(), "sha256:stale"), identity("project-a")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(error -> ((AgentTddToolException) error).code())
+                .isEqualTo("DSL_AUTHORING_CONTEXT_STALE");
+    }
+
+    @Test
+    void keepsParseCoordinatesStructuredAndFingerprintsOpaque() {
+        AgentDslAuthoringSupport support = support(List.of(
+                operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted())), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate {\n  transform result {\n    value =\n}",
+                List.of(), context), identity("project-a"));
+
+        assertThat(receipt.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.span().startLine()).isGreaterThanOrEqualTo(0);
+            assertThat(diagnostic.span().startColumn()).isGreaterThanOrEqualTo(0);
+            if (!diagnostic.span().known()) {
+                assertThat(diagnostic.span().startLine()).isZero();
+                assertThat(diagnostic.span().startColumn()).isZero();
+            }
+            assertThat(diagnostic.diagnosticFingerprint()).matches("sha256:[0-9a-f]{64}");
+        });
+        assertThat(receipt.projection().get("sourceSemanticFingerprint")).isEqualTo("");
+    }
+
+    @Test
+    void rejectsOversizedSourceBeforeParserAllocation() {
+        AgentDslAuthoringSupport support = support(List.of(), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "x".repeat(DslAuthoringCompiler.MAX_SOURCE_BYTES + 1),
+                List.of(), context), identity("project-a")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(error -> ((AgentTddToolException) error).code())
+                .isEqualTo("DSL_SOURCE_TOO_LARGE");
+    }
+
     private AgentDslAuthoringSupport support(List<OperatorDefinition> operators,
                                              List<OperatorLibrary> libraries) {
         return new AgentDslAuthoringSupport(new FixedCatalog(operators), new FixedLibraries(libraries), mapper);
