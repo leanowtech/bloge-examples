@@ -113,11 +113,27 @@ class TraceCertificateTest(unittest.TestCase):
         self.assertTrue(certificate["assertions"]["businessOracleProposed"])
         self.assertTrue(certificate["assertions"]["stoppedBeforeExecutionGovernanceAndPublication"])
         self.assertTrue(certificate["assertions"]["sameCandidateReceiptAndAssets"])
+        self.assertTrue(certificate["assertions"]["selfRepairObserved"])
         self.assertEqual("EPHEMERAL_HMAC_SHA256", certificate["correlation"]["method"])
         self.assertTrue(certificate["correlation"]["cases"])
         self.assertNotIn("Alice-secret", serialized)
         self.assertNotIn("must-not-survive", serialized)
         self.assertNotIn("private-tool", serialized)
+
+    def test_accepts_an_honest_first_pass_without_manufacturing_an_error(self) -> None:
+        events = [event for event in self.happy_events()
+                  if event.get("item", {}).get("status") != "failed"]
+
+        certificate = MODULE.certify(self.write_trace(events), {
+            "repositoryCommit": "abc123",
+            "codexVersion": "codex-cli test",
+            "certifiedAt": "2026-09-04T00:00:00Z",
+            "exitCode": 0,
+        })
+
+        self.assertFalse(certificate["assertions"]["selfRepairObserved"])
+        self.assertTrue(certificate["assertions"]["firstPassAccepted"])
+        self.assertTrue(certificate["assertions"]["selfRepairOrFirstPassAccepted"])
 
     def test_rejects_a_case_set_bound_to_a_different_tool(self) -> None:
         events = self.happy_events()

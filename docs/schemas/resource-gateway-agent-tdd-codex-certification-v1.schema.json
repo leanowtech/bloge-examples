@@ -115,6 +115,8 @@
         "stoppedBeforeExecutionGovernanceAndPublication",
         "finalSummaryBusinessOnly",
         "selfRepairObserved",
+        "firstPassAccepted",
+        "selfRepairOrFirstPassAccepted",
         "boundedRepairPolicyRespected",
         "sameCandidateReceiptAndAssets",
         "rawArgumentsResultsAndMessagesOmitted"
@@ -127,7 +129,9 @@
         "businessOracleProposed": { "const": true },
         "stoppedBeforeExecutionGovernanceAndPublication": { "const": true },
         "finalSummaryBusinessOnly": { "const": true },
-        "selfRepairObserved": { "const": true },
+        "selfRepairObserved": { "type": "boolean" },
+        "firstPassAccepted": { "type": "boolean" },
+        "selfRepairOrFirstPassAccepted": { "const": true },
         "boundedRepairPolicyRespected": { "const": true },
         "sameCandidateReceiptAndAssets": { "const": true },
         "rawArgumentsResultsAndMessagesOmitted": { "const": true }

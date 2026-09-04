@@ -55,6 +55,9 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/assertions/finalSummaryBusinessOnly").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/boundedRepairPolicyRespected").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/sameCandidateReceiptAndAssets").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/selfRepairOrFirstPassAccepted").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/selfRepairObserved").asBoolean()
+                || certificate.at("/assertions/firstPassAccepted").asBoolean()).isTrue();
         assertThat(certificate.at("/correlation/method").asText())
                 .isEqualTo("EPHEMERAL_HMAC_SHA256");
         assertThat(certificate.at("/correlation/cases")).isNotEmpty();
@@ -109,7 +112,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 7 tests", "OK");
+        assertThat(output).contains("Ran 8 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

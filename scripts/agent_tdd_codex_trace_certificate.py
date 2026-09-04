@@ -198,9 +198,12 @@ def follows_failure_with_success(calls: list[dict[str, Any]]) -> bool:
     """Prove an actual same-tool failure-to-success transition in trace order."""
     failed_at: dict[str, int] = {}
     for index, call in enumerate(calls):
-        if call["status"] == "failed":
+        rejected_authoring = call["tool"] in AUTHORING_TOOLS and call["successful"] \
+            and call["data"].get("accepted") is False
+        if call["status"] == "failed" or rejected_authoring:
             failed_at.setdefault(call["tool"], index)
-        elif call["successful"] and call["tool"] in failed_at and failed_at[call["tool"]] < index:
+        elif stage_accepted(call, call["tool"]) \
+                and call["tool"] in failed_at and failed_at[call["tool"]] < index:
             return True
     return False
 
@@ -335,8 +338,10 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         raise CertificationFailure("Codex final summary exposed technical implementation vocabulary")
 
     self_repair = follows_failure_with_success(calls)
-    if not self_repair:
-        raise CertificationFailure("Codex did not demonstrate an ordered same-tool self repair")
+    preview_calls = [call for call in calls if call["tool"] == "rg.dsl.preview"]
+    first_pass = bool(preview_calls) and stage_accepted(preview_calls[0], "rg.dsl.preview")
+    if not (self_repair or first_pass):
+        raise CertificationFailure("Codex neither repaired a rejected preview nor passed its first preview")
     safe_calls = [
         {"ordinal": index + 1, "server": call["server"], "tool": call["tool"], "status": call["status"]}
         for index, call in enumerate(calls)
@@ -366,7 +371,9 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "businessOracleProposed": True,
             "stoppedBeforeExecutionGovernanceAndPublication": True,
             "finalSummaryBusinessOnly": True,
-            "selfRepairObserved": True,
+            "selfRepairObserved": self_repair,
+            "firstPassAccepted": first_pass,
+            "selfRepairOrFirstPassAccepted": True,
             "boundedRepairPolicyRespected": True,
             "sameCandidateReceiptAndAssets": True,
             "rawArgumentsResultsAndMessagesOmitted": True,

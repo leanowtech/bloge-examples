@@ -1325,8 +1325,9 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
    Codex `-C` 参数前触碰继承的仓库目录；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
-3. 安全化 trace 必须按顺序包含 capability/contract discovery、失败后成功的同工具自修正、accepted
-   preview、accepted gate、compose、instruction、upsertCases、dependency behavior 与 listCases；
+3. 安全化 trace 必须按顺序包含 capability/contract discovery、accepted preview、accepted gate、
+   compose、instruction、upsertCases、dependency behavior 与 listCases；首次 preview 通过时记录
+   `firstPassAccepted`，否则必须证明同一工具从失败/`accepted=false` 到成功的有序自修正；
 4. 认证器不再拼接任意历史成功调用：它要求 preview/gate 的 `accepted=true`，逐项比较 reference、
    preview、gate 与 compose 的 source、library refs、context 和 receipt，再比较 compose、instruction、
    upsert、dependency behavior 与 listCases 的 Tool、CaseSet 和 case 归属；只有同一案例同时具备 stub

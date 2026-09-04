@@ -351,7 +351,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 - preview、gate、compose 的 source、library refs、context 与 receipt 完全一致；
 - compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与同一案例；
 - Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
-- 最终回复只使用业务语言，且至少观察到一次有先后顺序的同工具失败到成功自主修正；
+- 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到同一工具按顺序从失败或 `accepted=false` 到成功；
 - preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
 认证提示词用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动
