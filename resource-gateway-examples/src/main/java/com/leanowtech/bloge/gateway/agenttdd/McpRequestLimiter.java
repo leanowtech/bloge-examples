@@ -30,18 +30,30 @@ public final class McpRequestLimiter {
     private final int authoringPerWindow;
     private final int authoringConcurrency;
     private final LongSupplier nanoTime;
+    private final AgentTddAuthoringTelemetry telemetry;
     private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Semaphore> authoringPermits = new ConcurrentHashMap<>();
 
-    /** Creates the configured application limiter. */
-    @Autowired
+    /** Creates a limiter with inert telemetry for transport-neutral embedders. */
     public McpRequestLimiter(
             @Value("${gateway.agent-tdd.mcp-limits.common-per-minute:120}") int commonPerWindow,
             @Value("${gateway.agent-tdd.mcp-limits.reference-per-minute:60}") int referencePerWindow,
             @Value("${gateway.agent-tdd.mcp-limits.authoring-per-minute:30}") int authoringPerWindow,
             @Value("${gateway.agent-tdd.mcp-limits.authoring-concurrency:4}") int authoringConcurrency) {
         this(commonPerWindow, referencePerWindow, authoringPerWindow, authoringConcurrency,
-                System::nanoTime);
+                System::nanoTime, AgentTddAuthoringTelemetry.noop());
+    }
+
+    /** Creates the configured application limiter with payload-free rejection telemetry. */
+    @Autowired
+    public McpRequestLimiter(
+            @Value("${gateway.agent-tdd.mcp-limits.common-per-minute:120}") int commonPerWindow,
+            @Value("${gateway.agent-tdd.mcp-limits.reference-per-minute:60}") int referencePerWindow,
+            @Value("${gateway.agent-tdd.mcp-limits.authoring-per-minute:30}") int authoringPerWindow,
+            @Value("${gateway.agent-tdd.mcp-limits.authoring-concurrency:4}") int authoringConcurrency,
+            AgentTddAuthoringTelemetry telemetry) {
+        this(commonPerWindow, referencePerWindow, authoringPerWindow, authoringConcurrency,
+                System::nanoTime, telemetry);
     }
 
     McpRequestLimiter(int commonPerWindow,
@@ -49,11 +61,22 @@ public final class McpRequestLimiter {
                       int authoringPerWindow,
                       int authoringConcurrency,
                       LongSupplier nanoTime) {
+        this(commonPerWindow, referencePerWindow, authoringPerWindow, authoringConcurrency,
+                nanoTime, AgentTddAuthoringTelemetry.noop());
+    }
+
+    McpRequestLimiter(int commonPerWindow,
+                      int referencePerWindow,
+                      int authoringPerWindow,
+                      int authoringConcurrency,
+                      LongSupplier nanoTime,
+                      AgentTddAuthoringTelemetry telemetry) {
         this.commonPerWindow = positive(commonPerWindow, "commonPerWindow");
         this.referencePerWindow = positive(referencePerWindow, "referencePerWindow");
         this.authoringPerWindow = positive(authoringPerWindow, "authoringPerWindow");
         this.authoringConcurrency = positive(authoringConcurrency, "authoringConcurrency");
         this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
     }
 
     /** Returns conservative defaults for transport-focused unit tests and embedders. */
@@ -71,24 +94,26 @@ public final class McpRequestLimiter {
     Permit acquire(IntegrationRequestContext identity, String toolName) {
         Objects.requireNonNull(identity, "identity");
         String subject = subject(identity);
-        requireRate(subject + "|common", commonPerWindow);
+        requireRate(subject + "|common", commonPerWindow, toolName);
         if ("rg.dsl.reference.get".equals(toolName)) {
-            requireRate(subject + "|reference", referencePerWindow);
+            requireRate(subject + "|reference", referencePerWindow, toolName);
             return Permit.NONE;
         }
         if ("rg.dsl.preview".equals(toolName) || "rg.gate.check".equals(toolName)) {
-            requireRate(subject + "|authoring", authoringPerWindow);
+            requireRate(subject + "|authoring", authoringPerWindow, toolName);
             Semaphore semaphore;
             synchronized (authoringPermits) {
                 semaphore = authoringPermits.get(subject);
                 if (semaphore == null) {
                     if (authoringPermits.size() >= MAX_TRACKED_AUTHORING_IDENTITIES) {
+                        telemetry.limitRejected(toolName, "concurrency_capacity");
                         throw new McpProtocolException(-32030, "MCP authoring concurrency capacity exceeded");
                     }
                     semaphore = new Semaphore(authoringConcurrency);
                     authoringPermits.put(subject, semaphore);
                 }
                 if (!semaphore.tryAcquire()) {
+                    telemetry.limitRejected(toolName, "concurrency");
                     throw new McpProtocolException(-32030, "MCP authoring concurrency limit exceeded");
                 }
             }
@@ -98,7 +123,7 @@ public final class McpRequestLimiter {
         return Permit.NONE;
     }
 
-    private void requireRate(String key, int maximum) {
+    private void requireRate(String key, int maximum, String toolName) {
         long now = nanoTime.getAsLong();
         synchronized (windows) {
             Window window = windows.get(key);
@@ -107,12 +132,14 @@ public final class McpRequestLimiter {
                     windows.entrySet().removeIf(entry -> entry.getValue().expired(now));
                 }
                 if (windows.size() >= MAX_TRACKED_BUCKETS) {
+                    telemetry.limitRejected(toolName, "rate_capacity");
                     throw new McpProtocolException(-32029, "MCP request rate-limit capacity exceeded");
                 }
                 window = new Window(now);
                 windows.put(key, window);
             }
             if (!window.tryAcquire(now, maximum)) {
+                telemetry.limitRejected(toolName, "rate");
                 throw new McpProtocolException(-32029, "MCP request rate limit exceeded");
             }
         }

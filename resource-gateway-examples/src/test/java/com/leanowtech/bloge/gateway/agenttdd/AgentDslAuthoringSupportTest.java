@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -232,6 +233,58 @@ class AgentDslAuthoringSupportTest {
         assertThat(accepted.stages()).extracting(DslPreviewReceipt.Stage::status)
                 .containsOnly("PASS");
         assertThat(accepted.authoringReceiptFingerprint()).startsWith("sha256:");
+    }
+
+    @Test
+    void publishesPayloadFreeReferenceAndPreviewTelemetryAtTheAuthoringBoundary() {
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        AgentTddAuthoringTelemetry telemetry = new AgentTddAuthoringTelemetry(meters);
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of(operator(
+                        "bloge:transform", "", OperatorDefinition.Policy.unrestricted()))),
+                new FixedLibraries(List.of()), mapper, telemetry);
+
+        DslReferenceSnapshot reference = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"));
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph broken { transform result { value = ctx.token }",
+                List.of(), reference.authoringContextFingerprint()), identity("project-a"));
+
+        assertThat(receipt.technicalAcceptance()).isEqualTo("REVISE");
+        assertThat(receipt.roundTrip().status()).isEqualTo("PARTIAL");
+        assertThat(receipt.roundTrip().driftKinds()).containsExactly("SEMANTIC_PROJECTION");
+        assertThat(meters.get("rg.dsl.reference.requests").tag("result", "success")
+                .counter().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.reference.bytes").summary().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.preview.requests")
+                .tags("acceptance", "revise", "phase", "parse").counter().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.preview.duration").tag("phase", "parse")
+                .timer().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.diagnostics")
+                .tags("code", "dsl_parse_error", "level", "error", "phase", "parse")
+                .counter().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.round_trip")
+                .tags("status", "partial", "driftKind", "semantic_projection")
+                .counter().count()).isEqualTo(1);
+        assertThat(meters.getMeters()).allSatisfy(meter -> assertThat(meter.getId().getTags().toString())
+                .doesNotContain("project-a", "customer", "candidate.bloge", "ctx.token"));
+    }
+
+    @Test
+    void countsAStaleContextWithoutPublishingItsFingerprint() {
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of()), new FixedLibraries(List.of()), mapper,
+                new AgentTddAuthoringTelemetry(meters));
+
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate {}", List.of(), "sha256:" + "a".repeat(64)),
+                identity("project-a"))).isInstanceOf(AgentTddToolException.class);
+
+        assertThat(meters.get("rg.dsl.context.stale").counter().count()).isEqualTo(1);
+        assertThat(meters.get("rg.dsl.preview.requests")
+                .tags("acceptance", "refetch_reference", "phase", "context")
+                .counter().count()).isEqualTo(1);
     }
 
     @Test

@@ -121,7 +121,6 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
      * {@code bindingRef}, port contract, effect, and readiness of descriptor-backed APIs instead
      * of guessing identifiers that are not present in authored operator libraries.</p>
      */
-    @Autowired
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper,
@@ -133,11 +132,30 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         VisualOperatorCatalog catalog,
                                         AgentTddResourceDeclarationService declarations,
                                         AgentTddAttestationService attestations) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
+                catalog, declarations, attestations, AgentTddAuthoringTelemetry.noop());
+    }
+
+    /** Creates the Spring facade with payload-free Agent authoring telemetry. */
+    @Autowired
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        DslImportService projection,
+                                        VisualGraphSimulationService simulation,
+                                        AgentTddStateRepository states,
+                                        AuthoringPreviewService authoring,
+                                        AgentTddWorkflowService workflow,
+                                        VisualOperatorCatalog catalog,
+                                        AgentTddResourceDeclarationService declarations,
+                                        AgentTddAttestationService attestations,
+                                        AgentTddAuthoringTelemetry telemetry) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.catalog = catalog;
-        this.dslAuthoring = catalog == null ? null : new AgentDslAuthoringSupport(catalog, libraries, mapper);
+        this.dslAuthoring = catalog == null ? null
+                : new AgentDslAuthoringSupport(catalog, libraries, mapper, telemetry);
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(

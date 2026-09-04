@@ -1,10 +1,12 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Verifies independent rate buckets, window rollover and shared preview/gate concurrency. */
@@ -69,6 +71,22 @@ class McpRequestLimiterTest {
         time.addAndGet(McpRequestLimiter.WINDOW.toNanos());
 
         limiter.acquire(identity("fresh-agent"), "rg.dsl.reference.get").close();
+    }
+
+    @Test
+    void publishesOnlyClosedToolAndReasonLabelsWhenAdmissionRejects() {
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        McpRequestLimiter limiter = new McpRequestLimiter(
+                20, 1, 20, 1, System::nanoTime, new AgentTddAuthoringTelemetry(meters));
+
+        limiter.acquire(identity("agent-a"), "rg.dsl.reference.get").close();
+        assertRateLimited(() -> limiter.acquire(identity("agent-a"), "rg.dsl.reference.get"));
+
+        assertThat(meters.get("rg.mcp.limit.rejected")
+                .tags("tool", "rg.dsl.reference.get", "reason", "rate")
+                .counter().count()).isEqualTo(1);
+        assertThat(meters.getMeters()).allSatisfy(meter -> assertThat(meter.getId().getTags().toString())
+                .doesNotContain("agent-a", "tenant-a", "project-a"));
     }
 
     private static void assertRateLimited(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {

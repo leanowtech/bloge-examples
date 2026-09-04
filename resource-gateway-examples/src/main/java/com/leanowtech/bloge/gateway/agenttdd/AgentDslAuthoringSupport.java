@@ -46,6 +46,7 @@ public final class AgentDslAuthoringSupport {
     private final DslContractLens lens;
     private final CandidateCompiler compiler;
     private final Duration previewBudget;
+    private final AgentTddAuthoringTelemetry telemetry;
 
     /**
      * Creates the support boundary over the authoritative scoped catalog and library registry.
@@ -57,8 +58,23 @@ public final class AgentDslAuthoringSupport {
     public AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
                                     OperatorLibraryRegistry libraries,
                                     ObjectMapper mapper) {
+        this(catalog, libraries, mapper, AgentTddAuthoringTelemetry.noop());
+    }
+
+    /**
+     * Creates the support boundary with deployment telemetry.
+     *
+     * @param catalog visual operator authority
+     * @param libraries authored library authority
+     * @param mapper canonical protocol mapper
+     * @param telemetry payload-free authoring telemetry
+     */
+    public AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
+                                    OperatorLibraryRegistry libraries,
+                                    ObjectMapper mapper,
+                                    AgentTddAuthoringTelemetry telemetry) {
         this(catalog, libraries, mapper, new DslAuthoringCompiler(mapper)::preview,
-                DslAuthoringCompiler.PREVIEW_BUDGET);
+                DslAuthoringCompiler.PREVIEW_BUDGET, telemetry);
     }
 
     AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
@@ -66,12 +82,22 @@ public final class AgentDslAuthoringSupport {
                              ObjectMapper mapper,
                              CandidateCompiler compiler,
                              Duration previewBudget) {
+        this(catalog, libraries, mapper, compiler, previewBudget, AgentTddAuthoringTelemetry.noop());
+    }
+
+    AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
+                             OperatorLibraryRegistry libraries,
+                             ObjectMapper mapper,
+                             CandidateCompiler compiler,
+                             Duration previewBudget,
+                             AgentTddAuthoringTelemetry telemetry) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.bundle = new DslReferenceBundleLoader(mapper).bundle();
         this.contexts = new DslAuthoringContextResolver(catalog, libraries, mapper, bundle);
         this.lens = new DslContractLens(mapper);
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.previewBudget = Objects.requireNonNull(previewBudget, "previewBudget");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry");
         if (previewBudget.isZero() || previewBudget.isNegative()) {
             throw new IllegalArgumentException("previewBudget must be positive");
         }
@@ -85,6 +111,25 @@ public final class AgentDslAuthoringSupport {
      * @return server-owned syntax, contract lenses and context fingerprint
      */
     public DslReferenceSnapshot reference(DslReferenceRequest request, IntegrationRequestContext identity) {
+        try {
+            DslReferenceSnapshot snapshot = buildReference(request, identity);
+            telemetry.referenceSucceeded(mapper.writeValueAsBytes(snapshot).length);
+            return snapshot;
+        } catch (AgentTddToolException failure) {
+            telemetry.referenceFailed(true);
+            throw failure;
+        } catch (JsonProcessingException failure) {
+            telemetry.referenceFailed(false);
+            throw new IllegalStateException("DSL reference response cannot be encoded", failure);
+        } catch (RuntimeException failure) {
+            telemetry.referenceFailed(false);
+            throw failure;
+        }
+    }
+
+    private DslReferenceSnapshot buildReference(
+            DslReferenceRequest request,
+            IntegrationRequestContext identity) {
         Objects.requireNonNull(request, "request");
         List<String> topics = normalize(request.topics(), MAX_TOPICS);
         List<String> operatorRefs = normalize(request.operatorRefs(), MAX_OPERATOR_REFS);
@@ -161,6 +206,20 @@ public final class AgentDslAuthoringSupport {
      * @return bounded payload-free authoring receipt
      */
     public DslPreviewReceipt preview(DslPreviewRequest request, IntegrationRequestContext identity) {
+        long started = System.nanoTime();
+        try {
+            DslPreviewReceipt receipt = compilePreview(request, identity);
+            telemetry.previewCompleted(receipt, System.nanoTime() - started);
+            return receipt;
+        } catch (AgentTddToolException failure) {
+            telemetry.previewRejected(failure.code(), System.nanoTime() - started);
+            throw failure;
+        }
+    }
+
+    private DslPreviewReceipt compilePreview(
+            DslPreviewRequest request,
+            IntegrationRequestContext identity) {
         Objects.requireNonNull(request, "request");
         if (request.authoringContextFingerprint().isBlank()) {
             throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_REQUIRED",

@@ -46,6 +46,11 @@ Preview is bounded to 512 KiB, 5 seconds, 25 diagnostics per phase and 100 total
 MCP defaults to 120 total calls/minute, 60 reference calls/minute, and 30 shared preview/gate calls/minute
 with four concurrent authoring calls; expired rate windows and fully released identity semaphores are evicted so
 historical clients cannot permanently consume admission capacity. The `RG_AGENT_TDD_MCP_*` settings may lower those limits.
+Micrometer publishes payload-free reference size/result, preview acceptance/phase/duration, safe diagnostic,
+round-trip, stale-context, and limiter-rejection measurements. Labels are restricted to server-owned states,
+diagnostic codes, and catalog tool names; identity, source, fingerprints, operator references, and exception prose
+are never metric labels. Cross-call repair rounds remain a Codex trace-certificate fact rather than creating
+session state in the stateless MCP server.
 Sandbox attestation also rejects stable or mixed DNS answers in private and RFC special-purpose ranges, including
 documentation, benchmark, protocol-assignment, discard-only, transition and reserved addresses.
 The board derives each Tool's position and next business action along the five-act journey from

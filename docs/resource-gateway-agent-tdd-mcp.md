@@ -277,6 +277,8 @@ DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`c
 
 `fixHints.reasonCode=AUTHORIZED_NAME_MATCH` 只表示候选在当前 scope 可见且名称接近，不表示业务含义或端口契约已经兼容。Codex 必须以 reference 中返回的 operator contract 复核输入、输出和 effect。服务端会在 `TYPE_CHECK` 阶段校验命名端口、输出路径、必需输入，以及可由纯字面量直接证明的显式类型冲突；`session/state_machine` 会明确返回当前 graph-only profile 不支持，而不是让 Codex 猜测泛化解析错误。
 
+运营侧可从 Spring `MeterRegistry` 采集 `rg.dsl.reference.requests`、`rg.dsl.reference.bytes`、`rg.dsl.preview.requests`、`rg.dsl.preview.duration`、`rg.dsl.diagnostics`、`rg.dsl.context.stale`、`rg.dsl.round_trip` 与 `rg.mcp.limit.rejected`。这些指标只使用服务端闭集状态、诊断码和工具名作为标签，不包含 tenant/project/actor、DSL source、指纹、operator ref 或异常文本。修正轮次与不收敛原因属于跨调用会话事实，由 Codex 认证 trace reducer 统计；无状态 MCP 服务端不为指标另建会话状态。
+
 ### 5.5 实景验证边界
 
 - 只接受 `local`、`test`、`sandbox` 环境；`prod` 失败关闭。
