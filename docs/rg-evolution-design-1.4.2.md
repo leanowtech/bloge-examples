@@ -1302,8 +1302,8 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 - `AgentTddCodexCertificationArtifactTest` 与 `agent_tdd_codex_trace_certificate_test.py`：固定可入库
   证书的严格结构、语义断言、指纹、载荷零泄漏，以及未绑定用例和越过人工停点的失败路径。
 
-最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 12 分 35 秒：
-**8,536 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。该计数已从
+最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 11 分 44 秒：
+**8,539 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。该计数已从
 Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其中：
 
 - `AgentDslAuthoringSupportTest`：24/24 通过；
@@ -1386,6 +1386,7 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 | 权威范围与版本 | `7f0db1738` | 关闭跨项目 library 探测，运行版本取自实际 BLOGE DSL JAR，并补 library/function 漂移证据 |
 | 认证动作隔离 | `078f17043` | 从 clean target 自举服务，拒绝非 MCP action，并约束用例补充证据必须晚于本次写入 |
 | 审计失败关闭 | `ce34fb711`、`95adb71d2` | 区分被动 CLI error 与外部 action，保留认证必需元数据并显式关闭外部功能面 |
+| 最终产品认证 | `313f8c522` | 对 clean commit 重跑真实 Codex/MCP 作者链，入库全链 HMAC 关联证书并更新严格指纹 |
 
 ### 23.5 剩余限制与差距
 
