@@ -5,7 +5,7 @@ Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.
 
 ## Resource Gateway Agent TDD 支持范围
 
-本文是仓库内的完整语法资料，不是远程 Agent 的运行时权威输入。Resource Gateway 1.4.2 只向 Agent TDD 开放 `graph` 根类型。Codex 必须先调用 `rg.dsl.reference.get`，以返回的 `languageVersion`、`compilerProfile`、topics、可见 operator/function contracts、certified examples 和 `authoringContextFingerprint` 为准。不同 tenant、project、environment 或 `libraryRefs` 的参考不能混用。
+本文是仓库内的完整语法资料，不是远程 Agent 的运行时权威输入。Resource Gateway 1.4.4 的 Graph authoring profile 只开放 `graph` 根类型；Solution authoring 另以 Feature、Scenario、Instruction、Solution 四类受治理契约表达，不把它们伪装成 Graph DSL。Codex 必须先调用 `rg.dsl.reference.get`，以返回的 `languageVersion`、`compilerProfile`、topics、可见 operator/function contracts、certified examples 和 `authoringContextFingerprint` 为准。不同 tenant、project、environment 或 `libraryRefs` 的参考不能混用。
 
 业务人员不需要阅读或编写 DSL。Codex 根据业务意图生成候选后，应按以下顺序在后台处理：
 
@@ -20,7 +20,7 @@ Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.
 
 运行时参考包用以下稳定 topic id 组织本页中受支持的知识：`graph-root`、`node-declaration`、
 `node-bindings`、`types-and-nullability`、`transform`、`decision-table`、`execution-controls`、
-`functions`、`round-trip`、`common-errors`。`graph`、`node`、`bindings`、`effects` 仅为旧请求的兼容别名；
+`functions`、`round-trip`、`common-errors`、`solution-authoring`。`graph`、`node`、`bindings`、`effects` 仅为旧请求的兼容别名；
 新 Agent 应使用前述稳定 id。示例 source 只在服务端 versioned bundle 中维护，并以 `exampleFingerprint` 标识，
 避免本文与线上示例形成两份会漂移的代码。
 

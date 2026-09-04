@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.SolutionAuthoringDecoder;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -75,34 +76,57 @@ class DslReferenceCertificationTest {
         assertThat(bundle.examples()).extracting(DslReferenceBundleLoader.BundleExample::exampleId)
                 .contains("graph-named-ports", "graph-nullable-collection-schema",
                         "graph-decision-boundaries", "graph-design-only-operator");
-        bundle.examples().forEach(example -> {
-            boolean designOnly = example.exampleId().equals("graph-design-only-operator");
-            AgentDslAuthoringSupport selectedSupport = designOnly ? designSupport : support;
-            DslReferenceSnapshot selectedReference = designOnly ? designReference : reference;
-            List<String> libraryRefs = designOnly ? List.of("risk-policy-design") : List.of();
-            DslPreviewReceipt receipt = selectedSupport.preview(new DslPreviewRequest(
-                    example.exampleId() + ".bloge", example.source(), libraryRefs,
-                    selectedReference.authoringContextFingerprint()), identity);
+        bundle.examples().stream()
+                .filter(example -> !example.exampleId().startsWith("solution-"))
+                .forEach(example -> {
+                    boolean designOnly = example.exampleId().equals("graph-design-only-operator");
+                    AgentDslAuthoringSupport selectedSupport = designOnly ? designSupport : support;
+                    DslReferenceSnapshot selectedReference = designOnly ? designReference : reference;
+                    List<String> libraryRefs = designOnly ? List.of("risk-policy-design") : List.of();
+                    DslPreviewReceipt receipt = selectedSupport.preview(new DslPreviewRequest(
+                            example.exampleId() + ".bloge", example.source(), libraryRefs,
+                            selectedReference.authoringContextFingerprint()), identity);
 
-            assertThat(receipt.authoringDiagnostics())
-                    .as("diagnostics for %s", example.exampleId())
-                    .noneMatch(diagnostic -> "ERROR".equals(diagnostic.level()));
-            assertThat(receipt.stages())
-                    .as("stages for %s", example.exampleId())
-                    .extracting(DslPreviewReceipt.Stage::status)
-                    .containsOnly("PASS");
-            assertThat(receipt.accepted()).as("accepted %s", example.exampleId()).isTrue();
-            if (designOnly) {
-                assertThat(receipt.roundTrip().status())
-                        .as("round-trip for %s: %s", example.exampleId(), receipt.roundTrip())
-                        .isEqualTo("DEFERRED_DESIGN_ONLY");
-                assertThat(receipt.roundTrip().driftKinds()).containsExactly("DESIGN_ONLY_OPERATOR");
-            } else {
-                assertThat(receipt.roundTrip().status())
-                        .as("round-trip for %s: %s", example.exampleId(), receipt.roundTrip())
-                        .isEqualTo("SUPPORTED");
-            }
-        });
+                    assertThat(receipt.authoringDiagnostics())
+                            .as("diagnostics for %s", example.exampleId())
+                            .noneMatch(diagnostic -> "ERROR".equals(diagnostic.level()));
+                    assertThat(receipt.stages())
+                            .as("stages for %s", example.exampleId())
+                            .extracting(DslPreviewReceipt.Stage::status)
+                            .containsOnly("PASS");
+                    assertThat(receipt.accepted()).as("accepted %s", example.exampleId()).isTrue();
+                    if (designOnly) {
+                        assertThat(receipt.roundTrip().status())
+                                .as("round-trip for %s: %s", example.exampleId(), receipt.roundTrip())
+                                .isEqualTo("DEFERRED_DESIGN_ONLY");
+                        assertThat(receipt.roundTrip().driftKinds())
+                                .containsExactly("DESIGN_ONLY_OPERATOR");
+                    } else {
+                        assertThat(receipt.roundTrip().status())
+                                .as("round-trip for %s: %s", example.exampleId(), receipt.roundTrip())
+                                .isEqualTo("SUPPORTED");
+                    }
+                });
+
+        SolutionAuthoringDecoder decoder = new SolutionAuthoringDecoder();
+        bundle.examples().stream()
+                .filter(example -> example.exampleId().startsWith("solution-"))
+                .forEach(example -> assertThat(decodeSolutionExample(decoder, example))
+                        .as("contract diagnostics for %s", example.exampleId())
+                        .isTrue());
+    }
+
+    private static boolean decodeSolutionExample(
+            SolutionAuthoringDecoder decoder,
+            DslReferenceBundleLoader.BundleExample example) {
+        byte[] source = example.source().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return switch (example.exampleId()) {
+            case "solution-feature-contract" -> decoder.decodeFeature(source).successful();
+            case "solution-scenario-contract" -> decoder.decodeScenario(source).successful();
+            case "solution-instruction-contract" -> decoder.decodeInstruction(source).successful();
+            case "solution-solution-contract" -> decoder.decodeSolution(source).successful();
+            default -> false;
+        };
     }
 
     private static Path repositoryRoot() {

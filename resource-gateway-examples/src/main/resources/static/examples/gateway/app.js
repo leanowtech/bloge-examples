@@ -4559,12 +4559,11 @@ function renderOperatorPaletteWindowControls() {
 
 function operatorPaletteLibraryIds(entries = []) {
   const facetIds = Object.keys(state.visualOperatorCatalogFacets?.operatorLibraryIds || {});
-  if (facetIds.length) {
-    return facetIds.sort((left, right) => left.localeCompare(right));
-  }
-  return [...new Set(entries
-    .map(([, spec]) => String(spec.operatorLibraryId || '').trim())
-    .filter(Boolean))]
+  const storedIds = (state.operatorLibraries || [])
+    .map((library) => String(library?.libraryId || '').trim());
+  const visibleIds = entries
+    .map(([, spec]) => String(spec.operatorLibraryId || '').trim());
+  return [...new Set([...facetIds, ...storedIds, ...visibleIds].filter(Boolean))]
     .sort((left, right) => left.localeCompare(right));
 }
 
@@ -8699,6 +8698,10 @@ async function importOperatorLibrary() {
   state.libraryImportConfirmationKey = '';
   state.selectedLibraryId = stored.libraryId;
   state.libraryHistoryId = stored.libraryId;
+  // The catalog is server-windowed. Focus the newly imported library before reloading so its
+  // operators cannot fall behind the first page when built-ins and resources fill that window.
+  state.paletteOperatorLibraryId = stored.libraryId;
+  state.paletteOffset = 0;
   state.libraryRevisions = [];
   state.selectedLibraryRevision = 0;
   state.libraryRevisionDiff = null;
