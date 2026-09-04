@@ -1,13 +1,13 @@
 {
   "schemaVersion": "rg.agentTddCodexCertification.v1",
-  "certifiedAt": "2026-09-04T06:34:35Z",
-  "repositoryCommit": "e408b83f78d0e279827b94b9540f0736e4aa6b43",
+  "certifiedAt": "2026-09-04T06:54:05Z",
+  "repositoryCommit": "d0c246329ea51c8af0bfc989d29c732cb4f77dff",
   "codexVersion": "codex-cli 0.150.0-alpha.8",
   "runtimeIdentity": {
     "schemaVersion": "rg.agentTddCertificationInstance.v1",
-    "instanceNonceFingerprint": "sha256:2b7a494f1789ff893d4ebaf15c3f5b62f4357810cc92cbdb58e57d0910fbb77a",
-    "repositoryCommit": "e408b83f78d0e279827b94b9540f0736e4aa6b43",
-    "jarSha256": "sha256:1399d9f0619f3877bc62adb0bd71d4f9a13a2d28a9998d0259b7aadd731ed97f",
+    "instanceNonceFingerprint": "sha256:91ea29687c87543c74423a7c90cee7acff87a8b48ba1001397714c122370b02a",
+    "repositoryCommit": "d0c246329ea51c8af0bfc989d29c732cb4f77dff",
+    "jarSha256": "sha256:3fa71c1efac78cbfc482b674c530b8d3ddc3c15e99469c92b84c22874026c094",
     "processOwnershipVerified": true,
     "verifiedBeforeAndAfterTurn": true
   },
@@ -30,13 +30,13 @@
     ],
     "successfulPositions": [
       1,
-      2,
+      3,
       4,
-      6,
       7,
       8,
       9,
-      10
+      10,
+      11
     ],
     "observedCalls": [
       {
@@ -48,14 +48,14 @@
       {
         "ordinal": 2,
         "server": "rg_read",
-        "tool": "rg.contract.get",
+        "tool": "rg.capability.list",
         "status": "completed"
       },
       {
         "ordinal": 3,
         "server": "rg_read",
-        "tool": "rg.dsl.reference.get",
-        "status": "failed"
+        "tool": "rg.contract.get",
+        "status": "completed"
       },
       {
         "ordinal": 4,
@@ -72,62 +72,68 @@
       {
         "ordinal": 6,
         "server": "rg_read",
+        "tool": "rg.dsl.reference.get",
+        "status": "failed"
+      },
+      {
+        "ordinal": 7,
+        "server": "rg_read",
         "tool": "rg.dsl.preview",
         "status": "completed"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "server": "rg_read",
         "tool": "rg.gate.check",
         "status": "completed"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "server": "rg_author",
         "tool": "rg.tool.compose",
         "status": "completed"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "server": "rg_author",
         "tool": "rg.tool.setInstruction",
         "status": "completed"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "server": "rg_author",
         "tool": "rg.scenario.upsertCases",
         "status": "completed"
       },
       {
-        "ordinal": 11,
-        "server": "rg_read",
-        "tool": "rg.contract.get",
-        "status": "completed"
-      },
-      {
         "ordinal": 12,
-        "server": "rg_read",
-        "tool": "rg.scenario.listCases",
+        "server": "rg_author",
+        "tool": "rg.scenario.setDependencyBehavior",
         "status": "completed"
       },
       {
         "ordinal": 13,
+        "server": "rg_author",
+        "tool": "rg.oracle.propose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 14,
         "server": "rg_read",
-        "tool": "rg.capability.list",
+        "tool": "rg.scenario.listCases",
         "status": "completed"
       }
     ]
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "candidate": "hmac-sha256:670739efbf2840fe20a3d773972dfd5ab9d5a917b3945516bfc67c520e0021c7",
-    "authoringContext": "hmac-sha256:e4762abb9534b56ceca211fc3b1a3468a377d063cd1ab1e4c005604b664283f2",
-    "authoringReceipt": "hmac-sha256:01ed73b11efe7f75f2c9fda58695fda9c11b13f96def444eba7f03e54866c0cc",
-    "tool": "hmac-sha256:9ca346a89d2349b9c6f24590fcb2f06ab2dbe89a08a0790df297672ca83360d1",
-    "caseSet": "hmac-sha256:c04309fa5d506049d2742a4c9850b3a0b1f293165a65748507574149a3967f01",
+    "candidate": "hmac-sha256:86f7a71f028b31171e584b313af4791cc6b689b611d9ed285f3e44ac57f36c39",
+    "authoringContext": "hmac-sha256:6e2b6a799c02176cb60b8227622846d4d2ee8d6fd5ae4a85f6a9f67c8ca51432",
+    "authoringReceipt": "hmac-sha256:0183050d9ccabcdfe92c02bf2be16f1b7886978611794fcb84562bf885068933",
+    "tool": "hmac-sha256:fc0c406d25650911af7f2a62c9809164b93d22bfd5c94eda2fe24f5c30f3e2fe",
+    "caseSet": "hmac-sha256:639c2bda8e036ed03f181d16ce4ba4d6373fa112af089acb9b206cb78d97970b",
     "cases": [
-      "hmac-sha256:e69924ce88b698ff03ce34000eca33ab4f9306e38d3abbc8a879d6baf368822b"
+      "hmac-sha256:970030717c69b5672ed1263bc59537904343b421c9c101598e038d744f67c13c"
     ]
   },
   "assertions": {
@@ -148,5 +154,5 @@
     "spawnedRuntimeIdentityVerified": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:571f53ed65a2f6b9c77bbcf15f8ddaaf7cac67283d31cb1457006b072d9cd6e7"
+  "certificateFingerprint": "sha256:9ec047d5a1062797e3ec0317c11d8c56f862fc64ec55811c724cdacc2fe3c108"
 }

@@ -1315,7 +1315,8 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 - `McpRequestLimiterTest`：4/4 通过；
 - `AgentTddEgressHostPolicyTest`：7/7 通过；
 - `AgentTddCodexCertificationArtifactTest`：3/3 通过；Python trace reducer 行为测试 12/12 通过；
-- `AgentTddCertificationInstanceControllerTest`：2/2 通过，覆盖严格实例身份与畸形启动参数拒绝；
+- `AgentTddCertificationInstanceControllerTest`：4/4 通过，覆盖实际运行归档散列、预期值不匹配、
+  非普通文件与畸形启动参数拒绝；
 - `AgentTddMcpOperationalWorkflowTest`：4/4 通过，**skipped=0**，覆盖真实 HTTP MCP 与 Chrome；
 - `DatabaseAgentTddStateRepositoryPostgresCertificationTest`：2/2 通过，**skipped=0**，覆盖原生 PostgreSQL。
 
@@ -1323,7 +1324,7 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 
 ### 23.3 真实 Codex MCP 产品认证
 
-2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对干净 commit `e408b83f7` 完成认证；认证从
+2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对干净 commit `d0c246329` 完成认证；认证从
 该提交自举，没有复用前一提交或当前机器上碰巧运行的 RG：
 
 1. `certify-agent-tdd-codex.sh` 拒绝脏工作区和占用端口，自行生成一次性双身份，先
@@ -1344,10 +1345,11 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
    shell/unified-exec 能力；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
-3. 安全化 trace 实际记录 `capability.list → contract.get → dsl.reference.get(失败) →
-   dsl.reference.get(成功) → dsl.preview(拒绝) → dsl.preview(接受) → gate.check → tool.compose →
-   setInstruction → upsertCases → contract.get → listCases → capability.list`；第二次 preview 被接受。
-   依赖行为与待审批 Oracle 随同标准案例原子写入并在随后回读中核对。只有带阻断诊断指纹的
+3. 安全化 trace 实际记录 `capability.list → capability.list → contract.get →
+   dsl.reference.get(成功) → dsl.preview(拒绝) → dsl.reference.get(失败) → dsl.preview(接受) →
+   gate.check → tool.compose → setInstruction → upsertCases → setDependencyBehavior → oracle.propose →
+   listCases`；第二次 preview 被接受。依赖行为与待审批 Oracle 在标准案例写入后通过专用操作补充，
+   并由最后一次回读核对。只有带阻断诊断指纹的
    preview/gate 拒绝随后被同一工具
    接受，才可证明 DSL 自修复；reference 重试和 MCP 失败不再计入该断言；
    用例写入后的依赖行为、业务 Oracle 和回读也属于同一 Tool/CaseSet/case 链，没有伪称首次通过；
@@ -1366,8 +1368,10 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 业务载荷。完整证书由 Draft 2020-12 validator 校验，不再只手写抽查字段。本轮入库的严格证书为
 `docs/acceptance/agent-tdd/codex-certification-v1.json`，Schema 为
 `docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`，证书指纹为
-`sha256:571f53ed65a2f6b9c77bbcf15f8ddaaf7cac67283d31cb1457006b072d9cd6e7`。证书同时保存
-`e408b83f7` 的完整提交号、被启动 JAR 的 SHA-256、一次性实例 nonce 指纹，以及调用前后身份一致断言。
+`sha256:9ec047d5a1062797e3ec0317c11d8c56f862fc64ec55811c724cdacc2fe3c108`。证书同时保存
+`d0c246329ea51c8af0bfc989d29c732cb4f77dff` 的完整提交号、实际运行 JAR 的
+`sha256:3fa71c1efac78cbfc482b674c530b8d3ddc3c15e99469c92b84c22874026c094`、一次性实例 nonce 指纹，
+以及调用前后身份一致断言。
 
 ### 23.4 分阶段提交
 
@@ -1401,6 +1405,7 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 | 最终产品认证 | `313f8c522` | 对 clean commit 重跑真实 Codex/MCP 作者链，入库全链 HMAC 关联证书并更新严格指纹 |
 | 编译修正证明 | `4e6db9a62` | 只有带阻断诊断的 authoring 拒绝后被同一工具接受才算 DSL 自修复 |
 | 运行实例绑定 | `798f2bfde`、`d127b5dc9`、`e408b83f7` | 直接启动 clean JAR，以 nonce/commit/JAR 摘要和专属 PID 绑定证书，并把进程白名单收至 Codex 与 MCP 编排器 |
+| 运行归档自证 | `d0c246329` | 私有只读不可变 JAR、服务端实际归档重散列，以及凭据复制前安装的失败清理 trap |
 
 ### 23.5 剩余限制与差距
 
