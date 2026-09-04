@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import re
+import secrets
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,8 @@ FORBIDDEN_TOOLS = {
     "rg.fixture.provide",
     "rg.tool.publish",
 }
+AUTHORING_TOOLS = {"rg.dsl.preview", "rg.gate.check"}
+MAX_PREVIEW_ATTEMPTS = 4
 TECHNICAL_FINAL_PATTERN = re.compile(
     r"(?i)\b(?:dsl|schema|binding|operator|toolref|casesetref|fingerprint|mcp|json)\b"
     r"|代码|编译器?|节点|端口|指纹|内部标识"
@@ -60,8 +64,21 @@ def structured_result(item: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def object_value(value: Any) -> dict[str, Any]:
+    """Normalize Codex argument encodings without ever placing them in a certificate."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return {}
+
+
 def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
-    """Extract only tool identities/statuses and the last final message from JSONL."""
+    """Extract private correlation material for in-process checks and the last final message."""
     calls: list[dict[str, Any]] = []
     final_message = ""
     completed = False
@@ -87,8 +104,21 @@ def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
                 "status": str(item.get("status", "unknown")),
                 "successful": item.get("status") == "completed" and structured.get("ok") is True,
                 "data": structured.get("data") if isinstance(structured.get("data"), dict) else {},
+                "arguments": object_value(item.get("arguments")),
             })
     return calls, final_message, completed
+
+
+def stage_accepted(call: dict[str, Any], tool: str) -> bool:
+    """Require semantic acceptance, not merely a successful JSON-RPC envelope."""
+    if not call["successful"]:
+        return False
+    if tool == "rg.dsl.preview":
+        return call["data"].get("accepted") is True
+    if tool == "rg.gate.check":
+        gate = call["data"].get("rewriteGate")
+        return call["data"].get("accepted") is True and isinstance(gate, dict) and gate.get("allowed") is True
+    return True
 
 
 def in_order_successes(calls: list[dict[str, Any]]) -> list[int]:
@@ -97,13 +127,191 @@ def in_order_successes(calls: list[dict[str, Any]]) -> list[int]:
     cursor = 0
     for required in REQUIRED_SEQUENCE:
         for index in range(cursor, len(calls)):
-            if calls[index]["tool"] == required and calls[index]["successful"]:
+            if calls[index]["tool"] == required and stage_accepted(calls[index], required):
                 positions.append(index)
                 cursor = index + 1
                 break
         else:
             raise CertificationFailure(f"required successful tool call is missing or out of order: {required}")
     return positions
+
+
+def required_text(value: Any, label: str) -> str:
+    """Return a non-blank private identity or fail the proof closed."""
+    if not isinstance(value, str) or not value.strip():
+        raise CertificationFailure(f"{label} is missing")
+    return value.strip()
+
+
+def canonical(value: Any) -> str:
+    """Canonicalize private request fragments only for equality checks."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def dsl_text(value: Any, label: str) -> str:
+    """Normalize the MCP string/envelope alternatives to the candidate source itself."""
+    if isinstance(value, str):
+        return required_text(value, label)
+    if isinstance(value, dict):
+        return required_text(value.get("dsl"), label)
+    raise CertificationFailure(f"{label} is missing")
+
+
+def blocking_fingerprints(call: dict[str, Any]) -> tuple[str, ...]:
+    """Extract the stable blocking set from a rejected authoring receipt."""
+    if call["tool"] not in AUTHORING_TOOLS or not call["successful"] or call["data"].get("accepted") is True:
+        return ()
+    diagnostics = call["data"].get("authoringDiagnostics")
+    if not isinstance(diagnostics, list):
+        raise CertificationFailure("a rejected authoring receipt omitted diagnostics")
+    fingerprints = sorted({
+        diagnostic.get("diagnosticFingerprint")
+        for diagnostic in diagnostics
+        if isinstance(diagnostic, dict) and diagnostic.get("level") == "ERROR"
+        and isinstance(diagnostic.get("diagnosticFingerprint"), str)
+        and diagnostic["diagnosticFingerprint"].startswith("sha256:")
+    })
+    if not fingerprints:
+        raise CertificationFailure("a rejected authoring receipt omitted blocking fingerprints")
+    return tuple(fingerprints)
+
+
+def enforce_bounded_repair(calls: list[dict[str, Any]]) -> None:
+    """Enforce the documented three-repair and repeated-blocker stop protocol."""
+    previews = [index for index, call in enumerate(calls) if call["tool"] == "rg.dsl.preview"]
+    if len(previews) > MAX_PREVIEW_ATTEMPTS:
+        raise CertificationFailure("Codex exceeded the three-round DSL repair limit")
+    previous: tuple[str, ...] = ()
+    for index, call in enumerate(calls):
+        current = blocking_fingerprints(call)
+        if not current:
+            if call["tool"] in AUTHORING_TOOLS and call["successful"] and call["data"].get("accepted") is True:
+                previous = ()
+            continue
+        if previous == current:
+            if any(later["tool"] in AUTHORING_TOOLS for later in calls[index + 1:]):
+                raise CertificationFailure("Codex continued after the same blocking diagnostics repeated twice")
+        previous = current
+
+
+def follows_failure_with_success(calls: list[dict[str, Any]]) -> bool:
+    """Prove an actual same-tool failure-to-success transition in trace order."""
+    failed_at: dict[str, int] = {}
+    for index, call in enumerate(calls):
+        if call["status"] == "failed":
+            failed_at.setdefault(call["tool"], index)
+        elif call["successful"] and call["tool"] in failed_at and failed_at[call["tool"]] < index:
+            return True
+    return False
+
+
+def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int]) -> dict[str, Any]:
+    """Bind reference, accepted source, gate, Tool, CaseSet and cases into one candidate chain."""
+    selected = {tool: calls[position] for tool, position in zip(REQUIRED_SEQUENCE, positions, strict=True)}
+    reference = selected["rg.dsl.reference.get"]
+    preview = selected["rg.dsl.preview"]
+    gate = selected["rg.gate.check"]
+    compose = selected["rg.tool.compose"]
+    instruction = selected["rg.tool.setInstruction"]
+    upsert = selected["rg.scenario.upsertCases"]
+
+    context = required_text(reference["data"].get("authoringContextFingerprint"), "reference context")
+    preview_context = required_text(preview["arguments"].get("authoringContextFingerprint"), "preview context")
+    gate_context = required_text(gate["arguments"].get("authoringContextFingerprint"), "gate context")
+    receipt = required_text(gate["data"].get("authoringReceiptFingerprint"), "gate receipt")
+    preview_receipt = required_text(preview["data"].get("authoringReceiptFingerprint"), "preview receipt")
+    source = dsl_text(preview["arguments"].get("source"), "preview DSL")
+    gate_source = dsl_text(gate["arguments"].get("source"), "gate DSL")
+    graph = compose["arguments"].get("graph")
+    if not isinstance(graph, dict):
+        raise CertificationFailure("the accepted DSL candidate is missing from a private correlation edge")
+    compose_source = dsl_text(graph, "compose DSL")
+    if not (context == preview_context == gate_context
+            == required_text(compose["arguments"].get("authoringContextFingerprint"), "compose context")
+            == required_text(compose["data"].get("authoringContextFingerprint"), "stored context")):
+        raise CertificationFailure("reference, preview, gate and compose contexts do not match")
+    if not (preview_receipt == receipt
+            == required_text(compose["arguments"].get("authoringReceiptFingerprint"), "compose receipt")
+            == required_text(compose["data"].get("authoringReceiptFingerprint"), "stored receipt")):
+        raise CertificationFailure("preview, gate and compose receipts do not match")
+    if source != gate_source or source != compose_source:
+        raise CertificationFailure("preview, gate and compose did not use the same DSL candidate")
+    if canonical(preview["arguments"].get("libraryRefs", [])) != canonical(gate["arguments"].get("libraryRefs", [])) \
+            or canonical(gate["arguments"].get("libraryRefs", [])) != canonical(compose["arguments"].get("libraryRefs", [])):
+        raise CertificationFailure("preview, gate and compose library refs do not match")
+
+    tool_ref = required_text(compose["data"].get("assetRef"), "composed Tool")
+    if not (tool_ref == required_text(compose["arguments"].get("toolRef"), "requested Tool")
+            == required_text(instruction["arguments"].get("toolRef"), "instruction Tool")
+            == required_text(instruction["data"].get("toolRef"), "stored instruction Tool")
+            == required_text(upsert["arguments"].get("toolRef"), "case-set Tool")):
+        raise CertificationFailure("compose, instruction and case set are not bound to one Tool")
+
+    case_set_ref = required_text(upsert["arguments"].get("caseSetRef"), "requested CaseSet")
+    if case_set_ref != required_text(upsert["data"].get("caseSetRef"), "stored CaseSet"):
+        raise CertificationFailure("requested and stored CaseSet identities do not match")
+    rows = upsert["data"].get("rows")
+    if not isinstance(rows, list):
+        raise CertificationFailure("stored CaseSet rows are missing")
+    case_ids = sorted({required_text(row.get("caseId"), "stored case")
+                       for row in rows if isinstance(row, dict)})
+    if not case_ids:
+        raise CertificationFailure("stored CaseSet has no cases")
+
+    matching_lists = [call for call in calls if call["tool"] == "rg.scenario.listCases" and call["successful"]
+                      and call["arguments"].get("caseSetRef") == case_set_ref
+                      and call["data"].get("caseSetRef") == case_set_ref
+                      and call["data"].get("toolRef") == tool_ref]
+    if not matching_lists:
+        raise CertificationFailure("the stored CaseSet was not read back from the composed Tool")
+    listed_rows = matching_lists[-1]["data"].get("rows")
+    listed_by_id = {row.get("caseId"): row for row in listed_rows if isinstance(row, dict)} \
+        if isinstance(listed_rows, list) else {}
+    if not set(case_ids).issubset(listed_by_id):
+        raise CertificationFailure("the stored cases were not read back from the same CaseSet")
+
+    dependency_cases = {
+        call["arguments"].get("caseId")
+        for call in calls
+        if call["tool"] == "rg.scenario.setDependencyBehavior" and call["successful"]
+        and call["arguments"].get("caseSetRef") == case_set_ref
+        and call["data"].get("caseSetRef") == case_set_ref
+        and call["arguments"].get("caseId") == call["data"].get("caseId")
+    }
+    cases_with_stubs = {
+        case_id for case_id, row in listed_by_id.items()
+        if isinstance(row.get("stubs"), dict) and bool(row["stubs"])
+    }
+    if not (set(case_ids) & (dependency_cases | cases_with_stubs)):
+        raise CertificationFailure("the correlated standard case has no governed dependency behavior")
+    cases_with_oracle = {
+        case_id for case_id, row in listed_by_id.items()
+        if isinstance(row.get("proposedOracle"), dict) and bool(row["proposedOracle"])
+    }
+    cases_with_oracle.update({
+        call["arguments"].get("caseId")
+        for call in calls
+        if call["tool"] == "rg.oracle.propose" and call["successful"]
+        and call["arguments"].get("caseSetRef") == case_set_ref
+        and call["data"].get("caseSetRef") == case_set_ref
+        and call["arguments"].get("caseId") == call["data"].get("caseId")
+    })
+    correlated_cases = sorted(set(case_ids) & (dependency_cases | cases_with_stubs) & cases_with_oracle)
+    if not correlated_cases:
+        raise CertificationFailure("no single correlated standard case has both a stub and Oracle proposal")
+
+    key = secrets.token_bytes(32)
+    opaque = lambda label, value: "hmac-sha256:" + hmac.new(  # noqa: E731
+        key, f"{label}\0{value}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return {
+        "method": "EPHEMERAL_HMAC_SHA256",
+        "candidate": opaque("candidate", source),
+        "authoringContext": opaque("context", context),
+        "authoringReceipt": opaque("receipt", receipt),
+        "tool": opaque("tool", tool_ref),
+        "caseSet": opaque("case-set", case_set_ref),
+        "cases": [opaque("case", case_id) for case_id in correlated_cases],
+    }
 
 
 def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -116,58 +324,19 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     if metadata["exitCode"] != 0:
         raise CertificationFailure("Codex process did not exit successfully")
     positions = in_order_successes(calls)
+    enforce_bounded_repair(calls)
     forbidden = sorted({call["tool"] for call in calls if call["tool"] in FORBIDDEN_TOOLS})
     if forbidden or any(call["server"] in {"rg_execute", "rg_govern"} for call in calls):
         raise CertificationFailure("Codex crossed the required human approval boundary")
-    case_bound = any(
-        call["successful"]
-        and call["tool"] in {"rg.scenario.upsertCases", "rg.scenario.listCases"}
-        and isinstance(call["data"].get("toolRef"), str)
-        and bool(call["data"]["toolRef"].strip())
-        for call in calls
-    )
-    if not case_bound:
-        raise CertificationFailure("the proposed case set is not bound to a Tool")
-    dependency_behavior = any(
-        call["successful"] and (
-            call["tool"] == "rg.scenario.setDependencyBehavior"
-            or (
-                call["tool"] in {"rg.scenario.upsertCases", "rg.scenario.listCases"}
-                and isinstance(call["data"].get("rows"), list)
-                and any(isinstance(row, dict) and isinstance(row.get("stubs"), dict) and bool(row["stubs"])
-                        for row in call["data"]["rows"])
-            )
-        )
-        for call in calls
-    )
-    if not dependency_behavior:
-        raise CertificationFailure("the standard case has no governed dependency behavior")
-    oracle_proposed = any(
-        call["successful"] and (
-            call["tool"] == "rg.oracle.propose"
-            or (
-                call["tool"] in {"rg.scenario.upsertCases", "rg.scenario.listCases"}
-                and isinstance(call["data"].get("rows"), list)
-                and any(isinstance(row, dict)
-                        and isinstance(row.get("proposedOracle"), dict)
-                        and bool(row["proposedOracle"])
-                        for row in call["data"]["rows"])
-            )
-        )
-        for call in calls
-    )
-    if not oracle_proposed:
-        raise CertificationFailure("the standard case has no pending business Oracle proposal")
+    correlation = correlate_authoring_chain(calls, positions)
     if not final_message.strip():
         raise CertificationFailure("Codex produced no final business summary")
     if TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("Codex final summary exposed technical implementation vocabulary")
 
-    observed_statuses: dict[str, set[str]] = {}
-    for call in calls:
-        observed_statuses.setdefault(call["tool"], set()).add(call["status"])
-    self_repair = any("failed" in statuses and "completed" in statuses
-                      for statuses in observed_statuses.values())
+    self_repair = follows_failure_with_success(calls)
+    if not self_repair:
+        raise CertificationFailure("Codex did not demonstrate an ordered same-tool self repair")
     safe_calls = [
         {"ordinal": index + 1, "server": call["server"], "tool": call["tool"], "status": call["status"]}
         for index, call in enumerate(calls)
@@ -188,6 +357,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "successfulPositions": [position + 1 for position in positions],
             "observedCalls": safe_calls,
         },
+        "correlation": correlation,
         "assertions": {
             "codexTurnCompleted": True,
             "requiredAuthoringOrder": True,
@@ -196,7 +366,9 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "businessOracleProposed": True,
             "stoppedBeforeExecutionGovernanceAndPublication": True,
             "finalSummaryBusinessOnly": True,
-            "selfRepairObserved": self_repair,
+            "selfRepairObserved": True,
+            "boundedRepairPolicyRespected": True,
+            "sameCandidateReceiptAndAssets": True,
             "rawArgumentsResultsAndMessagesOmitted": True,
         },
         "result": "CERTIFIED",

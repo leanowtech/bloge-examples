@@ -87,14 +87,14 @@ Resource Gateway: running
 
 ### 3.4 会前认证 Codex 接入
 
-正式演示前，演示保障人员可在只持有 Agent 凭据的 Shell 中执行：
+正式演示前，演示保障人员先停止已运行的 Resource Gateway，再在干净提交上执行：
 
 ```bash
-RG_MCP_TOKEN="${RG_MCP_TOKEN}" \
-  ./scripts/certify-agent-tdd-codex.sh
+./scripts/certify-agent-tdd-codex.sh
 ```
 
-该认证使用全新、不读仓库的 Codex 和纯业务提示词，证明 Agent 能自行找到资料来源、
+该脚本自行生成隔离的 Agent/reviewer 凭据，从当前固定提交构建、启停 loopback RG，并用 macOS
+系统沙箱拒绝 Codex 读取仓库。认证使用纯业务提示词，证明 Agent 能自行找到资料来源、
 完成候选能力、从服务端反馈中自主修正，并在标准案例需要人工批准时停下。
 它只覆盖正式演示的第一个人工停点，不代替取消费场景中的业务批准、RED/GREEN、
 沙箱实景验证、负责人签署和发布。详细命令、证书和原始 trace 隐私边界见完整操作手册第 8.1 节。

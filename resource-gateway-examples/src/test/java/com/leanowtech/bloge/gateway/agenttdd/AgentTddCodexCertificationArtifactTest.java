@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -31,6 +33,10 @@ class AgentTddCodexCertificationArtifactTest {
         JsonNode schema = mapper.readTree(SCHEMA.toFile());
 
         assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+                .getSchema(schema).validate(certificate))
+                .as("the complete checked-in certificate must satisfy its Draft 2020-12 schema")
+                .isEmpty();
         assertThat(certificate.path("schemaVersion").asText())
                 .isEqualTo("rg.agentTddCodexCertification.v1");
         assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
@@ -47,6 +53,13 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/assertions/stoppedBeforeExecutionGovernanceAndPublication").asBoolean())
                 .isTrue();
         assertThat(certificate.at("/assertions/finalSummaryBusinessOnly").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/boundedRepairPolicyRespected").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/sameCandidateReceiptAndAssets").asBoolean()).isTrue();
+        assertThat(certificate.at("/correlation/method").asText())
+                .isEqualTo("EPHEMERAL_HMAC_SHA256");
+        assertThat(certificate.at("/correlation/cases")).isNotEmpty();
+        assertThat(textValues(certificate.at("/correlation/cases")))
+                .allMatch(value -> value.matches("hmac-sha256:[0-9a-f]{64}"));
         assertThat(certificate.at("/journey/observedCalls")).allSatisfy(call ->
                 assertThat(toFieldSet(call)).containsExactlyInAnyOrder(
                         "ordinal", "server", "tool", "status"));
@@ -72,12 +85,29 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(script).contains(
                 "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox read-only",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
-                "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py");
+                "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
+                "git -C \"${ROOT_DIR}\" diff --quiet", "ls-files --others --exclude-standard",
+                "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
+                "example-services.sh\" start resource-gateway",
+                "example-services.sh\" stop resource-gateway",
+                "openssl rand -hex 32");
         assertThat(prompt).contains(
                 "按用户编号查询用户姓名和会员等级", "什么时候使用", "待我确认的标准案例",
                 "不要替我确认标准案例", "不要开始验证或发布");
         assertThat(prompt).doesNotContain(
                 "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
+    }
+
+    @Test
+    void certificationReducerExecutesMismatchAcceptanceAndBoundedRepairNegativeCases() throws Exception {
+        Process process = new ProcessBuilder("python3",
+                REPOSITORY.resolve("scripts/agent_tdd_codex_trace_certificate_test.py").toString())
+                .redirectErrorStream(true)
+                .start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        assertThat(process.waitFor()).as(output).isZero();
+        assertThat(output).contains("Ran 7 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

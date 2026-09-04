@@ -4,14 +4,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_BIN="${CODEX_BIN:-codex}"
-RG_MCP_ENDPOINT="${RG_MCP_ENDPOINT:-http://127.0.0.1:8081/mcp}"
+RG_CERT_PORT="${RG_CERT_PORT:-18081}"
+RG_MCP_ENDPOINT="http://127.0.0.1:${RG_CERT_PORT}/mcp"
 OUTPUT_FILE="${1:-${ROOT_DIR}/resource-gateway-examples/target/agent-tdd-codex-certification.json}"
 
 usage() {
     cat <<'EOF'
-Usage: RG_MCP_TOKEN=<agent-token> scripts/certify-agent-tdd-codex.sh [certificate.json]
+Usage: scripts/certify-agent-tdd-codex.sh [certificate.json]
 
-Certifies the first business journey against an already-running local Resource Gateway.
+Builds and starts Resource Gateway from the current clean commit, then certifies the first
+business journey through a repository-blind Codex process. RG_CERT_PORT defaults to 18081.
 The private raw Codex trace is removed by default. Set KEEP_RAW_CODEX_TRACE=true only for
 an approved local investigation; the script then prints its mode-0600 temporary path.
 EOF
@@ -21,22 +23,32 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     usage
     exit 0
 fi
-if [ -z "${RG_MCP_TOKEN:-}" ]; then
-    echo "RG_MCP_TOKEN must contain the WORKLOAD Agent token." >&2
+if ! [[ "${RG_CERT_PORT}" =~ ^[0-9]+$ ]] || [ "${RG_CERT_PORT}" -lt 1024 ] \
+        || [ "${RG_CERT_PORT}" -gt 65535 ]; then
+    echo "RG_CERT_PORT must be an unprivileged TCP port." >&2
     exit 1
 fi
-if [[ ! "${RG_MCP_ENDPOINT}" =~ ^http://(127\.0\.0\.1|localhost):[0-9]+/mcp$ ]]; then
-    echo "Certification accepts a loopback HTTP MCP endpoint only." >&2
+if ! git -C "${ROOT_DIR}" diff --quiet \
+        || ! git -C "${ROOT_DIR}" diff --cached --quiet \
+        || [ -n "$(git -C "${ROOT_DIR}" ls-files --others --exclude-standard)" ]; then
+    echo "Certification requires a clean committed worktree." >&2
     exit 1
 fi
-for command in "${CODEX_BIN}" curl git python3; do
+for command in "${CODEX_BIN}" curl git python3 openssl sandbox-exec; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "Required command is unavailable: ${command}" >&2
         exit 1
     fi
 done
-
-curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
+if curl --fail --silent --max-time 2 "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null 2>&1; then
+    echo "Certification port already serves Resource Gateway; stop it or choose another RG_CERT_PORT." >&2
+    exit 1
+fi
+if "${ROOT_DIR}/scripts/example-services.sh" status resource-gateway 2>/dev/null \
+        | grep -q 'Resource Gateway: running'; then
+    echo "A repository-managed Resource Gateway is already running; stop it before certification." >&2
+    exit 1
+fi
 
 PRIVATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rg-codex-cert.XXXXXX")"
 chmod 700 "${PRIVATE_DIR}"
@@ -44,12 +56,26 @@ TRACE_FILE="${PRIVATE_DIR}/trace.jsonl"
 FINAL_FILE="${PRIVATE_DIR}/final.txt"
 PROMPT_FILE="${PRIVATE_DIR}/prompt.txt"
 WORKSPACE_DIR="${PRIVATE_DIR}/workspace"
+SANDBOX_PROFILE="${PRIVATE_DIR}/repository-deny.sb"
 mkdir -p "${WORKSPACE_DIR}" "$(dirname "${OUTPUT_FILE}")"
 chmod 500 "${WORKSPACE_DIR}"
 umask 077
 TEMP_OUTPUT=""
+SERVICE_OWNED=false
+
+AGENT_TOKEN="$(openssl rand -hex 32)"
+REVIEW_TOKEN="$(openssl rand -hex 32)"
+if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ]; then
+    echo "Generated demo identities unexpectedly collided." >&2
+    exit 1
+fi
 
 cleanup() {
+    if [ "${SERVICE_OWNED}" = "true" ]; then
+        RESOURCE_GATEWAY_PORT="${RG_CERT_PORT}" \
+            "${ROOT_DIR}/scripts/example-services.sh" stop resource-gateway >/dev/null 2>&1 || true
+    fi
+    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN
     if [ -n "${TEMP_OUTPUT}" ]; then
         rm -f "${TEMP_OUTPUT}"
     fi
@@ -60,6 +86,35 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+
+if [[ "${ROOT_DIR}" == *'"'* ]]; then
+    echo "Repository paths containing a quote cannot be represented in the macOS sandbox profile." >&2
+    exit 1
+fi
+cat > "${SANDBOX_PROFILE}" <<EOF
+(version 1)
+(allow default)
+(deny file-read* (subpath "${ROOT_DIR}"))
+(deny file-write* (subpath "${ROOT_DIR}"))
+EOF
+if ! sandbox-exec -f "${SANDBOX_PROFILE}" /usr/bin/true; then
+    echo "macOS repository-isolation sandbox is unavailable." >&2
+    exit 1
+fi
+if sandbox-exec -f "${SANDBOX_PROFILE}" /bin/cat "${ROOT_DIR}/AGENTS.md" >/dev/null 2>&1; then
+    echo "macOS sandbox did not deny repository reads." >&2
+    exit 1
+fi
+
+SERVICE_OWNED=true
+RG_INTEGRATION_DEMO_TOKEN="${AGENT_TOKEN}" \
+RG_INTEGRATION_DEMO_REVIEW_TOKEN="${REVIEW_TOKEN}" \
+RG_INTEGRATION_ENVIRONMENT_ID=local \
+RESOURCE_GATEWAY_ADDRESS=127.0.0.1 \
+RESOURCE_GATEWAY_PORT="${RG_CERT_PORT}" \
+    "${ROOT_DIR}/scripts/example-services.sh" start resource-gateway
+export RG_MCP_TOKEN="${AGENT_TOKEN}"
+curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
 
 BATCH_LABEL="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 cat > "${PROMPT_FILE}" <<EOF
@@ -111,9 +166,17 @@ CODEX_ARGS+=(
 )
 
 set +e
-"${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_FILE}" > "${TRACE_FILE}"
+sandbox-exec -f "${SANDBOX_PROFILE}" \
+    "${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_FILE}" > "${TRACE_FILE}"
 CODEX_EXIT=$?
 set -e
+
+if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
+        || ! git -C "${ROOT_DIR}" diff --quiet \
+        || ! git -C "${ROOT_DIR}" diff --cached --quiet; then
+    echo "Repository commit or tracked files changed during certification." >&2
+    exit 1
+fi
 
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/agent_tdd_codex_trace_certificate.py" "${TRACE_FILE}" \

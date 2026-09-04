@@ -49,13 +49,13 @@ class DslAuthoringRepairMatrixTest {
         matrix.put(14, evidence(AgentDslAuthoringSupportTest.class,
                 "reportsRoundTripDriftAndAcceptsAProjectionStableCorrection"));
         matrix.put(15, evidence(AgentDslAuthoringSupportTest.class,
-                "rejectsMissingAndStaleContextBeforeCompilingAnySource"));
+                "rejectsARealCatalogDriftThenAcceptsOnlyAfterFetchingTheNewContext"));
         matrix.put(16, evidence(DslSafeDiagnosticRegistryTest.class,
                 "neverCopiesLowerMessageMetadataOrBusinessTargetSegments"));
         matrix.put(17, evidence(DslSafeDiagnosticRegistryTest.class,
                 "truncationKeepsLateBlockingErrorsAndReportsTheUntruncatedTotals"));
-        matrix.put(18, evidence(McpProtocolControllerTest.class,
-                "initializeNegotiatesOnlyKnownVersionsAndPreservesRequestIdOnFailure"));
+        matrix.put(18, evidence(AgentTddCodexCertificationArtifactTest.class,
+                "certificationReducerExecutesMismatchAcceptanceAndBoundedRepairNegativeCases"));
         matrix.put(19, evidence(AgentTddMutationServiceTest.class,
                 "mcpComposeRejectsChangedSourceForgedReceiptAndClientGraphWithoutWriting"));
         matrix.put(20, evidence(AgentTddMutationServiceTest.class,

@@ -333,33 +333,40 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ### 8.1 真实 Codex 第一幕认证
 
-在 Resource Gateway 已按第 2 节启动、当前 Shell 只有 WORKLOAD token 时执行：
+先停止本仓库已经运行的 Resource Gateway，再在干净且已提交的工作区执行：
 
 ```bash
-RG_MCP_TOKEN="${RG_MCP_TOKEN}" \
-  ./scripts/certify-agent-tdd-codex.sh
+./scripts/certify-agent-tdd-codex.sh
 ```
 
-该脚本会在临时只读目录启动一个全新、不读仓库、不读用户配置与规则的
-Codex，只提供四个 loopback HTTP MCP 连接和一段业务提示词。认证检查业务语义，
+脚本不接受外部 Agent/reviewer token，也不复用已经运行的服务。它先拒绝脏工作区和被占用的
+认证端口（默认 `18081`），生成两份一次性凭据，从当前 HEAD 构建并启动 loopback RG；退出时无论
+成功失败都停止该进程。随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 对仓库的读写，
+并在临时只读目录启动一个全新、不读用户配置与规则的 Codex，只提供四个 HTTP MCP 连接和一段
+业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义，
 不要求 Agent 执行僵化的工具仪式：依赖行为和待审批 Oracle 可在提交标准案例时一并写入，
 也可通过专用操作补充。最终必须证明以下事实：
 
-- Codex 先发现业务能力与契约，再获取 DSL 参考、预览、检查并保存同一份候选；
-- Instruction、依赖行为和业务标准答案已形成，用例集明确归属于新 Tool；
+- Codex 先发现业务能力与契约，再获取 DSL 参考，且只有 `accepted=true` 的 preview/gate 才计为通过；
+- preview、gate、compose 的 source、library refs、context 与 receipt 完全一致；
+- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与同一案例；
 - Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
-- 最终回复只使用业务语言，且至少观察到一次从失败诊断到成功的自主修正。
+- 最终回复只使用业务语言，且至少观察到一次有先后顺序的同工具失败到成功自主修正；
+- preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
 默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，并在结束时删除；
-仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。可入库的证书只保留
-工具名、顺序、状态和布尔断言，不保留参数、结果、消息和业务载荷。已审核样例见
+仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中
+比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言和使用一次性随机密钥生成的
+HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
+或业务值。证书不保留参数、结果、消息和业务载荷。已审核样例见
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](acceptance/agent-tdd/codex-certification-v1.json)，
 严格 Schema 见
 [`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`](schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json)。
 
-一次性执行器可能在 Shell 退出时回收后台服务。在 CI 或沙箱中必须在同一 Shell
-完成“启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
+脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
+认证依赖 macOS `sandbox-exec` 提供操作系统级仓库隔离；不具备等价隔离能力的平台必须失败关闭，
+不能把 Codex 的 `--sandbox read-only` 当成“不可读取仓库”的证据。
 
 ### 8.2 自动回归
 

@@ -11,6 +11,7 @@
     "codexVersion",
     "transport",
     "journey",
+    "correlation",
     "assertions",
     "result",
     "certificateFingerprint"
@@ -75,6 +76,33 @@
         }
       }
     },
+    "correlation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "candidate",
+        "authoringContext",
+        "authoringReceipt",
+        "tool",
+        "caseSet",
+        "cases"
+      ],
+      "properties": {
+        "method": { "const": "EPHEMERAL_HMAC_SHA256" },
+        "candidate": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
+        "authoringContext": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
+        "authoringReceipt": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
+        "tool": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
+        "caseSet": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/opaqueCorrelationFingerprint" }
+        }
+      }
+    },
     "assertions": {
       "type": "object",
       "additionalProperties": false,
@@ -87,6 +115,8 @@
         "stoppedBeforeExecutionGovernanceAndPublication",
         "finalSummaryBusinessOnly",
         "selfRepairObserved",
+        "boundedRepairPolicyRespected",
+        "sameCandidateReceiptAndAssets",
         "rawArgumentsResultsAndMessagesOmitted"
       ],
       "properties": {
@@ -97,11 +127,19 @@
         "businessOracleProposed": { "const": true },
         "stoppedBeforeExecutionGovernanceAndPublication": { "const": true },
         "finalSummaryBusinessOnly": { "const": true },
-        "selfRepairObserved": { "type": "boolean" },
+        "selfRepairObserved": { "const": true },
+        "boundedRepairPolicyRespected": { "const": true },
+        "sameCandidateReceiptAndAssets": { "const": true },
         "rawArgumentsResultsAndMessagesOmitted": { "const": true }
       }
     },
     "result": { "const": "CERTIFIED" },
     "certificateFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "opaqueCorrelationFingerprint": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    }
   }
 }

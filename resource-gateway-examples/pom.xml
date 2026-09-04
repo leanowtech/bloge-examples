@@ -41,6 +41,7 @@
         <jackson.version>2.18.2</jackson.version>
         <selenium.version>4.45.0</selenium.version>
         <bouncycastle.version>1.80</bouncycastle.version>
+        <json-schema-validator.version>2.0.4</json-schema-validator.version>
         <embedded-postgres.version>2.2.2</embedded-postgres.version>
         <embedded-postgres-binaries.version>14.22.0</embedded-postgres-binaries.version>
         <!-- The full frontend gate currently takes about 18 minutes on a developer machine. -->
@@ -177,6 +178,12 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
             <version>${bouncycastle.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${json-schema-validator.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

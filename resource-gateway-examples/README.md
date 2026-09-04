@@ -20,9 +20,11 @@ no-store review details at
 `/agent-tdd.html`. See the
 [Agent TDD MCP guide](../docs/resource-gateway-agent-tdd-mcp.md) for startup,
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
-The repeatable [real Codex certification script](../scripts/certify-agent-tdd-codex.sh) starts an
-ephemeral, repository-blind Codex turn against the loopback MCP endpoint and emits a payload-free
-certificate. The reviewed example certificate is checked in at
+The repeatable [real Codex certification script](../scripts/certify-agent-tdd-codex.sh) requires a
+clean commit, builds and owns a fresh loopback RG process with ephemeral credentials, and runs Codex
+under an OS repository-read denial. It correlates one accepted candidate through Tool and CaseSet
+creation, then emits a payload-free certificate containing only ephemeral HMAC identities. The reviewed
+example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
 The 27-tool catalog now includes `rg.dsl.reference.get`. Codex first receives a scoped, versioned,
 graph-only and payload-free syntax/contract/example snapshot, then previews and gates the exact source

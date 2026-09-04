@@ -1128,6 +1128,7 @@ phase、code、span、resolutionClass、referenceRefs、fixHints、禁止字段�
 - 用户只提供演示脚本中的业务语言，不提供 DSL、schema、operator ref 或 binding；
 - Codex 在第一次 DSL preview 前调用 `rg.dsl.reference.get`；
 - 首次候选若错误，最多三轮根据安全诊断收敛；首次即通过也算成功，不人为制造错误冒充智能修复；
+- 同一 blocking fingerprint 组连续两次后，认证器必须拒绝任何第三次 preview/gate；成功 JSON-RPC 信封但 `accepted=false` 不算通过；
 - gate 通过后，看板真实浏览器展示白话流程和规则矩阵；
 - 业务人员仍需独立批准 Oracle 和 signoff。
 
@@ -1312,28 +1313,28 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 
 ### 23.3 真实 Codex MCP 产品认证
 
-2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对 commit `ee238d21b` 完成了可重复的
-仓库外认证：
+最终认证必须从待认证的干净提交自举，不能复用前一提交或当前机器上碰巧运行的 RG：
 
-1. `certify-agent-tdd-codex.sh` 在只读临时目录运行 `codex exec --ephemeral`，忽略用户配置和
-   规则，不读仓库、memory、plugin、skill 或 browser，只提供四个 loopback HTTP MCP server 和
-   WORKLOAD token；
+1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，从固定
+   HEAD 构建、启动并最终停止 loopback RG；Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
+   下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
-3. 安全化 trace 实际记录 `capability.list → capability.list → contract.get →
-   dsl.reference.get(失败) → dsl.reference.get(成功) → dsl.preview × 3 → gate.check → tool.compose →
-   setInstruction → upsertCases → setDependencyBehavior → listCases`；Codex 从失败的参考主题请求中自主修正；
-4. `upsertCases/listCases` 返回的服务端投影证明 case set 已绑定 Tool，且用例内已有非空
-   stubs 与 proposed Oracle；本次 Codex 另外调用了 `setDependencyBehavior`，但认证器按业务语义判定，
-   不僵化要求必须使用专用操作；
+3. 安全化 trace 必须按顺序包含 capability/contract discovery、失败后成功的同工具自修正、accepted
+   preview、accepted gate、compose、instruction、upsertCases、dependency behavior 与 listCases；
+4. 认证器不再拼接任意历史成功调用：它要求 preview/gate 的 `accepted=true`，逐项比较 reference、
+   preview、gate 与 compose 的 source、library refs、context 和 receipt，再比较 compose、instruction、
+   upsert、dependency behavior 与 listCases 的 Tool、CaseSet 和 case 归属；只有同一案例同时具备 stub
+   与 proposed Oracle 才通过；
 5. Codex 没有调用 execute 或 governance server，在人工 GOLDEN 批准前停下，最终只用业务语言
    报告资料来源、草稿、标准案例和人工待办。
 
 原始 JSONL 只在 `0700` 临时目录以 `0600` 权限处理，默认在结束时删除；认证器只输出
-工具身份、顺序、状态和布尔断言，不输出参数、结果、消息或业务载荷。已入库的严格证书为
+工具身份、顺序、状态、布尔断言和一次性密钥 HMAC 关联指纹，不输出参数、结果、消息、真实 ID 或
+业务载荷。完整证书由 Draft 2020-12 validator 校验，不再只手写抽查字段。认证完成后入库的严格证书为
 `docs/acceptance/agent-tdd/codex-certification-v1.json`，Schema 为
-`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`，证书指纹为
-`sha256:9847b2b09a930bef46cecc6762f0c63c92f2732c2aa84da46e2f52b4631c1239`。
+`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`；提交号、Codex 版本、调用序列和
+证书指纹必须取自本轮新证书，不能沿用旧值。
 
 ### 23.4 分阶段提交
 
