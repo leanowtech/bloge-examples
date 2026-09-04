@@ -212,7 +212,8 @@ class AgentDslAuthoringSupportTest {
                         org.assertj.core.groups.Tuple.tuple("ROUND_TRIP", "NOT_RUN"));
         assertThat(rejected.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
             assertThat(diagnostic.phase()).isEqualTo("PARSE");
-            assertThat(diagnostic.code()).isEqualTo("DSL_PARSE_EXPECTED_CONSTRUCT");
+            assertThat(diagnostic.code()).isEqualTo("DSL_PARSE_ERROR");
+            assertThat(diagnostic.expectedKinds()).isEmpty();
             assertThat(diagnostic.safeSummary()).doesNotContain("token", "broken", "ctx");
             assertThat(diagnostic.referenceRefs()).contains("topic:graph");
             assertThat(diagnostic.resolutionClass()).isEqualTo("AGENT_CAN_REVISE");

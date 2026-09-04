@@ -28,7 +28,11 @@ final class DslSafeDiagnosticRegistry {
         this.mapper = mapper;
     }
 
-    /** Maps one visual importer or validator diagnostic without consuming its prose or metadata. */
+    /**
+     * Maps one visual importer or validator diagnostic without consuming its prose or metadata.
+     * Generic parser failures deliberately remain coarse because the importer does not expose a
+     * structured expected-token code; guessing a construct would give the author false guidance.
+     */
     MappedDiagnostic visual(VisualDiagnostic source, DslAuthoringContext context) {
         return visual(source, context, "");
     }
@@ -46,9 +50,8 @@ final class DslSafeDiagnosticRegistry {
 
         if ("visual.dslImport.parseFailed".equals(lowerCode)) {
             phase = "PARSE";
-            code = "DSL_PARSE_EXPECTED_CONSTRUCT";
-            summary = "The source is not a complete BLOGE graph construct.";
-            expected = List.of("GRAPH_MEMBER_OR_RIGHT_BRACE");
+            code = "DSL_PARSE_ERROR";
+            summary = "The source could not be parsed as a BLOGE graph.";
             references = List.of("topic:graph");
         } else if ("visual.dslImport.rootUnsupported".equals(lowerCode)) {
             phase = "PARSE";

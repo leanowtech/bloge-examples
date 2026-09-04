@@ -176,7 +176,7 @@ class AgentTddExecutionServiceTest {
 
         assertThat(preview).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
         assertThat(gate).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
-        assertThat(preview).contains("DSL_PARSE_EXPECTED_CONSTRUCT", "REVISE_SOURCE");
+        assertThat(preview).contains("DSL_PARSE_ERROR", "REVISE_SOURCE");
     }
 
     @Test

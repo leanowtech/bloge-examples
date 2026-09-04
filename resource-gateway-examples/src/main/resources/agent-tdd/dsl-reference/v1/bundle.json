@@ -106,7 +106,7 @@
       "topicId": "common-errors",
       "title": "Common correction patterns",
       "rules": [
-        {"ruleId": "UNKNOWN_CONSTRUCT", "summary": "When a parser diagnostic names an expected construct, change only the indicated syntax and preview again."},
+        {"ruleId": "UNKNOWN_CONSTRUCT", "summary": "For DSL_PARSE_ERROR, reopen the referenced graph syntax and revise the smallest affected construct; do not infer a missing token that the diagnostic did not declare."},
         {"ruleId": "UNKNOWN_OPERATOR_OR_PORT", "summary": "Choose only a visible compatible contract or a declared named port; never guess from a similar display name."},
         {"ruleId": "STOP_RULE", "summary": "Use blocking=true rather than severity to identify blockers; stop after three repair rounds or two identical blocking fingerprint sets and report the prescribed non-technical next action."}
       ],

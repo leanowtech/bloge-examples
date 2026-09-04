@@ -658,7 +658,7 @@ mutation 内部顺序固定为：
 | `DSL_AUTHORING_CONTEXT_STALE` | CONTEXT | 当前目录与参考已漂移 | `FETCH_DSL_REFERENCE` |
 | `DSL_REFERENCE_TOO_LARGE` | CONTEXT | 请求的参考范围超过安全上限 | `NARROW_REFERENCE_REQUEST` |
 | `DSL_AUTHORING_RECEIPT_STALE` | CONTEXT | compose 候选与已验 receipt 不一致 | `RUN_GATE_AGAIN` |
-| `DSL_PARSE_EXPECTED_CONSTRUCT` | PARSE | 当前位置缺少某类语法构造 | `REVISE_SOURCE` |
+| `DSL_PARSE_ERROR` | PARSE | 解析器未提供结构化 expected-token 时的安全粗粒度错误 | `REVISE_SOURCE` |
 | `DSL_ROOT_UNSUPPORTED` | PARSE | RG 当前不支持该顶层构造 | `USE_GRAPH_ROOT` |
 | `DSL_IDENTIFIER_RESERVED` | PARSE | 标识符使用保留字 | `RENAME_IDENTIFIER` |
 | `DSL_LIBRARY_NOT_VISIBLE` | RESOLVE | 请求库在当前 scope 不可见 | `CHECK_LIBRARY_REFS` |

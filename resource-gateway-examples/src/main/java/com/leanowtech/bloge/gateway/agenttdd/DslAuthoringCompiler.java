@@ -92,12 +92,12 @@ final class DslAuthoringCompiler {
         List<DslSafeDiagnosticRegistry.MappedDiagnostic> unsupportedRoots = unsupportedRoot(request.source());
         if (!unsupportedRoots.isEmpty()) {
             byPhase.get("PARSE").removeIf(value ->
-                    "DSL_PARSE_EXPECTED_CONSTRUCT".equals(value.diagnostic().code()));
+                    "DSL_PARSE_ERROR".equals(value.diagnostic().code()));
             byPhase.get("PARSE").addAll(unsupportedRoots);
         }
         if (!reservedIdentifiers.isEmpty()) {
             byPhase.get("PARSE").removeIf(value ->
-                    "DSL_PARSE_EXPECTED_CONSTRUCT".equals(value.diagnostic().code()));
+                    "DSL_PARSE_ERROR".equals(value.diagnostic().code()));
             byPhase.get("PARSE").addAll(reservedIdentifiers);
         }
 

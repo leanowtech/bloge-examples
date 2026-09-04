@@ -273,6 +273,8 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`code`、`phase`、`span`、`safeSummary`、`expectedKinds`、`referenceRefs`、受限 `fixHints`、`resolutionClass` 和 `diagnosticFingerprint`。兼容字段 `target/line/column` 暂时保留。截断前先保留 blocking ERROR，再保留 WARNING、INFO；`diagnosticSummary.total/byPhase` 表示去重后的原始数量。底层异常文案、metadata、source fragment、regenerated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
 
+其中 `DSL_PARSE_ERROR` 是解析器未给出结构化 expected-token 时的诚实兜底：Codex 只应打开 `topic:graph`，修改最小语法片段后重新 preview；`expectedKinds` 为空时不得自行脑补“缺右括号”等服务端没有证明的结论。
+
 `fixHints.reasonCode=AUTHORIZED_NAME_MATCH` 只表示候选在当前 scope 可见且名称接近，不表示业务含义或端口契约已经兼容。Codex 必须以 reference 中返回的 operator contract 复核输入、输出和 effect。服务端会在 `TYPE_CHECK` 阶段校验命名端口、输出路径、必需输入，以及可由纯字面量直接证明的显式类型冲突；`session/state_machine` 会明确返回当前 graph-only profile 不支持，而不是让 Codex 猜测泛化解析错误。
 
 ### 5.5 实景验证边界

@@ -10,7 +10,7 @@ Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.
 业务人员不需要阅读或编写 DSL。Codex 根据业务意图生成候选后，应按以下顺序在后台处理：
 
 1. 用同一 `authoringContextFingerprint` 调用 `rg.dsl.preview`。
-2. 只根据 payload-free `authoringDiagnostics` 修正；最多三轮。同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
+2. 只根据 payload-free `authoringDiagnostics` 修正；最多三轮。同一阻断 `diagnosticFingerprint` 连续出现两次时停止。`DSL_PARSE_ERROR` 是解析器尚未提供结构化 expected-token 时的安全兜底，只表示应回看 `topic:graph` 并最小修改；不得据此猜测服务端看见了哪个 token。
 3. preview 接受后，对同一 source 调用 `rg.gate.check`。
 4. compose 时提交同一 source、context fingerprint 和 receipt fingerprint。服务端会重新编译并拒绝 source/context/receipt 不一致的请求。
 

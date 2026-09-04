@@ -23,7 +23,7 @@ class DslSafeDiagnosticRegistryTest {
 
     @Test
     void mapsEveryVisualDiagnosticFamilyToOneStablePhaseAndResolutionClass() {
-        assertMapped("visual.dslImport.parseFailed", "DSL_PARSE_EXPECTED_CONSTRUCT", "PARSE",
+        assertMapped("visual.dslImport.parseFailed", "DSL_PARSE_ERROR", "PARSE",
                 "AGENT_CAN_REVISE", true);
         assertMapped("visual.dslImport.rootUnsupported", "DSL_ROOT_UNSUPPORTED", "PARSE",
                 "AGENT_CAN_REVISE", true);
@@ -60,6 +60,20 @@ class DslSafeDiagnosticRegistryTest {
         assertThat(mapped.diagnostic().target()).isEqualTo("/nodes/*/config/*");
         assertThat(mapped.diagnostic().span().known()).isTrue();
         assertThat(mapped.diagnostic().diagnosticFingerprint()).matches("sha256:[0-9a-f]{64}");
+    }
+
+    @Test
+    void genericParseFailureDoesNotGuessAnExpectedConstruct() {
+        DslSafeDiagnosticRegistry.MappedDiagnostic mapped = registry.visual(new VisualDiagnostic(
+                "ERROR", "visual.dslImport.parseFailed", "expected ')' after customer-secret",
+                "/dsl", 2, 7, Map.of("token", "customer-secret")), context);
+
+        assertThat(mapped.diagnostic().code()).isEqualTo("DSL_PARSE_ERROR");
+        assertThat(mapped.diagnostic().expectedKinds()).isEmpty();
+        assertThat(mapped.diagnostic().safeSummary())
+                .isEqualTo("The source could not be parsed as a BLOGE graph.");
+        assertThat(mapper.valueToTree(mapped.diagnostic()).toString())
+                .doesNotContain("customer-secret", "expected ')'", "token");
     }
 
     @Test
