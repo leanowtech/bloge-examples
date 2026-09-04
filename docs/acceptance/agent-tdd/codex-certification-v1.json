@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "rg.agentTddCodexCertification.v1",
+  "certifiedAt": "2026-09-04T04:18:41Z",
+  "repositoryCommit": "ee238d21b3410ed1a9fb9ba7fd0444c5b872b017",
+  "codexVersion": "codex-cli 0.150.0-alpha.8",
+  "transport": {
+    "kind": "HTTP_MCP",
+    "endpointClass": "LOOPBACK",
+    "serverCount": 4
+  },
+  "journey": {
+    "phase": "AUTHORING_TO_HUMAN_GOLDEN_REVIEW",
+    "requiredSequence": [
+      "rg.capability.list",
+      "rg.contract.get",
+      "rg.dsl.reference.get",
+      "rg.dsl.preview",
+      "rg.gate.check",
+      "rg.tool.compose",
+      "rg.tool.setInstruction",
+      "rg.scenario.upsertCases"
+    ],
+    "successfulPositions": [1, 3, 5, 6, 9, 10, 11, 12],
+    "observedCalls": [
+      { "ordinal": 1, "server": "rg_read", "tool": "rg.capability.list", "status": "completed" },
+      { "ordinal": 2, "server": "rg_read", "tool": "rg.capability.list", "status": "completed" },
+      { "ordinal": 3, "server": "rg_read", "tool": "rg.contract.get", "status": "completed" },
+      { "ordinal": 4, "server": "rg_read", "tool": "rg.dsl.reference.get", "status": "failed" },
+      { "ordinal": 5, "server": "rg_read", "tool": "rg.dsl.reference.get", "status": "completed" },
+      { "ordinal": 6, "server": "rg_read", "tool": "rg.dsl.preview", "status": "completed" },
+      { "ordinal": 7, "server": "rg_read", "tool": "rg.dsl.preview", "status": "completed" },
+      { "ordinal": 8, "server": "rg_read", "tool": "rg.dsl.preview", "status": "completed" },
+      { "ordinal": 9, "server": "rg_read", "tool": "rg.gate.check", "status": "completed" },
+      { "ordinal": 10, "server": "rg_author", "tool": "rg.tool.compose", "status": "completed" },
+      { "ordinal": 11, "server": "rg_author", "tool": "rg.tool.setInstruction", "status": "completed" },
+      { "ordinal": 12, "server": "rg_author", "tool": "rg.scenario.upsertCases", "status": "completed" },
+      { "ordinal": 13, "server": "rg_author", "tool": "rg.scenario.setDependencyBehavior", "status": "completed" },
+      { "ordinal": 14, "server": "rg_read", "tool": "rg.scenario.listCases", "status": "completed" }
+    ]
+  },
+  "assertions": {
+    "codexTurnCompleted": true,
+    "requiredAuthoringOrder": true,
+    "caseSetBoundToTool": true,
+    "dependencyBehaviorDefined": true,
+    "businessOracleProposed": true,
+    "stoppedBeforeExecutionGovernanceAndPublication": true,
+    "finalSummaryBusinessOnly": true,
+    "selfRepairObserved": true,
+    "rawArgumentsResultsAndMessagesOmitted": true
+  },
+  "result": "CERTIFIED",
+  "certificateFingerprint": "sha256:9847b2b09a930bef46cecc6762f0c63c92f2732c2aa84da46e2f52b4631c1239"
+}

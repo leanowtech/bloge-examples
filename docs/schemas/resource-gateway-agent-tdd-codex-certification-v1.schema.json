@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.example/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json",
+  "title": "Resource Gateway Agent TDD Codex certification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "certifiedAt",
+    "repositoryCommit",
+    "codexVersion",
+    "transport",
+    "journey",
+    "assertions",
+    "result",
+    "certificateFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "rg.agentTddCodexCertification.v1" },
+    "certifiedAt": { "type": "string", "format": "date-time" },
+    "repositoryCommit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+    "codexVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "endpointClass", "serverCount"],
+      "properties": {
+        "kind": { "const": "HTTP_MCP" },
+        "endpointClass": { "const": "LOOPBACK" },
+        "serverCount": { "const": 4 }
+      }
+    },
+    "journey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "requiredSequence", "successfulPositions", "observedCalls"],
+      "properties": {
+        "phase": { "const": "AUTHORING_TO_HUMAN_GOLDEN_REVIEW" },
+        "requiredSequence": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "prefixItems": [
+            { "const": "rg.capability.list" },
+            { "const": "rg.contract.get" },
+            { "const": "rg.dsl.reference.get" },
+            { "const": "rg.dsl.preview" },
+            { "const": "rg.gate.check" },
+            { "const": "rg.tool.compose" },
+            { "const": "rg.tool.setInstruction" },
+            { "const": "rg.scenario.upsertCases" }
+          ],
+          "items": false
+        },
+        "successfulPositions": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "observedCalls": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ordinal", "server", "tool", "status"],
+            "properties": {
+              "ordinal": { "type": "integer", "minimum": 1 },
+              "server": { "enum": ["rg_read", "rg_author", "rg_execute", "rg_govern"] },
+              "tool": { "type": "string", "pattern": "^rg\\." },
+              "status": { "enum": ["completed", "failed", "cancelled", "unknown"] }
+            }
+          }
+        }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "codexTurnCompleted",
+        "requiredAuthoringOrder",
+        "caseSetBoundToTool",
+        "dependencyBehaviorDefined",
+        "businessOracleProposed",
+        "stoppedBeforeExecutionGovernanceAndPublication",
+        "finalSummaryBusinessOnly",
+        "selfRepairObserved",
+        "rawArgumentsResultsAndMessagesOmitted"
+      ],
+      "properties": {
+        "codexTurnCompleted": { "const": true },
+        "requiredAuthoringOrder": { "const": true },
+        "caseSetBoundToTool": { "const": true },
+        "dependencyBehaviorDefined": { "const": true },
+        "businessOracleProposed": { "const": true },
+        "stoppedBeforeExecutionGovernanceAndPublication": { "const": true },
+        "finalSummaryBusinessOnly": { "const": true },
+        "selfRepairObserved": { "type": "boolean" },
+        "rawArgumentsResultsAndMessagesOmitted": { "const": true }
+      }
+    },
+    "result": { "const": "CERTIFIED" },
+    "certificateFingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

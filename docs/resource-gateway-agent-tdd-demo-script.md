@@ -85,6 +85,20 @@ Resource Gateway: running
 
 如果任一项未准备好，不要开始正式演示。
 
+### 3.4 会前认证 Codex 接入
+
+正式演示前，演示保障人员可在只持有 Agent 凭据的 Shell 中执行：
+
+```bash
+RG_MCP_TOKEN="${RG_MCP_TOKEN}" \
+  ./scripts/certify-agent-tdd-codex.sh
+```
+
+该认证使用全新、不读仓库的 Codex 和纯业务提示词，证明 Agent 能自行找到资料来源、
+完成候选能力、从服务端反馈中自主修正，并在标准案例需要人工批准时停下。
+它只覆盖正式演示的第一个人工停点，不代替取消费场景中的业务批准、RED/GREEN、
+沙箱实景验证、负责人签署和发布。详细命令、证书和原始 trace 隐私边界见完整操作手册第 8.1 节。
+
 ## 4. 开场：先约定人和 Agent 的分工
 
 小李在新的 Codex 任务中输入：

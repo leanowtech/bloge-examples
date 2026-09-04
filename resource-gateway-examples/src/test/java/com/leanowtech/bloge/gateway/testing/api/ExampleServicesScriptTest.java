@@ -135,7 +135,7 @@ class ExampleServicesScriptTest {
                 "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true",
                 "业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数",
                 "请把“按用户编号查询用户姓名和会员等级”做成客服助手可用的业务能力",
-                "请自行完成技术设计和检查，不要向我展示代码、DSL、Schema、节点、端口或内部标识",
+                "请自行完成平台需要的工作和检查，不要向我展示过程或真实用户资料",
                 "人工停点一：批准 Oracle",
                 "人工停点二：签署发布证据",
                 "`realExternalCalls` 必须为 `0`",

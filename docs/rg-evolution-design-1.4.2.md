@@ -1286,6 +1286,8 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 - `AgentTddEgressHostPolicyTest`：IPv4/IPv6、多地址、公私混合、空结果、变化结果与显式本地例外；
 - `AgentTddMcpOperationalWorkflowTest`：真实 Spring HTTP `/mcp` 生命周期、reference → preview → gate →
   compose、独立 WORKLOAD/HUMAN、真实 Chrome 规则矩阵、GREEN、平台实景验证、签署与发布。
+- `AgentTddCodexCertificationArtifactTest` 与 `agent_tdd_codex_trace_certificate_test.py`：固定可入库
+  证书的严格结构、语义断言、指纹、载荷零泄漏，以及未绑定用例和越过人工停点的失败路径。
 
 最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 13 分 51 秒：
 **8,514 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
@@ -1304,22 +1306,28 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 
 ### 23.3 真实 Codex MCP 产品认证
 
-2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 做了仓库外认证：
+2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对 commit `ee238d21b` 完成了可重复的
+仓库外认证：
 
-1. 在只读临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，关闭仓库、memory、plugin、
-   skill 与 browser 输入，只提供四个最小权限 RG MCP server 和 WORKLOAD token；
-2. 输入只描述“按用户编号查询姓名和会员等级”的业务目标、事实来源和 `u-100 → Alice/premium`
-   标准答案，没有 DSL、Schema、binding、节点、端口或 MCP 参数；
-3. trace 实际调用 `capability.list → contract.get → dsl.reference.get → dsl.preview → gate.check →
-   tool.compose → setInstruction → upsertCases → setDependencyBehavior → oracle.propose`；
-4. 第一次 reference 请求使用了不存在的 topic，服务端返回 `DSL_REFERENCE_TOPIC_UNKNOWN` 和
-   `NARROW_REFERENCE_REQUEST`；Codex 删除猜测 topic 后自行重试成功，证明稳定反馈可驱动修正；
-5. preview 与 gate 接受同一 source，compose 使用同一 context/receipt 成功；Codex 最终只用业务语言
-   报告“资料来源匹配、能力草稿有效、标准案例待人工确认”，没有执行、自批、签署或发布。
+1. `certify-agent-tdd-codex.sh` 在只读临时目录运行 `codex exec --ephemeral`，忽略用户配置和
+   规则，不读仓库、memory、plugin、skill 或 browser，只提供四个 loopback HTTP MCP server 和
+   WORKLOAD token；
+2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
+   说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
+3. 安全化 trace 实际记录 `capability.list → capability.list → contract.get →
+   dsl.reference.get(失败) → dsl.reference.get(成功) → dsl.preview × 3 → gate.check → tool.compose →
+   setInstruction → upsertCases → setDependencyBehavior → listCases`；Codex 从失败的参考主题请求中自主修正；
+4. `upsertCases/listCases` 返回的服务端投影证明 case set 已绑定 Tool，且用例内已有非空
+   stubs 与 proposed Oracle；本次 Codex 另外调用了 `setDependencyBehavior`，但认证器按业务语义判定，
+   不僵化要求必须使用专用操作；
+5. Codex 没有调用 execute 或 governance server，在人工 GOLDEN 批准前停下，最终只用业务语言
+   报告资料来源、草稿、标准案例和人工待办。
 
-该认证进程退出码为 0。认证外层最初用于 grep 工具显示名的辅助 Shell 断言因 Codex trace 使用原始
-`rg.dsl.*` 名称而误报；逐条解析 JSONL 后确认上述调用和最终状态均成立。这里记录产品结果，也保留
-辅助脚本误判这一事实，不把脚本误判写成平台失败或静默忽略。
+原始 JSONL 只在 `0700` 临时目录以 `0600` 权限处理，默认在结束时删除；认证器只输出
+工具身份、顺序、状态和布尔断言，不输出参数、结果、消息或业务载荷。已入库的严格证书为
+`docs/acceptance/agent-tdd/codex-certification-v1.json`，Schema 为
+`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`，证书指纹为
+`sha256:9847b2b09a930bef46cecc6762f0c63c92f2732c2aa84da46e2f52b4631c1239`。
 
 ### 23.4 分阶段提交
 

@@ -1,0 +1,119 @@
+package com.leanowtech.bloge.gateway.agenttdd;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Certifies that the checked-in real-Codex proof is strict, payload-free and reproducible. */
+class AgentTddCodexCertificationArtifactTest {
+    private static final Path REPOSITORY = Path.of("..").toAbsolutePath().normalize();
+    private static final Path CERTIFICATE = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd/codex-certification-v1.json");
+    private static final Path SCHEMA = REPOSITORY.resolve(
+            "docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json");
+    private static final Path SCRIPT = REPOSITORY.resolve("scripts/certify-agent-tdd-codex.sh");
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void checkedInCertificateProvesTheBusinessJourneyWithoutCarryingTracePayloads() throws Exception {
+        JsonNode certificate = mapper.readTree(CERTIFICATE.toFile());
+        JsonNode schema = mapper.readTree(SCHEMA.toFile());
+
+        assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(certificate.path("schemaVersion").asText())
+                .isEqualTo("rg.agentTddCodexCertification.v1");
+        assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
+        assertThat(certificate.path("repositoryCommit").asText()).matches("[0-9a-f]{40}");
+        assertThat(certificate.path("certificateFingerprint").asText())
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
+                "rg.capability.list", "rg.contract.get", "rg.dsl.reference.get", "rg.dsl.preview",
+                "rg.gate.check", "rg.tool.compose", "rg.tool.setInstruction", "rg.scenario.upsertCases");
+        assertThat(certificate.at("/assertions/requiredAuthoringOrder").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/caseSetBoundToTool").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/dependencyBehaviorDefined").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/businessOracleProposed").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/stoppedBeforeExecutionGovernanceAndPublication").asBoolean())
+                .isTrue();
+        assertThat(certificate.at("/assertions/finalSummaryBusinessOnly").asBoolean()).isTrue();
+        assertThat(certificate.at("/journey/observedCalls")).allSatisfy(call ->
+                assertThat(toFieldSet(call)).containsExactlyInAnyOrder(
+                        "ordinal", "server", "tool", "status"));
+
+        String serialized = mapper.writeValueAsString(certificate);
+        assertThat(serialized).doesNotContain(
+                "arguments", "structured_content", "messages", "source", "Alice", "u-100", "premium",
+                "secret", "private-tool");
+
+        JsonNode unsigned = certificate.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) unsigned).remove("certificateFingerprint");
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(canonical(unsigned).getBytes(StandardCharsets.UTF_8)));
+        assertThat(certificate.path("certificateFingerprint").asText()).isEqualTo("sha256:" + digest);
+    }
+
+    @Test
+    void certificationScriptUsesAnIsolatedBusinessOnlyPromptAndPrivateTraceLifecycle() throws Exception {
+        String script = Files.readString(SCRIPT, StandardCharsets.UTF_8);
+        int promptStart = script.indexOf("cat > \"${PROMPT_FILE}\" <<EOF");
+        String prompt = script.substring(promptStart, script.indexOf("\nEOF\n", promptStart));
+
+        assertThat(script).contains(
+                "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox read-only",
+                "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
+                "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py");
+        assertThat(prompt).contains(
+                "按用户编号查询用户姓名和会员等级", "什么时候使用", "待我确认的标准案例",
+                "不要替我确认标准案例", "不要开始验证或发布");
+        assertThat(prompt).doesNotContain(
+                "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
+    }
+
+    private static Set<String> toFieldSet(JsonNode node) {
+        java.util.LinkedHashSet<String> result = new java.util.LinkedHashSet<>();
+        node.fieldNames().forEachRemaining(result::add);
+        return result;
+    }
+
+    private static List<String> textValues(JsonNode array) {
+        List<String> result = new ArrayList<>();
+        array.forEach(value -> result.add(value.asText()));
+        return result;
+    }
+
+    private String canonical(JsonNode node) throws Exception {
+        if (node.isObject()) {
+            List<String> fields = new ArrayList<>();
+            node.fieldNames().forEachRemaining(fields::add);
+            fields.sort(String::compareTo);
+            List<String> members = new ArrayList<>();
+            for (String field : fields) {
+                members.add(mapper.writeValueAsString(field) + ":" + canonical(node.get(field)));
+            }
+            return "{" + String.join(",", members) + "}";
+        }
+        if (node.isArray()) {
+            List<String> values = new ArrayList<>();
+            node.forEach(value -> {
+                try {
+                    values.add(canonical(value));
+                } catch (Exception failure) {
+                    throw new IllegalStateException(failure);
+                }
+            });
+            return "[" + String.join(",", values) + "]";
+        }
+        return mapper.writeValueAsString(node);
+    }
+}

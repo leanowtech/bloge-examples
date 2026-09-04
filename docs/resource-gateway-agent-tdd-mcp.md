@@ -181,7 +181,7 @@ tail -80 target/example-logs/resource-gateway.log
 
 这项能力接收一个用户编号，返回用户姓名和会员等级。典型案例是：查询用户 u-100 时，资料来源返回 Alice，会员等级为 premium；能力也应返回 Alice 和 premium。请把它整理成待我确认的标准案例。
 
-请自行完成技术设计和检查，不要向我展示代码、DSL、Schema、节点、端口或内部标识。完成后只用业务语言告诉我：资料来源是否匹配、能力草稿是否有效、标准案例是否已提交，以及我接下来需要在看板完成什么。不要替我批准标准案例，也不要开始发布。
+请自行完成平台需要的工作和检查，不要向我展示过程或真实用户资料。完成后只用业务语言告诉我：资料来源是否匹配、能力草稿是否有效、标准案例是否已提交，以及我接下来需要在看板完成什么。不要替我批准标准案例，也不要开始发布。
 ```
 
 预期：能力草稿已保存；技术结构已通过 authoring 检查，但业务正确性仍未证明；标准案例等待人工确认，不能进入基线验证。Codex 后台必须完成 capability/contract discovery → DSL reference → preview/revise → gate → compose；业务人员不需要看到这些步骤。
@@ -330,10 +330,44 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ## 8. 回归验证
 
+### 8.1 真实 Codex 第一幕认证
+
+在 Resource Gateway 已按第 2 节启动、当前 Shell 只有 WORKLOAD token 时执行：
+
+```bash
+RG_MCP_TOKEN="${RG_MCP_TOKEN}" \
+  ./scripts/certify-agent-tdd-codex.sh
+```
+
+该脚本会在临时只读目录启动一个全新、不读仓库、不读用户配置与规则的
+Codex，只提供四个 loopback HTTP MCP 连接和一段业务提示词。认证检查业务语义，
+不要求 Agent 执行僵化的工具仪式：依赖行为和待审批 Oracle 可在提交标准案例时一并写入，
+也可通过专用操作补充。最终必须证明以下事实：
+
+- Codex 先发现业务能力与契约，再获取 DSL 参考、预览、检查并保存同一份候选；
+- Instruction、依赖行为和业务标准答案已形成，用例集明确归属于新 Tool；
+- Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
+- 最终回复只使用业务语言，且至少观察到一次从失败诊断到成功的自主修正。
+
+默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
+可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，并在结束时删除；
+仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。可入库的证书只保留
+工具名、顺序、状态和布尔断言，不保留参数、结果、消息和业务载荷。已审核样例见
+[`docs/acceptance/agent-tdd/codex-certification-v1.json`](acceptance/agent-tdd/codex-certification-v1.json)，
+严格 Schema 见
+[`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`](schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json)。
+
+一次性执行器可能在 Shell 退出时回收后台服务。在 CI 或沙箱中必须在同一 Shell
+完成“启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
+
+### 8.2 自动回归
+
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslReferenceCertificationTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
+  -Dtest='AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslAuthoringRepairMatrixTest,DslReferenceCertificationTest,AgentTddCodexCertificationArtifactTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
   test
+
+python3 -m unittest scripts/agent_tdd_codex_trace_certificate_test.py
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
