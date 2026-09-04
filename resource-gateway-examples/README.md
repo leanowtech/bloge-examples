@@ -26,6 +26,11 @@ against that immutable authoring context. Compose accepts the DSL envelope plus 
 fingerprints rather than trusting a client-authored `GraphDraft`; the mutation reruns the production
 parser/compiler/linter/projection pipeline and persists only the matching server projection. Business users
 state intent, rules and expected outcomes; they are not asked to write DSL or interpret compiler prose.
+The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
+for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
+an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.
+Operator repair candidates are authorized name matches only; the Agent must still read and satisfy the returned
+contract instead of treating a similar name as proof of compatibility.
 Preview is bounded to 512 KiB, 5 seconds, 25 diagnostics per phase and 100 total. Per authenticated identity,
 MCP defaults to 120 total calls/minute, 60 reference calls/minute, and 30 shared preview/gate calls/minute
 with four concurrent authoring calls; expired rate windows and fully released identity semaphores are evicted so

@@ -7,14 +7,15 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -202,6 +203,42 @@ class AgentDslAuthoringSupportTest {
     }
 
     @Test
+    void rejectsUnsupportedRootsAndUnknownFunctionsThenAcceptsGraphCorrections() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt wrongRoot = support.preview(new DslPreviewRequest(
+                "candidate.bloge", """
+                session candidate {
+                  phase start {
+                    transform result { value = "ready" }
+                  }
+                }
+                """, List.of(), context), identity("project-a"));
+        DslPreviewReceipt wrongFunction = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = mystery(ctx.value) } }",
+                List.of(), context), identity("project-a"));
+        DslPreviewReceipt corrected = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph candidate { transform result { value = coalesce(ctx.value, \"unknown\") } }",
+                List.of(), context), identity("project-a"));
+
+        assertThat(wrongRoot.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("DSL_ROOT_UNSUPPORTED");
+            assertThat(diagnostic.phase()).isEqualTo("PARSE");
+            assertThat(diagnostic.referenceRefs()).contains("topic:graph");
+        });
+        assertThat(wrongFunction.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_FUNCTION_NOT_FOUND");
+        assertThat(corrected.accepted()).as("corrected diagnostics: %s", corrected.authoringDiagnostics())
+                .isTrue();
+    }
+
+    @Test
     void suggestsOnlyVisibleOperatorsAndNeverEchoesRejectedSourceOrLowerMessages() {
         OperatorDefinition transform = operator(
                 "bloge:transform", "", OperatorDefinition.Policy.unrestricted());
@@ -224,8 +261,14 @@ class AgentDslAuthoringSupportTest {
         assertThat(diagnostic.fixHints()).extracting(DslAuthoringDiagnostic.FixHint::candidate)
                 .contains("bloge:transform")
                 .doesNotContain("secret:operator");
+        assertThat(diagnostic.fixHints()).extracting(DslAuthoringDiagnostic.FixHint::reasonCode)
+                .containsOnly("AUTHORIZED_NAME_MATCH");
         assertThat(mapper.valueToTree(receipt).toString())
                 .doesNotContain("tranform", "secret-value", "secret:operator", "token=");
+        DslPreviewReceipt corrected = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = ctx.value } }",
+                List.of(), context), identity("project-a"));
+        assertThat(corrected.accepted()).isTrue();
     }
 
     @Test
@@ -246,6 +289,15 @@ class AgentDslAuthoringSupportTest {
 
         DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
                 "policy.bloge", source, List.of(), context), identity("project-a"));
+        DslPreviewReceipt corrected = support.preview(new DslPreviewRequest(
+                "policy.bloge", """
+                graph policyGraph {
+                  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {
+                    rule (score: score >= 120) -> { decision: "accept" }
+                    otherwise -> { decision: "review" }
+                  }
+                }
+                """, List.of(), context), identity("project-a"));
 
         assertThat(receipt.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
                 .contains("DSL_DECISION_UNIQUE_OVERLAP", "DSL_DECISION_OTHERWISE_REQUIRED");
@@ -254,17 +306,158 @@ class AgentDslAuthoringSupportTest {
                 .allMatch(value -> value.phase().equals("SEMANTIC_COMPILE"));
         assertThat(mapper.valueToTree(receipt).toString())
                 .doesNotContain("review-secret", "accept-secret", "policyGraph");
+        assertThat(corrected.accepted()).isTrue();
+    }
+
+    @Test
+    void typeChecksPureTransformDeclarationsBeforeAcceptingThem() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt rejected = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph candidate { transform result { value: String = 42 } }",
+                List.of(), context), identity("project-a"));
+        DslPreviewReceipt corrected = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph candidate { transform result { value: String = \"forty-two\" count: Integer = 42 } }",
+                List.of(), context), identity("project-a"));
+        DslPreviewReceipt fractionalInteger = support.preview(new DslPreviewRequest(
+                "candidate.bloge",
+                "graph candidate { transform result { count: Integer = 42.5 } }",
+                List.of(), context), identity("project-a"));
+
+        assertThat(rejected.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_TYPE_MISMATCH");
+        assertThat(fractionalInteger.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_TYPE_MISMATCH");
+        assertThat(rejected.stages()).contains(new DslPreviewReceipt.Stage("TYPE_CHECK", "FAIL"));
+        assertThat(corrected.accepted()).isTrue();
+        assertThat(corrected.stages()).extracting(DslPreviewReceipt.Stage::status).containsOnly("PASS");
+    }
+
+    @Test
+    void validatesNamedResourceInputsRequiredBindingsAndOutputPathsBeforeAcceptance() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+        String operatorRef = "resource:" + VisualCatalogTestSupport.RESOURCE_ID;
+
+        DslPreviewReceipt wrongInput = preview(support, context, """
+                graph candidate {
+                  node lookup : "%s" { input { unknown = ctx.applicantId } }
+                }
+                """.formatted(operatorRef));
+        DslPreviewReceipt missingInput = preview(support, context, """
+                graph candidate {
+                  node lookup : "%s" { }
+                }
+                """.formatted(operatorRef));
+        DslPreviewReceipt wrongOutput = preview(support, context, """
+                graph candidate {
+                  node lookup : "%s" { input { applicantId = ctx.applicantId } }
+                  transform result { score = lookup.output.payload.unknown }
+                }
+                """.formatted(operatorRef));
+        DslPreviewReceipt corrected = preview(support, context, """
+                graph candidate {
+                  node lookup : "%s" { input { params = { applicantId: ctx.applicantId } } }
+                  transform result { score = lookup.output.payload.score }
+                }
+                """.formatted(operatorRef));
+
+        assertThat(wrongInput.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_INPUT_PORT_UNKNOWN");
+        assertThat(missingInput.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_REQUIRED_INPUT_MISSING");
+        assertThat(wrongOutput.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_OUTPUT_PORT_UNKNOWN");
+        assertThat(corrected.authoringDiagnostics())
+                .as("corrected named-port diagnostics")
+                .noneMatch(diagnostic -> "ERROR".equals(diagnostic.level()));
+        assertThat(corrected.accepted()).isTrue();
+    }
+
+    @Test
+    void reportsRoundTripDriftAndAcceptsAProjectionStableCorrection() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt drifted = preview(support, context, """
+                graph candidate {
+                  node lookup : httpResource {
+                    input { resourceId = ctx.resourceId params = ctx.params }
+                  }
+                  transform result { payload = lookup.output.payload }
+                }
+                """);
+        DslPreviewReceipt corrected = preview(support, context, """
+                graph candidate {
+                  node lookup : httpResource {
+                    input { resourceId = ctx.resourceId params = {} }
+                  }
+                  transform result { payload = lookup.output.payload }
+                }
+                """);
+
+        assertThat(drifted.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
+                .contains("DSL_ROUND_TRIP_DRIFT");
+        assertThat(drifted.nextAction()).isEqualTo("REPORT_PLATFORM_DEFECT");
+        assertThat(corrected.accepted()).isTrue();
+    }
+
+    @Test
+    void stopsOnAnUnsupportedProjectionConstructInsteadOfDroppingIt() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt unsupported = preview(support, context,
+                "import \"shared.bloge\"\ngraph candidate {}");
+        DslPreviewReceipt corrected = preview(support, context,
+                "graph candidate { transform result { value = \"ready\" } }");
+
+        assertThat(unsupported.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("DSL_PROJECTION_UNSUPPORTED");
+            assertThat(diagnostic.phase()).isEqualTo("PROJECT");
+            assertThat(diagnostic.resolutionClass()).isEqualTo("PLATFORM_MAINTAINER");
+        });
+        assertThat(corrected.accepted()).isTrue();
+    }
+
+    private DslPreviewReceipt preview(AgentDslAuthoringSupport support, String context, String source) {
+        return support.preview(new DslPreviewRequest(
+                "candidate.bloge", source, List.of(), context), identity("project-a"));
     }
 
     @Test
     void classifiesReservedDeclarationIdentifiersWithoutEchoingTheKeyword() {
-        AgentDslAuthoringSupport support = support(List.of(), List.of());
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource(),
+                new FixedLibraries(List.of()), mapper);
         String context = support.reference(new DslReferenceRequest(
                 List.of(), List.of(), List.of(), false), identity("project-a"))
                 .authoringContextFingerprint();
 
         DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
                 "candidate.bloge", "graph graph {}", List.of(), context), identity("project-a"));
+        DslPreviewReceipt corrected = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
+                List.of(), context), identity("project-a"));
 
         assertThat(receipt.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
             assertThat(diagnostic.code()).isEqualTo("DSL_IDENTIFIER_RESERVED");
@@ -272,6 +465,8 @@ class AgentDslAuthoringSupportTest {
             assertThat(diagnostic.expectedKinds()).containsExactly("IDENTIFIER");
             assertThat(diagnostic.safeSummary()).doesNotContain("graph graph");
         });
+        assertThat(corrected.accepted()).as("corrected diagnostics: %s", corrected.authoringDiagnostics())
+                .isTrue();
     }
 
     @Test
@@ -307,6 +502,13 @@ class AgentDslAuthoringSupportTest {
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(error -> ((AgentTddToolException) error).code())
                 .isEqualTo("DSL_AUTHORING_CONTEXT_STALE");
+        String refreshed = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+        assertThat(support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
+                List.of(), refreshed), identity("project-a"))
+                .accepted()).isTrue();
     }
 
     @Test
@@ -381,6 +583,15 @@ class AgentDslAuthoringSupportTest {
     private static OperatorDefinition operator(String ref,
                                                String libraryId,
                                                OperatorDefinition.Policy policy) {
+        OperatorDefinition.Ports ports = ref.startsWith("bloge:")
+                ? new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs", SchemaEnvelope.opaque(), false, "unsafe")),
+                        List.of(new OperatorDefinition.Port("output", SchemaEnvelope.opaque(), true, "unsafe")))
+                : new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("input", SchemaEnvelope.object(Map.of(
+                                "secretField", Map.of("type", "string", "description", "business-example-value",
+                                        "default", "secret")), List.of("secretField")), true, "unsafe")),
+                        List.of(new OperatorDefinition.Port("output", SchemaEnvelope.opaque(), true, "unsafe")));
         return new OperatorDefinition(
                 "bloge.visualOperator.v1", ref, "1.0.0", "",
                 new OperatorDefinition.Display(ref, "unsafe operator description", List.of("unsafe")),
@@ -388,11 +599,7 @@ class AgentDslAuthoringSupportTest {
                         libraryId.isBlank() ? "" : "resource-secret", "GET",
                         libraryId.isBlank() ? "" : "https://secret.internal/business-example-value",
                         false, libraryId),
-                new OperatorDefinition.Ports(
-                        List.of(new OperatorDefinition.Port("input", SchemaEnvelope.object(Map.of(
-                                "secretField", Map.of("type", "string", "description", "business-example-value",
-                                        "default", "secret")), List.of("secretField")), true, "unsafe")),
-                        List.of(new OperatorDefinition.Port("output", SchemaEnvelope.opaque(), true, "unsafe"))),
+                ports,
                 SchemaEnvelope.object(Map.of("mode", Map.of("type", "string", "default", "secret")), List.of()),
                 OperatorDefinition.Capabilities.pure(), policy,
                 new OperatorDefinition.Lowering(libraryId.isBlank() ? "dsl" : "design", ref,

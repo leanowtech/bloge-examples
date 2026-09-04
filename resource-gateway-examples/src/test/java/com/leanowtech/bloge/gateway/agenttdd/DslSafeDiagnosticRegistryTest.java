@@ -86,6 +86,21 @@ class DslSafeDiagnosticRegistryTest {
     }
 
     @Test
+    void classifiesDisallowedEffectsAsGovernedStopsWithoutSuggestingBypass() {
+        DslSafeDiagnosticRegistry.MappedDiagnostic mapped = registry.visual(new VisualDiagnostic(
+                "ERROR", "visual.operator.policyDenied", "sensitive policy details",
+                "/nodes/private-write/operatorRef", 4, 7, Map.of("secret", "not-public")), context);
+
+        assertThat(mapped.blocking()).isTrue();
+        assertThat(mapped.diagnostic().code()).isEqualTo("DSL_EFFECT_NOT_ALLOWED");
+        assertThat(mapped.diagnostic().phase()).isEqualTo("SEMANTIC_COMPILE");
+        assertThat(mapped.diagnostic().resolutionClass()).isEqualTo("HUMAN_OR_PLATFORM_REQUIRED");
+        assertThat(mapped.diagnostic().fixHints()).isEmpty();
+        assertThat(mapper.valueToTree(mapped.diagnostic()).toString())
+                .doesNotContain("sensitive", "private-write", "not-public");
+    }
+
+    @Test
     void truncationKeepsLateBlockingErrorsAndReportsTheUntruncatedTotals() {
         List<DslSafeDiagnosticRegistry.MappedDiagnostic> diagnostics = new ArrayList<>();
         for (int index = 0; index < 100; index++) {

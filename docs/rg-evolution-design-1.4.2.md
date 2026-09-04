@@ -608,7 +608,7 @@ mutation 内部顺序固定为：
     {
       "kind": "REPLACE_OPERATOR_REF",
       "candidate": "bloge:decisionTable",
-      "reasonCode": "AUTHORIZED_CONTRACT_COMPATIBLE"
+      "reasonCode": "AUTHORIZED_NAME_MATCH"
     }
   ],
   "resolutionClass": "AGENT_CAN_REVISE",
@@ -1053,12 +1053,13 @@ P2 基础设施限制，不影响 reference/preview/gate/compose 的 DSL 正确�
 | `DslReferenceBundleLoader` | schema/version 校验、未知 topic 拒绝、控制字符和大小限制、启动失败关闭 |
 | `DslReferenceService` | graph-only 裁剪、授权 operator、函数签名、大小上限、空 libraryRefs 语义 |
 | `DslSafeDiagnosticRegistry` | 每个 code 映射、未知折叠、禁止字段永不输出、span 规范化 |
-| suggestion | 先授权后匹配、契约兼容过滤、确定排序、最多 3 个、低置信为空 |
+| suggestion | 先授权后做名称近似匹配、确定排序、最多 3 个、低置信为空；未知引用没有可信的待匹配契约，不伪称“契约兼容” |
 | `DslAuthoringCompiler` | 阶段顺序、阻塞后 NOT_RUN、timeout、round-trip drift、receipt fingerprint |
 
 ### 18.2 诊断语料
 
-至少为以下候选各提供一条 RED → 修正 → GREEN 测试：
+Agent 能修改的创作错误必须提供 RED → 修正 → GREEN；治理、平台、安全与 admission
+边界必须断言精确停止、无绕过建议和无副作用，不能为了凑 GREEN 伪造一个放宽治理的“修正”。二十行与可执行测试的绑定如下：
 
 1. 缺失括号或块结束符；
 2. 把上下文关键字当普通标识符；
@@ -1081,7 +1082,11 @@ P2 基础设施限制，不影响 reference/preview/gate/compose 的 DSL 正确�
 19. preview source A 后 compose source B；
 20. 客户端伪造 receipt 或直接提交 nodes/edges/operatorSnapshots。
 
-测试不能只断言“有错误”；必须断言 phase、code、span、resolutionClass、referenceRefs、fixHints、禁止字段和修正后的最终 acceptance。
+`DslAuthoringRepairMatrixTest` 以反射校验 1–20 行引用的测试方法确实存在且仍是 `@Test`；具体行为由
+`AgentDslAuthoringSupportTest`、`DslSafeDiagnosticRegistryTest`、`McpProtocolControllerTest` 和
+`AgentTddMutationServiceTest` 承担。1–11、14–15 验证 Agent 修正后的 acceptance；12–13、16–20
+验证准确的人工/平台停止、泄漏防护、资源边界或零写入。测试不能只断言“有错误”；还要按场景断言
+phase、code、span、resolutionClass、referenceRefs、fixHints、禁止字段及最终 acceptance/stop 状态。
 
 ### 18.3 协议与安全测试
 
@@ -1254,6 +1259,7 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 | 权威参考面 | `AgentDslAuthoringSupport`、`DslReferenceBundleLoader`、`DslAuthoringContextResolver`、`DslContractLens` | scope-aware、版本化、graph-only；空 `libraryRefs` 仍包含平台内置函数与当前 scope 的资源 operator |
 | 完整 preview/gate | `DslAuthoringCompiler`、`DslImportService` 的冻结 catalog 入口 | 固定阶段执行；阻断后不把未执行阶段伪装成成功；5 秒总预算含 context 解析与编译 |
 | 可修正诊断 | `DslSafeDiagnosticRegistry`、`DslAuthoringDiagnostic` | 不读取下层 message/metadata；返回稳定摘要、位置、期望种类、参考和有限修复建议 |
+| 类型与 profile 收口 | `DslAuthoringCompiler` | GraphDraft 契约检查不再跳过 `bloge:*`；显式纯 literal 类型矛盾在 TYPE_CHECK 阶段失败；0.8.9 尚无 AST 的 session/state_machine 被安全识别为 graph-profile 不支持 |
 | 防 TOCTOU 提升 | `DslPreviewReceipt`、`AgentTddMutationService` | source/context/receipt 三者绑定；mutation 内用同一冻结上下文复编译并只保存服务端投影 |
 | 严格 MCP 协议 | `McpToolCatalog`、`McpProtocolController`、`ResourceGatewayAgentTddTools` | 第 27 个工具；input/output schema 均执行；initialize instructions 强制 reference-first 和人工边界 |
 | 资源治理 | `McpRequestLimiter`、`AgentDslAuthoringSupport` 有界 executor | 每身份总桶、reference 桶、preview/gate 共享桶、4 并发和 16 排队上限；稳定 JSON-RPC 错误 |
@@ -1269,7 +1275,9 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 新增或强化的关键测试包括：
 
 - `AgentDslAuthoringSupportTest`：作用域、稳定指纹、参考裁剪、缺失/过期 context、解析错误修正、
-  operator 建议防越权、决策表 lint、保留字、大小限制、超时与 payload-free；
+  graph-only root、未知 function/operator、命名端口、输出路径、必需输入、纯 literal 类型、决策表 lint、
+  不可投影构造、round-trip 漂移、保留字、大小限制、超时与 payload-free；
+- `DslAuthoringRepairMatrixTest`：将第 18.2 节二十行语料固定绑定到可执行行为测试，防止覆盖静默缩水；
 - `DslReferenceCertificationTest`：逐个编译并 round-trip 认证所有随包 example；
 - `DslSafeDiagnosticRegistryTest`：完整 code family、未知诊断折叠、恶意 message/metadata/target 不泄漏；
 - `AgentTddMutationServiceTest`：合法 receipt 提升，以及换 source、伪 receipt、客户端 GraphDraft

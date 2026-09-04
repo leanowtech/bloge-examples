@@ -16,6 +16,8 @@ Derived from [`bloge-dsl-specification.md`](../bloge-dsl-specification.md) v1.0.
 
 `session` 和 `state_machine` 仍属于 BLOGE 语言，但不在当前 Agent TDD authoring profile 中。不要把本文件整篇复制进提示词，也不要用它覆盖 MCP 返回的当前作用域参考。
 
+当前服务端还会校验可见 operator 的命名输入/输出路径、必需输入，以及 transform 中能由字面量直接证明的显式类型矛盾。例如 `value: String = 42` 和 `count: Integer = 42.5` 会在 `TYPE_CHECK` 阶段被拒绝；依赖运行时上下文或函数结果的类型仍以 BLOGE 编译器与 operator contract 为准。未知 operator 的候选只表示“当前作用域可见且名称近似”，不代表语义或契约自动兼容，Agent 必须读取返回的 contract 后再选择。
+
 运行时参考包用以下稳定 topic id 组织本页中受支持的知识：`graph-root`、`node-declaration`、
 `node-bindings`、`types-and-nullability`、`transform`、`decision-table`、`execution-controls`、
 `functions`、`round-trip`、`common-errors`。`graph`、`node`、`bindings`、`effects` 仅为旧请求的兼容别名；

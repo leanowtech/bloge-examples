@@ -64,7 +64,7 @@ final class DslSafeDiagnosticRegistry {
             references = List.of("topic:node");
             fixes = rankedOperatorCandidates(rejectedOperatorRef, context.operators().keySet()).stream()
                     .map(value -> new DslAuthoringDiagnostic.FixHint(
-                            "REPLACE_OPERATOR_REF", value, "AUTHORIZED_CONTRACT_COMPATIBLE"))
+                            "REPLACE_OPERATOR_REF", value, "AUTHORIZED_NAME_MATCH"))
                     .toList();
         } else if ("visual.dslImport.functionMissing".equals(lowerCode)) {
             phase = "RESOLVE";
@@ -133,6 +133,22 @@ final class DslSafeDiagnosticRegistry {
         return mapped("ERROR", "PARSE", "DSL_IDENTIFIER_RESERVED", "", span(line, column),
                 "A declaration identifier uses a reserved BLOGE keyword.",
                 List.of("IDENTIFIER"), List.of("topic:graph"), List.of(),
+                "AGENT_CAN_REVISE", false, true);
+    }
+
+    /** Creates the graph-profile diagnostic for a recognized non-graph BLOGE root. */
+    MappedDiagnostic unsupportedRoot(int line, int column) {
+        return mapped("ERROR", "PARSE", "DSL_ROOT_UNSUPPORTED", "", span(line, column),
+                "Resource Gateway authoring accepts a graph root only.",
+                List.of("GRAPH"), List.of("topic:graph"), List.of(),
+                "AGENT_CAN_REVISE", false, true);
+    }
+
+    /** Creates a stable mismatch for a literal that contradicts its explicit transform type. */
+    MappedDiagnostic declaredLiteralTypeMismatch(int line, int column) {
+        return mapped("ERROR", "TYPE_CHECK", "DSL_TYPE_MISMATCH", "", span(line, column),
+                "A literal value does not satisfy its declared transform field type.",
+                List.of("DECLARED_FIELD_TYPE"), List.of("topic:types-and-nullability"), List.of(),
                 "AGENT_CAN_REVISE", false, true);
     }
 

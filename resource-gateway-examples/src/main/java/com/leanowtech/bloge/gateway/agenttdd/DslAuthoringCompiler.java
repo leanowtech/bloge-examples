@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.ExpressionFunction;
 import com.leanowtech.bloge.dsl.ast.AstNode;
+import com.leanowtech.bloge.dsl.ast.Expression;
 import com.leanowtech.bloge.dsl.compiler.CompilationMode;
 import com.leanowtech.bloge.dsl.compiler.CompilationResult;
 import com.leanowtech.bloge.dsl.compiler.DslCompiler;
@@ -88,6 +89,12 @@ final class DslAuthoringCompiler {
                 .map(value -> diagnostics.visual(value, context,
                         missingOperatorRefs.isEmpty() ? "" : missingOperatorRefs.getFirst()))
                 .forEach(value -> byPhase.get(value.diagnostic().phase()).add(value));
+        List<DslSafeDiagnosticRegistry.MappedDiagnostic> unsupportedRoots = unsupportedRoot(request.source());
+        if (!unsupportedRoots.isEmpty()) {
+            byPhase.get("PARSE").removeIf(value ->
+                    "DSL_PARSE_EXPECTED_CONSTRUCT".equals(value.diagnostic().code()));
+            byPhase.get("PARSE").addAll(unsupportedRoots);
+        }
         if (!reservedIdentifiers.isEmpty()) {
             byPhase.get("PARSE").removeIf(value ->
                     "DSL_PARSE_EXPECTED_CONSTRUCT".equals(value.diagnostic().code()));
@@ -103,8 +110,9 @@ final class DslAuthoringCompiler {
         if (failedPhase == null) {
             if (System.nanoTime() > deadline) {
                 byPhase.get("TYPE_CHECK").add(diagnostics.platformDefect("TYPE_CHECK"));
-            } else if (projection.draft().nodes().stream()
-                    .anyMatch(node -> !node.operatorRef().startsWith("bloge:"))) {
+            } else {
+                byPhase.get("TYPE_CHECK").addAll(declaredLiteralTypeDiagnostics(
+                        request.source(), context));
                 new GraphDraftValidator(frozenCatalog).validate(projection.draft()).diagnostics().stream()
                         .filter(java.util.Objects::nonNull)
                         .map(value -> diagnostics.visual(value, context))
@@ -115,18 +123,22 @@ final class DslAuthoringCompiler {
         }
 
         if (failedPhase == null) {
-            try {
-                DslCompiler compiler = semanticCompiler(context);
-                AstNode ast = compiler.parseAst(request.source());
-                if (ast instanceof AstNode.GraphDef graph) {
-                    CompilationResult result = compiler.compileWithDiagnostics(graph);
-                    result.diagnostics().stream().map(diagnostics::compiler)
-                            .forEach(byPhase.get("SEMANTIC_COMPILE")::add);
-                } else {
+            boolean knownProjectionStop = byPhase.get("PROJECT").stream()
+                    .anyMatch(DslSafeDiagnosticRegistry.MappedDiagnostic::blocking);
+            if (!knownProjectionStop) {
+                try {
+                    DslCompiler compiler = semanticCompiler(context);
+                    AstNode ast = compiler.parseAst(request.source());
+                    if (ast instanceof AstNode.GraphDef graph) {
+                        CompilationResult result = compiler.compileWithDiagnostics(graph);
+                        result.diagnostics().stream().map(diagnostics::compiler)
+                                .forEach(byPhase.get("SEMANTIC_COMPILE")::add);
+                    } else {
+                        byPhase.get("SEMANTIC_COMPILE").add(diagnostics.platformDefect("SEMANTIC_COMPILE"));
+                    }
+                } catch (RuntimeException failure) {
                     byPhase.get("SEMANTIC_COMPILE").add(diagnostics.platformDefect("SEMANTIC_COMPILE"));
                 }
-            } catch (RuntimeException failure) {
-                byPhase.get("SEMANTIC_COMPILE").add(diagnostics.platformDefect("SEMANTIC_COMPILE"));
             }
             try {
                 new LintRunner().lintSource(request.source()).stream().map(diagnostics::lint)
@@ -199,6 +211,67 @@ final class DslAuthoringCompiler {
         return compiler;
     }
 
+    /**
+     * Closes the BLOGE 0.8.9 gap where an explicit transform field type replaces, but does not
+     * validate, the inferred literal type. Only contradictions that are provable without business
+     * data are rejected here; context paths and function results remain with the semantic compiler.
+     */
+    private List<DslSafeDiagnosticRegistry.MappedDiagnostic> declaredLiteralTypeDiagnostics(
+            String source, DslAuthoringContext context) {
+        try {
+            AstNode ast = semanticCompiler(context).parseAst(source);
+            if (!(ast instanceof AstNode.GraphDef graph)) return List.of();
+            List<DslSafeDiagnosticRegistry.MappedDiagnostic> result = new ArrayList<>();
+            graph.members().stream().filter(AstNode.TransformDef.class::isInstance)
+                    .map(AstNode.TransformDef.class::cast)
+                    .flatMap(transform -> transform.fields().stream())
+                    .filter(field -> field.typeAnnotation() != null && !field.typeAnnotation().isBlank())
+                    .filter(field -> literalContradicts(field.typeAnnotation(), field.value()))
+                    .map(field -> diagnostics.declaredLiteralTypeMismatch(field.line(), field.column()))
+                    .forEach(result::add);
+            return List.copyOf(result);
+        } catch (RuntimeException alreadyClassifiedByParser) {
+            return List.of();
+        }
+    }
+
+    private static boolean literalContradicts(String declaredType, Expression value) {
+        String type = declaredType.endsWith("?")
+                ? declaredType.substring(0, declaredType.length() - 1) : declaredType;
+        Expression literal = value;
+        while (literal instanceof Expression.GroupExpr group) {
+            literal = group.inner();
+        }
+        return switch (type) {
+            case "String" -> literal instanceof Expression.NumberLiteral
+                    || literal instanceof Expression.BooleanLiteral
+                    || literal instanceof Expression.ArrayLiteral
+                    || literal instanceof Expression.ObjectLiteral;
+            case "Int", "Integer" -> literal instanceof Expression.NumberLiteral number
+                    ? number.value() != Math.rint(number.value())
+                    : literal instanceof Expression.StringLiteral
+                    || literal instanceof Expression.StringInterpolation
+                    || literal instanceof Expression.BooleanLiteral
+                    || literal instanceof Expression.ArrayLiteral
+                    || literal instanceof Expression.ObjectLiteral;
+            case "Number" -> literal instanceof Expression.StringLiteral
+                    || literal instanceof Expression.StringInterpolation
+                    || literal instanceof Expression.BooleanLiteral
+                    || literal instanceof Expression.ArrayLiteral
+                    || literal instanceof Expression.ObjectLiteral;
+            case "Boolean" -> literal instanceof Expression.StringLiteral
+                    || literal instanceof Expression.StringInterpolation
+                    || literal instanceof Expression.NumberLiteral
+                    || literal instanceof Expression.ArrayLiteral
+                    || literal instanceof Expression.ObjectLiteral;
+            default -> literal instanceof Expression.StringLiteral
+                    || literal instanceof Expression.StringInterpolation
+                    || literal instanceof Expression.NumberLiteral
+                    || literal instanceof Expression.BooleanLiteral
+                    || literal instanceof Expression.ArrayLiteral;
+        };
+    }
+
     private List<DslSafeDiagnosticRegistry.MappedDiagnostic> reservedIdentifiers(String source) {
         try {
             List<Token> tokens = new Lexer(source).tokenize();
@@ -214,6 +287,31 @@ final class DslAuthoringCompiler {
                 }
             }
             return result;
+        } catch (RuntimeException malformed) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Recognizes BLOGE roots that are valid language concepts but outside the graph-only profile.
+     *
+     * <p>BLOGE 0.8.9 does not yet expose Session and State Machine AST variants, so its parser
+     * reports these roots as a generic parse error. Classifying only the first lexical identifier
+     * keeps the server response useful without copying the source or attempting a shadow parser.</p>
+     */
+    private List<DslSafeDiagnosticRegistry.MappedDiagnostic> unsupportedRoot(String source) {
+        try {
+            return new Lexer(source).tokenize().stream()
+                    .filter(token -> token.type() != TokenType.LINE_COMMENT
+                            && token.type() != TokenType.BLOCK_COMMENT
+                            && token.type() != TokenType.DOC_COMMENT
+                            && token.type() != TokenType.EOF)
+                    .findFirst()
+                    .filter(token -> token.type() == TokenType.IDENT)
+                    .filter(token -> token.lexeme().equals("session")
+                            || token.lexeme().equals("state_machine"))
+                    .map(token -> List.of(diagnostics.unsupportedRoot(token.line(), token.column())))
+                    .orElseGet(List::of);
         } catch (RuntimeException malformed) {
             return List.of();
         }
