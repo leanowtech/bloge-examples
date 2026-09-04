@@ -44,9 +44,12 @@ public final class McpProtocolController {
             + "Generate DSL from the user's business intent; never ask the user to write DSL. Preview, revise "
             + "from authoringDiagnostics, and gate the exact source. Stop after three repair rounds or when the "
             + "same blocking diagnosticFingerprint appears twice; report HUMAN_OR_PLATFORM_REQUIRED or "
-            + "PLATFORM_MAINTAINER instead of guessing. Compose only the exact accepted source with its context "
-            + "and receipt fingerprints. Never invent runtime bindings, Oracle approval, GREEN, attestation, or "
-            + "signoff evidence. Human Oracle approval and executable signoff require the reviewer boundary. "
+            + "PLATFORM_MAINTAINER instead of guessing. If the business intent admits materially different "
+            + "outcomes, stop before generating DSL, report BUSINESS_CLARIFICATION_REQUIRED, and ask one "
+            + "business-language clarification without technical terms. Compose only the exact accepted source "
+            + "with its context and receipt fingerprints, then bind the case set to the toolRef returned by "
+            + "compose. Never invent runtime bindings, Oracle approval, GREEN, attestation, or signoff evidence. "
+            + "Human Oracle approval and executable signoff require the reviewer boundary. "
             + "Call rg.readiness.get before publish and publish only when publishable=true.";
 
     private final ObjectMapper mapper;

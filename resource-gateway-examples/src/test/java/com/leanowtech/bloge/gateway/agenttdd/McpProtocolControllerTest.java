@@ -383,7 +383,9 @@ class McpProtocolControllerTest {
                 .startsWith("Use the Agent TDD tools in order");
         assertThat(modern.path("result").path("instructions").asText())
                 .contains("rg.dsl.reference.get", "never ask the user to write DSL",
-                        "three repair rounds", "same blocking diagnosticFingerprint appears twice");
+                        "three repair rounds", "same blocking diagnosticFingerprint appears twice",
+                        "BUSINESS_CLARIFICATION_REQUIRED", "business-language clarification",
+                        "bind the case set to the toolRef returned by compose");
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(unknown.path("id").asInt()).isEqualTo(12);

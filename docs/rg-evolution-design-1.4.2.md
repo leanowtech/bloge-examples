@@ -380,7 +380,7 @@ functionName + signatureFingerprint (sorted)
 
 规则：
 
-- `libraryRefs` 必填，允许显式空数组，含义是只取平台内建子集；不得把省略误解为“所有库”；
+- `libraryRefs` 必填，允许显式空数组，含义是取平台内建函数、平台内建图算子和当前 tenant/project/environment 可见的资源算子，但不导入任何命名扩展库；不得把省略误解为“所有库”；
 - `topics`、`operatorRefs` 可选；缺省返回紧凑必备主题、平台内建算子和 library 摘要。Agent 应先用 capability/contract 查询选定业务能力，再用 `operatorRefs` 取精确创作契约；
 - 未授权 library/operator 按不可见处理，不通过建议或错误详情泄漏其存在；
 - 请求不接受自然语言业务描述、DSL source、fixture 或业务 payload；
@@ -517,8 +517,12 @@ v1.4.2 至少提供以下稳定 `topicId`：
 - `ACCEPTED`：L1 与 L2 均通过，可进入 `gate.check`；
 - `REVISE`：Agent 可按诊断修改技术结构；
 - `REFETCH_REFERENCE`：上下文已漂移，必须先重取参考；
-- `BUSINESS_CLARIFICATION_REQUIRED`：技术上存在多个等价业务含义，不能由平台替业务选择；
 - `PLATFORM_DEFECT`：下层错误无法安全分类，停止自动修正并报告平台维护者。
+
+`BUSINESS_CLARIFICATION_REQUIRED` 不是编译器伪造的技术结论，也不属于
+`technicalAcceptance` 枚举。它是 Codex 在生成 DSL 前执行的业务歧义停机协议：当同一业务描述允许产生 materially different
+outcomes 时，Codex 必须停止生成，只问一个不含 DSL、schema、operator ref 等技术术语的业务问题。服务端只负责通过
+`initialize.instructions` 发布并约束这条协议；在用户消除歧义后，下一次创作重新从 reference 开始。
 
 共享信封的顶层 `diagnostics` 继续只承载通用协议诊断。增强后的 DSL 诊断放在 `data.authoringDiagnostics`，避免改变所有工具的共享信封；兼容期内 `projection.diagnostics` 只保留旧五字段的派生视图。
 
@@ -700,7 +704,7 @@ stateDiagram-v2
     CandidateReady --> PreviewAccepted: preview ACCEPTED
     CandidateReady --> RevisionNeeded: preview REVISE
     CandidateReady --> ReferenceReady: preview REFETCH_REFERENCE
-    CandidateReady --> HumanNeeded: BUSINESS_CLARIFICATION_REQUIRED
+    ReferenceReady --> HumanNeeded: BUSINESS_CLARIFICATION_REQUIRED before generation
     CandidateReady --> PlatformDefect: PLATFORM_DEFECT
     RevisionNeeded --> CandidateReady: Codex revises source
     PreviewAccepted --> GateAccepted: gate accepted
@@ -725,6 +729,7 @@ stateDiagram-v2
 9. 不向业务人员展示 DSL、schema、operator ref 或诊断原文，除非对方主动进入专家模式；
 10. 不修改 GOLDEN Oracle 来迎合当前实现。
 11. compose 时提交与已通过 gate 完全相同的 DSL、上下文指纹和 receipt；receipt 不匹配时重新 gate，不尝试伪造或绕过。
+12. compose 成功后，创建该工具的持久 GOLDEN case set 时必须绑定 compose 返回的 `toolRef`，不得留下无归属 case set。
 
 ### 11.3 收敛和停止规则
 
@@ -873,7 +878,7 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 | 工具数 26 → 27 | 更新 catalog/controller/运营测试的精确数量断言；新增工具不改旧工具名称 |
 | preview/gate 增加 context 指纹 | 同一版本内先扩 schema和调用者，再收紧为 required；最终不保留隐式上下文 |
 | compose 增加 context/receipt 指纹 | 更新所有 MCP 调用者；MCP 不再接受任意客户端 `GraphDraft`，内部 visual API 不受影响 |
-| `libraryRefs=[]` | Agent TDD 新 resolver 明确为“仅平台内建”；移除旧投影器可能出现的“空等于所有可见库”，客户端必须显式列库 |
+| `libraryRefs=[]` | Agent TDD resolver 明确为“平台内建函数与图算子 + 当前 scope 可见资源算子，但不导入命名扩展库”；移除旧投影器可能出现的“空等于所有命名库”，客户端必须显式列库 |
 | authoring diagnostics 新增字段 | 暂保留旧五字段一个版本；新客户端以 `span/phase/resolutionClass` 为准 |
 | 未知坐标 `-1` → `0 + span.known=false` | output schema 明确新规则；兼容字段在下一主版本移除 |
 | preview 验证更严格 | 新错误只阻止此前可能被错误接受的候选；不改变已发布 artifact 的运行语义 |
@@ -918,7 +923,7 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 
 **新增**：
 
-- `DslAuthoringContext` 及 resolver；
+- `DslAuthoringContext` 及 resolver；一次解析先冻结 library registry，再据同一快照选库、函数和库内算子；授权 catalog 也只读取一次，禁止把多次可变读取拼成混合版本；
 - `DslReferenceBundleLoader`；
 - `DslReferenceService`；
 - `DslContractLens`；

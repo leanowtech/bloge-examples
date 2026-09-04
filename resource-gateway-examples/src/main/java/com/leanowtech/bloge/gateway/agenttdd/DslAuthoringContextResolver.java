@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
+import com.leanowtech.bloge.gateway.visual.catalog.BuiltInFunctionCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -59,12 +60,21 @@ final class DslAuthoringContextResolver {
         if (libraryRefs.size() > MAX_LIBRARY_REFS) {
             throw tooLarge();
         }
-        List<OperatorLibrary> selected = libraryRefs.stream().map(libraryRef -> libraries.find(libraryRef)
-                        .filter(library -> library.visibleInCatalog(false))
-                        .orElseThrow(() -> new AgentTddToolException("DSL_LIBRARY_NOT_VISIBLE",
-                                "A requested DSL library is not visible in this authoring scope.",
-                                Map.of("nextAction", "CHECK_LIBRARY_REFS"))))
+        List<OperatorLibrary> registrySnapshot = libraries.all().stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(OperatorLibrary::libraryId))
                 .toList();
+        Map<String, OperatorLibrary> librariesById = registrySnapshot.stream().collect(
+                java.util.stream.Collectors.toMap(OperatorLibrary::libraryId, value -> value,
+                        (first, ignored) -> first, TreeMap::new));
+        List<OperatorLibrary> selected = libraryRefs.stream().map(libraryRef -> {
+            OperatorLibrary library = librariesById.get(libraryRef);
+            if (library == null || !library.visibleInCatalog(false)
+                    || visibleOperators(library, identity).isEmpty()) {
+                throw notVisible();
+            }
+            return library;
+        }).toList();
 
         OperatorCatalogQuery allInScope = new OperatorCatalogQuery(
                 "", List.of(), false, false,
@@ -74,24 +84,18 @@ final class DslAuthoringContextResolver {
                 .filter(Objects::nonNull)
                 .filter(operator -> operator.policy().allows(
                         identity.tenantId(), identity.projectId(), identity.environmentId()))
-                .filter(operator -> libraryRefs.isEmpty()
-                        ? platformOwned(operator)
-                        : operator.source().libraryId().isBlank()
-                                || libraryRefs.contains(operator.source().libraryId()))
+                .filter(operator -> operator.source().libraryId().isBlank())
+                .filter(operator -> !libraryRefs.isEmpty() || platformOwned(operator))
                 .forEach(operator -> operators.putIfAbsent(operator.operatorRef(), operator));
+        selected.forEach(library -> visibleOperators(library, identity).stream()
+                .map(operator -> ownedBy(library, operator))
+                .forEach(operator -> operators.putIfAbsent(operator.operatorRef(), operator)));
 
-        Set<String> knownLibraryIds = libraries.all().stream().filter(Objects::nonNull)
-                .map(OperatorLibrary::libraryId).collect(java.util.stream.Collectors.toSet());
-        OperatorCatalogQuery functionQuery = new OperatorCatalogQuery(
-                "", List.of(), false, false,
-                identity.tenantId(), identity.projectId(), identity.environmentId(),
-                libraryRefs.isEmpty() ? List.of("platform-built-in-only") : List.of(),
-                libraryRefs, List.of(), List.of(), List.of());
         Map<String, OperatorLibrary.BuiltInFunction> functions = new TreeMap<>();
-        catalog.builtInFunctions(functionQuery).stream()
+        BuiltInFunctionCatalog.defaults().stream().filter(Objects::nonNull)
+                .forEach(function -> functions.putIfAbsent(function.name(), function));
+        selected.stream().flatMap(library -> library.builtInFunctions().stream())
                 .filter(Objects::nonNull)
-                .filter(function -> !knownLibraryIds.contains(function.namespace())
-                        || libraryRefs.contains(function.namespace()))
                 .forEach(function -> functions.putIfAbsent(function.name(), function));
 
         List<DslAuthoringContext.LibrarySnapshot> librarySnapshots = selected.stream()
@@ -152,6 +156,39 @@ final class DslAuthoringContextResolver {
         return operator.source().libraryId().isBlank()
                 && (!operator.source().resourceId().isBlank()
                 || Set.of("built-in", "bloge-dsl", "bloge-operator").contains(operator.source().kind()));
+    }
+
+    private static List<OperatorDefinition> visibleOperators(OperatorLibrary library,
+                                                              IntegrationRequestContext identity) {
+        return library.operators().stream()
+                .filter(Objects::nonNull)
+                .filter(DslAuthoringContextResolver::hasConcretePorts)
+                .filter(operator -> operator.policy().allows(
+                        identity.tenantId(), identity.projectId(), identity.environmentId()))
+                .toList();
+    }
+
+    private static boolean hasConcretePorts(OperatorDefinition operator) {
+        return operator.ports().inputs().stream().allMatch(Objects::nonNull)
+                && operator.ports().outputs().stream().allMatch(Objects::nonNull);
+    }
+
+    private static OperatorDefinition ownedBy(OperatorLibrary library, OperatorDefinition operator) {
+        if (library.libraryId().equals(operator.source().libraryId())) return operator;
+        OperatorDefinition.Source source = operator.source();
+        return new OperatorDefinition(
+                operator.schemaVersion(), operator.operatorRef(), operator.operatorVersion(),
+                operator.fingerprint(), operator.display(),
+                new OperatorDefinition.Source(source.kind(), source.resourceId(), source.method(),
+                        source.urlTemplate(), source.virtual(), library.libraryId()),
+                operator.ports(), operator.configSchema(), operator.capabilities(), operator.policy(),
+                operator.lowering(), operator.diagnostics(), operator.runtimeReadiness());
+    }
+
+    private static AgentTddToolException notVisible() {
+        return new AgentTddToolException("DSL_LIBRARY_NOT_VISIBLE",
+                "A requested DSL library is not visible in this authoring scope.",
+                Map.of("nextAction", "CHECK_LIBRARY_REFS"));
     }
 
     private static List<String> normalize(List<String> values) {

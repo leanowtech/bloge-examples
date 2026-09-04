@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,7 +25,7 @@ class AgentDslAuthoringSupportTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    void emptyLibraryRefsExposeOnlyBuiltInsAndNeverLeakRuntimeMaterial() {
+    void emptyLibraryRefsExposeBuiltInsAndScopedResourcesWithoutRuntimeMaterial() {
         OperatorDefinition builtIn = operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted());
         OperatorDefinition library = operator("ride:lookup", "ride-policy", OperatorDefinition.Policy.unrestricted());
         OperatorDefinition resource = resourceOperator("resource:ride-order.get");
@@ -70,6 +71,52 @@ class AgentDslAuthoringSupportTest {
         assertThat(first.examples()).isEmpty();
         assertThat(mapper.valueToTree(first).toString())
                 .doesNotContain("secret.internal", "business-example-value", "urlTemplate", "description");
+    }
+
+    @Test
+    void treatsAnExistingLibraryWithOnlyOtherProjectOperatorsAsNotVisible() {
+        OperatorDefinition otherProject = operator("ride:hidden", "ride-policy",
+                new OperatorDefinition.Policy(List.of("tenant-a"), List.of("project-b"), List.of("test")));
+        AgentDslAuthoringSupport support = support(
+                List.of(otherProject), List.of(library("ride-policy", List.of(otherProject))));
+
+        assertThatThrownBy(() -> support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("DSL_LIBRARY_NOT_VISIBLE");
+                    assertThat(failure.details()).containsOnlyKeys("nextAction");
+                });
+    }
+
+    @Test
+    void freezesLibraryOperatorsAndFunctionsFromOneRegistrySnapshot() {
+        OperatorDefinition firstOperator = operator(
+                "ride:first", "ride-policy", OperatorDefinition.Policy.unrestricted());
+        OperatorDefinition laterOperator = operator(
+                "ride:later", "ride-policy", OperatorDefinition.Policy.unrestricted());
+        OperatorLibrary first = library("ride-policy", List.of(firstOperator));
+        OperatorLibrary later = library("ride-policy", List.of(laterOperator));
+        AtomicInteger reads = new AtomicInteger();
+        OperatorLibraryRegistry changing = new FixedLibraries(List.of(first)) {
+            @Override public Collection<OperatorLibrary> all() {
+                return reads.getAndIncrement() == 0 ? List.of(first) : List.of(later);
+            }
+
+            @Override public Optional<OperatorLibrary> find(String libraryId) {
+                throw new AssertionError("authoring context must not re-read a mutable library registry");
+            }
+        };
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of()), changing, mapper);
+
+        DslReferenceSnapshot reference = support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity("project-a"));
+
+        assertThat(reads).hasValue(1);
+        assertThat(reference.operators()).extracting(DslReferenceSnapshot.OperatorContract::operatorRef)
+                .contains("ride:first").doesNotContain("ride:later");
+        assertThat(reference.functions()).extracting(DslReferenceSnapshot.FunctionContract::name)
+                .contains("rideRisk");
     }
 
     @Test
@@ -386,7 +433,13 @@ class AgentDslAuthoringSupportTest {
         }
     }
 
-    private record FixedLibraries(List<OperatorLibrary> values) implements OperatorLibraryRegistry {
+    private static class FixedLibraries implements OperatorLibraryRegistry {
+        private final List<OperatorLibrary> values;
+
+        private FixedLibraries(List<OperatorLibrary> values) {
+            this.values = List.copyOf(values);
+        }
+
         @Override public Collection<OperatorLibrary> all() { return values; }
         @Override public Optional<OperatorLibrary> find(String libraryId) {
             return values.stream().filter(library -> library.libraryId().equals(libraryId)).findFirst();
