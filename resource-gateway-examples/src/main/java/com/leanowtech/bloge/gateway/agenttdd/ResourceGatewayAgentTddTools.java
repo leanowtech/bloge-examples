@@ -41,6 +41,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final AgentTddResourceDeclarationService declarations;
     private final AgentTddAttestationService attestations;
     private final AgentDslAuthoringSupport dslAuthoring;
+    private final SolutionAgentTools solutionTools;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -167,6 +168,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
+        this.solutionTools = states == null ? null : new SolutionAgentTools(states, mapper);
     }
 
     /**
@@ -201,6 +203,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                             optionalStringList(safeArguments, "topics"),
                             optionalStringList(safeArguments, "operatorRefs"),
                             safeArguments.path("includeExamples").asBoolean(false)), identity));
+            case "rg.feature.define" -> executionSuccess(solutionTools().defineFeature(safeArguments, identity));
+            case "rg.scenario.define" -> executionSuccess(solutionTools().defineScenario(safeArguments, identity));
+            case "rg.instruction.define" -> executionSuccess(
+                    solutionTools().defineInstruction(safeArguments, identity));
+            case "rg.solution.compose" -> executionSuccess(
+                    solutionTools().composeSolution(safeArguments, identity));
             case "rg.readiness.get" -> workflow == null
                     ? readiness(safeArguments, identity)
                     : executionSuccess(workflow.readiness(safeArguments, identity));
@@ -235,6 +243,14 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         } catch (AgentTddToolException failure) {
             return failure(failure.code(), safeErrorMessage(failure.code()), failure.details(), failure.retryable());
         }
+    }
+
+    private SolutionAgentTools solutionTools() {
+        if (solutionTools == null) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The solution authoring service is unavailable.");
+        }
+        return solutionTools;
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {
@@ -673,6 +689,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "DRAFT_NOT_FOUND" -> "The requested governed asset was not found.";
             case "LIBRARY_NOT_FOUND" -> "A referenced library or runtime binding was not found.";
             case "RESOURCE_NOT_REGISTERED" -> "A referenced resource must be declared before composition.";
+            case "REFERENCE_UNRESOLVED" -> "A referenced solution entity is unavailable in this scope.";
+            case "SCENARIO_OUTLET_UNRESOLVED" -> "A scenario outlet is not declared by the solution.";
             case "COMPILE_ERROR" -> "Compilation failed; inspect payload-free diagnostics.";
             case "SPECCING_NOT_EXECUTABLE" -> "A design-only asset is not executable.";
             case "GOLDEN_REQUIRES_APPROVAL" -> "Business approval is required for the golden Oracle.";

@@ -17,7 +17,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(27);
+        assertThat(catalog.all()).hasSize(31);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -26,6 +26,10 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.tool.publish").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.resource.declare").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.feature.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.scenario.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.instruction.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.solution.compose").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
         assertThat(catalog.all()).extracting(definition -> definition.impact().operation())
                 .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST);
@@ -169,6 +173,24 @@ class McpToolCatalogTest {
                 .doesNotContain("message", "metadata", "source", "generatedDsl");
         Map<?, ?> projection = (Map<?, ?>) previewData.get("projection");
         assertThat(projection.get("additionalProperties")).isEqualTo(false);
+    }
+
+    @Test
+    void publishesStrictFourEntityAuthoringSchemas() {
+        McpToolCatalog catalog = new McpToolCatalog();
+
+        assertThat(stringKeys((Map<?, ?>) catalog.require("rg.feature.define")
+                .inputSchema().get("properties")))
+                .containsExactlyInAnyOrder("featureYaml", "idempotencyKey");
+        assertThat(stringKeys((Map<?, ?>) catalog.require("rg.scenario.define")
+                .inputSchema().get("properties")))
+                .containsExactlyInAnyOrder("scenarioYaml", "libraryRefs", "idempotencyKey");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.instruction.define"))))
+                .contains("instructionId", "effect", "reasoningRequired", "writeGovernance",
+                        "speccing", "contractFingerprint", "honestVerdict");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.solution.compose"))))
+                .contains("solutionRef", "inputContract", "scenarioTreeValid",
+                        "pureFunctionProjection", "authoringContextFingerprint");
     }
 
     @SuppressWarnings("unchecked")

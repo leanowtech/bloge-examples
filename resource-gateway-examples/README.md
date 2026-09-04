@@ -12,7 +12,7 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
-Resource Gateway 1.4.3 also exposes an authenticated, stateless MCP Agent TDD surface at
+Resource Gateway 1.4.4 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
 cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board with separately authenticated
@@ -33,7 +33,13 @@ business flow plus a decision table with at least two reviewable branches before
 certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
-The 27-tool catalog now includes `rg.dsl.reference.get`. Codex first receives a scoped, versioned,
+The 31-tool catalog includes `rg.dsl.reference.get` plus the first four-entity solution authoring
+operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
+`rg.solution.compose`. Each mutation uses the existing exact-response idempotency authority and
+stores canonical revisions within the authenticated tenant/project/environment scope. Solution
+composition resolves every direct Feature, root Scenario, and Instruction reference before it
+persists a pure-function projection; unresolved references fail closed rather than surfacing as a
+later DSL surprise. Codex first receives a scoped, versioned,
 graph-only and payload-free syntax/contract/example snapshot, then previews and gates the exact source
 against that immutable authoring context. Compose accepts the DSL envelope plus its context and receipt
 fingerprints rather than trusting a client-authored `GraphDraft`; the mutation reruns the production

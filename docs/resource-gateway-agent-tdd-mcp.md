@@ -2,7 +2,7 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成世界观与积木发现、资源登记、样例提供、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、平台实景验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.3 会在 MCP 初始化说明中要求 Codex 先读取当前 DSL 参考，再自行生成、预览和修正实现；通过检查后，服务端才允许保存同一份候选。
+业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.4 会在 MCP 初始化说明中要求 Codex 先读取当前 DSL 参考，再自行生成、预览和修正实现；通过检查后，服务端才允许保存同一份候选。1.4.4 的创作主线把业务对象拆成 Feature（事实采集契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合），并由服务端在组合时解析同一作用域内的引用。
 
 需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。五幕共享同一条服务端资产线：第 1 幕先创建并回读设计态契约库，第 2 幕在同一库上补齐事实来源，第 3 幕以后才基于该库编排、验证和发布；前一幕的交接门未通过时不得继续。
 
@@ -105,7 +105,8 @@ http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING" }
 enabled_tools = [
   "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
   "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
-  "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec"
+  "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec",
+  "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose"
 ]
 required = true
 startup_timeout_sec = 10

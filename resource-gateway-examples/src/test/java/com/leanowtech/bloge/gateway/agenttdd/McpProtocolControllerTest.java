@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(27);
+        assertThat(response.path("result").path("tools")).hasSize(31);
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
@@ -71,7 +71,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(27);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(31);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -148,6 +148,37 @@ class McpProtocolControllerTest {
         assertThat(reference.path("supportedRootKinds").get(0).asText()).isEqualTo("graph");
         assertThat(reference.path("authoringContextFingerprint").asText()).startsWith("sha256:");
         assertThat(reference.toString()).doesNotContain("urlTemplate", "diagnostics", "lowering");
+    }
+
+    @Test
+    void definesFeatureThroughStrictMcpInputAndOutputSchemas() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))
+                .thenReturn(identity());
+        SolutionAgentTools authoring = new SolutionAgentTools(
+                new InMemoryAgentTddStateRepository(), mapper);
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of(
+                        "ok", true,
+                        "data", authoring.defineFeature(arguments, identity),
+                        "diagnostics", List.of()));
+
+        JsonNode response = controller.exchange(request(92, "tools/call", Map.of(
+                        "name", "rg.feature.define",
+                        "arguments", Map.of(
+                                "featureYaml", "responsibility.party: { output: { type: string }, "
+                                        + "evaluationKind: API, determinism: DETERMINISTIC, "
+                                        + "inputs: { orderId: string }, evaluationRef: resource:test#$.value }",
+                                "idempotencyKey", "feature-mcp-v1"))),
+                modernHeaders("tools/call", "rg.feature.define")).getBody();
+
+        assertThat(response.path("error").isMissingNode()).isTrue();
+        assertThat(response.at("/result/structuredContent/data/featureId").asText())
+                .isEqualTo("responsibility.party");
+        assertThat(response.at("/result/structuredContent/data/contractFingerprint").asText())
+                .startsWith("sha256:");
+        verify(authenticator).authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE));
     }
 
     @Test

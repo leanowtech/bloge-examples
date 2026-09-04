@@ -398,6 +398,19 @@ responsibility.party: { output:{type:{enum:[passenger,driver,platform,none]}}, e
 5. **存量 tool 图迁移**:拆成特征/场景/指令/纯函数解法,提供迁移器加兼容期双轨。
 6. **运营表现数据回流**:接入命中分布/处置结果,支撑解法调优闭环。
 
+## 11. 实施追踪
+
+本节只记录已经落入代码并由测试证明的能力，不把后续阶段的设计当成完成事实。
+
+| 阶段 | 当前状态 | 已有证据 | 尚未完成 |
+|---|---|---|---|
+| P1 四实体契约与创作面 | 已完成 | 严格有界解码 `bloge.solutionAuthoring.v1` 与四种单实体片段；Feature/Scenario/Instruction/Solution 按 tenant/project/environment 独立版本化；四个 MCP 工具具备严格输入输出 Schema、精确幂等回放；Solution 组合前解析直接引用并返回纯函数投影；聚焦单元和 MCP 协议测试全绿 | 跨层场景树检查与 GraphDraft lowering 归 P2 |
+| P2 纯函数编译与场景树 | 待实施 | — | lowering、`scenarioCall`、`instructionCall`、全树静态验证和零外呼集成测试 |
+| P3 特征求值与信任 token | 待实施 | — | 求值分派、短期签名 token、交互特征拒绝与 `solution.invoke` 校验 |
+| P4 测试金字塔与 GOLDEN | 待实施 | — | Feature/Scenario/Solution 分层执行、业务待办与人工批准线 |
+| P5 写交接与对账 | 待实施 | — | 工程交接、独立 WRITE_EXEC、对账证据和发布门 |
+| P6 看板与真实认证 | 待实施 | — | 四实体业务看板、表现视图、十步 HTTP/Codex/浏览器无跳过认证 |
+
 ## 附录，更细粒度的实施方案参考
 
 ---
@@ -854,4 +867,3 @@ rg.solution.invoke(sol:cancel-dispute,{party:"none",...,orderId:"O1",feeCharged:
 
 ## 乙.5 最终验收门槛
 ① 全新 Codex(无仓库读、无 skill、只连 MCP)按步 1–9 提示词跑通;② 篡改特征值 token → FEATURE_TOKEN_INVALID;③ 场景树静态检查触发环/超深/缺 otherwise 码;④ WRITE 指令模拟 realExternalCalls=0,受控执行有对账证据;⑤ 无 skipped/mock;⑥ `mvn -f `pom.xml` clean verify` 全绿。
-

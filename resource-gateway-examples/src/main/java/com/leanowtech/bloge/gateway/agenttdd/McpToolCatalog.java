@@ -43,6 +43,29 @@ public final class McpToolCatalog {
                         "operatorRefs", stringArray(), "includeExamples", bool()),
                 List.of("libraryRefs")));
 
+        values.add(tool("rg.feature.define", "Define feature",
+                "Validate and store one atomic typed feature collection contract.",
+                McpToolImpact.DRAFT_WRITE,
+                props("featureYaml", string(), "idempotencyKey", string()),
+                List.of("featureYaml", "idempotencyKey")));
+        values.add(tool("rg.scenario.define", "Define scenario",
+                "Validate and store one complete unique-hit business decision contract.",
+                McpToolImpact.DRAFT_WRITE,
+                props("scenarioYaml", string(), "libraryRefs", stringArray(),
+                        "idempotencyKey", string()),
+                List.of("scenarioYaml", "libraryRefs", "idempotencyKey")));
+        values.add(tool("rg.instruction.define", "Define instruction",
+                "Validate and store one result-plus-reasoning business action contract.",
+                McpToolImpact.DRAFT_WRITE,
+                props("instructionYaml", string(), "idempotencyKey", string()),
+                List.of("instructionYaml", "idempotencyKey")));
+        values.add(tool("rg.solution.compose", "Compose solution",
+                "Compose a pure solution from scoped Feature, Scenario and Instruction contracts.",
+                McpToolImpact.DRAFT_WRITE,
+                props("solutionYaml", string(), "authoringContextFingerprint", string(),
+                        "idempotencyKey", string()),
+                List.of("solutionYaml", "authoringContextFingerprint", "idempotencyKey")));
+
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
                 McpToolImpact.DRAFT_WRITE,
                 props("libraryYaml", string(), "idempotencyKey", string()),
@@ -498,6 +521,15 @@ public final class McpToolCatalog {
             case "rg.evidence.get" -> structuredObject(props("toolRef", string(), "operation", string(),
                     "result", businessObject()), List.of("toolRef", "operation", "result"));
             case "rg.dsl.reference.get" -> dslReference();
+            case "rg.feature.define" -> structuredObject(props(
+                    "featureId", string(), "evaluationKind", string(), "determinism", string(),
+                    "speccing", bool(), "revision", integer(), "contractFingerprint", string(),
+                    "honestVerdict", honestVerdict()),
+                    List.of("featureId", "evaluationKind", "determinism", "speccing",
+                            "revision", "contractFingerprint", "honestVerdict"));
+            case "rg.scenario.define" -> scenarioDefinitionOutput();
+            case "rg.instruction.define" -> instructionDefinitionOutput();
+            case "rg.solution.compose" -> solutionCompositionOutput();
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
@@ -552,5 +584,50 @@ public final class McpToolCatalog {
                     List.of("toolRef", "state", "publishable", "attestation"));
             default -> businessObject();
         };
+    }
+
+    private static Map<String, Object> scenarioDefinitionOutput() {
+        Map<String, Object> ruleMatrix = structuredObject(props(
+                "conditions", stringArray(), "rules", arrayOf(businessObject()),
+                "otherwise", businessObject()), List.of("conditions", "rules", "otherwise"));
+        Map<String, Object> tree = structuredObject(props(
+                "acyclic", bool(), "maxDepth", integer(), "referencedScenarios", stringArray(),
+                "referencedInstructions", stringArray()),
+                List.of("acyclic", "maxDepth", "referencedScenarios", "referencedInstructions"));
+        return structuredObject(props(
+                "scenarioId", string(), "ruleMatrix", ruleMatrix, "tree", tree,
+                "speccing", bool(), "revision", integer(), "contractFingerprint", string(),
+                "honestVerdict", honestVerdict()),
+                List.of("scenarioId", "ruleMatrix", "tree", "speccing", "revision",
+                        "contractFingerprint", "honestVerdict"));
+    }
+
+    private static Map<String, Object> instructionDefinitionOutput() {
+        Map<String, Object> governance = structuredObject(props(
+                "downstreamSystem", string(), "reconciliationKey", string(),
+                "reconciliationAdapterRef", string()),
+                List.of("downstreamSystem", "reconciliationKey", "reconciliationAdapterRef"));
+        return structuredObject(props(
+                "instructionId", string(), "effect", enumString("READ", "WRITE"),
+                "reasoningRequired", bool(), "writeGovernance", governance,
+                "speccing", bool(), "revision", integer(), "contractFingerprint", string(),
+                "honestVerdict", honestVerdict()),
+                List.of("instructionId", "effect", "reasoningRequired", "speccing",
+                        "revision", "contractFingerprint", "honestVerdict"));
+    }
+
+    private static Map<String, Object> solutionCompositionOutput() {
+        Map<String, Object> projection = structuredObject(props(
+                "pure", bool(), "rootScenarioRef", string(), "operators", stringArray()),
+                List.of("pure", "rootScenarioRef", "operators"));
+        return structuredObject(props(
+                "solutionRef", string(), "inputContract", businessObject(),
+                "scenarioTreeValid", bool(), "pureFunctionProjection", projection,
+                "speccing", bool(), "authoringContextFingerprint", string(),
+                "revision", integer(), "contractFingerprint", string(),
+                "honestVerdict", honestVerdict()),
+                List.of("solutionRef", "inputContract", "scenarioTreeValid",
+                        "pureFunctionProjection", "speccing", "authoringContextFingerprint",
+                        "revision", "contractFingerprint", "honestVerdict"));
     }
 }
