@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
@@ -142,6 +143,32 @@ class AgentTddMutationServiceTest {
         assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
                 assertThat(draft.visualLayout()).containsKey("agentTdd"));
         assertThat(conflict.path("error").path("code").asText()).isEqualTo("IDEMPOTENCY_CONFLICT");
+    }
+
+    @Test
+    void composeDoesNotRevealWhetherARequestedLibraryExistsOutsideTheProjectScope() {
+        Fixture fixture = hardenedFixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "private-lib-1")));
+        OperatorLibrary original = fixture.libraries().find("shipping").orElseThrow();
+        OperatorDefinition source = original.operators().getFirst();
+        OperatorDefinition otherProjectOnly = new OperatorDefinition(
+                source.schemaVersion(), source.operatorRef(), source.operatorVersion(), "",
+                source.display(), source.source(), source.ports(), source.configSchema(), source.capabilities(),
+                new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("project-b"), List.of("local")),
+                source.lowering(), source.diagnostics());
+        fixture.libraries().upsert(new OperatorLibrary(
+                original.schemaVersion(), original.libraryId(), original.displayName(), original.version(),
+                original.owner(), original.status(), original.builtInFunctions(), List.of(otherProjectOnly)));
+
+        JsonNode hidden = composeWithUntrustedReceipt(fixture, "shipping", "hidden-library-compose");
+        JsonNode absent = composeWithUntrustedReceipt(fixture, "does-not-exist", "absent-library-compose");
+
+        assertThat(hidden.at("/error/code").asText()).isEqualTo("DSL_LIBRARY_NOT_VISIBLE");
+        assertThat(absent.at("/error/code").asText()).isEqualTo("DSL_LIBRARY_NOT_VISIBLE");
+        assertThat(hidden.at("/error/details/nextAction").asText())
+                .isEqualTo(absent.at("/error/details/nextAction").asText())
+                .isEqualTo("CHECK_LIBRARY_REFS");
     }
 
     @Test
@@ -494,6 +521,16 @@ class AgentTddMutationServiceTest {
                 "libraryRefs", libraryRefs,
                 "authoringContextFingerprint",
                 reference.at("/data/authoringContextFingerprint").asText())));
+    }
+
+    private JsonNode composeWithUntrustedReceipt(Fixture fixture, String libraryRef, String idempotencyKey) {
+        return invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "scope-probe-tool",
+                "libraryRefs", List.of(libraryRef),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "authoringContextFingerprint", "sha256:" + "a".repeat(64),
+                "authoringReceiptFingerprint", "sha256:" + "b".repeat(64),
+                "idempotencyKey", idempotencyKey)));
     }
 
     private Fixture hardenedFixture() {

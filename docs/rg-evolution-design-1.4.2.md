@@ -206,7 +206,11 @@ DSL 参考不是一篇长文，而是三类事实的合成：
 
 三者共同计算 `authoringContextFingerprint`。Agent preview 时必须回传该指纹。服务端重新一次性物化当前上下文并比较；不一致则返回 `DSL_AUTHORING_CONTEXT_STALE`，不拿新目录偷偷编译旧候选。
 
-静态参考包的 `languageVersion` 还必须与构建中固定的 `bloge.version` 一致。启动加载器执行精确比较，认证测试再从 Maven POM 读取依赖版本核对编译期常量；任一侧单独升级都会失败，而不是把旧语法参考交给新编译器。
+静态参考包的 `languageVersion` 还必须与实际被 class loader 选中的
+`bloge-dsl` 运行包一致。启动加载器从该 JAR 内的 Maven `pom.properties` 读取
+group/artifact/version 并执行精确比较；因此即使通过 `-Dbloge.version=...` 等方式覆盖
+POM 默认值，观测到的仍然是真正 linked runtime。任一侧单独升级都会失败，而不是
+把旧语法参考交给新编译器。
 
 ### D3 · 安全诊断注册表，而不是“编译期 message 白名单”
 
@@ -925,6 +929,8 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 **新增**：
 
 - `DslAuthoringContext` 及 resolver；一次解析先冻结 library registry，再据同一快照选库、函数和库内算子；授权 catalog 也只读取一次，禁止把多次可变读取拼成混合版本；
+- compose 不在 resolver 之前单独 `find` 库；缺失库和他项目不可见库统一由同一次
+  scope-aware resolve 返回 `DSL_LIBRARY_NOT_VISIBLE`，不暴露对象存在性；
 - `DslReferenceBundleLoader`；
 - `DslReferenceService`；
 - `DslContractLens`；

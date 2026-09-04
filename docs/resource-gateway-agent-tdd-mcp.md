@@ -297,9 +297,9 @@ DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`c
 | `GOLDEN_REQUIRES_APPROVAL` | GOLDEN 未人工批准 | 看板批准精确 revision，再读 case set |
 | `GATE_REJECTED` / 409（审批） | 使用了 Agent token、自批，或 proposal fingerprint 已变化 | 改用独立 reviewer token，重新打开详情并复核 |
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
-| `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
+| `DSL_LIBRARY_NOT_VISIBLE` | libraryRefs 缺失或在当前项目不可见 | 核对当前项目的授权库并重新 discovery；服务端不区分这两种情况 |
 | `DSL_AUTHORING_CONTEXT_REQUIRED` / `DSL_AUTHORING_CONTEXT_STALE` | 未先读取 DSL 参考，或目录在生成期间变化 | 重新调用 `rg.dsl.reference.get`，不要复用旧 fingerprint |
-| 服务启动时报 DSL reference/runtime version mismatch | 随包语法参考与 Maven 固定的 BLOGE DSL 版本未同步 | 同一提交更新依赖版本、参考包版本与认证示例；不得跳过启动门禁 |
+| 服务启动时报 DSL reference/runtime version mismatch | 随包语法参考与实际 linked `bloge-dsl` JAR 版本未同步 | 同一提交更新依赖版本、参考包版本与认证示例；不得跳过启动门禁 |
 | `DSL_PREVIEW_TIMEOUT` / `DSL_PREVIEW_CAPACITY_EXCEEDED` | 候选超出 5 秒预算，或预览容量暂时耗尽 | 缩小候选；按退避策略重试，不要无限循环 |
 | JSON-RPC `-32029` / `-32030` | 单身份速率或 authoring 并发超过上限 | 停止批量重试，等待当前分钟窗口或在容量评审后调整配置；过期窗口和已空闲身份会自动释放，不需要重启服务 |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |

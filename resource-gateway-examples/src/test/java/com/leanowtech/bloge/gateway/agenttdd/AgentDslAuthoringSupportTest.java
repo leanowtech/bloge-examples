@@ -586,6 +586,48 @@ class AgentDslAuthoringSupportTest {
     }
 
     @Test
+    void invalidatesAnAuthoringContextWhenTheSelectedLibraryVersionChanges() {
+        OperatorDefinition lookup = operator(
+                "ride:lookup", "ride-policy", OperatorDefinition.Policy.unrestricted());
+        AtomicReference<OperatorLibrary> current = new AtomicReference<>(
+                library("ride-policy", "1.0.0", "number", List.of(lookup)));
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of(lookup)), new MutableLibraries(current), mapper);
+        IntegrationRequestContext identity = identity("project-a");
+        String oldContext = support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity)
+                .authoringContextFingerprint();
+
+        current.set(library("ride-policy", "2.0.0", "number", List.of(lookup)));
+
+        assertStaleContext(support, oldContext, identity);
+        assertThat(support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity)
+                .authoringContextFingerprint()).isNotEqualTo(oldContext);
+    }
+
+    @Test
+    void invalidatesAnAuthoringContextWhenASelectedFunctionSignatureChanges() {
+        OperatorDefinition lookup = operator(
+                "ride:lookup", "ride-policy", OperatorDefinition.Policy.unrestricted());
+        AtomicReference<OperatorLibrary> current = new AtomicReference<>(
+                library("ride-policy", "1.0.0", "number", List.of(lookup)));
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of(lookup)), new MutableLibraries(current), mapper);
+        IntegrationRequestContext identity = identity("project-a");
+        String oldContext = support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity)
+                .authoringContextFingerprint();
+
+        current.set(library("ride-policy", "1.0.0", "string", List.of(lookup)));
+
+        assertStaleContext(support, oldContext, identity);
+        assertThat(support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of(), List.of(), false), identity)
+                .authoringContextFingerprint()).isNotEqualTo(oldContext);
+    }
+
+    @Test
     void keepsParseCoordinatesStructuredAndFingerprintsOpaque() {
         AgentDslAuthoringSupport support = support(List.of(
                 operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted())), List.of());
@@ -654,6 +696,18 @@ class AgentDslAuthoringSupportTest {
         return new AgentDslAuthoringSupport(new FixedCatalog(operators), new FixedLibraries(libraries), mapper);
     }
 
+    private static void assertStaleContext(AgentDslAuthoringSupport support,
+                                           String oldContext,
+                                           IntegrationRequestContext identity) {
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
+                List.of("ride-policy"), oldContext), identity))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("DSL_AUTHORING_CONTEXT_STALE");
+                    assertThat(failure.details()).containsEntry("nextAction", "REFETCH_DSL_REFERENCE");
+                });
+    }
+
     private static OperatorDefinition operator(String ref,
                                                String libraryId,
                                                OperatorDefinition.Policy policy) {
@@ -692,13 +746,20 @@ class AgentDslAuthoringSupportTest {
     }
 
     private static OperatorLibrary library(String id, List<OperatorDefinition> operators) {
-        return new OperatorLibrary("bloge.visualOperatorLibrary.v1", id, id, "1.0.0", "owner", "ACTIVE",
+        return library(id, "1.0.0", "number", operators);
+    }
+
+    private static OperatorLibrary library(String id,
+                                            String version,
+                                            String functionReturnType,
+                                            List<OperatorDefinition> operators) {
+        return new OperatorLibrary("bloge.visualOperatorLibrary.v1", id, id, version, "owner", "ACTIVE",
                 List.of(new OperatorLibrary.BuiltInFunction("rideRisk", id, "rideRisk",
                         "business-example-value", "business",
                         List.of(new OperatorLibrary.Signature("rideRisk(secret)", "unsafe",
                                 List.of(new OperatorLibrary.Parameter("secret", "string", null,
                                         false, false, "unsafe")),
-                                new OperatorLibrary.ReturnValue("number", null, "unsafe"))),
+                                new OperatorLibrary.ReturnValue(functionReturnType, null, "unsafe"))),
                         List.of("rideRisk(\"business-example-value\")"))), operators);
     }
 
@@ -751,6 +812,37 @@ class AgentDslAuthoringSupportTest {
         @Override public OperatorLibrary upsert(OperatorLibrary library,
                                                 com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision.RevisionMetadata metadata) {
             throw new UnsupportedOperationException();
+        }
+        @Override public OperatorLibrary restore(
+                com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision revision,
+                com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision.RevisionMetadata metadata) {
+            throw new UnsupportedOperationException();
+        }
+        @Override public void delete(String libraryId,
+                                     com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision.RevisionMetadata metadata) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    private static final class MutableLibraries implements OperatorLibraryRegistry {
+        private final AtomicReference<OperatorLibrary> value;
+
+        private MutableLibraries(AtomicReference<OperatorLibrary> value) {
+            this.value = value;
+        }
+
+        @Override public Collection<OperatorLibrary> all() { return List.of(value.get()); }
+        @Override public Optional<OperatorLibrary> find(String libraryId) {
+            return Optional.of(value.get()).filter(library -> library.libraryId().equals(libraryId));
+        }
+        @Override public List<com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision> revisions(
+                String libraryId) { return List.of(); }
+        @Override public Optional<com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision> findRevision(
+                String libraryId, long revision) { return Optional.empty(); }
+        @Override public OperatorLibrary upsert(OperatorLibrary library,
+                                                com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision.RevisionMetadata metadata) {
+            value.set(library);
+            return library;
         }
         @Override public OperatorLibrary restore(
                 com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision revision,

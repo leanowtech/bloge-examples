@@ -635,11 +635,9 @@ public final class AgentTddMutationService {
         }
         LinkedHashSet<String> refs = new LinkedHashSet<>();
         arguments.path("libraryRefs").forEach(value -> refs.add(value.asText().trim()));
-        refs.forEach(ref -> {
-            if (ref.isBlank() || libraries.find(ref).isEmpty()) {
-                throw new AgentTddToolException("LIBRARY_NOT_FOUND", "Referenced library contract was not found.");
-            }
-        });
+        // Existence and authorization are deliberately resolved together by the scope-aware
+        // authoring context. A preliminary live find would both create a second snapshot and let
+        // callers distinguish an absent library from one owned by another project.
         return List.copyOf(refs);
     }
 

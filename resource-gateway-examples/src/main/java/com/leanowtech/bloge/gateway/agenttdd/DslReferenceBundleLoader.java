@@ -2,25 +2,57 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.dsl.compiler.DslCompiler;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 
 /** Loads and validates the versioned, server-owned DSL syntax and example bundle. */
 final class DslReferenceBundleLoader {
     static final String RESOURCE = "agent-tdd/dsl-reference/v1/bundle.json";
-    static final String SUPPORTED_LANGUAGE_VERSION = "bloge-dsl-0.8.9-RC2";
+    private static final String DSL_RUNTIME_METADATA =
+            "META-INF/maven/com.leanowtech.bloge/bloge-dsl/pom.properties";
     private static final int MAX_STATIC_BUNDLE_BYTES = 256 * 1024;
 
     private final Bundle bundle;
 
     /** Fails closed when the packaged reference cannot be read or violates its structural contract. */
     DslReferenceBundleLoader(ObjectMapper mapper) {
-        this(mapper, SUPPORTED_LANGUAGE_VERSION);
+        this(mapper, runtimeLanguageVersion());
+    }
+
+    /**
+     * Reads the Maven identity packaged inside the actual DSL runtime selected by the class loader.
+     *
+     * <p>This is intentionally not a source constant: a command-line dependency override must
+     * change the observed version and make a stale reference bundle fail during startup.</p>
+     *
+     * @return language identity bound to the linked {@link DslCompiler} artifact
+     */
+    static String runtimeLanguageVersion() {
+        ClassLoader runtimeLoader = DslCompiler.class.getClassLoader();
+        try (InputStream input = runtimeLoader.getResourceAsStream(DSL_RUNTIME_METADATA)) {
+            if (input == null) {
+                throw new IllegalStateException("BLOGE DSL runtime metadata is missing");
+            }
+            Properties metadata = new Properties();
+            metadata.load(input);
+            String artifact = metadata.getProperty("artifactId", "").trim();
+            String group = metadata.getProperty("groupId", "").trim();
+            String version = metadata.getProperty("version", "").trim();
+            if (!"com.leanowtech.bloge".equals(group) || !"bloge-dsl".equals(artifact)
+                    || !version.matches("[0-9A-Za-z][0-9A-Za-z._-]*")) {
+                throw new IllegalStateException("BLOGE DSL runtime metadata is invalid");
+            }
+            return "bloge-dsl-" + version;
+        } catch (IOException failure) {
+            throw new IllegalStateException("BLOGE DSL runtime metadata cannot be loaded", failure);
+        }
     }
 
     /**

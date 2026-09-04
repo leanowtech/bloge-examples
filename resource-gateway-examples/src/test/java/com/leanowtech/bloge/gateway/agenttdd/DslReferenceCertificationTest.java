@@ -23,15 +23,12 @@ import static org.mockito.Mockito.when;
 class DslReferenceCertificationTest {
 
     @Test
-    void packagedReferenceVersionMatchesTheMavenBlogeDependencyAndRejectsDrift() throws IOException {
-        Path repositoryRoot = repositoryRoot();
-        String pom = Files.readString(repositoryRoot.resolve("resource-gateway-examples/pom.xml"));
-        String dependencyVersion = textBetween(pom, "<bloge.version>", "</bloge.version>");
+    void packagedReferenceVersionMatchesTheActuallyLinkedDslRuntimeAndRejectsDrift() {
+        String runtimeLanguageVersion = DslReferenceBundleLoader.runtimeLanguageVersion();
 
-        assertThat(DslReferenceBundleLoader.SUPPORTED_LANGUAGE_VERSION)
-                .isEqualTo("bloge-dsl-" + dependencyVersion);
+        assertThat(runtimeLanguageVersion).matches("bloge-dsl-[0-9A-Za-z][0-9A-Za-z._-]*");
         assertThat(new DslReferenceBundleLoader(new ObjectMapper()).bundle().languageVersion())
-                .isEqualTo(DslReferenceBundleLoader.SUPPORTED_LANGUAGE_VERSION);
+                .isEqualTo(runtimeLanguageVersion);
         org.assertj.core.api.Assertions.assertThatThrownBy(() ->
                 new DslReferenceBundleLoader(new ObjectMapper(), "bloge-dsl-drifted"))
                 .isInstanceOf(IllegalStateException.class)
@@ -113,10 +110,4 @@ class DslReferenceCertificationTest {
         return Files.isDirectory(root.resolve("docs")) ? root : root.getParent();
     }
 
-    private static String textBetween(String value, String start, String end) {
-        int from = value.indexOf(start);
-        int to = value.indexOf(end, from + start.length());
-        if (from < 0 || to < 0) throw new IllegalStateException("Maven BLOGE version is missing");
-        return value.substring(from + start.length(), to).trim();
-    }
 }
