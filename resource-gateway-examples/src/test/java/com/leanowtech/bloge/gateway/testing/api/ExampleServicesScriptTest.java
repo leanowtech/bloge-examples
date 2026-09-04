@@ -133,10 +133,12 @@ class ExampleServicesScriptTest {
                 "RG_INTEGRATION_ENVIRONMENT_ID=local",
                 "RG_CORRECTNESS_AUTHORING_ENABLED=true",
                 "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true",
-                "node profile : \"resource:user-service.getProfile\"",
+                "业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数",
+                "请把“按用户编号查询用户姓名和会员等级”做成客服助手可用的业务能力",
+                "请自行完成技术设计和检查，不要向我展示代码、DSL、Schema、节点、端口或内部标识",
                 "人工停点一：批准 Oracle",
                 "人工停点二：签署发布证据",
-                "realExternalCalls=0",
+                "`realExternalCalls` 必须为 `0`",
                 "artifactKind=EXECUTABLE");
     }
 }
