@@ -1289,16 +1289,18 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 - `AgentTddCodexCertificationArtifactTest` 与 `agent_tdd_codex_trace_certificate_test.py`：固定可入库
   证书的严格结构、语义断言、指纹、载荷零泄漏，以及未绑定用例和越过人工停点的失败路径。
 
-最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 13 分 51 秒：
-**8,514 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
+最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 14 分 48 秒：
+**8,532 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
 
-- `AgentDslAuthoringSupportTest`：12/12 通过；
-- `DslReferenceCertificationTest`：1/1 通过；
-- `DslSafeDiagnosticRegistryTest`：3/3 通过；
+- `AgentDslAuthoringSupportTest`：20/20 通过；
+- `DslReferenceCertificationTest`：2/2 通过；
+- `DslSafeDiagnosticRegistryTest`：6/6 通过；
+- `DslAuthoringRepairMatrixTest`：1/1 通过，索引 20 行可执行修正语料；
 - `AgentTddMutationServiceTest`：17/17 通过；
 - `McpProtocolControllerTest`：15/15 通过；
-- `McpRequestLimiterTest`：2/2 通过；
-- `AgentTddEgressHostPolicyTest`：6/6 通过；
+- `McpRequestLimiterTest`：4/4 通过；
+- `AgentTddEgressHostPolicyTest`：7/7 通过；
+- `AgentTddCodexCertificationArtifactTest`：2/2 通过；Python trace reducer 行为测试 3/3 通过；
 - `AgentTddMcpOperationalWorkflowTest`：4/4 通过，**skipped=0**，覆盖真实 HTTP MCP 与 Chrome；
 - `DatabaseAgentTddStateRepositoryPostgresCertificationTest`：2/2 通过，**skipped=0**，覆盖原生 PostgreSQL。
 
@@ -1343,6 +1345,13 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 | 产品认证测试 | `64b7778dd` | 修正语料、reference 认证与 HTTP MCP 链 |
 | 契约收口 | `9a8fa23b5` | 运营手册测试从 DSL 字面量切换为业务提示词契约 |
 | 冻结运行 binding | `2761d89f0` | receipt 重编译与 compose 运行目标共用同一不可变上下文 |
+| 实施证据 | `e58b4c91d` | 同步 1.4.2 实施状态、验收命令与已知限制 |
+| 诊断归一 | `86df829e2` | 统一编译器修正提示与安全摘要 |
+| 作用域收口 | `16ea00d72` | 冻结目录快照、project scope、歧义停机与 case-set 绑定 |
+| 参考语料完整性 | `33a093693` | 固定主题、别名、八个编译认证样例与局部 `$ref` 契约投影 |
+| 安全与资源有界 | `250de8ab0` | 限流状态回收、RFC 特殊地址、阻断诊断优先级与文档同步 |
+| 修正矩阵 | `ee238d21b` | 20 行修正语料、显式 literal 类型检查与 graph-only profile 诊断 |
+| 真实 Codex 认证 | `6901bb4c1` | 业务提示词、可重复产品脚本、载荷零泄漏证书与正反例测试 |
 
 ### 23.5 剩余限制与差距
 
