@@ -1,7 +1,7 @@
 {
   "schemaVersion": "rg.agentTddCodexCertification.v1",
-  "certifiedAt": "2026-09-04T05:17:51Z",
-  "repositoryCommit": "ae2c5b26b7df153a20bde7eab1f8e930d494598a",
+  "certifiedAt": "2026-09-04T05:58:40Z",
+  "repositoryCommit": "95adb71d2ecd723c0f61a5755ee483a08cbd4f2d",
   "codexVersion": "codex-cli 0.150.0-alpha.8",
   "transport": {
     "kind": "HTTP_MCP",
@@ -24,11 +24,11 @@
       1,
       3,
       5,
-      8,
       9,
       10,
       11,
-      12
+      12,
+      13
     ],
     "observedCalls": [
       {
@@ -76,41 +76,59 @@
       {
         "ordinal": 8,
         "server": "rg_read",
-        "tool": "rg.dsl.preview",
+        "tool": "rg.dsl.reference.get",
         "status": "completed"
       },
       {
         "ordinal": 9,
         "server": "rg_read",
-        "tool": "rg.gate.check",
+        "tool": "rg.dsl.preview",
         "status": "completed"
       },
       {
         "ordinal": 10,
-        "server": "rg_author",
-        "tool": "rg.tool.compose",
+        "server": "rg_read",
+        "tool": "rg.gate.check",
         "status": "completed"
       },
       {
         "ordinal": 11,
         "server": "rg_author",
-        "tool": "rg.tool.setInstruction",
+        "tool": "rg.tool.compose",
         "status": "completed"
       },
       {
         "ordinal": 12,
         "server": "rg_author",
-        "tool": "rg.scenario.upsertCases",
+        "tool": "rg.tool.setInstruction",
         "status": "completed"
       },
       {
         "ordinal": 13,
+        "server": "rg_author",
+        "tool": "rg.scenario.upsertCases",
+        "status": "completed"
+      },
+      {
+        "ordinal": 14,
+        "server": "rg_author",
+        "tool": "rg.scenario.setDependencyBehavior",
+        "status": "completed"
+      },
+      {
+        "ordinal": 15,
+        "server": "rg_author",
+        "tool": "rg.oracle.propose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 16,
         "server": "rg_read",
         "tool": "rg.scenario.listCases",
         "status": "completed"
       },
       {
-        "ordinal": 14,
+        "ordinal": 17,
         "server": "rg_read",
         "tool": "rg.contract.get",
         "status": "completed"
@@ -119,17 +137,18 @@
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "candidate": "hmac-sha256:d8293be22f18116f1e32e83b730514393a49a35fda1ea7e210a61108785c2ad9",
-    "authoringContext": "hmac-sha256:4f8ba73430dc3ba5b766fb5bcec8d4cc2ed7344694159829809a4d243ce2a48e",
-    "authoringReceipt": "hmac-sha256:566dc1f0ac90d6437e101384e0974efd5d53c7914ae51c967a0aaa185e34113a",
-    "tool": "hmac-sha256:2ad1bdddd3766f98fbb53e5c54c33cd2600297e85780ada61a9fbc1672667724",
-    "caseSet": "hmac-sha256:d23e611153c37b0700446848c64523cf7e630ebab2231e31a4ad190e9530f831",
+    "candidate": "hmac-sha256:864d5bc0a64bbd418b7361a52ae21352d01b8733b05727c0ec38ea506853af3a",
+    "authoringContext": "hmac-sha256:bac34017592ff3d7058aca1ddf2a9f2dfcf0d3b51c0bf100349ea6521c3ea80e",
+    "authoringReceipt": "hmac-sha256:f297149798f5f24feedbad1aa007bfe68919e12a8730919b03ac7c33ebc32740",
+    "tool": "hmac-sha256:3325603de4ae86a7179c4e19155f91cae641b3604501e80d5bdbea660ad461ac",
+    "caseSet": "hmac-sha256:2e78818b509fb4101472d0e2925f03e132a149cd51736b1b64f15ce808665841",
     "cases": [
-      "hmac-sha256:3a5a775417bc9fbde0d8ae50b7a4742a633d9dee9db1ab2cb0d5c10e5d2fe200"
+      "hmac-sha256:78c5c5f8d228935a9936cbf03aa26eaea853f57dee99eb3348cde738642580bd"
     ]
   },
   "assertions": {
     "codexTurnCompleted": true,
+    "onlyMcpExternalActionsObserved": true,
     "requiredAuthoringOrder": true,
     "caseSetBoundToTool": true,
     "dependencyBehaviorDefined": true,
@@ -144,5 +163,5 @@
     "rawArgumentsResultsAndMessagesOmitted": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:7d218bf750d96080af62f8ca3923c3e10b001bef112afb65c6ff05974fa625a8"
+  "certificateFingerprint": "sha256:be1fe1558a72ef962a15355f9d393df05cad969c455a07df9b0f12cf1c9de343"
 }
