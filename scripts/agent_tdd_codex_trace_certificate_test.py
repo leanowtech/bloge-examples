@@ -64,6 +64,13 @@ class TraceCertificateTest(unittest.TestCase):
             completed_call("rg_read", "rg.dsl.reference.get", {"libraryRefs": []},
                            {"authoringContextFingerprint": context}),
             completed_call("rg_read", "rg.dsl.preview", {
+                "source": "graph broken {}", "libraryRefs": [],
+                "authoringContextFingerprint": context,
+            }, {"accepted": False, "authoringDiagnostics": [{
+                "level": "ERROR", "blocking": True,
+                "diagnosticFingerprint": "sha256:" + "c" * 64,
+            }]}),
+            completed_call("rg_read", "rg.dsl.preview", {
                 "source": source, "libraryRefs": [], "authoringContextFingerprint": context,
             }, {"accepted": True, "authoringReceiptFingerprint": receipt}),
             completed_call("rg_read", "rg.gate.check", {
@@ -122,7 +129,11 @@ class TraceCertificateTest(unittest.TestCase):
 
     def test_accepts_an_honest_first_pass_without_manufacturing_an_error(self) -> None:
         events = [event for event in self.happy_events()
-                  if event.get("item", {}).get("status") != "failed"]
+                  if event.get("item", {}).get("status") != "failed"
+                  and not (event.get("item", {}).get("tool") == "rg.dsl.preview"
+                           and event.get("item", {}).get("result", {})
+                           .get("structured_content", {}).get("data", {})
+                           .get("accepted") is False)]
 
         certificate = MODULE.certify(self.write_trace(events), {
             "repositoryCommit": "abc123",
@@ -134,6 +145,25 @@ class TraceCertificateTest(unittest.TestCase):
         self.assertFalse(certificate["assertions"]["selfRepairObserved"])
         self.assertTrue(certificate["assertions"]["firstPassAccepted"])
         self.assertTrue(certificate["assertions"]["selfRepairOrFirstPassAccepted"])
+
+    def test_does_not_count_reference_retry_or_transport_failure_as_dsl_repair(self) -> None:
+        events = [event for event in self.happy_events()
+                  if not (event.get("item", {}).get("tool") == "rg.dsl.preview"
+                          and event.get("item", {}).get("result", {})
+                          .get("structured_content", {}).get("data", {})
+                          .get("accepted") is False)]
+        accepted_index = next(index for index, event in enumerate(events)
+                              if event.get("item", {}).get("tool") == "rg.dsl.preview")
+        events.insert(accepted_index, failed_call("rg_read", "rg.dsl.preview"))
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure,
+                                    "neither repaired a rejected preview nor passed its first preview"):
+            MODULE.certify(self.write_trace(events), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+            })
 
     def test_rejects_a_case_set_bound_to_a_different_tool(self) -> None:
         events = self.happy_events()

@@ -201,16 +201,15 @@ def enforce_bounded_repair(calls: list[dict[str, Any]]) -> None:
         previous = current
 
 
-def follows_failure_with_success(calls: list[dict[str, Any]]) -> bool:
-    """Prove an actual same-tool failure-to-success transition in trace order."""
-    failed_at: dict[str, int] = {}
+def follows_blocking_authoring_rejection_with_acceptance(calls: list[dict[str, Any]]) -> bool:
+    """Prove that compiler feedback for one authoring tool led to an accepted retry."""
+    rejected_at: dict[str, int] = {}
     for index, call in enumerate(calls):
-        rejected_authoring = call["tool"] in AUTHORING_TOOLS and call["successful"] \
-            and call["data"].get("accepted") is False
-        if call["status"] == "failed" or rejected_authoring:
-            failed_at.setdefault(call["tool"], index)
-        elif stage_accepted(call, call["tool"]) \
-                and call["tool"] in failed_at and failed_at[call["tool"]] < index:
+        blockers = blocking_fingerprints(call)
+        if blockers:
+            rejected_at.setdefault(call["tool"], index)
+        elif call["tool"] in AUTHORING_TOOLS and stage_accepted(call, call["tool"]) \
+                and call["tool"] in rejected_at and rejected_at[call["tool"]] < index:
             return True
     return False
 
@@ -348,7 +347,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     if TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("Codex final summary exposed technical implementation vocabulary")
 
-    self_repair = follows_failure_with_success(calls)
+    self_repair = follows_blocking_authoring_rejection_with_acceptance(calls)
     preview_calls = [call for call in calls if call["tool"] == "rg.dsl.preview"]
     first_pass = bool(preview_calls) and stage_accepted(preview_calls[0], "rg.dsl.preview")
     if not (self_repair or first_pass):
