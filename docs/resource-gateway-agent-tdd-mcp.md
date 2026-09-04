@@ -270,6 +270,10 @@ USER_COMPONENT/USER_CONVERSATION 不调求值工具，而是采集用户明确�
 ### 5.2 用例与 Oracle
 
 - `rg.simulate.cases` 必须二选一：只传 `caseSetRef`，或只传临时 `rows`。
+- Solution 使用同一个 `rg.scenario.upsertCases`，但 `toolRef` 填 Solution ref；服务端会在当前作用域解析它，不需要伪造一个同名 Tool draft。
+- `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
+- `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。只有提案、没有有效 `expect` 的行返回 `GOLDEN_REQUIRES_APPROVAL`。
+- Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。
 - 只有持久 `caseSetRef` 中的 `ACTIVE` 行能推进 READY 并形成发布证据。
 - 每个执行行必须有显式 `expect`。实现不能反过来修改 Oracle 以迎合结果。
 - 执行后的并发用例修改会让 READY、evidence、verdict 和 line 一起回滚。

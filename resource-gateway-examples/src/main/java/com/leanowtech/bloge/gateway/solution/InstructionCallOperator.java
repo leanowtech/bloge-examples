@@ -65,9 +65,7 @@ public final class InstructionCallOperator implements Operator<Map<String, Objec
                 : Map.of();
         if (instruction.effect() == InstructionContract.Effect.WRITE
                 && authority.mode() == SolutionExecutionAuthority.Mode.SIMULATE) {
-            return Map.of(
-                    "result", Map.of("status", "STUBBED"),
-                    "reasoning", "SIMULATED_WRITE_STUB");
+            return InstructionStubFactory.from(instruction);
         }
         if (instruction.effect() == InstructionContract.Effect.WRITE
                 && authority.mode() != SolutionExecutionAuthority.Mode.WRITE_EXEC) {

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.SolutionContract;
+import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringPreviewService;
 import com.leanowtech.bloge.gateway.visual.authoring.compile.AuthoringCompiler;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
@@ -36,6 +38,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Verifies canonical mutations, proposal boundaries and exact idempotency semantics. */
 class AgentTddMutationServiceTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void acceptsCanonicalSolutionAsGoldenCaseOwnerWithoutCreatingALegacyDraft() {
+        Fixture fixture = fixture();
+        new SolutionEntityRegistry(fixture.states(), mapper).upsertSolution(
+                AgentTddMutationService.scopeKey(identity()),
+                new SolutionContract("sol:cancel", "Resolve cancellation dispute.",
+                        Map.of("party", "feature:party"), "scn:root", List.of("ins:uphold"),
+                        "caseSet:cancel"), false);
+
+        JsonNode response = invoke(fixture, "rg.scenario.upsertCases", mapper.valueToTree(Map.of(
+                "caseSetRef", "caseSet:cancel", "toolRef", "sol:cancel",
+                "idempotencyKey", "solution-cases-v1", "rows", List.of(Map.of(
+                        "caseId", "g1", "category", "GOLDEN", "oracleOwner", "cx-ops",
+                        "given", Map.of("party", "none"), "stubs", Map.of(),
+                        "expect", Map.of("result", Map.of("decision", "UPHELD")))))));
+
+        assertThat(response.at("/ok").asBoolean()).isTrue();
+        assertThat(response.at("/data/caseSetRef").asText()).isEqualTo("caseSet:cancel");
+        assertThat(response.at("/data/proposed/0/awaiting").asText()).isEqualTo("human-approval");
+    }
 
     @Test
     void bindingCompatibilityRejectsSameShapeWithDifferentArchetypeOrEffect() {

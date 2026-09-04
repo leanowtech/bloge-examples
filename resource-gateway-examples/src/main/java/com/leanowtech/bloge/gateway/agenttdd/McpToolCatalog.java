@@ -78,6 +78,17 @@ public final class McpToolCatalog {
                 McpToolImpact.EXECUTE,
                 props("solutionRef", string(), "inputs", businessObject()),
                 List.of("solutionRef", "inputs")));
+        values.add(tool("rg.scenario.test", "Test scenario",
+                "Run pure Scenario outlet contracts against pinned Feature values.",
+                McpToolImpact.EXECUTE,
+                props("scenarioRef", string(), "cases", solutionTestCases()),
+                List.of("scenarioRef", "cases")));
+        values.add(tool("rg.solution.baseline", "Baseline solution",
+                "Run approved Solution GOLDEN cases with WRITE effects stubbed.",
+                McpToolImpact.EXECUTE,
+                props("solutionRef", string(), "caseSetRef", string(),
+                        "side", enumString("RED", "GREEN")),
+                List.of("solutionRef", "caseSetRef", "side")));
 
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
                 McpToolImpact.DRAFT_WRITE,
@@ -553,6 +564,23 @@ public final class McpToolCatalog {
                     "rulePath", stringArray(), "verifiedFeatureCount", integer()),
                     List.of("result", "reasoning", "instructionRef", "rulePath",
                             "verifiedFeatureCount"));
+            case "rg.scenario.test" -> structuredObject(props(
+                    "scenarioRef", string(), "byCase", arrayOf(structuredObject(props(
+                            "caseId", string(), "hitRuleId", string(), "outlet", businessObject(),
+                            "pass", bool()), List.of("caseId", "hitRuleId", "outlet", "pass"))),
+                    "passed", integer(), "failed", integer(), "realExternalCalls", integer()),
+                    List.of("scenarioRef", "byCase", "passed", "failed", "realExternalCalls"));
+            case "rg.solution.baseline" -> structuredObject(props(
+                    "solutionRef", string(), "caseSetRef", string(), "caseSetRevision", integer(),
+                    "solutionRevision", integer(), "solutionContractFingerprint", string(),
+                    "goldenSetId", string(), "evidenceRef", string(), "side", enumString("RED", "GREEN"),
+                    "byLayer", businessObject(), "cases", arrayOf(businessObject()),
+                    "businessBacklog", arrayOf(businessObject()), "realExternalCalls", integer(),
+                    "status", enumString("GO", "NO_GO")),
+                    List.of("solutionRef", "caseSetRef", "caseSetRevision", "solutionRevision",
+                            "solutionContractFingerprint", "goldenSetId",
+                            "evidenceRef", "side", "byLayer", "cases", "businessBacklog",
+                            "realExternalCalls", "status"));
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
@@ -668,5 +696,11 @@ public final class McpToolCatalog {
         return structuredObject(props(
                 "solutionRef", string(), "problem", string(), "inputs", arrayOf(input),
                 "output", businessObject()), List.of("solutionRef", "problem", "inputs", "output"));
+    }
+
+    private static Map<String, Object> solutionTestCases() {
+        return arrayOf(structuredObject(props(
+                "caseId", string(), "given", businessObject(), "expect", businessObject()),
+                List.of("caseId", "given", "expect")));
     }
 }

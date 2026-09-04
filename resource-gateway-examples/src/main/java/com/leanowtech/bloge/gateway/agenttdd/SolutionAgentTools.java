@@ -48,6 +48,7 @@ public final class SolutionAgentTools {
     private final SolutionLowering lowering;
     private final FeatureEvaluationService featureEvaluation;
     private final SolutionInvocationService invocation;
+    private final SolutionTestingService testing;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
     public SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper) {
@@ -90,6 +91,7 @@ public final class SolutionAgentTools {
         this.featureEvaluation = new FeatureEvaluationService(registry, safeBackend, tokens);
         this.invocation = new SolutionInvocationService(registry, tokens,
                 new SolutionExecutionService(registry, mapper, safeChannel), mapper);
+        this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
     }
 
     /** Evaluates a platform-owned Feature and returns a short-lived proof for Solution invocation. */
@@ -129,6 +131,21 @@ public final class SolutionAgentTools {
         } catch (SolutionContractException failure) {
             throw new AgentTddToolException(failure.code(), failure.getMessage());
         }
+    }
+
+    /** Runs pure Scenario outlet contract cases using caller-pinned Feature values. */
+    public Map<String, Object> testScenario(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        return testing.testScenario(AgentTddMutationService.scopeKey(identity),
+                requiredText(arguments, "scenarioRef"), arguments.path("cases"));
+    }
+
+    /** Runs the approved Solution GOLDEN line with WRITE effects stubbed and zero real calls. */
+    public Map<String, Object> baselineSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        return testing.baseline(AgentTddMutationService.scopeKey(identity),
+                requiredText(arguments, "solutionRef"), requiredText(arguments, "caseSetRef"),
+                requiredText(arguments, "side"));
     }
 
     /**

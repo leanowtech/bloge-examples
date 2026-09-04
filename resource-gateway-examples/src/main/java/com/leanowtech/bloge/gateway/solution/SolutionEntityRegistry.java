@@ -136,6 +136,19 @@ public final class SolutionEntityRegistry {
         return require(scopeKey, SOLUTION, solutionRef, SolutionContract.class);
     }
 
+    /** Resolves the current Solution revision and contract fingerprint for evidence fencing. */
+    public RegisteredEntity requireRegisteredSolution(String scopeKey, String solutionRef) {
+        AgentTddStoredAsset asset = states.find(scopeKey, SOLUTION, solutionRef)
+                .orElseThrow(EntityUnavailableException::new);
+        JsonNode data = asset.data();
+        if (!data.path("contract").isObject() || data.path("contractFingerprint").asText().isBlank()) {
+            throw new EntityUnavailableException();
+        }
+        return new RegisteredEntity("SOLUTION", solutionRef, asset.revision(),
+                data.path("contractFingerprint").asText(), data.path("speccing").asBoolean(),
+                data.path("contract"));
+    }
+
     private <T> T require(String scopeKey, String kind, String ref, Class<T> type) {
         AgentTddStoredAsset asset = states.find(scopeKey, kind, ref)
                 .orElseThrow(EntityUnavailableException::new);

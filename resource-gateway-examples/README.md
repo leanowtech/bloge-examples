@@ -5663,6 +5663,14 @@ demos use one process-local key; replicated or restart-stable environments must 
 format is comma-separated `keyId=base64(32-or-more-byte-secret)` and may retain verify-only keys
 during rotation.
 
+Solution test cases reuse the governed case-set and human Oracle approval line. Set `toolRef` to the
+Solution ref when calling `rg.scenario.upsertCases`; no synthetic legacy Tool draft is required.
+`rg.scenario.test` asserts pure rule outlets from pinned Feature values. `rg.solution.baseline`
+accepts only ACTIVE GOLDEN rows, locks both the case-set and Solution revisions for the complete
+evidence transaction, stubs WRITE results from their declared output contracts, and persists the
+layer summary plus business backlog with `realExternalCalls=0`. A passing GREEN row advances to
+READY in that same transaction; an unapproved, stale, or concurrently changed line fails closed.
+
 1. Start the demo and open `http://localhost:8080/author/`.
 2. Load one of the built-in complex canvas examples. Its graph Contract and table cases are
    projected automatically.

@@ -235,7 +235,7 @@ public final class AgentTddMutationService {
         return idempotent("rg.scenario.upsertCases", arguments, identity, () -> {
             String caseSetRef = requiredText(arguments, "caseSetRef");
             String toolRef = optionalText(arguments, "toolRef");
-            if (!toolRef.isBlank()) requireScopedDraft(toolRef, identity);
+            if (!toolRef.isBlank()) requireCaseTarget(toolRef, identity);
             JsonNode rowsNode = arguments.path("rows");
             if (!rowsNode.isArray()) {
                 throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "rows must be an array.");
@@ -698,6 +698,15 @@ public final class AgentTddMutationService {
         return drafts.find(ref).filter(identity::matchesDraftScope)
                 .orElseThrow(() -> new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Tool draft was not found in the authorized scope."));
+    }
+
+    /** Accepts either a scoped legacy Tool draft or a canonical v1.4.4 Solution as case owner. */
+    private void requireCaseTarget(String ref, IntegrationRequestContext identity) {
+        if (states.find(scopeKey(identity),
+                com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry.SOLUTION, ref).isPresent()) {
+            return;
+        }
+        requireScopedDraft(ref, identity);
     }
 
     private void markCaseSetsStale(String toolRef, IntegrationRequestContext identity) {

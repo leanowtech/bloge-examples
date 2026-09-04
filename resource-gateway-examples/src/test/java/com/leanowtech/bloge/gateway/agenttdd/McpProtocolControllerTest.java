@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(34);
+        assertThat(response.path("result").path("tools")).hasSize(36);
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
@@ -71,7 +71,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(34);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(36);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -141,6 +141,23 @@ class McpProtocolControllerTest {
                             "result", Map.of("decision", "UPHELD"), "reasoning", "rule R1",
                             "instructionRef", "ins:uphold", "rulePath", List.of("R1"),
                             "verifiedFeatureCount", 1);
+                    case "rg.scenario.test" -> Map.of(
+                            "scenarioRef", "scn:root", "byCase", List.of(Map.of(
+                                    "caseId", "g1", "hitRuleId", "R1", "outlet", Map.of(
+                                            "outletKind", "INSTRUCTION", "ref", "ins:uphold"),
+                                    "pass", true)), "passed", 1, "failed", 0,
+                            "realExternalCalls", 0);
+                    case "rg.solution.baseline" -> Map.ofEntries(
+                            Map.entry("solutionRef", "sol:cancel"),
+                            Map.entry("caseSetRef", "caseSet:cancel"),
+                            Map.entry("caseSetRevision", 2), Map.entry("solutionRevision", 1),
+                            Map.entry("solutionContractFingerprint", "sha256:solution"),
+                            Map.entry("goldenSetId", "sha256:golden"),
+                            Map.entry("evidenceRef", "sol:cancel@1"), Map.entry("side", "GREEN"),
+                            Map.entry("byLayer", Map.of("integration", Map.of("pass", 1, "fail", 0))),
+                            Map.entry("cases", List.of(Map.of("caseId", "g1", "verdict", "GREEN_PASS"))),
+                            Map.entry("businessBacklog", List.of()), Map.entry("realExternalCalls", 0),
+                            Map.entry("status", "GO"));
                     default -> throw new IllegalArgumentException();
                 },
                 "diagnostics", List.of());
@@ -158,10 +175,22 @@ class McpProtocolControllerTest {
                 "name", "rg.solution.invoke", "arguments", Map.of(
                         "solutionRef", "sol:cancel", "inputs", Map.of("party", Map.of("value", "none"))))),
                 modernHeaders("tools/call", "rg.solution.invoke")).getBody();
+        JsonNode scenario = controller.exchange(request(94, "tools/call", Map.of(
+                "name", "rg.scenario.test", "arguments", Map.of(
+                        "scenarioRef", "scn:root", "cases", List.of(Map.of(
+                                "caseId", "g1", "given", Map.of("party", "none"),
+                                "expect", Map.of("outletKind", "INSTRUCTION")))))),
+                modernHeaders("tools/call", "rg.scenario.test")).getBody();
+        JsonNode baseline = controller.exchange(request(95, "tools/call", Map.of(
+                "name", "rg.solution.baseline", "arguments", Map.of(
+                        "solutionRef", "sol:cancel", "caseSetRef", "caseSet:cancel", "side", "GREEN"))),
+                modernHeaders("tools/call", "rg.solution.baseline")).getBody();
 
         assertThat(evaluated.path("result").path("isError").asBoolean()).isFalse();
         assertThat(contract.path("result").path("isError").asBoolean()).isFalse();
         assertThat(invoked.path("result").path("isError").asBoolean()).isFalse();
+        assertThat(scenario.path("result").path("isError").asBoolean()).isFalse();
+        assertThat(baseline.path("result").path("isError").asBoolean()).isFalse();
     }
 
     @Test
