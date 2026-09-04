@@ -114,7 +114,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 10 tests", "OK");
+        assertThat(output).contains("Ran 11 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

@@ -264,6 +264,22 @@ class TraceCertificateTest(unittest.TestCase):
                 "exitCode": 0,
             })
 
+    def test_allows_a_passive_error_item_when_the_required_journey_still_completes(self) -> None:
+        events = self.happy_events()
+        events.insert(1, {
+            "type": "item.completed",
+            "item": {"type": "error", "message": "non-action status"},
+        })
+
+        certificate = MODULE.certify(self.write_trace(events), {
+            "repositoryCommit": "abc123",
+            "codexVersion": "codex-cli test",
+            "certifiedAt": "2026-09-04T00:00:00Z",
+            "exitCode": 0,
+        })
+
+        self.assertTrue(certificate["assertions"]["onlyMcpExternalActionsObserved"])
+
 
 if __name__ == "__main__":
     unittest.main()

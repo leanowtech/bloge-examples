@@ -105,7 +105,10 @@ if [[ "${ROOT_DIR}" == */worktrees/* ]]; then
     CODEX_DATA_ROOT="${ROOT_DIR%%/worktrees/*}"
     EXTRA_DENY_RULES="
 (deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/worktrees\"))
-(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/memories\"))"
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/memories\"))
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/agents\"))
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/skills\"))
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/plugins\"))"
     MEMORY_PROBE="${CODEX_DATA_ROOT}/memories/MEMORY.md"
 fi
 if [ "${COMMON_REPOSITORY}" != "${ROOT_DIR}" ]; then

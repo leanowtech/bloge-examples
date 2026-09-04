@@ -39,7 +39,7 @@ TECHNICAL_FINAL_PATTERN = re.compile(
     r"(?i)\b(?:dsl|schema|binding|operator|toolref|casesetref|fingerprint|mcp|json)\b"
     r"|代码|编译器?|节点|端口|指纹|内部标识"
 )
-PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list"}
+PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list", "error"}
 
 
 class CertificationFailure(RuntimeError):
