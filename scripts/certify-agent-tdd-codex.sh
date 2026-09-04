@@ -52,6 +52,11 @@ if [[ "${CODEX_EXECUTABLE}" != /* ]]; then
     echo "Codex executable must resolve to an absolute path." >&2
     exit 1
 fi
+CODE_MODE_EXECUTABLE="$(dirname "${CODEX_EXECUTABLE}")/codex-code-mode-host"
+if [ ! -x "${CODE_MODE_EXECUTABLE}" ] || [ -L "${CODE_MODE_EXECUTABLE}" ]; then
+    echo "Codex MCP orchestration host must be a regular executable beside Codex." >&2
+    exit 1
+fi
 if lsof -nP -iTCP:"${RG_CERT_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "Certification port is already occupied; stop its listener or choose another RG_CERT_PORT." >&2
     exit 1
@@ -128,7 +133,7 @@ if [ "${COMMON_REPOSITORY}" != "${ROOT_DIR}" ]; then
     EXTRA_DENY_RULES="${EXTRA_DENY_RULES}
 (deny file-read* file-write* (subpath \"${COMMON_REPOSITORY}\"))"
 fi
-if [[ "${ROOT_DIR}${PRIVATE_DIR}${COMMON_REPOSITORY}${CODEX_DATA_ROOT:-}${SOURCE_CODEX_DIR}" == *'"'* ]]; then
+if [[ "${ROOT_DIR}${PRIVATE_DIR}${COMMON_REPOSITORY}${CODEX_DATA_ROOT:-}${SOURCE_CODEX_DIR}${CODE_MODE_EXECUTABLE}" == *'"'* ]]; then
     echo "Repository paths containing a quote cannot be represented in the macOS sandbox profile." >&2
     exit 1
 fi
@@ -137,7 +142,7 @@ cat > "${SANDBOX_PROFILE}" <<EOF
 (allow default)
 (deny process-exec)
 (allow process-exec (literal "${CODEX_EXECUTABLE}"))
-(deny process-fork)
+(allow process-exec (literal "${CODE_MODE_EXECUTABLE}"))
 (deny file-write*)
 (allow file-write* (literal "${TRACE_FILE}"))
 (allow file-write* (subpath "${ISOLATED_CODEX_DIR}"))

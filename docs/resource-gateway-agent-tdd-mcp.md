@@ -344,7 +344,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证进程。脚本只记录和停止自己
 创建的 PID，不调用可复用既有进程的通用启动器。服务同时返回一次性实例随机量、提交号和 JAR
 SHA-256；脚本在 Codex 调用前后都精确核对，证书只保留随机量指纹和非敏感构建身份。
-随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 派生任何进程、读取仓库/原始 Codex
+随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 执行任意进程、读取仓库/原始 Codex
 状态和私有 trace，以及写入一次性运行目录之外的位置。Codex 使用只复制 `auth.json` 的隔离目录，
 在临时只读工作目录启动，不读用户配置与规则，只提供四个 HTTP MCP 连接和一段
 业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义，
@@ -379,12 +379,13 @@ HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系
 脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
 认证依赖 macOS `sandbox-exec` 提供操作系统级隔离；不具备等价隔离能力的平台必须失败关闭，
 不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。Codex 内层使用 `read-only`；权威外层
-profile 只允许执行解析后的 Codex 二进制，禁止该进程 fork/exec，禁止读取当前仓库、Git common
-checkout、原始 Codex home、worktrees/memories 与私有 trace，且禁止写入隔离 home、运行临时目录和
+profile 只允许执行解析后的 Codex 二进制及其同目录 `codex-code-mode-host`，拒绝执行其他程序，
+并禁止读取当前仓库、Git common checkout、原始 Codex home、worktrees/memories 与私有 trace，且禁止写入隔离 home、运行临时目录和
 trace 文件描述符之外的位置。认证所需 `auth.json` 被单独复制到一次性 `CODEX_HOME`，用户配置和
-其他状态不会进入子进程。脚本同时显式禁用 shell、unified exec、code-mode host、apps、browser、
+其他状态不会进入子进程。脚本同时显式禁用 shell、unified exec、apps、browser、
 computer-use、multi-agent、plugins、remote-plugin、skill-search 和文件/图像工具；Codex 内部的
-code-mode host 只负责组织已配置 MCP 调用，仍受外层 fork/exec 禁令约束，且拿不到 shell/unified-exec；认证器再对所有
+code-mode host 只负责组织已配置 MCP 调用；除这两个固定二进制外，外层仍拒绝所有 process-exec，
+且编排器拿不到 shell/unified-exec；认证器再对所有
 非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
 否则 Codex 在处理 `-C` 之前读取继承的仓库 cwd，就会被系统正确拒绝而无法启动。
 

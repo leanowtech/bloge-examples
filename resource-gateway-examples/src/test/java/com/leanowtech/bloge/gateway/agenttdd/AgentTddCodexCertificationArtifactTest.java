@@ -105,7 +105,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
                 "repository_is_clean", "ls-files --others --exclude-standard",
                 "clean package -DskipTests", "cd \"${WORKSPACE_DIR}\"",
-                "(deny process-exec)", "(deny process-fork)", "(deny file-write*)",
+                "(deny process-exec)", "codex-code-mode-host", "(deny file-write*)",
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
