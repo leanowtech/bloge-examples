@@ -59,6 +59,12 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   agent-tdd:
+    mcp-limits:
+      # Per authenticated tenant/project/environment/actor. Preview and gate share one bucket.
+      common-per-minute: ${RG_AGENT_TDD_MCP_COMMON_PER_MINUTE:120}
+      reference-per-minute: ${RG_AGENT_TDD_MCP_REFERENCE_PER_MINUTE:60}
+      authoring-per-minute: ${RG_AGENT_TDD_MCP_AUTHORING_PER_MINUTE:30}
+      authoring-concurrency: ${RG_AGENT_TDD_MCP_AUTHORING_CONCURRENCY:4}
     attestation:
       # Exact sandbox egress hosts. An empty list fails resource declaration and attestation closed.
       allowed-hosts: ${RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS:localhost,127.0.0.1}

@@ -376,9 +376,9 @@ public final class AgentTddAttestationService {
             throw new AgentTddToolException(
                     "WRITE_EFFECT_NOT_ALLOWED", "Attestation does not execute external writes.");
         }
-        egress.requireAllowed(descriptor.urlTemplate());
+        AgentTddEgressHostPolicy.Resolution resolution = egress.resolveAllowed(descriptor.urlTemplate());
         return new Dependency(node.id(), operator.operatorRef(), resourceId,
-                operator.capabilities().effect(), descriptor);
+                operator.capabilities().effect(), descriptor, resolution);
     }
 
     private CaseObservation executeCase(AttestationPlan plan, JsonNode row) {
@@ -391,6 +391,8 @@ public final class AgentTddAttestationService {
             plan.dependencies().forEach(dependency ->
                     admittedDescriptors.put(dependency.resourceId(),
                             ResourceRegistryVisualAdapter.toVisual(dependency.descriptor())));
+            plan.dependencies().forEach(dependency -> egress.requireUnchanged(
+                    dependency.descriptor().urlTemplate(), dependency.resolution()));
             VisualGraphRunResponse response = runner.runAgainst(
                     plan.executable(), runtimeInputs, "", plan.frozenCatalog(), admittedDescriptors);
             calls.replaceAll((nodeId, ignored) -> transportDispatchCount(response, nodeId));
@@ -609,7 +611,8 @@ public final class AgentTddAttestationService {
                               String operatorRef,
                               String resourceId,
                               String effect,
-                              ResourceDescriptor descriptor) { }
+                              ResourceDescriptor descriptor,
+                              AgentTddEgressHostPolicy.Resolution resolution) { }
 
     private record CaseObservation(boolean oracleHeld,
                                    boolean allDependenciesCalled,

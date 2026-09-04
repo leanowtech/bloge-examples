@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -239,6 +240,31 @@ class AgentDslAuthoringSupportTest {
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(error -> ((AgentTddToolException) error).code())
                 .isEqualTo("DSL_SOURCE_TOO_LARGE");
+    }
+
+    @Test
+    void cancelsAndClassifiesACompilerThatExceedsThePreviewBudget() {
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                new FixedCatalog(List.of()), new FixedLibraries(List.of()), mapper,
+                (request, context) -> {
+                    try {
+                        Thread.sleep(Duration.ofSeconds(30));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    throw new IllegalStateException("late compiler payload");
+                }, Duration.ofMillis(25));
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate {}", List.of(), context), identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("DSL_PREVIEW_TIMEOUT");
+                    assertThat(failure.retryable()).isTrue();
+                    assertThat(failure.getMessage()).doesNotContain("payload");
+                });
     }
 
     private AgentDslAuthoringSupport support(List<OperatorDefinition> operators,

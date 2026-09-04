@@ -20,6 +20,7 @@ import org.springframework.http.ResponseEntity;
 import java.util.Map;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -318,6 +319,34 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void rejectsRateLimitedCallsBeforeToolDispatch() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_EXECUTE)))
+                .thenReturn(identity());
+        AtomicInteger invocations = new AtomicInteger();
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> {
+                    invocations.incrementAndGet();
+                    return Map.of("ok", true, "data", Map.of(
+                                    "goldenSetId", "sha256:golden", "side", "RED",
+                                    "realExternalCalls", 0),
+                            "diagnostics", List.of());
+                }, new McpRequestLimiter(1, 1, 1, 1, System::nanoTime));
+        JsonNode call = request(25, "tools/call", Map.of(
+                "name", "rg.simulate", "arguments", Map.of(
+                        "toolRef", "ride:cancel", "libraryRefs", List.of(),
+                        "cases", Map.of("caseSetRef", "cancel-golden"))));
+
+        JsonNode first = controller.exchange(call, modernHeaders("tools/call", "rg.simulate")).getBody();
+        JsonNode limited = controller.exchange(call, modernHeaders("tools/call", "rg.simulate")).getBody();
+
+        assertThat(first.path("error").isMissingNode()).isTrue();
+        assertThat(limited.at("/error/code").asInt()).isEqualTo(-32029);
+        assertThat(invocations).hasValue(1);
+    }
+
+    @Test
     void rejectsModernRequestWhenRoutingHeadersDisagreeWithBody() {
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
@@ -352,6 +381,9 @@ class McpProtocolControllerTest {
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
         assertThat(modern.path("result").path("instructions").asText())
                 .startsWith("Use the Agent TDD tools in order");
+        assertThat(modern.path("result").path("instructions").asText())
+                .contains("rg.dsl.reference.get", "never ask the user to write DSL",
+                        "three repair rounds", "same blocking diagnosticFingerprint appears twice");
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(unknown.path("id").asInt()).isEqualTo(12);

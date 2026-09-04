@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,26 +38,43 @@ public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
     public static final String CODEX_PROTOCOL_VERSION = "2025-06-18";
-    private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order: READ, "
-            + "AUTHORING, EXECUTION, then GOVERNANCE. Never invent runtime bindings or approval "
-            + "evidence. RED and GREEN must report realExternalCalls=0. Human Oracle approval and "
-            + "executable signoff happen through the review boundary; pause and ask the operator. "
+    private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order. Start DSL work with "
+            + "rg.dsl.reference.get and treat its "
+            + "languageVersion, contracts, examples, and authoringContextFingerprint as authoritative. "
+            + "Generate DSL from the user's business intent; never ask the user to write DSL. Preview, revise "
+            + "from authoringDiagnostics, and gate the exact source. Stop after three repair rounds or when the "
+            + "same blocking diagnosticFingerprint appears twice; report HUMAN_OR_PLATFORM_REQUIRED or "
+            + "PLATFORM_MAINTAINER instead of guessing. Compose only the exact accepted source with its context "
+            + "and receipt fingerprints. Never invent runtime bindings, Oracle approval, GREEN, attestation, or "
+            + "signoff evidence. Human Oracle approval and executable signoff require the reviewer boundary. "
             + "Call rg.readiness.get before publish and publish only when publishable=true.";
 
     private final ObjectMapper mapper;
     private final McpToolCatalog catalog;
     private final IntegrationRequestAuthenticator authenticator;
     private final McpToolInvoker invoker;
+    private final McpRequestLimiter limiter;
 
     /** Creates the authenticated MCP transport. */
     public McpProtocolController(ObjectMapper mapper,
                                  McpToolCatalog catalog,
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker) {
+        this(mapper, catalog, authenticator, invoker, McpRequestLimiter.defaults());
+    }
+
+    /** Creates the Spring transport with configured pre-dispatch rate and concurrency admission. */
+    @Autowired
+    public McpProtocolController(ObjectMapper mapper,
+                                 McpToolCatalog catalog,
+                                 IntegrationRequestAuthenticator authenticator,
+                                 McpToolInvoker invoker,
+                                 McpRequestLimiter limiter) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.invoker = Objects.requireNonNull(invoker, "invoker");
+        this.limiter = Objects.requireNonNull(limiter, "limiter");
     }
 
     /**
@@ -170,7 +188,7 @@ public final class McpProtocolController {
                 "Tool arguments do not match the declared input schema");
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
         JsonNode structured;
-        try {
+        try (McpRequestLimiter.Permit ignored = limiter.acquire(identity, name)) {
             structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
         } catch (McpProtocolException failure) {
             throw failure;
@@ -194,7 +212,7 @@ public final class McpProtocolController {
     private Map<String, Object> discover() {
         return Map.of(
                 "protocolVersion", MODERN_PROTOCOL_VERSION,
-                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.2"),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
                 "instructions", AGENT_INSTRUCTIONS
         );
@@ -209,7 +227,7 @@ public final class McpProtocolController {
         }
         return Map.of(
                 "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
-                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.0"),
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.2"),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
                 "instructions", AGENT_INSTRUCTIONS
         );

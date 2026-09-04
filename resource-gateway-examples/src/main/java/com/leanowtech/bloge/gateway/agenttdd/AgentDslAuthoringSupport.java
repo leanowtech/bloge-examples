@@ -7,12 +7,20 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Deep application boundary for server-authoritative BLOGE DSL authoring support.
@@ -27,12 +35,15 @@ public final class AgentDslAuthoringSupport {
     static final int MAX_FUNCTIONS = 256;
     static final int MAX_EXAMPLES = 8;
     static final int MAX_RESPONSE_BYTES = 1024 * 1024;
+    private static final ExecutorService PREVIEW_EXECUTOR = Executors.newFixedThreadPool(
+            4, Thread.ofVirtual().name("agent-dsl-preview-", 0).factory());
 
     private final ObjectMapper mapper;
     private final DslReferenceBundleLoader.Bundle bundle;
     private final DslAuthoringContextResolver contexts;
     private final DslContractLens lens;
-    private final DslAuthoringCompiler compiler;
+    private final CandidateCompiler compiler;
+    private final Duration previewBudget;
 
     /**
      * Creates the support boundary over the authoritative scoped catalog and library registry.
@@ -44,11 +55,24 @@ public final class AgentDslAuthoringSupport {
     public AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
                                     OperatorLibraryRegistry libraries,
                                     ObjectMapper mapper) {
+        this(catalog, libraries, mapper, new DslAuthoringCompiler(mapper)::preview,
+                DslAuthoringCompiler.PREVIEW_BUDGET);
+    }
+
+    AgentDslAuthoringSupport(VisualOperatorCatalog catalog,
+                             OperatorLibraryRegistry libraries,
+                             ObjectMapper mapper,
+                             CandidateCompiler compiler,
+                             Duration previewBudget) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.bundle = new DslReferenceBundleLoader(mapper).bundle();
         this.contexts = new DslAuthoringContextResolver(catalog, libraries, mapper, bundle);
         this.lens = new DslContractLens(mapper);
-        this.compiler = new DslAuthoringCompiler(mapper);
+        this.compiler = Objects.requireNonNull(compiler, "compiler");
+        this.previewBudget = Objects.requireNonNull(previewBudget, "previewBudget");
+        if (previewBudget.isZero() || previewBudget.isNegative()) {
+            throw new IllegalArgumentException("previewBudget must be positive");
+        }
     }
 
     /**
@@ -146,7 +170,31 @@ public final class AgentDslAuthoringSupport {
                     "The DSL authoring context changed after the reference was fetched.",
                     Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
         }
-        return compiler.preview(request, context);
+        Future<DslPreviewReceipt> task;
+        try {
+            task = PREVIEW_EXECUTOR.submit(() -> compiler.preview(request, context));
+        } catch (RejectedExecutionException saturated) {
+            throw new AgentTddToolException("DSL_PREVIEW_CAPACITY_EXCEEDED",
+                    "The DSL preview capacity is temporarily exhausted.",
+                    Map.of("nextAction", "RETRY_WITH_BACKOFF"), true);
+        }
+        try {
+            return task.get(previewBudget.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException timeout) {
+            task.cancel(true);
+            throw new AgentTddToolException("DSL_PREVIEW_TIMEOUT",
+                    "The DSL preview exceeded its bounded execution time.",
+                    Map.of("nextAction", "NARROW_DSL_SOURCE"), true);
+        } catch (InterruptedException interrupted) {
+            task.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new AgentTddToolException("DSL_PREVIEW_INTERRUPTED",
+                    "The DSL preview was interrupted before completion.",
+                    Map.of("nextAction", "RETRY_WITH_BACKOFF"), true);
+        } catch (ExecutionException failed) {
+            if (failed.getCause() instanceof AgentTddToolException expected) throw expected;
+            throw new IllegalStateException("DSL preview failed inside the authoring boundary", failed.getCause());
+        }
     }
 
     private static List<String> normalize(List<String> values, int maximum) {
@@ -163,5 +211,11 @@ public final class AgentDslAuthoringSupport {
         return new AgentTddToolException("DSL_REFERENCE_TOO_LARGE",
                 "The requested DSL reference exceeds its safe size limit.",
                 Map.of("nextAction", "NARROW_REFERENCE_REQUEST"));
+    }
+
+    /** Internal compiler seam used only to prove timeout behavior without replacing production stages. */
+    @FunctionalInterface
+    interface CandidateCompiler {
+        DslPreviewReceipt preview(DslPreviewRequest request, DslAuthoringContext context);
     }
 }
