@@ -153,7 +153,7 @@ final class DslSafeDiagnosticRegistry {
         String summary = code.equals("DSL_DIAGNOSTIC_UNCLASSIFIED")
                 ? "The compiler reported an unmapped structural diagnostic."
                 : "Semantic compilation rejected a referenced construct or contract.";
-        String level = source == null ? "ERROR" : source.level().name();
+        String level = normalizeLevel(source == null ? "ERROR" : source.level().name());
         String target = source == null ? "" : safeTarget(joinTarget(source.nodeId(), source.field()));
         return mapped(level, "SEMANTIC_COMPILE", code, target,
                 span(source == null ? 0 : source.line(), source == null ? 0 : source.column()),

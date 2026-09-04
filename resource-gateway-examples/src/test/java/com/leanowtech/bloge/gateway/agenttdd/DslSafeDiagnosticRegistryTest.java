@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.dsl.compiler.CompilationDiagnostic;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import org.junit.jupiter.api.Test;
 
@@ -68,6 +69,19 @@ class DslSafeDiagnosticRegistryTest {
         assertThat(registry.designOnlyRoundTripDeferred().blocking()).isFalse();
         assertThat(registry.platformDefect("LINT").diagnostic().code())
                 .isEqualTo("DSL_DIAGNOSTIC_UNCLASSIFIED");
+    }
+
+    @Test
+    void normalizesCompilerHintsToTheStrictPublicInfoLevel() {
+        DslSafeDiagnosticRegistry.MappedDiagnostic mapped = registry.compiler(
+                new CompilationDiagnostic(CompilationDiagnostic.Level.HINT,
+                        "provider payload customer-secret", "customer-secret", "token-value",
+                        3, 4, "future-structured-hint", "semantic",
+                        Map.of("payload", "customer-secret")));
+
+        assertThat(mapped.diagnostic().level()).isEqualTo("INFO");
+        assertThat(mapper.valueToTree(mapped.diagnostic()).toString())
+                .doesNotContain("customer-secret", "token-value", "provider payload");
     }
 
     private void assertMapped(String lowerCode,
