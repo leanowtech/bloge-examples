@@ -49,6 +49,8 @@ public final class SolutionAgentTools {
     private final FeatureEvaluationService featureEvaluation;
     private final SolutionInvocationService invocation;
     private final SolutionTestingService testing;
+    private final EngineeringHandoffService handoffs;
+    private final SolutionGovernanceService governance;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
     public SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper) {
@@ -92,6 +94,34 @@ public final class SolutionAgentTools {
         this.invocation = new SolutionInvocationService(registry, tokens,
                 new SolutionExecutionService(registry, mapper, safeChannel), mapper);
         this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
+        this.handoffs = new EngineeringHandoffService(states, registry, mapper);
+        this.governance = new SolutionGovernanceService(states, registry, mapper);
+    }
+
+    /** Submits the exact current Solution and DSL receipt for independent business review. */
+    public Map<String, Object> commitSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        return executeOnce("rg.solution.commit", arguments, identity,
+                () -> governance.commit(requiredText(arguments, "solutionRef"),
+                        requiredText(arguments, "authoringReceiptFingerprint"), identity));
+    }
+
+    /** Produces a design-only engineering handoff without granting WRITE execution authority. */
+    public Map<String, Object> handoffSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        return executeOnce("rg.engineering.handoff", arguments, identity,
+                () -> handoffs.submit(requiredText(arguments, "solutionRef"), identity));
+    }
+
+    /** Returns live Solution publication gates bound to the current evidence coordinates. */
+    public Map<String, Object> readinessSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        return governance.readiness(requiredText(arguments, "solutionRef"), identity);
+    }
+
+    /** Publishes an immutable Solution only through the separately governed purpose. */
+    public Map<String, Object> publishSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        return executeOnce("rg.solution.publish", arguments, identity,
+                () -> governance.publish(requiredText(arguments, "solutionRef"),
+                        requiredText(arguments, "signoffRef"), identity));
     }
 
     /** Evaluates a platform-owned Feature and returns a short-lived proof for Solution invocation. */
@@ -394,5 +424,18 @@ public final class SolutionAgentTools {
             throw new AgentTddToolException("SCHEMA_NONCONFORMANT", field + " is required.");
         }
         return arguments.path(field).deepCopy();
+    }
+
+    private Map<String, Object> executeOnce(
+            String operation,
+            JsonNode arguments,
+            IntegrationRequestContext identity,
+            java.util.function.Supplier<Map<String, Object>> action) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        String idempotencyKey = requiredText(arguments, "idempotencyKey");
+        String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, arguments, MAX_BYTES);
+        JsonNode response = states.executeOnce(AgentTddMutationService.scopeKey(identity), operation,
+                idempotencyKey, fingerprint, () -> mapper.valueToTree(action.get()));
+        return mapper.convertValue(response, OBJECT_MAP);
     }
 }

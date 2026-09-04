@@ -89,6 +89,25 @@ public final class McpToolCatalog {
                 props("solutionRef", string(), "caseSetRef", string(),
                         "side", enumString("RED", "GREEN")),
                 List.of("solutionRef", "caseSetRef", "side")));
+        values.add(tool("rg.solution.commit", "Commit solution",
+                "Submit one exact Solution authoring receipt for independent review.",
+                McpToolImpact.PROPOSE,
+                props("solutionRef", string(), "authoringReceiptFingerprint", string(),
+                        "idempotencyKey", string()),
+                List.of("solutionRef", "authoringReceiptFingerprint", "idempotencyKey")));
+        values.add(tool("rg.engineering.handoff", "Handoff write design",
+                "Create an engineering handoff for unbound WRITE Instruction contracts.",
+                McpToolImpact.PROPOSE,
+                props("solutionRef", string(), "idempotencyKey", string()),
+                List.of("solutionRef", "idempotencyKey")));
+        values.add(tool("rg.solution.readiness", "Get solution readiness",
+                "Read current logic, binding, reconciliation and owner-signoff gates.",
+                McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
+        values.add(tool("rg.solution.publish", "Publish solution",
+                "Publish one immutable Solution after every exact governance gate passes.",
+                McpToolImpact.GOVERNED_WRITE,
+                props("solutionRef", string(), "signoffRef", string(), "idempotencyKey", string()),
+                List.of("solutionRef", "signoffRef", "idempotencyKey")));
 
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
                 McpToolImpact.DRAFT_WRITE,
@@ -581,6 +600,17 @@ public final class McpToolCatalog {
                             "solutionContractFingerprint", "goldenSetId",
                             "evidenceRef", "side", "byLayer", "cases", "businessBacklog",
                             "realExternalCalls", "status"));
+            case "rg.solution.commit" -> structuredObject(props(
+                    "solutionRef", string(), "proposalStatus", enumString("PENDING"),
+                    "revision", integer(), "proposalFingerprint", string(), "awaiting", string()),
+                    List.of("solutionRef", "proposalStatus", "revision", "proposalFingerprint", "awaiting"));
+            case "rg.engineering.handoff" -> engineeringHandoffOutput();
+            case "rg.solution.readiness" -> solutionReadinessOutput();
+            case "rg.solution.publish" -> structuredObject(props(
+                    "solutionRef", string(), "publicationId", string(),
+                    "artifactKind", enumString("SOLUTION"), "goldenSetId", string(),
+                    "signoffRef", string()),
+                    List.of("solutionRef", "publicationId", "artifactKind", "goldenSetId", "signoffRef"));
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),
@@ -702,5 +732,37 @@ public final class McpToolCatalog {
         return arrayOf(structuredObject(props(
                 "caseId", string(), "given", businessObject(), "expect", businessObject()),
                 List.of("caseId", "given", "expect")));
+    }
+
+    private static Map<String, Object> engineeringHandoffOutput() {
+        Map<String, Object> item = structuredObject(props(
+                "instructionId", string(), "inputs", businessObject(), "output", businessObject(),
+                "effect", enumString("WRITE"), "downstreamSystem", string(),
+                "reconciliationKey", string(), "reconciliationAdapterRef", string(),
+                "businessIntent", string(), "acceptanceGolden", string(),
+                "state", enumString("DESIGN_ONLY")),
+                List.of("instructionId", "inputs", "output", "effect", "downstreamSystem",
+                        "reconciliationKey", "reconciliationAdapterRef", "businessIntent",
+                        "acceptanceGolden", "state"));
+        return structuredObject(props(
+                "handoffId", string(), "solutionRef", string(), "status", enumString("OPEN"),
+                "items", arrayOf(item), "revision", integer()),
+                List.of("handoffId", "solutionRef", "status", "items", "revision"));
+    }
+
+    private static Map<String, Object> solutionReadinessOutput() {
+        Map<String, Object> gates = structuredObject(props(
+                "logicGreen", bool(), "implementationBound", bool(),
+                "writeReconciled", bool(), "ownerSignoff", bool()),
+                List.of("logicGreen", "implementationBound", "writeReconciled", "ownerSignoff"));
+        return structuredObject(props(
+                "solutionRef", string(), "state", enumString("READY", "BLOCKED"),
+                "publishable", bool(), "solutionRevision", integer(),
+                "solutionContractFingerprint", string(), "goldenSetId", string(),
+                "evidenceFingerprint", string(), "gates", gates,
+                "remainingLimitations", stringArray()),
+                List.of("solutionRef", "state", "publishable", "solutionRevision",
+                        "solutionContractFingerprint", "goldenSetId", "evidenceFingerprint",
+                        "gates", "remainingLimitations"));
     }
 }

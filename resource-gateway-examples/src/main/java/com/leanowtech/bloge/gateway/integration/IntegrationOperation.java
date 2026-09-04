@@ -294,6 +294,7 @@ public enum IntegrationOperation {
     AGENT_TDD_PROPOSE(Set.of("AGENT_TDD_AUTHORING", "AGENT_TDD_GOVERNANCE")),
     AGENT_TDD_EXECUTE(Set.of("AGENT_TDD_EXECUTION")),
     AGENT_TDD_ATTEST(Set.of("AGENT_TDD_ATTEST")),
+    AGENT_TDD_WRITE_EXEC(Set.of("AGENT_TDD_WRITE_EXEC")),
     AGENT_TDD_GOVERNED_WRITE(Set.of("AGENT_TDD_GOVERNANCE"));
 
     private final Set<String> acceptedPurposes;

@@ -94,7 +94,8 @@ enabled_tools = [
   "rg.capability.list", "rg.library.get", "rg.library.list",
   "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
   "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get", "rg.dsl.preview",
-  "rg.gate.check", "rg.readiness.get"
+  "rg.gate.check", "rg.readiness.get", "rg.solution.getContract",
+  "rg.solution.readiness"
 ]
 required = true
 startup_timeout_sec = 10
@@ -108,7 +109,8 @@ enabled_tools = [
   "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
   "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
   "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec",
-  "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose"
+  "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
+  "rg.solution.commit", "rg.engineering.handoff"
 ]
 required = true
 startup_timeout_sec = 10
@@ -118,7 +120,10 @@ tool_timeout_sec = 60
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION" }
-enabled_tools = ["rg.simulate", "rg.feature.rehearse", "rg.tool.baseline"]
+enabled_tools = [
+  "rg.simulate", "rg.feature.rehearse", "rg.tool.baseline",
+  "rg.feature.evaluate", "rg.scenario.test", "rg.solution.baseline", "rg.solution.invoke"
+]
 required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 120
@@ -127,7 +132,9 @@ tool_timeout_sec = 120
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_GOVERNANCE" }
-enabled_tools = ["rg.fixture.promote", "rg.fixture.provide", "rg.tool.publish"]
+enabled_tools = [
+  "rg.fixture.promote", "rg.fixture.provide", "rg.tool.publish", "rg.solution.publish"
+]
 required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 120
@@ -274,6 +281,20 @@ USER_COMPONENT/USER_CONVERSATION 不调求值工具，而是采集用户明确�
 - `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
 - `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。只有提案、没有有效 `expect` 的行返回 `GOLDEN_REQUIRES_APPROVAL`。
 - Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。
+
+WRITE Instruction 在 GREEN baseline 中始终使用服务端从输出契约合成的桩，`realExternalCalls=0`。
+若 WRITE 还没有 `bindingRef`，Codex 调用 `rg.engineering.handoff` 生成工程交接单；交接单只含输入、
+输出、目标下游、对账键、对账适配器和验收 GOLDEN，不授予执行权限。实现接入后，平台使用独立的
+`AGENT_TDD_WRITE_EXEC` 身份执行当前 GREEN 线；这个用途不在 MCP 目录，也绝不能配置给 Codex。
+平台在第一次真实写之前提交持久 reservation，崩溃后返回 `RECOVERY_REQUIRED`，不会自动重试可能
+已经发生的副作用。每次写后必须由同一下游的精确 `ReconciliationAdapter` 按业务键读回；只有
+`status=RECONCILED` 且 `goldenSetId`、GREEN `evidenceFingerprint`、Solution revision 和 contract
+fingerprint 全部仍一致，`rg.solution.readiness.gates.writeReconciled` 才为 true。
+
+Solution 发布按以下顺序：Codex 用 `rg.solution.commit` 提交当前 authoring receipt；人工 owner 在
+看板打开同一提案和 GREEN/对账坐标后签署；Codex 再读取 `rg.solution.readiness`。只有
+`logicGreen`、`implementationBound`、`writeReconciled` 和 `ownerSignoff` 全绿时，才允许
+`rg.solution.publish` 生成不可变 publication。Solution、GOLDEN、证据或 binding 任一变化都会使旧签署失效。
 - 只有持久 `caseSetRef` 中的 `ACTIVE` 行能推进 READY 并形成发布证据。
 - 每个执行行必须有显式 `expect`。实现不能反过来修改 Oracle 以迎合结果。
 - 执行后的并发用例修改会让 READY、evidence、verdict 和 line 一起回滚。

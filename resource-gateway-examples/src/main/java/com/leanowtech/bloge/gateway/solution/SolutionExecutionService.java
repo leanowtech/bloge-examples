@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 
 import java.util.List;
 import java.util.Map;
@@ -56,6 +58,23 @@ public final class SolutionExecutionService {
      */
     public ExecutionResult invoke(String scopeKey, String solutionRef, JsonNode featureValues) {
         return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.RUNTIME);
+    }
+
+    /** Executes a WRITE-capable path only for the dedicated platform purpose in a matching scope. */
+    public ExecutionResult executeControlledWrite(
+            String scopeKey,
+            String solutionRef,
+            JsonNode featureValues,
+            IntegrationRequestContext platformIdentity) {
+        if (platformIdentity == null
+                || !IntegrationOperation.AGENT_TDD_WRITE_EXEC.accepts(platformIdentity.purpose())
+                || !scopeKey.equals(String.join("|", platformIdentity.tenantId(),
+                        platformIdentity.organizationId(), platformIdentity.projectId(),
+                        platformIdentity.environmentId(), platformIdentity.region()))) {
+            throw new SolutionContractException(
+                    "FORBIDDEN_PURPOSE", "Controlled WRITE authority is required.");
+        }
+        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.WRITE_EXEC);
     }
 
     private ExecutionResult execute(
