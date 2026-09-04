@@ -335,7 +335,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ## 8. 回归验证
 
-### 8.1 真实 Codex 第一幕认证
+### 8.1 真实 Codex 第 3 幕创作认证
 
 先停止本仓库已经运行的 Resource Gateway，再在干净且已提交的工作区执行：
 
@@ -359,16 +359,16 @@ HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证
 
 - Codex 先发现业务能力与契约，再获取 DSL 参考，且只有 `accepted=true` 的 preview/gate 才计为通过；
 - preview、gate、compose 的 source、library refs、context 与 receipt 完全一致；
-- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与同一案例，
+- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与至少两条分支案例，
   且回读、补充依赖和 Oracle 证据必须发生在本次 upsert 之后；
+- 同一新 Tool 必须出现在认证结束时读取的 `STRUCTURE_ONLY` 看板，包含非空业务流程、至少两条可评审决策分支，且上述分支案例全部出现在该 Tool 的案例表；显式规则行和非空 `otherwise` 都按一条业务分支计算；
 - Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
 - trace 中的外部动作只能是已配置 MCP 调用；出现 shell、文件修改、Web 搜索或任何
   未识别的 action item 时，认证失败关闭；
 - 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到 preview/gate 成功返回 `accepted=false` 和阻断诊断指纹，随后同一工具接受修正候选；参考查询重试或 MCP 传输失败不能充数；
 - preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
-认证提示词用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动
-contract-first 行为；不会把 `rg.contract.get`、MCP 参数或其他实现术语交给业务人员。
+认证提示词以“按用户编号决定客服接待方式”为业务任务，用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动 contract-first 行为，并要求 premium 与默认接待方式形成业务规则表。提示词不会把 `rg.contract.get`、DSL、MCP 参数或其他实现术语交给业务人员。
 
 默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理；外层 sandbox

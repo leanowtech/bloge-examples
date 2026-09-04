@@ -66,13 +66,17 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/assertions/finalSummaryBusinessOnly").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/boundedRepairPolicyRespected").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/sameCandidateReceiptAndAssets").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/businessDecisionTableAuthored").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/sameToolBoardProjectionObserved").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/businessFlowSummaryProjected").asBoolean()).isTrue();
+        assertThat(certificate.at("/assertions/sameCasesVisibleOnBoard").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/spawnedRuntimeIdentityVerified").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/selfRepairOrFirstPassAccepted").asBoolean()).isTrue();
         assertThat(certificate.at("/assertions/selfRepairObserved").asBoolean()
                 || certificate.at("/assertions/firstPassAccepted").asBoolean()).isTrue();
         assertThat(certificate.at("/correlation/method").asText())
                 .isEqualTo("EPHEMERAL_HMAC_SHA256");
-        assertThat(certificate.at("/correlation/cases")).isNotEmpty();
+        assertThat(certificate.at("/correlation/cases")).hasSizeGreaterThanOrEqualTo(2);
         assertThat(textValues(certificate.at("/correlation/cases")))
                 .allMatch(value -> value.matches("hmac-sha256:[0-9a-f]{64}"));
         assertThat(certificate.at("/journey/observedCalls")).allSatisfy(call ->
@@ -138,7 +142,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 15 tests", "OK");
+        assertThat(output).contains("Ran 16 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

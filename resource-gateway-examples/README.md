@@ -28,7 +28,9 @@ temporary directory or authentication copy is created. Codex receives an isolate
 home; the OS policy denies child-process execution, repository/private-state reads, and writes outside its disposable
 runtime while non-MCP features are explicitly disabled. The reducer rejects
 every non-MCP action and correlates only post-upsert evidence for one accepted candidate through Tool and CaseSet
-creation, then emits a payload-free certificate containing only ephemeral HMAC identities. The reviewed
+creation. It then requires two governed branch cases and the same Tool's structure-only board to expose a
+business flow plus a decision table with at least two reviewable branches before emitting a payload-free
+certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
 The 27-tool catalog now includes `rg.dsl.reference.get`. Codex first receives a scoped, versioned,

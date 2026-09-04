@@ -1,6 +1,6 @@
 # Resource Gateway 演进详细技术方案 v1.4.3：补齐 Agent 的 DSL 创作支持面
 
-> 状态：实现收尾稿。代码、确定性测试和操作材料已完成；当前固定提交的真实 Codex 认证证书待按 §18.5 执行后回填。
+> 状态：已实现并完成真实 Codex 产品认证；最终全量回归结果见本轮交付记录。
 >
 > 日期：2026-09-04。
 >
@@ -745,6 +745,6 @@ v1.4.3 只有同时满足以下条件才算完成：
 - [x] 原始 message、metadata、source fragment、generated DSL、业务值和隐藏目录 0 泄漏；
 - [x] MCP instructions 明确 reference-first、最多三轮、重复错误停止和人工边界；
 - [x] `libraryRefs=[]` 已明确为“平台内建 + scope 内已治理资源、不含具名扩展库”，存量用法审计与回归测试已覆盖；
-- [ ] 全新无仓库/无 skill 的 Codex 通过真实 MCP 认证完成第 3 幕，且无 skipped/mock。
+- [x] 全新无仓库/无 skill 的 Codex 通过真实 MCP 认证完成第 3 幕，且无 skipped/mock。
 
-当前未勾选项只能由 `scripts/certify-agent-tdd-codex.sh` 在 clean commit 上生成的证书关闭。不得以 reducer 单元测试、直接 facade 调用或历史证书替代。
+关闭该项的权威证据为 `docs/acceptance/agent-tdd/codex-certification-v1.json`：脚本从 clean commit `49f2d6d87a7c2c82016f77b5c54eeed8caba73fc` 构建并启动独立 JAR，Codex CLI 0.153.0 在无仓库、无 skill、无 shell 的边界内只经真实 HTTP MCP 完成 15 次调用；证书关联 2 条业务分支案例、同一 Tool 的业务流程与规则矩阵，并在人工 GOLDEN 审批前停止。该次候选首次 preview 即通过，证书如实记录 `firstPassAccepted=true`、`selfRepairObserved=false`，没有人为制造错误冒充修正能力。确定性错误修正能力由 §18.1–§18.4 的负例矩阵另行证明。

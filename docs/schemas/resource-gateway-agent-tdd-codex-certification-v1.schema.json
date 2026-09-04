@@ -118,7 +118,7 @@
         "caseSet": { "$ref": "#/$defs/opaqueCorrelationFingerprint" },
         "cases": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 2,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/opaqueCorrelationFingerprint" }
         }
@@ -141,6 +141,10 @@
         "selfRepairOrFirstPassAccepted",
         "boundedRepairPolicyRespected",
         "sameCandidateReceiptAndAssets",
+        "businessDecisionTableAuthored",
+        "sameToolBoardProjectionObserved",
+        "businessFlowSummaryProjected",
+        "sameCasesVisibleOnBoard",
         "rawArgumentsResultsAndMessagesOmitted",
         "spawnedRuntimeIdentityVerified"
       ],
@@ -158,6 +162,10 @@
         "selfRepairOrFirstPassAccepted": { "const": true },
         "boundedRepairPolicyRespected": { "const": true },
         "sameCandidateReceiptAndAssets": { "const": true },
+        "businessDecisionTableAuthored": { "const": true },
+        "sameToolBoardProjectionObserved": { "const": true },
+        "businessFlowSummaryProjected": { "const": true },
+        "sameCasesVisibleOnBoard": { "const": true },
         "rawArgumentsResultsAndMessagesOmitted": { "const": true },
         "spawnedRuntimeIdentityVerified": { "const": true }
       }
