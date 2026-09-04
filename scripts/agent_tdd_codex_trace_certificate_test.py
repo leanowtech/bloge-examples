@@ -118,7 +118,8 @@ class TraceCertificateTest(unittest.TestCase):
             "payloadPolicy": "STRUCTURE_ONLY",
             "tools": [{
                 "toolRef": tool,
-                "ruleMatrices": [{"rules": [{"id": "R1"}, {"id": "otherwise"}]}],
+                "ruleMatrices": [{"rules": [{"id": "R1"}],
+                                  "otherwise": {"serviceMode": "regular"}}],
                 "flowSummary": "接收用户编号 → 读取资料 → 按会员等级决定接待方式 → 返回结果",
                 "caseTable": [
                     {"caseSetRef": "private-case-set", "caseId": "private-case"},
@@ -229,6 +230,21 @@ class TraceCertificateTest(unittest.TestCase):
         board["tools"][0]["ruleMatrices"] = []
 
         with self.assertRaisesRegex(MODULE.CertificationFailure, "business rule matrix"):
+            MODULE.certify(self.write_trace(self.happy_events()), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+                "runtimeInstanceNonce": "d" * 32,
+                "runtimeJarSha256": "sha256:" + "e" * 64,
+                "boardProjection": board,
+            })
+
+    def test_rejects_a_matrix_with_only_one_branch_and_no_fallback(self) -> None:
+        board = self.board_projection()
+        board["tools"][0]["ruleMatrices"][0]["otherwise"] = {}
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "two decision branches"):
             MODULE.certify(self.write_trace(self.happy_events()), {
                 "repositoryCommit": "abc123",
                 "codexVersion": "codex-cli test",

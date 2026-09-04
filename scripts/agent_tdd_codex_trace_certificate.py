@@ -348,8 +348,15 @@ def verify_board_projection(board: Any, chain: dict[str, Any]) -> None:
     matrices = card.get("ruleMatrices")
     if not isinstance(matrices, list) or not matrices:
         raise CertificationFailure("the same Tool has no business rule matrix")
-    if not any(isinstance(matrix, dict) and isinstance(matrix.get("rules"), list)
-               and len(matrix["rules"]) >= 2 for matrix in matrices):
+    def branch_count(matrix: Any) -> int:
+        """Count explicit rows and a populated fallback as equally reviewable branches."""
+        if not isinstance(matrix, dict) or not isinstance(matrix.get("rules"), list):
+            return 0
+        fallback = matrix.get("otherwise")
+        has_fallback = isinstance(fallback, dict) and bool(fallback)
+        return len(matrix["rules"]) + int(has_fallback)
+
+    if not any(branch_count(matrix) >= 2 for matrix in matrices):
         raise CertificationFailure("the business rule matrix does not contain two decision branches")
     if not isinstance(card.get("flowSummary"), str) or not card["flowSummary"].strip():
         raise CertificationFailure("the same Tool has no business flow summary")
