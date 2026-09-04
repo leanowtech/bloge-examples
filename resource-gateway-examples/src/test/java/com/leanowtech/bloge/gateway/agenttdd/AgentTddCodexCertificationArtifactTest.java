@@ -96,6 +96,9 @@ class AgentTddCodexCertificationArtifactTest {
         String script = Files.readString(SCRIPT, StandardCharsets.UTF_8);
         int promptStart = script.indexOf("cat > \"${PROMPT_FILE}\" <<EOF");
         String prompt = script.substring(promptStart, script.indexOf("\nEOF\n", promptStart));
+        int cleanupTrap = script.indexOf("trap cleanup EXIT");
+        int firstTemporaryDirectory = script.indexOf("PRIVATE_DIR=\"$(mktemp");
+        int authenticationCopy = script.indexOf("cp \"${SOURCE_AUTH_FILE}\"");
 
         assertThat(script).contains(
                 "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox read-only",
@@ -109,7 +112,10 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
-                "exec env", "SERVICE_PID=$!", "openssl rand -hex 32");
+                "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
+                "PRIVATE_JAR", "chflags uchg", "expected-jar-sha256");
+        assertThat(cleanupTrap).isGreaterThanOrEqualTo(0).isLessThan(firstTemporaryDirectory);
+        assertThat(cleanupTrap).isLessThan(authenticationCopy);
         assertThat(script).doesNotContain(
                 "--sandbox danger-full-access", "example-services.sh\" start resource-gateway",
                 "example-services.sh\" stop resource-gateway");

@@ -1327,9 +1327,12 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
 该提交自举，没有复用前一提交或当前机器上碰巧运行的 RG：
 
 1. `certify-agent-tdd-codex.sh` 拒绝脏工作区和占用端口，自行生成一次性双身份，先
-   `clean package` 清除 Git 忽略的旧 classes，再直接启动该 JAR。脚本只持有并停止本次创建的 PID，
-   不经可能复用旧进程的通用启动器；RG 暴露仅在本次启动参数开启的认证实例身份，包含随机 nonce、
-   固定 HEAD 和 JAR SHA-256，脚本在 Codex 前后精确核对，证书仅保留 nonce 指纹；
+   `clean package` 清除 Git 忽略的旧 classes，再把该 JAR 原子复制到私有随机路径，以 `0400` 权限和
+   不可变标志冻结后从该副本启动。RG 从自身 Spring Boot 运行归档计算 SHA-256，与启动器预期值
+   失败关闭，并在 Codex 前后重新散列；脚本只持有并停止本次创建的 PID，不经可能复用旧进程的
+   通用启动器。仅本次启动参数开启的认证实例身份包含随机 nonce、固定 HEAD 和实际 JAR SHA-256，
+   证书仅保留 nonce 指纹；清理 trap 在首个临时目录和 `auth.json` 复制之前安装，任何中途失败都不会
+   遗留认证凭据副本；
    Codex 从隔离且只含 `auth.json` 的一次性 home 与临时 cwd 运行 `codex exec --ephemeral`，忽略用户
    配置和规则，只得到 WORKLOAD token。Codex 内层为 `read-only`；macOS 外层 `sandbox-exec` profile
    只允许执行当前解析出的 Codex 二进制及其同目录 `codex-code-mode-host`，拒绝执行其他程序，

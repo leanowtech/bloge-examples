@@ -41,7 +41,7 @@ if ! repository_is_clean; then
     echo "Certification requires a clean committed worktree." >&2
     exit 1
 fi
-for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk curl git lsof python3 openssl sandbox-exec; do
+for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk chflags curl git lsof python3 openssl sandbox-exec; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "Required command is unavailable: ${command}" >&2
         exit 1
@@ -62,6 +62,54 @@ if lsof -nP -iTCP:"${RG_CERT_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
     exit 1
 fi
 
+PRIVATE_DIR=""
+WORKSPACE_DIR=""
+ISOLATED_CODEX_DIR=""
+CODEX_RUNTIME_DIR=""
+TRACE_FILE=""
+PRIVATE_JAR=""
+TEMP_OUTPUT=""
+SERVICE_PID=""
+
+remove_certification_temp_dir() {
+    local directory="${1:-}"
+    local expected_prefix="${2:-}"
+    if [ -z "${directory}" ] || [ ! -d "${directory}" ]; then
+        return
+    fi
+    case "$(basename "${directory}")" in
+        "${expected_prefix}"*) rm -rf "${directory}" ;;
+        *) echo "Refusing to remove unexpected certification directory: ${directory}" >&2 ;;
+    esac
+}
+
+cleanup() {
+    if [ -n "${SERVICE_PID:-}" ] && kill -0 "${SERVICE_PID}" 2>/dev/null; then
+        kill "${SERVICE_PID}" 2>/dev/null || true
+        wait "${SERVICE_PID}" 2>/dev/null || true
+    fi
+    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN
+    if [ -n "${TEMP_OUTPUT:-}" ]; then
+        rm -f "${TEMP_OUTPUT}"
+    fi
+    if [ -n "${PRIVATE_JAR:-}" ] && [ -e "${PRIVATE_JAR}" ]; then
+        chflags nouchg "${PRIVATE_JAR}" 2>/dev/null || true
+    fi
+    if [ "${KEEP_RAW_CODEX_TRACE:-false}" = "true" ] \
+            && [ -n "${PRIVATE_DIR:-}" ] && [ -d "${PRIVATE_DIR}" ]; then
+        echo "Private trace retained at ${TRACE_FILE:-${PRIVATE_DIR}}" >&2
+    else
+        remove_certification_temp_dir "${PRIVATE_DIR:-}" "rg-codex-cert."
+    fi
+    if [ -n "${WORKSPACE_DIR:-}" ] && [ -d "${WORKSPACE_DIR}" ]; then
+        chmod 700 "${WORKSPACE_DIR}" 2>/dev/null || true
+    fi
+    remove_certification_temp_dir "${WORKSPACE_DIR:-}" "rg-codex-workspace."
+    remove_certification_temp_dir "${ISOLATED_CODEX_DIR:-}" "rg-codex-home."
+    remove_certification_temp_dir "${CODEX_RUNTIME_DIR:-}" "rg-codex-runtime."
+}
+trap cleanup EXIT
+
 PRIVATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rg-codex-cert.XXXXXX")"
 PRIVATE_DIR="$(cd "${PRIVATE_DIR}" && pwd -P)"
 WORKSPACE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rg-codex-workspace.XXXXXX")"
@@ -81,8 +129,6 @@ chmod 600 "${TRACE_FILE}"
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
 chmod 500 "${WORKSPACE_DIR}"
 umask 077
-TEMP_OUTPUT=""
-SERVICE_PID=""
 
 SOURCE_CODEX_DIR="${CODEX_HOME:-${HOME}/.codex}"
 SOURCE_AUTH_FILE="${SOURCE_CODEX_DIR}/auth.json"
@@ -99,26 +145,6 @@ if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ]; then
     echo "Generated demo identities unexpectedly collided." >&2
     exit 1
 fi
-
-cleanup() {
-    if [ -n "${SERVICE_PID}" ] && kill -0 "${SERVICE_PID}" 2>/dev/null; then
-        kill "${SERVICE_PID}" 2>/dev/null || true
-        wait "${SERVICE_PID}" 2>/dev/null || true
-    fi
-    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN
-    if [ -n "${TEMP_OUTPUT}" ]; then
-        rm -f "${TEMP_OUTPUT}"
-    fi
-    if [ "${KEEP_RAW_CODEX_TRACE:-false}" = "true" ]; then
-        echo "Private trace retained at ${TRACE_FILE}" >&2
-    else
-        rm -rf "${PRIVATE_DIR}"
-    fi
-    chmod 700 "${WORKSPACE_DIR}" 2>/dev/null || true
-    rm -rf "${WORKSPACE_DIR}"
-    rm -rf "${ISOLATED_CODEX_DIR}" "${CODEX_RUNTIME_DIR}"
-}
-trap cleanup EXIT
 
 COMMON_GIT_DIR="$(git -C "${ROOT_DIR}" rev-parse --path-format=absolute --git-common-dir)"
 COMMON_REPOSITORY="$(dirname "${COMMON_GIT_DIR}")"
@@ -170,12 +196,17 @@ if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
     echo "Repository changed while the certification JAR was being built." >&2
     exit 1
 fi
-JAR_FILE="${ROOT_DIR}/resource-gateway-examples/target/bloge-examples-resource-gateway-1.0.0.jar"
-if [ ! -f "${JAR_FILE}" ] || [ -L "${JAR_FILE}" ]; then
+BUILT_JAR="${ROOT_DIR}/resource-gateway-examples/target/bloge-examples-resource-gateway-1.0.0.jar"
+if [ ! -f "${BUILT_JAR}" ] || [ -L "${BUILT_JAR}" ]; then
     echo "Clean package did not create the expected regular Resource Gateway JAR." >&2
     exit 1
 fi
-JAR_SHA256="sha256:$(openssl dgst -sha256 "${JAR_FILE}" | awk '{print $2}')"
+PRIVATE_JAR="${PRIVATE_DIR}/resource-gateway-certification.jar"
+cp "${BUILT_JAR}" "${PRIVATE_JAR}.copying"
+chmod 400 "${PRIVATE_JAR}.copying"
+mv "${PRIVATE_JAR}.copying" "${PRIVATE_JAR}"
+chflags uchg "${PRIVATE_JAR}"
+JAR_SHA256="sha256:$(openssl dgst -sha256 "${PRIVATE_JAR}" | awk '{print $2}')"
 INSTANCE_NONCE="$(openssl rand -hex 32)"
 if lsof -nP -iTCP:"${RG_CERT_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "Certification port became occupied while packaging; refusing to reuse its listener." >&2
@@ -184,6 +215,10 @@ fi
 
 (
     cd "${ROOT_DIR}/resource-gateway-examples"
+    if [ "sha256:$(openssl dgst -sha256 "${PRIVATE_JAR}" | awk '{print $2}')" != "${JAR_SHA256}" ]; then
+        echo "Private certification JAR changed before process launch." >&2
+        exit 1
+    fi
     exec env \
         RG_API_RESOURCE_AUTHORING_ENABLED=true \
         RG_REUSABLE_FLOW_AUTHORING_ENABLED=true \
@@ -191,12 +226,12 @@ fi
         RG_INTEGRATION_DEMO_TOKEN="${AGENT_TOKEN}" \
         RG_INTEGRATION_DEMO_REVIEW_TOKEN="${REVIEW_TOKEN}" \
         RG_INTEGRATION_ENVIRONMENT_ID=local \
-        "${JAVA_BIN}" --enable-preview -jar "${JAR_FILE}" \
+        "${JAVA_BIN}" --enable-preview -jar "${PRIVATE_JAR}" \
         "--server.address=127.0.0.1" "--server.port=${RG_CERT_PORT}" \
         "--gateway.agent-tdd.certification-instance.enabled=true" \
         "--gateway.agent-tdd.certification-instance.instance-nonce=${INSTANCE_NONCE}" \
         "--gateway.agent-tdd.certification-instance.repository-commit=${REPOSITORY_COMMIT}" \
-        "--gateway.agent-tdd.certification-instance.jar-sha256=${JAR_SHA256}"
+        "--gateway.agent-tdd.certification-instance.expected-jar-sha256=${JAR_SHA256}"
 ) > "${SERVICE_LOG}" 2>&1 &
 SERVICE_PID=$!
 

@@ -22,7 +22,9 @@ no-store review details at
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
 The repeatable [real Codex certification script](../scripts/certify-agent-tdd-codex.sh) requires a
 clean commit, performs a clean package, starts that exact JAR as an owned loopback process with ephemeral credentials,
-and verifies a one-run nonce plus the commit and JAR digest before and after Codex. Codex receives an isolated auth-only
+copies it atomically into a private read-only immutable path, and verifies a one-run nonce plus the commit and
+the running process's self-computed JAR digest before and after Codex. The cleanup trap is installed before any
+temporary directory or authentication copy is created. Codex receives an isolated auth-only
 home; the OS policy denies child-process execution, repository/private-state reads, and writes outside its disposable
 runtime while non-MCP features are explicitly disabled. The reducer rejects
 every non-MCP action and correlates only post-upsert evidence for one accepted candidate through Tool and CaseSet

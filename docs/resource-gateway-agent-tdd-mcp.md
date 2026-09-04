@@ -341,9 +341,11 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 脚本不接受外部 Agent/reviewer token，也不复用已经运行的服务。它先拒绝脏工作区和被占用的
 认证端口（默认 `18081`），生成两份一次性凭据，先执行 `clean package`，再直接启动当前
-HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证进程。脚本只记录和停止自己
-创建的 PID，不调用可复用既有进程的通用启动器。服务同时返回一次性实例随机量、提交号和 JAR
-SHA-256；脚本在 Codex 调用前后都精确核对，证书只保留随机量指纹和非敏感构建身份。
+HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证进程。构建产物先原子复制到
+权限为 `0400` 的私有随机路径并设置不可变标志，摘要也从该副本计算，随后只从该副本启动。
+服务从自己的 Spring Boot 运行归档重新计算 SHA-256，与启动器预期值失败关闭，并在 Codex 前后
+重新散列当前归档。脚本只记录和停止自己创建的 PID，不调用可复用既有进程的通用启动器。
+服务同时返回一次性实例随机量、提交号和实际 JAR SHA-256；证书只保留随机量指纹和非敏感构建身份。
 随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 执行任意进程、读取仓库/原始 Codex
 状态和私有 trace，以及写入一次性运行目录之外的位置。Codex 使用只复制 `auth.json` 的隔离目录，
 在临时只读工作目录启动，不读用户配置与规则，只提供四个 HTTP MCP 连接和一段
@@ -376,7 +378,9 @@ nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。�
 严格 Schema 见
 [`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`](schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json)。
 
-脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”，并使用 `trap` 保证异常时也会停服。
+脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”。清理 `trap` 在创建第一个临时目录之前
+安装，因此后续 `mktemp`、权限调整、凭据复制、随机量生成、构建或认证任一步失败，均会清理已经
+创建的一次性目录；服务一旦创建还会被停止。仅在显式保留 trace 时留下私有诊断目录。
 认证依赖 macOS `sandbox-exec` 提供操作系统级隔离；不具备等价隔离能力的平台必须失败关闭，
 不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。Codex 内层使用 `read-only`；权威外层
 profile 只允许执行解析后的 Codex 二进制及其同目录 `codex-code-mode-host`，拒绝执行其他程序，
