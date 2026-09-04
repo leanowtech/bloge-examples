@@ -9,7 +9,11 @@ import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionAuthoringDecoder;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
+import com.leanowtech.bloge.gateway.solution.ScenarioTreeValidator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
+import com.leanowtech.bloge.gateway.solution.SolutionContractException;
+import com.leanowtech.bloge.gateway.solution.SolutionLowering;
+import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.nio.charset.StandardCharsets;
@@ -33,13 +37,21 @@ public final class SolutionAgentTools {
     private final ObjectMapper mapper;
     private final SolutionAuthoringDecoder decoder;
     private final SolutionEntityRegistry registry;
+    private final SolutionLowering lowering;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
     public SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper) {
+        this(states, mapper, null);
+    }
+
+    /** Creates the production boundary with server BLOGE precompilation enabled. */
+    public SolutionAgentTools(
+            AgentTddStateRepository states, ObjectMapper mapper, DslImportService importer) {
         this.states = Objects.requireNonNull(states, "states");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decoder = new SolutionAuthoringDecoder();
         this.registry = new SolutionEntityRegistry(states, mapper);
+        this.lowering = importer == null ? null : new SolutionLowering(registry, importer);
     }
 
     /**
@@ -135,32 +147,44 @@ public final class SolutionAgentTools {
         String scopeKey = AgentTddMutationService.scopeKey(identity);
         SolutionContract contract = decoded.value();
         LinkedHashMap<String, Object> inputs = new LinkedHashMap<>();
-        ScenarioContract root;
         boolean speccing = false;
+        ScenarioTreeValidator.ValidationResult tree;
         try {
             contract.inputs().forEach((name, featureRef) -> {
                 FeatureContract feature = registry.requireFeature(scopeKey, featureRef);
                 inputs.put(name, feature.output().path("type"));
             });
-            root = registry.requireScenario(scopeKey, contract.rootScenarioRef());
             for (String instructionRef : contract.instructions()) {
                 InstructionContract instruction = registry.requireInstruction(scopeKey, instructionRef);
                 speccing |= instruction.speccing();
             }
+            tree = new ScenarioTreeValidator(registry, 8)
+                    .validate(scopeKey, contract.rootScenarioRef());
         } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
             throw new AgentTddToolException(
                     "REFERENCE_UNRESOLVED", "Referenced solution entity is unavailable.");
+        } catch (SolutionContractException failure) {
+            throw new AgentTddToolException(failure.code(), failure.getMessage());
         }
-        if (!contract.instructions().containsAll(root.referencedInstructions())) {
+        if (!contract.instructions().containsAll(tree.referencedInstructions())) {
             throw new AgentTddToolException(
                     "SCENARIO_OUTLET_UNRESOLVED", "Scenario instruction outlet is unresolved.");
         }
+        SolutionLowering.LoweredSolution lowered;
+        try {
+            lowered = lowering == null ? null : lowering.lower(scopeKey, contract);
+        } catch (SolutionContractException failure) {
+            throw new AgentTddToolException(failure.code(), failure.getMessage());
+        }
         SolutionEntityRegistry.RegisteredEntity stored =
-                registry.upsertSolution(scopeKey, contract, speccing);
+                registry.upsertSolution(scopeKey, contract, speccing,
+                        lowered == null ? null : lowered.draft());
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("solutionRef", stored.ref());
         result.put("inputContract", Map.copyOf(inputs));
         result.put("scenarioTreeValid", true);
+        result.put("precompiled", lowered != null && lowered.precompiled());
+        result.put("graphNodeCount", lowered == null ? 0 : lowered.draft().nodes().size());
         result.put("pureFunctionProjection", Map.of(
                 "pure", true,
                 "rootScenarioRef", contract.rootScenarioRef(),

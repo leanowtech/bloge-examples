@@ -623,11 +623,13 @@ public final class McpToolCatalog {
         return structuredObject(props(
                 "solutionRef", string(), "inputContract", businessObject(),
                 "scenarioTreeValid", bool(), "pureFunctionProjection", projection,
+                "precompiled", bool(), "graphNodeCount", integer(),
                 "speccing", bool(), "authoringContextFingerprint", string(),
                 "revision", integer(), "contractFingerprint", string(),
                 "honestVerdict", honestVerdict()),
                 List.of("solutionRef", "inputContract", "scenarioTreeValid",
-                        "pureFunctionProjection", "speccing", "authoringContextFingerprint",
+                        "pureFunctionProjection", "precompiled", "graphNodeCount",
+                        "speccing", "authoringContextFingerprint",
                         "revision", "contractFingerprint", "honestVerdict"));
     }
 }

@@ -13,7 +13,8 @@
     "execution-controls",
     "functions",
     "round-trip",
-    "common-errors"
+    "common-errors",
+    "solution-authoring"
   ],
   "topics": [
     {
@@ -113,6 +114,18 @@
       "exampleRefs": ["graph-transform-minimal"]
     },
     {
+      "topicId": "solution-authoring",
+      "title": "Feature, Scenario, Instruction and Solution contracts",
+      "rules": [
+        {"ruleId": "FEATURE_CONTRACT", "summary": "Define one atomic typed fact with output.type, evaluationKind, determinism, inputs and the matching evaluation or interaction reference."},
+        {"ruleId": "SCENARIO_CONTRACT", "summary": "Define a pure unique-hit decision with declared inputs, ordered rules, typed outlets, complete target bindings and a mandatory otherwise outlet."},
+        {"ruleId": "INSTRUCTION_CONTRACT", "summary": "Define inputs and an output containing structured result plus required reasoning; every WRITE also declares downstream reconciliation and may remain design-only without bindingRef."},
+        {"ruleId": "SOLUTION_CONTRACT", "summary": "Map each function input to a Feature reference, select one root Scenario, enumerate allowed Instructions and bind one GOLDEN case set."},
+        {"ruleId": "PURE_FUNCTION_BOUNDARY", "summary": "A Solution consumes already-collected feature values and lowers only to scenarioCall followed by instructionCall; never add featureCall, interaction, waiting or an external read to the Solution graph."}
+      ],
+      "exampleRefs": ["solution-feature-contract", "solution-scenario-contract", "solution-instruction-contract", "solution-solution-contract"]
+    },
+    {
       "topicId": "graph",
       "title": "Compatibility alias for graph-root",
       "rules": [{"ruleId": "USE_GRAPH_ROOT", "summary": "Use topic graph-root for the current authoritative graph-root rules."}],
@@ -193,6 +206,34 @@
       "source": "graph designOnlyExample {\n  node assess : \"risk:eligibility\" {\n    input {\n      score = ctx.score\n      amount = ctx.amount\n    }\n  }\n  transform result {\n    eligible = assess.output.eligible\n  }\n}",
       "assertions": ["COMPILES", "ROUND_TRIP_DEFERRED_DESIGN_ONLY", "DESIGN_ONLY_NOT_EXECUTABLE"],
       "requiredOperatorRefs": ["risk:eligibility", "bloge:transform"]
+    },
+    {
+      "exampleId": "solution-feature-contract",
+      "intent": "Declare one deterministic atomic fact collected by Resource Gateway",
+      "source": "responsibility.party:\n  output: { type: { enum: [passenger, driver, platform, none] } }\n  evaluationKind: API\n  determinism: DETERMINISTIC\n  inputs: { orderId: string }\n  evaluationRef: ride-responsibility-service.decide#$.party",
+      "assertions": ["FEATURE_CONTRACT_VALID", "ATOMIC_OUTPUT", "DETERMINISTIC_SOURCE_BOUND"],
+      "requiredOperatorRefs": []
+    },
+    {
+      "exampleId": "solution-scenario-contract",
+      "intent": "Declare a complete pure business decision with one safe fallback",
+      "source": "scn:cancel-dispute:\n  inputs: [party, withinFree, abuse]\n  hitPolicy: unique\n  rules:\n    - ruleId: R1\n      when: { party: { eq: none }, withinFree: { eq: true }, abuse: { ne: confirmed } }\n      outlet: { kind: INSTRUCTION, ref: 'ins:refund-waive-full', bind: { orderId: orderId, feeCharged: feeCharged } }\n  otherwise: { kind: INSTRUCTION, ref: 'ins:escalate-human-ticket', bind: { orderId: orderId } }",
+      "assertions": ["SCENARIO_CONTRACT_VALID", "UNIQUE_HIT", "OTHERWISE_PRESENT"],
+      "requiredOperatorRefs": []
+    },
+    {
+      "exampleId": "solution-instruction-contract",
+      "intent": "Declare a design-only write whose downstream effect can be reconciled",
+      "source": "ins:refund-waive-full:\n  inputs: { orderId: string, feeCharged: number }\n  output:\n    result: { type: { fields: { decision: { enum: [WAIVED] }, waiveAmount: number } } }\n    reasoning: required\n  effect: WRITE\n  writeGovernance: { downstreamSystem: refund-service, reconciliationKey: orderId, reconciliationAdapterRef: 'recon:refund-v1' }",
+      "assertions": ["INSTRUCTION_CONTRACT_VALID", "REASONING_REQUIRED", "DESIGN_ONLY_WRITE"],
+      "requiredOperatorRefs": []
+    },
+    {
+      "exampleId": "solution-solution-contract",
+      "intent": "Compose a pure solution from declared facts, decision and actions",
+      "source": "sol:cancel-dispute:\n  problem: Resolve a cancellation-fee dispute consistently.\n  inputs: { party: responsibility.party, withinFree: cancel.withinFree, abuse: history.abuseSignal, orderId: dispute.orderSelected }\n  scenarioTree: { root: 'scn:cancel-dispute' }\n  instructions: ['ins:refund-waive-full', 'ins:uphold', 'ins:escalate-human-ticket']\n  golden: 'caseSet:cancel-dispute'",
+      "assertions": ["SOLUTION_CONTRACT_VALID", "PURE_FUNCTION_INPUTS", "SCENARIO_AND_INSTRUCTIONS_RESOLVED"],
+      "requiredOperatorRefs": []
     }
   ]
 }

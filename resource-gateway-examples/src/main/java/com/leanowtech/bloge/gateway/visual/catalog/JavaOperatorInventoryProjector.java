@@ -54,6 +54,8 @@ public class JavaOperatorInventoryProjector {
             "httpRequest",
             "bloge:decisionTable",
             "bloge:transform",
+            "bloge:scenarioCall",
+            "bloge:instructionCall",
             VisualGraphPublicationOperator.NAME
     );
 

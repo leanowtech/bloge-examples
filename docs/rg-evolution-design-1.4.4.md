@@ -405,7 +405,7 @@ responsibility.party: { output:{type:{enum:[passenger,driver,platform,none]}}, e
 | 阶段 | 当前状态 | 已有证据 | 尚未完成 |
 |---|---|---|---|
 | P1 四实体契约与创作面 | 已完成 | 严格有界解码 `bloge.solutionAuthoring.v1` 与四种单实体片段；Feature/Scenario/Instruction/Solution 按 tenant/project/environment 独立版本化；四个 MCP 工具具备严格输入输出 Schema、精确幂等回放；Solution 组合前解析直接引用并返回纯函数投影；聚焦单元和 MCP 协议测试全绿 | 跨层场景树检查与 GraphDraft lowering 归 P2 |
-| P2 纯函数编译与场景树 | 待实施 | — | lowering、`scenarioCall`、`instructionCall`、全树静态验证和零外呼集成测试 |
+| P2 纯函数编译与场景树 | 已完成 | `SolutionLowering` 将解法固定降级为 `scenarioCall → instructionCall` 两算子 GraphDraft，并经生产 `DslImportService` 预编译；全树 DFS 校验引用、无环、深度上限与指令绑定；纯求值器支持嵌套场景、`otherwise` 和唯一命中；WRITE 指令在 SIMULATE 中结构化桩化，零外呼集成测证明 `realExternalCalls=0`；`solution-authoring` 参考包已含四实体约束和完整片段示例 | 特征采集、签名 token 与运行时调用归 P3 |
 | P3 特征求值与信任 token | 待实施 | — | 求值分派、短期签名 token、交互特征拒绝与 `solution.invoke` 校验 |
 | P4 测试金字塔与 GOLDEN | 待实施 | — | Feature/Scenario/Solution 分层执行、业务待办与人工批准线 |
 | P5 写交接与对账 | 待实施 | — | 工程交接、独立 WRITE_EXEC、对账证据和发布门 |

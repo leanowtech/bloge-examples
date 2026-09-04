@@ -190,7 +190,8 @@ class McpToolCatalogTest {
                         "speccing", "contractFingerprint", "honestVerdict");
         assertThat(stringKeys(dataProperties(catalog.require("rg.solution.compose"))))
                 .contains("solutionRef", "inputContract", "scenarioTreeValid",
-                        "pureFunctionProjection", "authoringContextFingerprint");
+                        "pureFunctionProjection", "precompiled", "graphNodeCount",
+                        "authoringContextFingerprint");
     }
 
     @SuppressWarnings("unchecked")

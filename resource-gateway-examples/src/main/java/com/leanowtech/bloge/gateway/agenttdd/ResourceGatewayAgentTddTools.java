@@ -168,7 +168,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
-        this.solutionTools = states == null ? null : new SolutionAgentTools(states, mapper);
+        this.solutionTools = states == null ? null : new SolutionAgentTools(states, mapper, projection);
     }
 
     /**
@@ -691,6 +691,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "RESOURCE_NOT_REGISTERED" -> "A referenced resource must be declared before composition.";
             case "REFERENCE_UNRESOLVED" -> "A referenced solution entity is unavailable in this scope.";
             case "SCENARIO_OUTLET_UNRESOLVED" -> "A scenario outlet is not declared by the solution.";
+            case "SCENARIO_TREE_CYCLE" -> "The scenario tree contains a cycle.";
+            case "SCENARIO_TREE_TOO_DEEP" -> "The scenario tree exceeds the configured depth.";
+            case "SCENARIO_BIND_INCOMPLETE" -> "A scenario outlet binding is incomplete.";
+            case "SCENARIO_HIT_NOT_UNIQUE" -> "More than one scenario rule matched.";
+            case "SOLUTION_LOWERING_FAILED" -> "The pure solution graph did not pass precompilation.";
+            case "SOLUTION_EXECUTION_UNAUTHORIZED" -> "Solution execution authority is required.";
             case "COMPILE_ERROR" -> "Compilation failed; inspect payload-free diagnostics.";
             case "SPECCING_NOT_EXECUTABLE" -> "A design-only asset is not executable.";
             case "GOLDEN_REQUIRES_APPROVAL" -> "Business approval is required for the golden Oracle.";

@@ -36,6 +36,8 @@ public class OperatorLibraryValidator {
             "httpResource",
             "bloge:decisionTable",
             "bloge:transform",
+            "bloge:scenarioCall",
+            "bloge:instructionCall",
             VisualGraphPublicationOperator.NAME
     );
     private static final Set<String> RESERVED_OPERATOR_REF_PREFIXES = Set.of(
@@ -46,6 +48,8 @@ public class OperatorLibraryValidator {
             "httpResource",
             "bloge:decisionTable",
             "bloge:transform",
+            "bloge:scenarioCall",
+            "bloge:instructionCall",
             VisualGraphPublicationOperator.NAME
     );
     private static final Set<String> RESERVED_EXECUTABLE_OPERATOR_REF_PREFIXES = Set.of(

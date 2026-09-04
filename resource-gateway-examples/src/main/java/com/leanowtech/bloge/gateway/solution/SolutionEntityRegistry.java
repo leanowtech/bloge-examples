@@ -16,6 +16,7 @@ import java.util.Objects;
  * stores the full implementation-bearing definition while computing a separate business contract
  * fingerprint that excludes mutable bindings.</p>
  */
+@org.springframework.stereotype.Service
 public final class SolutionEntityRegistry {
     /** Durable asset kind for Feature contracts. */
     public static final String FEATURE = "SOLUTION_FEATURE";
@@ -90,6 +91,15 @@ public final class SolutionEntityRegistry {
     /** Stores the next Solution revision and returns its server-owned identity envelope. */
     public RegisteredEntity upsertSolution(
             String scopeKey, SolutionContract contract, boolean speccing) {
+        return upsertSolution(scopeKey, contract, speccing, null);
+    }
+
+    /** Stores a Solution contract together with its server-precompiled graph projection. */
+    public RegisteredEntity upsertSolution(
+            String scopeKey,
+            SolutionContract contract,
+            boolean speccing,
+            com.leanowtech.bloge.gateway.visual.draft.GraphDraft loweredDraft) {
         String contractFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 mapper, contract.contractIdentity(), MAX_BYTES);
         ObjectNode data = mapper.createObjectNode();
@@ -99,6 +109,7 @@ public final class SolutionEntityRegistry {
         data.set("contract", mapper.valueToTree(contract));
         data.put("contractFingerprint", contractFingerprint);
         data.put("speccing", speccing);
+        if (loweredDraft != null) data.set("loweredDraft", mapper.valueToTree(loweredDraft));
         AgentTddStoredAsset stored = states.save(scopeKey, SOLUTION, contract.solutionRef(), data);
         return new RegisteredEntity(
                 "SOLUTION", contract.solutionRef(), stored.revision(), contractFingerprint,
@@ -118,6 +129,11 @@ public final class SolutionEntityRegistry {
     /** Resolves and decodes one Instruction inside the exact authenticated scope. */
     public InstructionContract requireInstruction(String scopeKey, String instructionRef) {
         return require(scopeKey, INSTRUCTION, instructionRef, InstructionContract.class);
+    }
+
+    /** Resolves one Solution contract inside the exact authenticated scope. */
+    public SolutionContract requireSolution(String scopeKey, String solutionRef) {
+        return require(scopeKey, SOLUTION, solutionRef, SolutionContract.class);
     }
 
     private <T> T require(String scopeKey, String kind, String ref, Class<T> type) {

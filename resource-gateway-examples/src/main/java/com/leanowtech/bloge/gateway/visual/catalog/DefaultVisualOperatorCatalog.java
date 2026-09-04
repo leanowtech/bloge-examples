@@ -790,7 +790,10 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     private static List<OperatorDefinition> nativeOperators() {
-        return List.of(httpResource(), decisionTable(), transform());
+        ArrayList<OperatorDefinition> operators = new ArrayList<>(
+                List.of(httpResource(), decisionTable(), transform()));
+        operators.addAll(com.leanowtech.bloge.gateway.solution.SolutionOperatorDefinitions.all());
+        return List.copyOf(operators);
     }
 
     private static OperatorDefinition httpResource() {

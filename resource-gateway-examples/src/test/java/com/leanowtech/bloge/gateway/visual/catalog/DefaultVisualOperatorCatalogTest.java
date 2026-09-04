@@ -42,6 +42,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DefaultVisualOperatorCatalogTest {
 
     @Test
+    void exposesSolutionDispatchOperatorsAsReservedBuiltIns() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+
+        assertThat(catalog.find("bloge:scenarioCall")).isPresent().get()
+                .satisfies(operator -> {
+                    assertThat(operator.capabilities().effect()).isEqualTo("PURE");
+                    assertThat(operator.lowering().operatorRef()).isEqualTo("scenarioCall");
+                });
+        assertThat(catalog.find("bloge:instructionCall")).isPresent().get()
+                .satisfies(operator -> {
+                    assertThat(operator.capabilities().effect()).isEqualTo("MIXED");
+                    assertThat(operator.lowering().operatorRef()).isEqualTo("instructionCall");
+                });
+    }
+
+    @Test
     void projectsResourceDescriptorAsSchemaAwareVirtualOperator() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
 

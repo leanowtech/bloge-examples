@@ -28,6 +28,27 @@ class AgentDslAuthoringSupportTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
+    void suppliesFourEntityContractsAndWorkedSourcesToAnIsolatedCodingAgent() {
+        AgentDslAuthoringSupport support = support(List.of(), List.of());
+
+        DslReferenceSnapshot reference = support.reference(new DslReferenceRequest(
+                List.of(), List.of("solution-authoring"), List.of(), true), identity("project-a"));
+
+        assertThat(reference.topics().getFirst().rules())
+                .extracting(DslReferenceSnapshot.Rule::ruleId)
+                .contains("FEATURE_CONTRACT", "SCENARIO_CONTRACT", "INSTRUCTION_CONTRACT",
+                        "SOLUTION_CONTRACT", "PURE_FUNCTION_BOUNDARY");
+        assertThat(reference.examples()).extracting(DslReferenceSnapshot.Example::exampleId)
+                .containsExactly("solution-feature-contract", "solution-instruction-contract",
+                        "solution-scenario-contract", "solution-solution-contract");
+        assertThat(reference.examples()).extracting(DslReferenceSnapshot.Example::source)
+                .anySatisfy(source -> assertThat(source)
+                        .contains("evaluationKind", "determinism", "evaluationRef"))
+                .anySatisfy(source -> assertThat(source)
+                        .contains("writeGovernance", "reconciliationAdapterRef"));
+    }
+
+    @Test
     void emptyLibraryRefsExposeBuiltInsAndScopedResourcesWithoutRuntimeMaterial() {
         OperatorDefinition builtIn = operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted());
         OperatorDefinition library = operator("ride:lookup", "ride-policy", OperatorDefinition.Policy.unrestricted());

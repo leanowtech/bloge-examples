@@ -33,7 +33,7 @@ public final class AgentDslAuthoringSupport {
     static final int MAX_TOPICS = 20;
     static final int MAX_OPERATOR_REFS = 256;
     static final int MAX_FUNCTIONS = 256;
-    static final int MAX_EXAMPLES = 8;
+    static final int MAX_EXAMPLES = 16;
     static final int MAX_RESPONSE_BYTES = 1024 * 1024;
     private static final ThreadPoolExecutor PREVIEW_EXECUTOR = new ThreadPoolExecutor(
             4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16),

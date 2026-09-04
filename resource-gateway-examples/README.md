@@ -5645,6 +5645,16 @@ remain untouched.
 
 ### Try Contract And Scenario Authoring
 
+The Agent-facing solution authoring path is separate from the legacy graph editor. The
+`solution-authoring` reference topic teaches an isolated MCP client the bounded Feature, Scenario,
+Instruction, and Solution fragments; a business user never needs to supply BLOGE DSL. At
+`rg.solution.compose`, the server resolves the complete scenario tree, rejects cycles, excessive
+depth, missing exits, and incomplete instruction bindings, and lowers an accepted solution through
+the production DSL importer into exactly `scenarioCall -> instructionCall`. Scenario evaluation is
+pure. During simulation, WRITE instructions return a contract-shaped stub and cannot reach the
+dispatch channel; the integration contract fixes `realExternalCalls` at zero. Feature collection
+and trusted runtime invocation are deliberately outside this authoring phase.
+
 1. Start the demo and open `http://localhost:8080/author/`.
 2. Load one of the built-in complex canvas examples. Its graph Contract and table cases are
    projected automatically.

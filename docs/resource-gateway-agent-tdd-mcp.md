@@ -252,6 +252,13 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 业务人员只核对业务流程、规则表和标准案例。不要为了绕过失败而让业务人员提供 DSL。
 
+面向 v1.4.4 四实体创作时，Codex 应请求 `solution-authoring` 主题。该参考包已给出
+Feature、Scenario、Instruction、Solution 的服务端权威约束和可编译片段；Codex 根据业务意图
+生成四实体文档，不向业务人员索要 BLOGE DSL。`rg.solution.compose` 会在服务端对完整
+场景树做引用、无环、深度和指令绑定校验，然后降级为固定的
+`scenarioCall -> instructionCall` 纯函数图。模拟期的 WRITE 指令只生成结构化桩结果，
+不进入真实派发通道。
+
 ### 5.2 用例与 Oracle
 
 - `rg.simulate.cases` 必须二选一：只传 `caseSetRef`，或只传临时 `rows`。
