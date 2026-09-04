@@ -55,9 +55,11 @@ public final class McpToolCatalog {
                         "idempotencyKey", string()),
                 List.of("resourceId", "method", "urlTemplate", "payloadSchema", "idempotencyKey")));
         values.add(tool("rg.feature.compose", "Compose feature", "Create or replace a Feature graph draft.",
-                McpToolImpact.DRAFT_WRITE, composeProperties(), List.of("featureRef", "graph", "libraryRefs", "idempotencyKey")));
+                McpToolImpact.DRAFT_WRITE, composeProperties(), List.of("featureRef", "graph", "libraryRefs",
+                        "authoringContextFingerprint", "authoringReceiptFingerprint", "idempotencyKey")));
         values.add(tool("rg.tool.compose", "Compose tool", "Create or replace a Tool graph draft.",
-                McpToolImpact.DRAFT_WRITE, composeProperties(), List.of("toolRef", "graph", "libraryRefs", "idempotencyKey")));
+                McpToolImpact.DRAFT_WRITE, composeProperties(), List.of("toolRef", "graph", "libraryRefs",
+                        "authoringContextFingerprint", "authoringReceiptFingerprint", "idempotencyKey")));
         values.add(tool("rg.tool.setInstruction", "Set tool instruction", "Set Agent semantics; examples remain golden-derived.",
                 McpToolImpact.DRAFT_WRITE,
                 props("toolRef", string(), "instruction", instruction(), "idempotencyKey", string()),
@@ -80,9 +82,11 @@ public final class McpToolCatalog {
                 List.of("caseSetRef", "caseId", "nodeId", "behavior", "idempotencyKey")));
 
         values.add(tool("rg.dsl.preview", "Preview DSL", "Compile with an explicit library contract context.",
-                McpToolImpact.READ, previewProperties(), List.of("source", "libraryRefs")));
+                McpToolImpact.READ, previewProperties(), List.of("source", "libraryRefs",
+                        "authoringContextFingerprint")));
         values.add(tool("rg.gate.check", "Check merge gate", "Evaluate compile, contract and honest-verdict gates.",
-                McpToolImpact.READ, previewProperties(), List.of("source", "libraryRefs")));
+                McpToolImpact.READ, previewProperties(), List.of("source", "libraryRefs",
+                        "authoringContextFingerprint")));
 
         values.add(tool("rg.feature.rehearse", "Rehearse feature", "Run fixture-only Feature rehearsal with zero egress.",
                 McpToolImpact.EXECUTE,
@@ -158,11 +162,13 @@ public final class McpToolCatalog {
 
     private static Map<String, Object> composeProperties() {
         return props("featureRef", string(), "toolRef", string(), "graph", graphSource(),
-                "libraryRefs", stringArray(), "idempotencyKey", string());
+                "libraryRefs", stringArray(), "authoringContextFingerprint", string(),
+                "authoringReceiptFingerprint", string(), "idempotencyKey", string());
     }
 
     private static Map<String, Object> previewProperties() {
-        return props("source", Map.of("oneOf", List.of(string(), graphSource())), "libraryRefs", stringArray());
+        return props("source", Map.of("oneOf", List.of(string(), graphSource())),
+                "libraryRefs", stringArray(), "authoringContextFingerprint", string());
     }
 
     private static Map<String, Object> schema(Map<String, Object> properties, List<String> required) {
@@ -300,6 +306,76 @@ public final class McpToolCatalog {
                 List.of("dimensions"));
     }
 
+    /** Strict payload-free schema for a server-owned DSL authoring receipt. */
+    private static Map<String, Object> dslAuthoringReceiptData() {
+        Map<String, Object> context = structuredObject(props(
+                "fingerprint", string(), "status", enumString("CURRENT"),
+                "languageVersion", string(), "compilerProfile", string()),
+                List.of("fingerprint", "status", "languageVersion", "compilerProfile"));
+        Map<String, Object> stage = structuredObject(props(
+                "phase", enumString("CONTEXT", "PARSE", "RESOLVE", "TYPE_CHECK", "SEMANTIC_COMPILE",
+                        "LINT", "PROJECT", "ROUND_TRIP", "GATE"),
+                "status", enumString("PASS", "FAIL", "NOT_RUN")), List.of("phase", "status"));
+        Map<String, Object> span = structuredObject(props(
+                "known", bool(), "startLine", integer(), "startColumn", integer(),
+                "endLine", integer(), "endColumn", integer()),
+                List.of("known", "startLine", "startColumn", "endLine", "endColumn"));
+        Map<String, Object> fixHint = structuredObject(props(
+                "kind", string(), "candidate", string(), "reasonCode", string()),
+                List.of("kind", "candidate", "reasonCode"));
+        Map<String, Object> authoringDiagnostic = structuredObject(props(
+                "level", enumString("ERROR", "WARNING", "INFO"), "phase", string(), "code", string(),
+                "target", string(), "span", span, "safeSummary", string(),
+                "expectedKinds", stringArray(), "referenceRefs", stringArray(),
+                "fixHints", arrayOf(fixHint), "resolutionClass", enumString(
+                        "AGENT_CAN_REVISE", "HUMAN_OR_PLATFORM_REQUIRED", "PLATFORM_MAINTAINER"),
+                "retryable", bool(), "diagnosticFingerprint", string()),
+                List.of("level", "phase", "code", "target", "span", "safeSummary",
+                        "expectedKinds", "referenceRefs", "fixHints", "resolutionClass",
+                        "retryable", "diagnosticFingerprint"));
+        Map<String, Object> projection = structuredObject(props(
+                "schemaVersion", string(), "status", enumString("PROJECTED", "REPAIR_REQUIRED"),
+                "nodeCount", integer(), "edgeCount", integer(), "unsupportedSyntaxCount", integer(),
+                "missingOperatorCount", integer(), "missingFunctionCount", integer(),
+                "sourceSemanticFingerprint", string()),
+                List.of("schemaVersion", "status", "nodeCount", "edgeCount", "unsupportedSyntaxCount",
+                        "missingOperatorCount", "missingFunctionCount", "sourceSemanticFingerprint"));
+        Map<String, Object> roundTrip = structuredObject(props(
+                "status", string(), "sourceSemanticFingerprint", string(),
+                "regeneratedSemanticFingerprint", string(), "driftKinds", stringArray()),
+                List.of("status", "sourceSemanticFingerprint", "regeneratedSemanticFingerprint", "driftKinds"));
+        Map<String, Object> phaseCount = structuredObject(props(
+                "phase", string(), "count", integer()), List.of("phase", "count"));
+        Map<String, Object> summary = structuredObject(props(
+                "total", integer(), "truncated", bool(), "byPhase", arrayOf(phaseCount)),
+                List.of("total", "truncated", "byPhase"));
+        return props(
+                "authoringContext", context, "stages", arrayOf(stage),
+                "technicalAcceptance", enumString("ACCEPTED", "REVISE", "REFETCH_REFERENCE", "PLATFORM_DEFECT"),
+                "projection", projection, "roundTrip", roundTrip,
+                "authoringDiagnostics", arrayOf(authoringDiagnostic), "diagnosticSummary", summary,
+                "nextAction", string(), "authoringReceiptFingerprint", string());
+    }
+
+    /** Complete strict output schema for preview and gate responses. */
+    private static Map<String, Object> dslAuthoringOutput() {
+        LinkedHashMap<String, Object> properties = new LinkedHashMap<>(dslAuthoringReceiptData());
+        properties.put("accepted", bool());
+        properties.put("compileAccepted", bool());
+        properties.put("rewriteGate", structuredObject(props(
+                "allowed", bool(), "decision", enumString("ALLOW", "BLOCK")),
+                List.of("allowed", "decision")));
+        properties.put("speccing", bool());
+        properties.put("executable", bool());
+        properties.put("libraryRefs", stringArray());
+        properties.put("honestVerdict", honestVerdict());
+        return structuredObject(Map.copyOf(properties), List.of(
+                "accepted", "compileAccepted", "speccing", "executable", "libraryRefs",
+                "authoringContext", "stages", "technicalAcceptance", "projection", "roundTrip",
+                "authoringDiagnostics", "diagnosticSummary", "nextAction",
+                "authoringReceiptFingerprint", "honestVerdict"));
+    }
+
     /** Strict, payload-free authoring reference returned by the DSL reference tool. */
     private static Map<String, Object> dslReference() {
         Map<String, Object> rule = structuredObject(
@@ -430,8 +506,10 @@ public final class McpToolCatalog {
                     List.of("resourceId", "registered", "host", "method", "contractId"));
             case "rg.feature.compose", "rg.tool.compose" -> structuredObject(props("assetRef", string(),
                     "assetKind", string(), "revision", integer(), "speccing", bool(), "executable", bool(),
-                    "libraryRefs", stringArray(), "honestVerdict", honestVerdict()),
-                    List.of("assetRef", "revision", "speccing", "executable"));
+                    "libraryRefs", stringArray(), "authoringContextFingerprint", string(),
+                    "authoringReceiptFingerprint", string(), "honestVerdict", honestVerdict()),
+                    List.of("assetRef", "revision", "speccing", "executable",
+                            "authoringContextFingerprint", "authoringReceiptFingerprint"));
             case "rg.tool.setInstruction" -> structuredObject(props("toolRef", string(), "revision", integer(),
                     "instructionFingerprint", string(), "examplesDerivedFromGolden", bool(),
                     "honestVerdict", honestVerdict()), List.of("toolRef", "revision"));
@@ -446,10 +524,7 @@ public final class McpToolCatalog {
                     "caseId", string(), "nodeId", string(), "behavior", behavior(), "revision", integer(),
                     "honestVerdict", honestVerdict()),
                     List.of("caseSetRef", "caseId", "nodeId"));
-            case "rg.dsl.preview", "rg.gate.check" -> structuredObject(props("accepted", bool(),
-                    "compileAccepted", bool(), "rewriteGate", businessObject(), "speccing", bool(),
-                    "executable", bool(), "libraryRefs", stringArray(), "projection", businessObject(),
-                    "honestVerdict", honestVerdict()), List.of("libraryRefs"));
+            case "rg.dsl.preview", "rg.gate.check" -> dslAuthoringOutput();
             case "rg.feature.rehearse", "rg.simulate", "rg.tool.baseline" -> structuredObject(props(
                     "toolRef", string(), "goldenSetId", string(), "evidenceFingerprint", string(), "draftRevision", integer(),
                     "caseSetRevision", integer(),

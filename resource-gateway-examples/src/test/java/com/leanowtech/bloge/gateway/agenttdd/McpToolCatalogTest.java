@@ -139,6 +139,32 @@ class McpToolCatalogTest {
                 .doesNotContain("urlTemplate", "description", "examples", "diagnostics", "lowering");
     }
 
+    @Test
+    void requiresContextAndReceiptAndAdvertisesOnlySafeAuthoringDiagnostics() {
+        McpToolCatalog catalog = new McpToolCatalog();
+        McpToolDefinition preview = catalog.require("rg.dsl.preview");
+        McpToolDefinition compose = catalog.require("rg.tool.compose");
+
+        assertThat(((List<?>) preview.inputSchema().get("required")).stream().map(Object::toString).toList())
+                .contains("source", "libraryRefs", "authoringContextFingerprint");
+        assertThat(((List<?>) compose.inputSchema().get("required")).stream().map(Object::toString).toList())
+                .contains("graph", "libraryRefs", "authoringContextFingerprint",
+                        "authoringReceiptFingerprint");
+        Map<?, ?> previewData = dataProperties(preview);
+        assertThat(stringKeys(previewData)).contains(
+                "authoringContext", "stages", "technicalAcceptance", "projection", "roundTrip",
+                "authoringDiagnostics", "diagnosticSummary", "nextAction",
+                "authoringReceiptFingerprint");
+        Map<?, ?> diagnostic = (Map<?, ?>) ((Map<?, ?>) previewData.get("authoringDiagnostics")).get("items");
+        assertThat(stringKeys((Map<?, ?>) diagnostic.get("properties"))).containsExactlyInAnyOrder(
+                "level", "phase", "code", "target", "span", "safeSummary", "expectedKinds",
+                "referenceRefs", "fixHints", "resolutionClass", "retryable", "diagnosticFingerprint");
+        assertThat(stringKeys((Map<?, ?>) diagnostic.get("properties")))
+                .doesNotContain("message", "metadata", "source", "generatedDsl");
+        Map<?, ?> projection = (Map<?, ?>) previewData.get("projection");
+        assertThat(projection.get("additionalProperties")).isEqualTo(false);
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<?, ?> properties(Map<String, Object> schema, String property) {
         Map<String, Object> selected = (Map<String, Object>) schemaProperty(schema, property);

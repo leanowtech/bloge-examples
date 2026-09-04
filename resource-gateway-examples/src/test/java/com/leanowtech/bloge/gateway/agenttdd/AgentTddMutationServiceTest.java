@@ -145,6 +145,61 @@ class AgentTddMutationServiceTest {
     }
 
     @Test
+    void mcpComposeRevalidatesAndPersistsTheExactAcceptedAuthoringReceipt() {
+        Fixture fixture = hardenedFixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "hardened-lib-1")));
+        JsonNode gate = authoringGate(fixture, shippingDsl(), List.of("shipping"));
+        assertThat(gate.at("/data/accepted").asBoolean()).as(gate.toPrettyString()).isTrue();
+        JsonNode compose = mapper.valueToTree(Map.of(
+                "toolRef", "shipping-tool", "libraryRefs", List.of("shipping"),
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "authoringContextFingerprint", gate.at("/data/authoringContext/fingerprint").asText(),
+                "authoringReceiptFingerprint", gate.at("/data/authoringReceiptFingerprint").asText(),
+                "idempotencyKey", "hardened-compose-1"));
+
+        JsonNode composed = invoke(fixture, "rg.tool.compose", compose);
+
+        assertThat(composed.path("ok").asBoolean()).as(composed.toPrettyString()).isTrue();
+        assertThat(composed.at("/data/authoringContextFingerprint").asText())
+                .isEqualTo(gate.at("/data/authoringContext/fingerprint").asText());
+        assertThat(composed.at("/data/authoringReceiptFingerprint").asText())
+                .isEqualTo(gate.at("/data/authoringReceiptFingerprint").asText());
+        assertThat(fixture.drafts().find("shipping-tool")).hasValueSatisfying(draft ->
+                assertThat(draft.visualLayout().toString())
+                        .contains(gate.at("/data/authoringReceiptFingerprint").asText()));
+    }
+
+    @Test
+    void mcpComposeRejectsChangedSourceForgedReceiptAndClientGraphWithoutWriting() {
+        Fixture fixture = hardenedFixture();
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", minimalLibraryYaml(), "idempotencyKey", "hardened-lib-2")));
+        JsonNode gate = authoringGate(fixture, shippingDsl(), List.of("shipping"));
+        Map<String, Object> base = Map.of(
+                "toolRef", "changed-tool", "libraryRefs", List.of("shipping"),
+                "authoringContextFingerprint", gate.at("/data/authoringContext/fingerprint").asText(),
+                "authoringReceiptFingerprint", gate.at("/data/authoringReceiptFingerprint").asText());
+        java.util.LinkedHashMap<String, Object> changed = new java.util.LinkedHashMap<>(base);
+        changed.put("graph", Map.of("sourceId", "shipping.bloge", "dsl",
+                shippingDsl().replace("shippingQuote", "changedQuote")));
+        changed.put("idempotencyKey", "changed-compose");
+
+        JsonNode changedResult = invoke(fixture, "rg.tool.compose", mapper.valueToTree(changed));
+        java.util.LinkedHashMap<String, Object> arbitrary = new java.util.LinkedHashMap<>(base);
+        arbitrary.put("toolRef", "arbitrary-tool");
+        arbitrary.put("graph", mapper.valueToTree(decisionDraft()));
+        arbitrary.put("idempotencyKey", "arbitrary-compose");
+        JsonNode arbitraryResult = invoke(fixture, "rg.tool.compose", mapper.valueToTree(arbitrary));
+
+        assertThat(changedResult.at("/error/code").asText()).isEqualTo("DSL_AUTHORING_RECEIPT_STALE");
+        assertThat(changedResult.at("/error/retryable").asBoolean()).isTrue();
+        assertThat(arbitraryResult.at("/error/code").asText()).isEqualTo("SCHEMA_NONCONFORMANT");
+        assertThat(fixture.drafts().find("changed-tool")).isEmpty();
+        assertThat(fixture.drafts().find("arbitrary-tool")).isEmpty();
+    }
+
+    @Test
     void goldenExpectationRemainsPendingAndDependencyBehaviorIsBounded() {
         Fixture fixture = fixtureWithTool();
         JsonNode upsert = mapper.valueToTree(Map.of(
@@ -371,7 +426,25 @@ class AgentTddMutationServiceTest {
         return fixture;
     }
 
+    private JsonNode authoringGate(Fixture fixture, String dsl, List<String> libraryRefs) {
+        JsonNode reference = invoke(fixture, "rg.dsl.reference.get",
+                mapper.valueToTree(Map.of("libraryRefs", libraryRefs)));
+        return invoke(fixture, "rg.gate.check", mapper.valueToTree(Map.of(
+                "source", Map.of("sourceId", "shipping.bloge", "dsl", dsl),
+                "libraryRefs", libraryRefs,
+                "authoringContextFingerprint",
+                reference.at("/data/authoringContextFingerprint").asText())));
+    }
+
+    private Fixture hardenedFixture() {
+        return fixture(true);
+    }
+
     private Fixture fixture() {
+        return fixture(false);
+    }
+
+    private Fixture fixture(boolean hardened) {
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         var catalog = new DefaultVisualOperatorCatalog(
@@ -385,9 +458,13 @@ class AgentTddMutationServiceTest {
         AuthoringPreviewService authoring = new AuthoringPreviewService(
                 new AuthoringCompiler(mapper, new OperatorLibraryValidator()), libraries, mapper);
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
-        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
-                libraries, drafts, mapper, projection, simulation,
-                states, authoring);
+        ResourceGatewayAgentTddTools tools = hardened
+                ? new ResourceGatewayAgentTddTools(
+                        libraries, drafts, mapper, projection, simulation,
+                        states, authoring, null, catalog)
+                : new ResourceGatewayAgentTddTools(
+                        libraries, drafts, mapper, projection, simulation,
+                        states, authoring);
         return new Fixture(tools, libraries, drafts, states);
     }
 

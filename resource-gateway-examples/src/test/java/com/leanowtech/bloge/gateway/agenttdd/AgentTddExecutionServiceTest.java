@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,14 +45,14 @@ class AgentTddExecutionServiceTest {
     @Test
     void previewsDslAgainstExplicitDesignOnlyLibraryWithoutRuntimeBinding() {
         Fixture fixture = fixture();
-        JsonNode arguments = mapper.valueToTree(Map.of(
+        JsonNode arguments = authoringArguments(fixture, Map.of(
                 "source", Map.of("sourceId", "eligibility.bloge", "dsl", eligibilityDsl()),
                 "libraryRefs", List.of("risk")));
 
         JsonNode response = mapper.valueToTree(fixture.tools().invoke("rg.dsl.preview", arguments, identity()));
 
         assertThat(response.path("ok").asBoolean()).isTrue();
-        assertThat(response.path("data").path("projection").path("coverage")
+        assertThat(response.path("data").path("projection")
                 .path("missingOperatorCount").asInt()).isZero();
         assertThat(response.path("data").path("speccing").asBoolean())
                 .as(response.toPrettyString()).isTrue();
@@ -163,7 +164,7 @@ class AgentTddExecutionServiceTest {
     @Test
     void previewAndGateNeverExposeParserMessagesMetadataOrRegeneratedDsl() {
         Fixture fixture = fixture();
-        JsonNode arguments = mapper.valueToTree(Map.of(
+        JsonNode arguments = authoringArguments(fixture, Map.of(
                 "source", Map.of("sourceId", "secret.bloge",
                         "dsl", "graph broken { node x : customer-secret ("),
                 "libraryRefs", List.of()));
@@ -175,7 +176,7 @@ class AgentTddExecutionServiceTest {
 
         assertThat(preview).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
         assertThat(gate).doesNotContain("customer-secret", "message", "metadata", "generatedDsl");
-        assertThat(preview).contains("visual.dslImport.parseFailed", "sourceMap");
+        assertThat(preview).contains("DSL_PARSE_EXPECTED_CONSTRUCT", "REVISE_SOURCE");
     }
 
     @Test
@@ -270,18 +271,19 @@ class AgentTddExecutionServiceTest {
         Fixture fixture = fixture();
         JsonNode arguments = mapper.valueToTree(Map.of(
                 "source", Map.of("sourceId", "eligibility.bloge", "dsl", eligibilityDsl()),
-                "libraryRefs", List.of("missing")));
+                "libraryRefs", List.of("missing"),
+                "authoringContextFingerprint", "sha256:stale"));
 
         JsonNode response = mapper.valueToTree(fixture.tools().invoke("rg.dsl.preview", arguments, identity()));
 
         assertThat(response.path("ok").asBoolean()).isFalse();
-        assertThat(response.path("error").path("code").asText()).isEqualTo("LIBRARY_NOT_FOUND");
+        assertThat(response.path("error").path("code").asText()).isEqualTo("DSL_LIBRARY_NOT_VISIBLE");
     }
 
     @Test
     void gatePublishesFourDimensionalProofLimits() {
         Fixture fixture = fixture();
-        JsonNode arguments = mapper.valueToTree(Map.of(
+        JsonNode arguments = authoringArguments(fixture, Map.of(
                 "source", Map.of("sourceId", "simple.bloge", "dsl", """
                         graph simple {
                           input { value: String }
@@ -450,8 +452,19 @@ class AgentTddExecutionServiceTest {
                 new VisualSimulationKernelAdapter(mapper), VisualProductionAdmissionPolicy.nonProductionTest());
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
-                libraries, drafts, mapper, projection, simulation);
+                libraries, drafts, mapper, projection, simulation, null, null, null, catalog);
         return new Fixture(tools, drafts, projection, libraries, simulation, catalog);
+    }
+
+    private JsonNode authoringArguments(Fixture fixture, Map<String, Object> base) {
+        @SuppressWarnings("unchecked")
+        List<String> refs = (List<String>) base.get("libraryRefs");
+        JsonNode reference = mapper.valueToTree(fixture.tools().invoke("rg.dsl.reference.get",
+                mapper.valueToTree(Map.of("libraryRefs", refs)), identity()));
+        LinkedHashMap<String, Object> arguments = new LinkedHashMap<>(base);
+        arguments.put("authoringContextFingerprint",
+                reference.at("/data/authoringContextFingerprint").asText());
+        return mapper.valueToTree(arguments);
     }
 
     private static String eligibilityDsl() {

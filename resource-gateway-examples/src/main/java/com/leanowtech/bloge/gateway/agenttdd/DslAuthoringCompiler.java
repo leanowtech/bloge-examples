@@ -126,8 +126,13 @@ final class DslAuthoringCompiler {
             failedPhase = runCollected("LINT", byPhase, stages, emitted);
         }
         if (failedPhase == null) failedPhase = runCollected("PROJECT", byPhase, stages, emitted);
+        boolean designOnly = projection.draft().operatorSnapshots().values().stream()
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(operator -> "design".equals(operator.lowering().mode()));
         if (failedPhase == null) {
-            if (!projection.roundTrip().supported()) {
+            if (!projection.roundTrip().supported() && designOnly) {
+                byPhase.get("ROUND_TRIP").add(diagnostics.designOnlyRoundTripDeferred());
+            } else if (!projection.roundTrip().supported()) {
                 byPhase.get("ROUND_TRIP").add(diagnostics.roundTripDrift());
             }
             failedPhase = runCollected("ROUND_TRIP", byPhase, stages, emitted);
@@ -138,7 +143,7 @@ final class DslAuthoringCompiler {
         boolean truncated = bounded.size() < deduplicated(emitted).size();
         boolean accepted = failedPhase == null;
         boolean platformDefect = bounded.stream().anyMatch(value ->
-                "PLATFORM_MAINTAINER".equals(value.resolutionClass()));
+                "ERROR".equals(value.level()) && "PLATFORM_MAINTAINER".equals(value.resolutionClass()));
         String acceptance = accepted ? "ACCEPTED" : platformDefect ? "PLATFORM_DEFECT" : "REVISE";
         String nextAction = accepted ? "CONTINUE_TO_REWRITE_GATE"
                 : platformDefect ? "REPORT_PLATFORM_DEFECT" : "REVISE_SOURCE";
@@ -148,9 +153,11 @@ final class DslAuthoringCompiler {
                 projection.roundTrip().generatedFingerprint());
         Map<String, Object> safeProjection = safeProjection(projection, safeSourceSemanticFingerprint);
         DslPreviewReceipt.RoundTrip roundTrip = new DslPreviewReceipt.RoundTrip(
-                projection.roundTrip().status(), safeSourceSemanticFingerprint,
+                designOnly && !projection.roundTrip().supported() ? "DEFERRED_DESIGN_ONLY"
+                        : projection.roundTrip().status(), safeSourceSemanticFingerprint,
                 safeGeneratedSemanticFingerprint,
-                projection.roundTrip().supported() ? List.of() : List.of("SEMANTIC_PROJECTION"));
+                projection.roundTrip().supported() ? List.of()
+                        : designOnly ? List.of("DESIGN_ONLY_OPERATOR") : List.of("SEMANTIC_PROJECTION"));
         DslPreviewReceipt.DiagnosticSummary summary = summary(bounded, truncated);
         String receiptFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "schemaVersion", "rg.dslAuthoringReceipt.v1",

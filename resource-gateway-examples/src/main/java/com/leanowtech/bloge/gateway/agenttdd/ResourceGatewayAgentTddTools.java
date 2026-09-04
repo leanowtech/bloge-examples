@@ -137,17 +137,18 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.catalog = catalog;
+        this.dslAuthoring = catalog == null ? null : new AgentDslAuthoringSupport(catalog, libraries, mapper);
         this.execution = projection == null || simulation == null
                 ? null
                 : new AgentTddExecutionService(
                         libraries, drafts, projection, simulation, mapper, states);
         this.mutations = states == null || authoring == null || projection == null
                 ? null
-                : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper);
+                : new AgentTddMutationService(libraries, drafts, states, authoring, projection, mapper,
+                        this.dslAuthoring);
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
-        this.dslAuthoring = catalog == null ? null : new AgentDslAuthoringSupport(catalog, libraries, mapper);
     }
 
     /**
@@ -196,8 +197,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.oracle.propose" -> executionSuccess(mutations().proposeOracle(safeArguments, identity));
             case "rg.scenario.setDependencyBehavior" -> executionSuccess(
                     mutations().setDependencyBehavior(safeArguments, identity));
-            case "rg.dsl.preview" -> executionSuccess(execution().preview(safeArguments));
-            case "rg.gate.check" -> executionSuccess(execution().gate(safeArguments));
+            case "rg.dsl.preview" -> executionSuccess(authoringPreview(safeArguments, identity, false));
+            case "rg.gate.check" -> executionSuccess(authoringPreview(safeArguments, identity, true));
             case "rg.simulate" -> executionSuccess(workflow == null
                     ? execution().simulate(safeArguments, identity)
                     : workflow.recordEvidence("rg.simulate", safeArguments,
@@ -214,7 +215,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             default -> failure("GATE_REJECTED", "The requested workflow operation is not available yet.");
             };
         } catch (AgentTddToolException failure) {
-            return failure(failure.code(), safeErrorMessage(failure.code()), failure.details());
+            return failure(failure.code(), safeErrorMessage(failure.code()), failure.details(), failure.retryable());
         }
     }
 
@@ -353,6 +354,77 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                         ? List.of("SPECCING_NOT_EXECUTABLE", "GREEN_BASELINE_ABSENT", "OWNER_SIGNOFF_ABSENT")
                         : List.of("GREEN_BASELINE_ABSENT", "OWNER_SIGNOFF_ABSENT")
         ));
+    }
+
+    /**
+     * Runs preview and merge-gate requests through the same immutable authoring compiler.
+     *
+     * <p>The response contains only the safe receipt projection. The internal graph projection is
+     * retained by the compiler for compose revalidation and is excluded from JSON serialization.</p>
+     */
+    private Map<String, Object> authoringPreview(JsonNode arguments,
+                                                 IntegrationRequestContext identity,
+                                                 boolean gate) {
+        JsonNode source = arguments.path("source");
+        String sourceId;
+        String dsl;
+        if (source.isTextual()) {
+            sourceId = "inline.bloge";
+            dsl = source.asText();
+        } else if (source.isObject()) {
+            sourceId = optionalText(source, "sourceId");
+            dsl = requiredText(source, "dsl");
+        } else {
+            throw new McpProtocolException(-32602, "source must be a string or DSL envelope");
+        }
+        List<String> refs = requiredStringList(arguments, "libraryRefs");
+        DslPreviewReceipt receipt = dslAuthoring().preview(new DslPreviewRequest(
+                sourceId, dsl, refs, requiredText(arguments, "authoringContextFingerprint")), identity);
+        boolean compileAccepted = receipt.stages().stream()
+                .filter(stage -> List.of("PARSE", "RESOLVE", "TYPE_CHECK", "SEMANTIC_COMPILE")
+                        .contains(stage.phase()))
+                .noneMatch(stage -> "FAIL".equals(stage.status()) || "NOT_RUN".equals(stage.status()));
+        boolean speccing = receipt.serverProjection().draft().operatorSnapshots().values().stream()
+                .filter(Objects::nonNull).anyMatch(ResourceGatewayAgentTddTools::designOnly);
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        result.put("accepted", receipt.accepted());
+        result.put("compileAccepted", compileAccepted);
+        if (gate) {
+            result.put("rewriteGate", Map.of(
+                    "allowed", receipt.accepted(),
+                    "decision", receipt.accepted() ? "ALLOW" : "BLOCK"));
+        }
+        result.put("speccing", speccing);
+        result.put("executable", !speccing);
+        result.put("libraryRefs", refs);
+        result.put("authoringContext", receipt.authoringContext());
+        result.put("stages", receipt.stages());
+        result.put("technicalAcceptance", receipt.technicalAcceptance());
+        result.put("projection", receipt.projection());
+        result.put("roundTrip", receipt.roundTrip());
+        result.put("authoringDiagnostics", receipt.authoringDiagnostics());
+        result.put("diagnosticSummary", receipt.diagnosticSummary());
+        result.put("nextAction", receipt.nextAction());
+        result.put("authoringReceiptFingerprint", receipt.authoringReceiptFingerprint());
+        result.put("honestVerdict", authoringVerdict(compileAccepted, gate));
+        return Map.copyOf(result);
+    }
+
+    /** Four proof dimensions prevent a technical gate from being presented as business proof. */
+    private static Map<String, Object> authoringVerdict(boolean compileAccepted, boolean gate) {
+        return Map.of("dimensions", List.of(
+                Map.of("name", "contract-conformance", "status", compileAccepted ? "PASS" : "FAIL",
+                        "proves", "Server authoring pipeline accepted the technical contract.",
+                        "doesNotProve", "Business correctness and runtime behavior."),
+                Map.of("name", "business-correctness", "status", "NOT_PROVEN",
+                        "proves", "No business claim.",
+                        "doesNotProve", "Approved GOLDEN cases have not been executed."),
+                Map.of("name", "dependency-isolation", "status", "NOT_PROVEN",
+                        "proves", "No dependency claim.",
+                        "doesNotProve", "Zero-egress evidence requires simulate or baseline."),
+                Map.of("name", "runtime-governance", "status", "NOT_PROVEN",
+                        "proves", gate ? "Technical gate only." : "Preview only.",
+                        "doesNotProve", "Attestation and owner signoff remain required.")));
     }
 
     private Map<String, Object> operatorCapability(OperatorLibrary library, OperatorDefinition operator) {
@@ -545,18 +617,25 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     }
 
     private static Map<String, Object> failure(String code, String message) {
-        return failure(code, message, Map.of());
+        return failure(code, message, Map.of(), false);
     }
 
     private static Map<String, Object> failure(String code,
                                                String message,
                                                Map<String, Object> details) {
+        return failure(code, message, details, false);
+    }
+
+    private static Map<String, Object> failure(String code,
+                                               String message,
+                                               Map<String, Object> details,
+                                               boolean retryable) {
         return Map.of(
                 "ok", false,
                 "error", Map.of(
                         "code", code,
                         "message", message,
-                        "retryable", false,
+                        "retryable", retryable,
                         "details", details == null ? Map.of() : Map.copyOf(details)),
                 "diagnostics", List.of()
         );
@@ -589,6 +668,9 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "SIM_REAL_CALL_DETECTED" -> "Simulation detected a forbidden real invocation.";
             case "COMBINATORIAL_CAP_EXCEEDED" -> "Scenario enumeration exceeds its configured cap.";
             case "DSL_AUTHORING_CONTEXT_REQUIRED" -> "Fetch the DSL authoring reference before compiling.";
+            case "DSL_AUTHORING_CONTEXT_STALE" -> "Refetch the DSL reference before compiling again.";
+            case "DSL_AUTHORING_RECEIPT_STALE" -> "Run the DSL gate again for this exact candidate.";
+            case "DSL_SOURCE_TOO_LARGE" -> "Narrow the DSL source before compiling again.";
             case "DSL_LIBRARY_NOT_VISIBLE" -> "A requested DSL library is not visible in this authoring scope.";
             case "DSL_REFERENCE_TOPIC_UNKNOWN" -> "A requested DSL reference topic is not supported.";
             case "DSL_REFERENCE_TOO_LARGE" -> "Narrow the requested DSL reference scope.";

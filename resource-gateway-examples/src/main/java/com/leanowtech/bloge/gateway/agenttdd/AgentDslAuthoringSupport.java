@@ -138,13 +138,13 @@ public final class AgentDslAuthoringSupport {
         if (request.authoringContextFingerprint().isBlank()) {
             throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_REQUIRED",
                     "Fetch the current DSL reference before previewing source.",
-                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"));
+                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
         }
         DslAuthoringContext context = contexts.resolve(request.libraryRefs(), identity);
         if (!context.fingerprint().equals(request.authoringContextFingerprint())) {
             throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_STALE",
                     "The DSL authoring context changed after the reference was fetched.",
-                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"));
+                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
         }
         return compiler.preview(request, context);
     }

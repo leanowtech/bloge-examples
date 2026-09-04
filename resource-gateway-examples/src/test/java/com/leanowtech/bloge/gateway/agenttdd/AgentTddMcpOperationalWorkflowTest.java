@@ -140,12 +140,10 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(populatedOverview.path("samples")).anySatisfy(sample ->
                 assertThat(sample.path("sourceKind").asText()).isEqualTo("SAMPLE"));
 
-        JsonNode composed = invoke("rg.tool.compose", Map.of(
-                "toolRef", TOOL_REF,
-                "graph", Map.of("sourceId", TOOL_REF + ".bloge", "dsl", policyGraph()),
-                "libraryRefs", List.of(LIBRARY_ID),
-                "idempotencyKey", "compose-profile-policy-test"), "AGENT_TDD_AUTHORING");
+        JsonNode composed = composeThroughAuthoringGate(
+                TOOL_REF, policyGraph(), List.of(LIBRARY_ID), "compose-profile-policy-test");
         assertThat(composed.at("/data/revision").asLong()).isEqualTo(1);
+        assertThat(composed.at("/data/authoringReceiptFingerprint").asText()).startsWith("sha256:");
 
         JsonNode composedCard = toolCard(agentGet("/api/agent-tdd/board"), TOOL_REF);
         assertThat(composedCard.at("/journey/stage").asText()).isEqualTo("ORCHESTRATION");
@@ -251,11 +249,8 @@ class AgentTddMcpOperationalWorkflowTest {
                 .map(value -> value.path("ref").asText())
                 .filter(value -> value.contains("user-service.getProfile"))
                 .findFirst().orElseThrow();
-        invoke("rg.tool.compose", Map.of(
-                "toolRef", toolRef,
-                "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", graph(bindingRef)),
-                "libraryRefs", List.of(), "idempotencyKey", "compose-attestation-failure"),
-                "AGENT_TDD_AUTHORING");
+        composeThroughAuthoringGate(
+                toolRef, graph(bindingRef), List.of(), "compose-attestation-failure");
         JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
                 "caseSetRef", caseSetRef, "toolRef", toolRef,
                 "rows", List.of(Map.of(
@@ -331,11 +326,8 @@ class AgentTddMcpOperationalWorkflowTest {
                 .map(value -> value.path("ref").asText())
                 .filter(value -> value.contains("wallet-service.getBalance"))
                 .findFirst().orElseThrow();
-        invoke("rg.tool.compose", Map.of(
-                "toolRef", toolRef,
-                "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", graph(bindingRef)),
-                "libraryRefs", List.of(),
-                "idempotencyKey", "compose-wallet-browser-test"), "AGENT_TDD_AUTHORING");
+        composeThroughAuthoringGate(
+                toolRef, graph(bindingRef), List.of(), "compose-wallet-browser-test");
         invoke("rg.scenario.upsertCases", Map.of(
                 "caseSetRef", caseSetRef,
                 "toolRef", toolRef,
@@ -480,6 +472,28 @@ class AgentTddMcpOperationalWorkflowTest {
         JsonNode result = response.getBody().at("/result/structuredContent");
         assertThat(result.path("ok").asBoolean()).as(response.getBody().toPrettyString()).isTrue();
         return result;
+    }
+
+    /** Follows the Codex authoring contract: reference, gate, then promote the exact receipt. */
+    private JsonNode composeThroughAuthoringGate(String toolRef,
+                                                 String dsl,
+                                                 List<String> libraryRefs,
+                                                 String idempotencyKey) {
+        JsonNode reference = invoke("rg.dsl.reference.get",
+                Map.of("libraryRefs", libraryRefs, "includeExamples", true), "AGENT_TDD_READ");
+        String contextFingerprint = reference.at("/data/authoringContextFingerprint").asText();
+        JsonNode gate = invoke("rg.gate.check", Map.of(
+                "source", Map.of("sourceId", toolRef + ".bloge", "dsl", dsl),
+                "libraryRefs", libraryRefs,
+                "authoringContextFingerprint", contextFingerprint), "AGENT_TDD_READ");
+        assertThat(gate.at("/data/accepted").asBoolean()).as(gate.toPrettyString()).isTrue();
+        return invoke("rg.tool.compose", Map.of(
+                "toolRef", toolRef,
+                "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", dsl),
+                "libraryRefs", libraryRefs,
+                "authoringContextFingerprint", contextFingerprint,
+                "authoringReceiptFingerprint", gate.at("/data/authoringReceiptFingerprint").asText(),
+                "idempotencyKey", idempotencyKey), "AGENT_TDD_AUTHORING");
     }
 
     private JsonNode reviewGet(String path) {

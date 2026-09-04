@@ -64,6 +64,7 @@ public final class AgentTddMutationService {
     private final ObjectMapper mapper;
     private final AuthoringDocumentDecoder decoder = new AuthoringDocumentDecoder();
     private final AgentTddDecisionScenarioEnumerator enumerator;
+    private final AgentDslAuthoringSupport dslAuthoring;
 
     /** Creates the mutation boundary over canonical registries and the Agent overlay repository. */
     public AgentTddMutationService(OperatorLibraryRegistry libraries,
@@ -72,6 +73,27 @@ public final class AgentTddMutationService {
                                    AuthoringPreviewService authoring,
                                    DslImportService projection,
                                    ObjectMapper mapper) {
+        this(libraries, drafts, states, authoring, projection, mapper, null);
+    }
+
+    /**
+     * Creates the mutation boundary with the authoritative Agent DSL compiler used by MCP compose.
+     *
+     * @param libraries canonical library registry
+     * @param drafts canonical graph repository
+     * @param states durable Agent workflow state
+     * @param authoring library authoring compiler
+     * @param projection legacy internal visual projection service
+     * @param mapper protocol mapper
+     * @param dslAuthoring authoritative scoped DSL authoring support, or {@code null} for legacy internal callers
+     */
+    public AgentTddMutationService(OperatorLibraryRegistry libraries,
+                                   GraphDraftRepository drafts,
+                                   AgentTddStateRepository states,
+                                   AuthoringPreviewService authoring,
+                                   DslImportService projection,
+                                   ObjectMapper mapper,
+                                   AgentDslAuthoringSupport dslAuthoring) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.states = Objects.requireNonNull(states, "states");
@@ -79,6 +101,7 @@ public final class AgentTddMutationService {
         this.projection = Objects.requireNonNull(projection, "projection");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.enumerator = new AgentTddDecisionScenarioEnumerator(mapper);
+        this.dslAuthoring = dslAuthoring;
     }
 
     /** Strictly decodes, compiles and stores one canonical visual operator library. */
@@ -131,9 +154,17 @@ public final class AgentTddMutationService {
             if (!graph.isObject()) {
                 throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "graph must be an object.");
             }
-            GraphDraft candidate = graph.hasNonNull("dsl")
-                    ? compileGraph(graph, refs)
-                    : convertGraph(graph);
+            GraphDraft candidate;
+            DslPreviewReceipt receipt = null;
+            if (graph.hasNonNull("dsl")) {
+                receipt = compileGraph(arguments, graph, refs, identity);
+                candidate = receipt.serverProjection().draft();
+            } else if (dslAuthoring == null) {
+                candidate = convertGraph(graph);
+            } else {
+                throw new AgentTddToolException("SCHEMA_NONCONFORMANT",
+                        "MCP compose accepts only a DSL graph envelope.");
+            }
             candidate = resolveRuntimeBindings(candidate);
             requireReferencedLibraries(candidate, refs);
             GraphDraft current = drafts.find(assetRef).orElse(null);
@@ -142,7 +173,8 @@ public final class AgentTddMutationService {
                         "DRAFT_NOT_FOUND", "Graph draft was not found in the authorized scope.");
             }
             long expectedRevision = current == null ? 0 : current.revision();
-            GraphDraft scoped = scoped(candidate, assetRef, expectedRevision, assetKind, refs, identity);
+            GraphDraft scoped = scoped(candidate, assetRef, expectedRevision, assetKind, refs, identity,
+                    receipt);
             GraphDraft stored = current == null
                     ? drafts.save(scoped)
                     : drafts.saveIfRevision(assetRef, expectedRevision, scoped)
@@ -154,9 +186,18 @@ public final class AgentTddMutationService {
             }
             boolean speccing = stored.operatorSnapshots().values().stream()
                     .filter(Objects::nonNull).anyMatch(AgentTddMutationService::designOnly);
-            return Map.of("assetRef", stored.draftId(), "assetKind", assetKind,
-                    "revision", stored.revision(), "libraryRefs", refs,
-                    "speccing", speccing, "executable", !speccing);
+            LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+            result.put("assetRef", stored.draftId());
+            result.put("assetKind", assetKind);
+            result.put("revision", stored.revision());
+            result.put("libraryRefs", refs);
+            result.put("speccing", speccing);
+            result.put("executable", !speccing);
+            if (receipt != null) {
+                result.put("authoringContextFingerprint", receipt.authoringContext().fingerprint());
+                result.put("authoringReceiptFingerprint", receipt.authoringReceiptFingerprint());
+            }
+            return Map.copyOf(result);
         });
     }
 
@@ -384,8 +425,23 @@ public final class AgentTddMutationService {
         return Map.of("name", name, "status", status, "limitation", limitation);
     }
 
-    private GraphDraft compileGraph(JsonNode graph, List<String> refs) {
+    private DslPreviewReceipt compileGraph(JsonNode arguments,
+                                           JsonNode graph,
+                                           List<String> refs,
+                                           IntegrationRequestContext identity) {
         String dsl = requiredText(graph, "dsl");
+        if (dslAuthoring != null) {
+            DslPreviewReceipt receipt = dslAuthoring.preview(new DslPreviewRequest(
+                    optionalText(graph, "sourceId"), dsl, refs,
+                    requiredText(arguments, "authoringContextFingerprint")), identity);
+            String suppliedReceipt = requiredText(arguments, "authoringReceiptFingerprint");
+            if (!receipt.accepted() || !receipt.authoringReceiptFingerprint().equals(suppliedReceipt)) {
+                throw new AgentTddToolException("DSL_AUTHORING_RECEIPT_STALE",
+                        "The candidate does not match an accepted current authoring receipt.",
+                        Map.of("nextAction", "RUN_GATE_AGAIN"), true);
+            }
+            return receipt;
+        }
         DslVisualProjection projected = projection.preview(new DslImportPreviewRequest(
                 optionalText(graph, "sourceId"), dsl, refs, List.of(), "agent-tdd-compose", Map.of()));
         boolean projectionStillDesign = projected.draft().operatorSnapshots().values().stream()
@@ -395,7 +451,17 @@ public final class AgentTddMutationService {
             throw new AgentTddToolException("GATE_REJECTED",
                     "Graph source did not pass compile and round-trip rewrite gates.");
         }
-        return projected.draft();
+        return legacyReceipt(projected, refs);
+    }
+
+    /** Adapts the legacy internal compose path without weakening the MCP authoring receipt path. */
+    private DslPreviewReceipt legacyReceipt(DslVisualProjection projection, List<String> refs) {
+        return new DslPreviewReceipt(
+                new DslPreviewReceipt.AuthoringContext("", "LEGACY_INTERNAL", "", ""),
+                List.of(), "ACCEPTED", Map.of(),
+                new DslPreviewReceipt.RoundTrip(projection.roundTrip().status(), "", "", List.of()),
+                List.of(), new DslPreviewReceipt.DiagnosticSummary(0, false, List.of()),
+                "CONTINUE_TO_COMPOSE", "", true, projection);
     }
 
     private GraphDraft convertGraph(JsonNode graph) {
@@ -524,9 +590,17 @@ public final class AgentTddMutationService {
                               long revision,
                               String kind,
                               List<String> refs,
-                              IntegrationRequestContext identity) {
+                              IntegrationRequestContext identity,
+                              DslPreviewReceipt receipt) {
         Map<String, Object> layout = new LinkedHashMap<>(source.visualLayout());
-        layout.put("agentTdd", Map.of("assetKind", kind, "libraryRefs", refs));
+        LinkedHashMap<String, Object> authoring = new LinkedHashMap<>();
+        authoring.put("assetKind", kind);
+        authoring.put("libraryRefs", refs);
+        if (receipt != null && !receipt.authoringReceiptFingerprint().isBlank()) {
+            authoring.put("authoringContextFingerprint", receipt.authoringContext().fingerprint());
+            authoring.put("authoringReceiptFingerprint", receipt.authoringReceiptFingerprint());
+        }
+        layout.put("agentTdd", Map.copyOf(authoring));
         return new GraphDraft(source.schemaVersion(), ref, revision, source.graphName(),
                 identity.tenantId(), identity.projectId(), identity.environmentId(), GraphDraft.STATUS_DRAFT,
                 source.inputSchema(), source.outputSchema(), source.nodes(), source.edges(), layout,

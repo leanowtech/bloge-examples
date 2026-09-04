@@ -181,6 +181,13 @@ final class DslSafeDiagnosticRegistry {
                 List.of(), List.of("topic:graph"), List.of(), "PLATFORM_MAINTAINER", false, true);
     }
 
+    /** Records that schema-only operators cannot be regenerated until a runtime lowering is bound. */
+    MappedDiagnostic designOnlyRoundTripDeferred() {
+        return mapped("INFO", "ROUND_TRIP", "DSL_ROUND_TRIP_DEFERRED_DESIGN_ONLY", "",
+                span(0, 0), "Round-trip lowering is deferred until design-only operators are bound.",
+                List.of(), List.of("topic:effects"), List.of(), "HUMAN_OR_PLATFORM_REQUIRED", false, false);
+    }
+
     /** Creates a payload-free platform defect without exposing the caught exception. */
     MappedDiagnostic platformDefect(String phase) {
         return mapped("ERROR", phase, "DSL_DIAGNOSTIC_UNCLASSIFIED", "", span(0, 0),
