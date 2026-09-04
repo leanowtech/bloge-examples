@@ -22,7 +22,8 @@ no-store review details at
 purpose mapping, workflow, review endpoints, publish gates, and verification commands.
 The repeatable [real Codex certification script](../scripts/certify-agent-tdd-codex.sh) requires a
 clean commit, performs a clean package, owns a fresh loopback RG process with ephemeral credentials, and runs Codex
-under OS denials covering the checkout, sibling Codex worktrees/memories/agents/skills/plugins, and the private trace. The reducer rejects
+under OS denials covering the checkout, sibling Codex worktrees/memories, and the private trace, while non-MCP Codex
+features are explicitly disabled. The reducer rejects
 every non-MCP action and correlates only post-upsert evidence for one accepted candidate through Tool and CaseSet
 creation, then emits a payload-free certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at

@@ -88,6 +88,7 @@ class AgentTddCodexCertificationArtifactTest {
 
         assertThat(script).contains(
                 "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox danger-full-access",
+                "--disable apps", "--disable plugins", "--disable skill_search",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
                 "repository_is_clean", "ls-files --others --exclude-standard",

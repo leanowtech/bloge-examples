@@ -1330,9 +1330,9 @@ Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其�
    Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
    下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token。Codex
    内层 sandbox 设为 `danger-full-access` 以避免嵌套 Seatbelt；权威外层 profile 已先用仓库读取负测
-   证明有效，并继续拒绝当前仓库、Git common checkout、Codex worktrees/memories/agents/skills/plugins
-   与私有 trace
-   的 read/write；外层 sandbox 启动前先切换到临时 cwd，避免进程在处理
+   证明有效，并继续拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace
+   的 read/write；鉴权必需的 Codex 运行元数据保持可读，但 apps、browser、multi-agent、plugins、
+   remote-plugin 和 skill-search 功能被显式禁用。外层 sandbox 启动前先切换到临时 cwd，避免进程在处理
    Codex `-C` 参数前触碰继承的仓库目录；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；

@@ -376,8 +376,9 @@ HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系
 认证依赖 macOS `sandbox-exec` 提供操作系统级仓库隔离；不具备等价隔离能力的平台必须失败关闭，
 不能把 Codex 自己的只读工作区当成“不可读取仓库”的证据。为避免两个 Seatbelt 实例嵌套失败，
 该受控子进程把 Codex 内层 sandbox 设为 `danger-full-access`；安全边界是已先做读取负测的外层 profile，
-它拒绝当前仓库、Git common checkout、Codex worktrees/memories/agents/skills/plugins 与私有 trace
-的 read/write；认证器另外
+它拒绝当前仓库、Git common checkout、Codex worktrees/memories 与私有 trace 的 read/write；
+Codex 鉴权仍需要读取自身的运行元数据，因此脚本不伪称拒绝整个 `CODEX_HOME`，而是显式禁用
+apps、browser、multi-agent、plugins、remote-plugin 和 skill-search；认证器另外
 对所有非 MCP action fail-closed。启动 sandbox 前必须先把进程当前目录切到独立临时目录；
 否则 Codex 在处理 `-C` 之前读取继承的仓库 cwd，就会被系统正确拒绝而无法启动。
 

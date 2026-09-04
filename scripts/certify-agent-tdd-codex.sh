@@ -105,10 +105,7 @@ if [[ "${ROOT_DIR}" == */worktrees/* ]]; then
     CODEX_DATA_ROOT="${ROOT_DIR%%/worktrees/*}"
     EXTRA_DENY_RULES="
 (deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/worktrees\"))
-(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/memories\"))
-(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/agents\"))
-(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/skills\"))
-(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/plugins\"))"
+(deny file-read* file-write* (subpath \"${CODEX_DATA_ROOT}/memories\"))"
     MEMORY_PROBE="${CODEX_DATA_ROOT}/memories/MEMORY.md"
 fi
 if [ "${COMMON_REPOSITORY}" != "${ROOT_DIR}" ]; then
@@ -178,6 +175,8 @@ CERTIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 CODEX_ARGS=(
     exec
+    --disable apps --disable in_app_browser --disable multi_agent --disable multi_agent_v2
+    --disable plugins --disable remote_plugin --disable skill_search
 )
 if [ -n "${CODEX_MODEL:-}" ]; then
     CODEX_ARGS+=(-m "${CODEX_MODEL}")
