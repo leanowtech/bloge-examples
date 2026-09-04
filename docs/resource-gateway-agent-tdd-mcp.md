@@ -4,7 +4,7 @@
 
 业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.2 会在 MCP 初始化说明中要求 Codex 先读取当前 DSL 参考，再自行生成、预览和修正实现；通过检查后，服务端才允许保存同一份候选。
 
-需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。
+需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。五幕共享同一条服务端资产线：第 1 幕先创建并回读设计态契约库，第 2 幕在同一库上补齐事实来源，第 3 幕以后才基于该库编排、验证和发布；前一幕的交接门未通过时不得继续。
 
 完整流程有两个人工停点。Agent 不能批准自己提出的业务 Oracle，也不能替人签署发布；这两步必须用独立的人工 reviewer 凭据在 Resource Gateway 看板中完成。服务端会校验 actor type、提议者与批准者分离，以及人实际打开的 proposal fingerprint。
 

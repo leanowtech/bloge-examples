@@ -1,0 +1,72 @@
+schemaVersion: bloge.visualLibraryAuthoring.v1
+library:
+  id: ride-cancellation
+  name: Ride Cancellation Dispute
+  version: 0.1.0
+  owner: cx-ops
+defaults:
+  operatorVersion: 0.1.0
+  namespace: ride
+
+types:
+  Order:
+    fields:
+      orderId: string
+      cancelledBy:
+        enum: [passenger, driver, platform, system]
+      cancelWindowSeconds:
+        type: number
+        minimum: 0
+      feeCharged:
+        type: number
+        minimum: 0
+      city: string
+  Responsibility:
+    fields:
+      party:
+        enum: [passenger, driver, platform, none]
+      confidence:
+        type: number
+        minimum: 0
+        maximum: 1
+  CityPolicy:
+    fields:
+      freeCancelSeconds:
+        type: number
+        minimum: 0
+      maxFee:
+        type: number
+        minimum: 0
+  History:
+    fields:
+      priorWaivedCount:
+        type: number
+        minimum: 0
+      abuseSignal:
+        enum: [none, suspected, confirmed]
+
+operators:
+  ride:order-lookup:
+    name: Order Lookup
+    archetype: resource-read
+    requiresSecrets: false
+    input: { orderId: string }
+    output: { order: Order }
+  ride:responsibility-decide:
+    name: Responsibility Decide
+    archetype: resource-read
+    requiresSecrets: false
+    input: { order: Order }
+    output: { responsibility: Responsibility }
+  ride:city-pricing-policy:
+    name: City Pricing Policy
+    archetype: resource-read
+    requiresSecrets: false
+    input: { city: string }
+    output: { policy: CityPolicy }
+  ride:compensation-history:
+    name: Compensation History
+    archetype: resource-read
+    requiresSecrets: false
+    input: { orderId: string }
+    output: { history: History }
