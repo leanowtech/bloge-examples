@@ -354,6 +354,9 @@ curl --fail-with-body http://localhost:8081/mcp \
 - 最终回复只使用业务语言，且至少观察到一次有先后顺序的同工具失败到成功自主修正；
 - preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
 
+认证提示词用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动
+contract-first 行为；不会把 `rg.contract.get`、MCP 参数或其他实现术语交给业务人员。
+
 默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理，并在结束时删除；
 仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中

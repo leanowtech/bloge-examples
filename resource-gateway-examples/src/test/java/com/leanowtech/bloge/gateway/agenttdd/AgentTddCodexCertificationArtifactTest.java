@@ -93,7 +93,8 @@ class AgentTddCodexCertificationArtifactTest {
                 "example-services.sh\" stop resource-gateway",
                 "openssl rand -hex 32");
         assertThat(prompt).contains(
-                "按用户编号查询用户姓名和会员等级", "什么时候使用", "待我确认的标准案例",
+                "按用户编号查询用户姓名和会员等级", "公开的输入信息和返回信息说明",
+                "不能只根据来源名称猜测", "什么时候使用", "待我确认的标准案例",
                 "不要替我确认标准案例", "不要开始验证或发布");
         assertThat(prompt).doesNotContain(
                 "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
