@@ -1296,8 +1296,9 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 - `AgentTddCodexCertificationArtifactTest` 与 `agent_tdd_codex_trace_certificate_test.py`：固定可入库
   证书的严格结构、语义断言、指纹、载荷零泄漏，以及未绑定用例和越过人工停点的失败路径。
 
-最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 14 分 48 秒：
-**8,532 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
+最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 12 分 35 秒：
+**8,536 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。该计数已从
+Surefire XML 独立汇总复算，且未生成 `.dump` 或 `.dumpstream`。其中：
 
 - `AgentDslAuthoringSupportTest`：22/22 通过；
 - `DslReferenceCertificationTest`：3/3 通过；
@@ -1369,6 +1370,7 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 | 认证链硬化 | `274ce08e7`、`a6db76540`、`493d95828`、`f9b4bf789` | 自启固定提交 RG、OS 仓库隔离、全链关联与纯业务 contract-first 提示 |
 | 阻断诊断 | `7c3cfc6c8` | 显式 `blocking` 协议事实、指纹和停止规则 |
 | 诚实首轮语义 | `ae2c5b26b` | 自修正与首次通过互补记录，不人为制造错误 |
+| 隔离认证证据 | `ea52937a6` | 入库实际 Codex 作者链证书，并同步认证指纹与验收记录 |
 
 ### 23.5 剩余限制与差距
 
