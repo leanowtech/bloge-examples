@@ -142,7 +142,10 @@ class McpProtocolControllerTest {
                     case "rg.solution.invoke" -> Map.of(
                             "result", Map.of("decision", "UPHELD"), "reasoning", "rule R1",
                             "instructionRef", "ins:uphold", "rulePath", List.of("R1"),
-                            "verifiedFeatureCount", 1);
+                            "verifiedFeatureCount", 1,
+                            "publicationId", "solution-publication:cancel-v1",
+                            "implementationFingerprint", "sha256:implementation",
+                            "executionStatus", "COMPLETED");
                     case "rg.scenario.test" -> Map.of(
                             "scenarioRef", "scn:root", "byCase", List.of(Map.of(
                                     "caseId", "g1", "hitRuleId", "R1", "outlet", Map.of(
@@ -175,7 +178,9 @@ class McpProtocolControllerTest {
                 modernHeaders("tools/call", "rg.solution.getContract")).getBody();
         JsonNode invoked = controller.exchange(request(93, "tools/call", Map.of(
                 "name", "rg.solution.invoke", "arguments", Map.of(
-                        "solutionRef", "sol:cancel", "inputs", Map.of("party", Map.of("value", "none"))))),
+                        "solutionRef", "sol:cancel", "inputs", Map.of(
+                                "party", Map.of("value", "none")),
+                        "idempotencyKey", "invoke-cancel-O-1"))),
                 modernHeaders("tools/call", "rg.solution.invoke")).getBody();
         JsonNode scenario = controller.exchange(request(94, "tools/call", Map.of(
                 "name", "rg.scenario.test", "arguments", Map.of(

@@ -66,6 +66,60 @@ public final class SolutionExecutionService {
             String solutionRef,
             JsonNode featureValues,
             IntegrationRequestContext platformIdentity) {
+        requireControlledAuthority(scopeKey, platformIdentity);
+        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.WRITE_EXEC);
+    }
+
+    /**
+     * Executes the exact immutable contracts frozen inside one governed publication.
+     *
+     * <p>No Scenario or Instruction is resolved from the mutable authoring registry on this path.
+     * That makes the publication check and the dispatched implementation one indivisible logical
+     * version even when a new draft is being authored concurrently.</p>
+     */
+    public ExecutionResult executePublished(
+            String scopeKey,
+            PublishedSolutionSnapshot snapshot,
+            JsonNode featureValues,
+            IntegrationRequestContext platformIdentity) {
+        requireControlledAuthority(scopeKey, platformIdentity);
+        SolutionContract solution = Objects.requireNonNull(snapshot, "snapshot").solution();
+        if (featureValues == null || !featureValues.isObject()
+                || !iterable(solution.inputs().keySet()).stream().allMatch(featureValues::has)) {
+            throw new SolutionContractException(
+                    "SOLUTION_INPUT_INVALID", "Required Solution feature values are missing.");
+        }
+        ScenarioTreeEvaluator.Outcome outcome = new ScenarioTreeEvaluator(snapshot.scenarios(), 8)
+                .evaluate(scopeKey, solution.rootScenarioRef(), featureValues);
+        if (!"INSTRUCTION".equals(outcome.outletKind())) {
+            return new ExecutionResult(
+                    Map.of("terminalKind", outcome.terminalKind()),
+                    "TERMINAL_SCENARIO_OUTLET", "", outcome.rulePath(), 0);
+        }
+        InstructionContract instruction = snapshot.instructions().get(outcome.ref());
+        if (instruction == null) {
+            throw new SolutionContractException(
+                    "SCENARIO_OUTLET_UNRESOLVED", "An Instruction outlet is unresolved.");
+        }
+        GraphContext graph = new GraphContext(mapper.convertValue(featureValues, OBJECT_MAP));
+        graph.put(SolutionExecutionAuthority.CONTEXT_KEY,
+                SolutionExecutionAuthority.issue(scopeKey, SolutionExecutionAuthority.Mode.WRITE_EXEC));
+        Map<String, Object> output;
+        try {
+            output = instructionCall.executeResolved(instruction, outcome.bind(),
+                    new OperatorContext("dispatch", solution.solutionRef(), graph, 0));
+        } catch (SolutionContractException expected) {
+            throw expected;
+        } catch (Exception failure) {
+            throw new SolutionContractException(
+                    "SOLUTION_EXECUTION_FAILED", "Instruction dispatch failed.");
+        }
+        return new ExecutionResult(output.get("result"), Objects.toString(output.get("reasoning"), ""),
+                instruction.instructionRef(), outcome.rulePath(), 1);
+    }
+
+    private static void requireControlledAuthority(
+            String scopeKey, IntegrationRequestContext platformIdentity) {
         if (platformIdentity == null
                 || !IntegrationOperation.AGENT_TDD_WRITE_EXEC.accepts(platformIdentity.purpose())
                 || !scopeKey.equals(String.join("|", platformIdentity.tenantId(),
@@ -74,7 +128,6 @@ public final class SolutionExecutionService {
             throw new SolutionContractException(
                     "FORBIDDEN_PURPOSE", "Controlled WRITE authority is required.");
         }
-        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.WRITE_EXEC);
     }
 
     private ExecutionResult execute(
@@ -140,7 +193,7 @@ public final class SolutionExecutionService {
         return List.copyOf(values);
     }
 
-    /** Immutable payload returned by the zero-egress Solution integration boundary. */
+    /** Immutable payload returned by simulation or governed published execution. */
     public record ExecutionResult(
             Object result,
             String reasoning,
@@ -153,8 +206,8 @@ public final class SolutionExecutionService {
             reasoning = reasoning == null ? "" : reasoning;
             instructionRef = instructionRef == null ? "" : instructionRef;
             rulePath = rulePath == null ? List.of() : List.copyOf(rulePath);
-            if (realExternalCalls != 0) {
-                throw new IllegalArgumentException("simulation cannot report external calls");
+            if (realExternalCalls < 0) {
+                throw new IllegalArgumentException("realExternalCalls cannot be negative");
             }
         }
     }

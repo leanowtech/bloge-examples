@@ -111,7 +111,7 @@ graph sol_cancel_dispute {
 2. 采集:
    - dispute.orderSelected (USER_COMPONENT) → Agent 拉 order-picker → 用户选 O1
    - party / withinFree / abuse / feeCharged (API/DAG,依赖 orderId) → rg.feature.evaluate({featureRef, inputs:{orderId:O1}}) → {value, evaluationToken}
-3. rg.solution.invoke(sol:cancel-dispute, { 值..., token... }) → RG 校验确定性特征 token → 跑纯函数 → {result, reasoning}(写指令经受管执行)
+3. rg.solution.invoke(sol:cancel-dispute, { 值..., token..., idempotencyKey }) → RG 锁定当前发布物并持久预留精确请求 → 校验确定性特征 token → 跑冻结纯函数 → {result, reasoning}(写指令经受管执行)
 ```
 
 ### 4.7 确定性特征信任
@@ -342,10 +342,10 @@ final class ReconciliationAdapterRegistry { ReconciliationAdapter require(String
 | `rg.engineering.handoff` | PROPOSE | solutionRef | handoffId + 设计态写指令清单 | 新增 |
 | `rg.solution.readiness` | READ | solutionRef | gates{logicGreen,writeReconciled,ownerSignoff}/remaining | 新增 |
 | `rg.solution.publish` | GOVERNED_WRITE | solutionRef+signoffRef | publicationId | 新增 |
-| `rg.solution.invoke` | 运行时,受管 | solutionRef+特征值+token | {result,reasoning}(写受管执行) | 新增(运行时) |
+| `rg.solution.invoke` | 运行时,受管 | solutionRef+特征值+token+idempotencyKey | {result,reasoning,publicationId,implementationFingerprint}(写受管执行) | 新增(运行时) |
 | 写执行 + 对账(不入目录) | 独立用途 | 已发布写指令 | 对账证据 | 新增,Agent 拿不到 |
 
-共享信封与错误码复用现有,加 `SCENARIO_TREE_CYCLE`/`SCENARIO_TREE_TOO_DEEP`/`SCENARIO_OTHERWISE_REQUIRED`/`SCENARIO_OUTLET_UNRESOLVED`/`SCENARIO_BIND_INCOMPLETE`、`FEATURE_TOKEN_INVALID`、`USE_NATIVE_INTERACTION`、`WRITE_EXECUTION_NOT_RECONCILED`。
+共享信封与错误码复用现有,加 `SCENARIO_TREE_CYCLE`/`SCENARIO_TREE_TOO_DEEP`/`SCENARIO_OTHERWISE_REQUIRED`/`SCENARIO_OUTLET_UNRESOLVED`/`SCENARIO_BIND_INCOMPLETE`、`FEATURE_TOKEN_INVALID`、`USE_NATIVE_INTERACTION`、`WRITE_EXECUTION_NOT_RECONCILED`、`SOLUTION_NOT_PUBLISHED`、`SOLUTION_INVOCATION_RECOVERY_REQUIRED`。
 
 ## 8. 十步客服演示剧本(细化手册,取消费纠纷)
 
@@ -377,7 +377,7 @@ responsibility.party: { output:{type:{enum:[passenger,driver,platform,none]}}, e
 - **步10 发布** · 工程补 bindingRef → 逻辑绿(`rg.solution.baseline{side:GREEN}`)→ 受控写执行加对账(独立通道,Agent 无)→ `rg.solution.readiness`(gates{logicGreen,writeReconciled,ownerSignoff} 全绿)→ 人工签署 → `rg.solution.publish`。信号:`publishable:true` → `publicationId`。**人工停点②**:核对逻辑绿加写对账加签署。
 
 ### 8.2 运行时(发布后,客服 Agent)
-`rg.solution.getContract` → 采集(`dispute.orderSelected` 拉 order-picker,用户选 O1;其余调 `rg.feature.evaluate({featureRef,inputs:{orderId:O1}})` 得 `{value,evaluationToken}`)→ `rg.solution.invoke(sol:cancel-dispute,{值...,token...})` → RG 校验 token → 跑纯函数 → 写受管执行 → 处置 `{result,reasoning}`。此形态对应 point 9/10:人经 AI 工作台表意,Agent 代劳,web 审阅。
+`rg.solution.getContract` → 采集(`dispute.orderSelected` 拉 order-picker,用户选 O1;其余调 `rg.feature.evaluate({featureRef,inputs:{orderId:O1}})` 得 `{value,evaluationToken}`)→ `rg.solution.invoke(sol:cancel-dispute,{值...,token...,idempotencyKey:"cancel-O1-attempt-1"})` → RG 只接受与当前 revision、contract fingerprint、完整 Scenario/Instruction implementation fingerprint 一致的不可变发布快照 → 校验 token → 在任何指令派发前提交持久 reservation → 以内部 PLATFORM/WRITE_EXEC 身份执行冻结快照 → 处置 `{result,reasoning,publicationId,implementationFingerprint}`。同键同请求精确回放，不再次派发；同键异请求 `IDEMPOTENCY_CONFLICT`；派发结果不明时保留未完成预留并返回 `SOLUTION_INVOCATION_RECOVERY_REQUIRED`，禁止 Agent 自动重试。此形态对应 point 9/10:人经 AI 工作台表意,Agent 代劳,web 审阅。
 
 ### 8.3 最终验收门槛
 ① 全新 Codex(无仓库读、无 skill、只连 MCP)按业务提示词跑完步 1–9;② 特征 token 篡改遭拒;③ 场景树静态检查覆盖环/超深/缺 otherwise;④ 写指令模拟零副作用、受控执行有对账;⑤ 无 skipped/mock;⑥ `mvn -f `pom.xml` clean verify` 全绿。
@@ -406,10 +406,11 @@ responsibility.party: { output:{type:{enum:[passenger,driver,platform,none]}}, e
 |---|---|---|---|
 | P1 四实体契约与创作面 | 已完成 | 严格有界解码 `bloge.solutionAuthoring.v1` 与四种单实体片段；Feature/Scenario/Instruction/Solution 按 tenant/project/environment 独立版本化；四个 MCP 工具具备严格输入输出 Schema、精确幂等回放；Solution 组合前解析直接引用并返回纯函数投影；聚焦单元和 MCP 协议测试全绿 | 跨层场景树检查与 GraphDraft lowering 归 P2 |
 | P2 纯函数编译与场景树 | 已完成 | `SolutionLowering` 将解法固定降级为 `scenarioCall → instructionCall` 两算子 GraphDraft，并经生产 `DslImportService` 预编译；全树 DFS 校验引用、无环、深度上限与指令绑定；纯求值器支持嵌套场景、`otherwise` 和唯一命中；WRITE 指令在 SIMULATE 中结构化桩化，零外呼集成测证明 `realExternalCalls=0`；`solution-authoring` 参考包已含四实体约束和完整片段示例 | 特征采集、签名 token 与运行时调用归 P3 |
-| P3 特征求值与信任 token | 已完成 | `FeatureEvaluationDispatcher` 按 API/DAG/MODEL/INSTRUCTION_RESULT 的 kind 和版本化引用唯一分派，缺失或多重声明失败关闭；交互特征返回 `USE_NATIVE_INTERACTION`；三段 HS256 token 仅含 feature/input/value 指纹、精确 scope、iat/ttl/nonce/kid，支持 active + verify-only 轮换，使用常量时间验签；`rg.solution.getContract` 暴露采集计划，`rg.solution.invoke` 对平台值逐项验签、对交互值强制 `source=USER`；篡改、过期、错 scope/错值/错输入/未知 kid 及轮换窗口均有测试 | token nonce 的写副作用重放防护与 WRITE_EXEC 同归 P5 |
+| P3 特征求值与信任 token | 已完成 | `FeatureEvaluationDispatcher` 按 API/DAG/MODEL/INSTRUCTION_RESULT 的 kind 和版本化引用唯一分派，缺失或多重声明失败关闭；交互特征返回 `USE_NATIVE_INTERACTION`；三段 HS256 token 仅含 feature/input/value 指纹、精确 scope、iat/ttl/nonce/kid，支持 active + verify-only 轮换，使用常量时间验签；`rg.solution.getContract` 暴露采集计划，`rg.solution.invoke` 对平台值逐项验签、对交互值强制 `source=USER`；篡改、过期、错 scope/错值/错输入/未知 kid 及轮换窗口均有测试 | token nonce 的运行时副作用重放防护归 P7 |
 | P4 测试金字塔与 GOLDEN | 已完成 | Feature 求值器/指令算子有独立单元测试；`rg.scenario.test` 对钉定特征值校验命中规则、出口和绑定；Solution 可作为现有 case-set 的 scope 内归属主体，GOLDEN 仍经独立 HUMAN/USER maker-checker 批准；`rg.solution.baseline` 只执行 ACTIVE GOLDEN，以 case-set revision 和 Solution revision 双锁保证证据原子性，持久化绑定指纹、分层统计、业务待办，GREEN 通过行推进 READY；WRITE 桩从输出契约确定合成且 `realExternalCalls=0` | 真实 WRITE 验收及对账证据归 P5；看板绩效投影归 P6 |
-| P5 写交接与对账 | 已完成 | 设计态 WRITE 由 `rg.engineering.handoff` 聚合输入/输出/下游/对账键/适配器/GOLDEN，且不授予执行权；`AGENT_TDD_WRITE_EXEC` 不进入 MCP 目录并仅允许 local/test/sandbox；真实写前用独立事务持久预留，重复调用精确回放，未完成预留返回恢复态；每次写后由精确下游 `ReconciliationAdapter` 读回并只持久化 expected/observed 指纹与 match；`rg.solution.commit/readiness/publish` 将 GREEN、当前 Instruction binding 的实现指纹、对账和独立 owner signoff 绑定到 Solution revision、contract fingerprint、goldenSetId 与 evidence fingerprint，任一漂移使旧对账和旧签署同时失效；commit 只接受 compose 持久化的服务端 authoring receipt，不能由客户端自填；聚焦测试覆盖零外呼交接、专用途/生产拒绝、match/mismatch、精确重放、伪造 receipt 拒绝和契约/实现漂移后签署不可复用 | 无 |
+| P5 写交接与对账 | 已完成 | 设计态 WRITE 由 `rg.engineering.handoff` 聚合输入/输出/下游/对账键/适配器/GOLDEN，且不授予执行权；`AGENT_TDD_WRITE_EXEC` 不进入 MCP 目录并仅允许 local/test/sandbox；真实写前用独立事务持久预留，重复调用精确回放，未完成预留返回恢复态；每次写后由精确下游 `ReconciliationAdapter` 读回并只持久化 expected/observed 指纹与 match；`rg.solution.commit/readiness/publish` 将 GREEN、完整 Scenario/Instruction 可执行闭包指纹、对账和独立 owner signoff 绑定到 Solution revision、contract fingerprint、goldenSetId 与 evidence fingerprint，任一规则或 binding 漂移使旧对账和旧签署同时失效；commit 只接受 compose 持久化的服务端 authoring receipt，不能由客户端自填；聚焦测试覆盖零外呼交接、专用途/生产拒绝、match/mismatch、精确重放、伪造 receipt 拒绝和契约/实现漂移后签署不可复用 | 无 |
 | P6 看板与真实认证 | 已完成 | 看板新增四实体 Solution 卡片，业务问题、输入事实、场景、指令、GOLDEN、工程交接、写对账、四门 readiness 和运营表现同屏，payload-bearing 详情只经 HUMAN no-store endpoint 打开；`rg.solution.performance` 只投影规则命中、处置、升级率和红色 GOLDEN；真实 `AgentTddMcpOperationalWorkflowTest` 从 initialize/initialized/tools-list 开始，经 HTTP `/mcp` 完成实体定义、设计态交接、工程 binding、人工 Oracle、GREEN、平台 WRITE_EXEC 对账、Chrome 打开详情并签署、readiness 和 publication，5 个场景均 `skipped=0` | 外部真实 Codex 认证仍是部署验收，不以仓内测试冒充生产 Agent/身份提供方证明 |
+| P7 运行时治理闭环 | 已完成 | publication 冻结完整 Solution/Scenario/Instruction 快照，运行时拒绝未发布或与当前可执行闭包不一致的草稿；`rg.solution.invoke` 强制业务幂等键，先为精确 Feature envelope 提交外部执行 reservation，再验签并以服务端派生 PLATFORM/WRITE_EXEC 身份执行冻结快照；无效 envelope 以仅含稳定码的拒绝结果完成预留，完成请求精确回放且不重复下游派发，键冲突失败关闭，结果不明进入人工恢复；MCP 影响注解如实标记 `destructiveHint/openWorldHint/idempotentHint=true`；测试覆盖 READ、WRITE、发布快照、规则漂移、验签拒绝回放、精确成功回放、冲突与恢复态 | 生产恢复工作台与长期幂等记录保留策略属于部署演进，不阻塞本版安全运行时边界 |
 
 ## 附录，更细粒度的实施方案参考
 
@@ -864,7 +865,7 @@ enabled_tools=["rg.solution.publish"]
 rg.solution.getContract(sol:cancel-dispute) → 需要 {party,withinFree,abuse,orderId,feeCharged}
 dispute.orderSelected(USER_COMPONENT) → 客服 Agent 拉 order-picker,用户选 O1
 rg.feature.evaluate({featureRef:"responsibility.party",inputs:{orderId:"O1"}}) → {"value":"none","evaluationToken":"eyJ...","source":"RG"}
-rg.solution.invoke(sol:cancel-dispute,{party:"none",...,orderId:"O1",feeCharged:8, tokens:{...}}) → RG 校验 token → {"result":{"decision":"WAIVED","waiveAmount":8},"reasoning":"无责且免责时长内,规则 R1"}
+rg.solution.invoke(sol:cancel-dispute,{party:"none",...,orderId:"O1",feeCharged:8,tokens:{...},idempotencyKey:"cancel-O1-attempt-1"}) → RG 校验发布快照与 token、持久预留后代执行 → {"result":{"decision":"WAIVED","waiveAmount":8},"reasoning":"无责且免责时长内,规则 R1","publicationId":"solution-publication:...","executionStatus":"COMPLETED"}
 ```
 
 ## 乙.5 最终验收门槛

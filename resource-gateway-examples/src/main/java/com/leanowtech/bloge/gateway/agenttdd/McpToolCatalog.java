@@ -74,10 +74,11 @@ public final class McpToolCatalog {
                 "Read the Feature collection plan for one pure Solution.",
                 McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
         values.add(tool("rg.solution.invoke", "Invoke solution",
-                "Verify collected Feature proofs and invoke one pure Solution.",
-                McpToolImpact.EXECUTE,
-                props("solutionRef", string(), "inputs", businessObject()),
-                List.of("solutionRef", "inputs")));
+                "Invoke one current published Solution through exact-replay governed execution.",
+                McpToolImpact.RUNTIME_EXECUTE,
+                props("solutionRef", string(), "inputs", businessObject(),
+                        "idempotencyKey", string()),
+                List.of("solutionRef", "inputs", "idempotencyKey")));
         values.add(tool("rg.scenario.test", "Test scenario",
                 "Run pure Scenario outlet contracts against pinned Feature values.",
                 McpToolImpact.EXECUTE,
@@ -583,9 +584,12 @@ public final class McpToolCatalog {
             case "rg.solution.getContract" -> solutionContractOutput();
             case "rg.solution.invoke" -> structuredObject(props(
                     "result", anyJson(), "reasoning", string(), "instructionRef", string(),
-                    "rulePath", stringArray(), "verifiedFeatureCount", integer()),
+                    "rulePath", stringArray(), "verifiedFeatureCount", integer(),
+                    "publicationId", string(), "implementationFingerprint", string(),
+                    "executionStatus", enumString("COMPLETED")),
                     List.of("result", "reasoning", "instructionRef", "rulePath",
-                            "verifiedFeatureCount"));
+                            "verifiedFeatureCount", "publicationId",
+                            "implementationFingerprint", "executionStatus"));
             case "rg.scenario.test" -> structuredObject(props(
                     "scenarioRef", string(), "byCase", arrayOf(structuredObject(props(
                             "caseId", string(), "hitRuleId", string(), "outlet", businessObject(),

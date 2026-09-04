@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InMemoryFeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -242,28 +244,144 @@ class SolutionAgentToolsTest {
                 "sol:cancel", "Resolve cancellation dispute.",
                 Map.of("party", "responsibility.party", "orderId", "dispute.orderSelected"),
                 "scn:root", List.of("ins:uphold"), "caseSet:cancel"), false);
+        AtomicInteger dispatches = new AtomicInteger();
         SolutionAgentTools runtime = new SolutionAgentTools(states, mapper, null,
                 (feature, inputs, context) -> mapper.valueToTree("none"),
-                (instruction, values, context) -> Map.of(
-                        "result", Map.of("decision", "UPHELD"), "reasoning", "rule R1"),
+                (instruction, values, context) -> {
+                    dispatches.incrementAndGet();
+                    return Map.of("result", Map.of("decision", "UPHELD"), "reasoning", "rule R1");
+                },
                 new InMemoryFeatureTokenKeyProvider("k1", Map.of("k1", secret)));
-        IntegrationRequestContext identity = identity("project-a");
+        IntegrationRequestContext identity = runtimeIdentity("project-a");
 
         Map<String, Object> evaluated = runtime.evaluateFeature(mapper.valueToTree(Map.of(
                 "featureRef", "responsibility.party", "inputs", Map.of("orderId", "O-1"))), identity);
         Map<String, Object> contract = runtime.getSolutionContract(
                 mapper.valueToTree(Map.of("solutionRef", "sol:cancel")), identity);
-        Map<String, Object> invoked = runtime.invokeSolution(mapper.valueToTree(Map.of(
+        ObjectNode invocation = mapper.valueToTree(Map.of(
                 "solutionRef", "sol:cancel", "inputs", Map.of(
                         "party", Map.of("value", "none", "inputs", Map.of("orderId", "O-1"),
                                 "evaluationToken", evaluated.get("evaluationToken")),
-                        "orderId", Map.of("value", "O-1", "source", "USER")))), identity);
+                        "orderId", Map.of("value", "O-1", "source", "USER")),
+                "idempotencyKey", "invoke-cancel-O-1"));
+
+        assertThatThrownBy(() -> runtime.invokeSolution(invocation, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("SOLUTION_NOT_PUBLISHED");
+        publishCurrent(registry, "sol:cancel");
+        Map<String, Object> invoked = runtime.invokeSolution(invocation, identity);
+        Map<String, Object> replay = runtime.invokeSolution(invocation, identity);
 
         assertThat(evaluated).containsEntry("evaluationKind", "API");
         assertThat(evaluated.get("evaluationToken").toString().split("\\.")).hasSize(3);
         assertThat((List<?>) contract.get("inputs")).hasSize(2);
         assertThat(invoked).containsEntry("reasoning", "rule R1")
-                .containsEntry("verifiedFeatureCount", 1);
+                .containsEntry("verifiedFeatureCount", 1)
+                .containsEntry("executionStatus", "COMPLETED")
+                .containsKeys("publicationId", "implementationFingerprint");
+        assertThat(replay).isEqualTo(invoked);
+        assertThat(dispatches).hasValue(1);
+
+        ObjectNode rejected = invocation.deepCopy().put("idempotencyKey", "invoke-invalid-token");
+        rejected.withObject("inputs").withObject("party").put("evaluationToken", "invalid");
+        assertThatThrownBy(() -> runtime.invokeSolution(rejected, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("FEATURE_TOKEN_INVALID");
+        assertThatThrownBy(() -> runtime.invokeSolution(rejected, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("FEATURE_TOKEN_INVALID");
+        assertThat(dispatches).hasValue(1);
+    }
+
+    @Test
+    void publishedWriteInvocationUsesInternalPlatformAuthorityAndRejectsReplayDrift() {
+        String scope = "tenant-a|org-a|project-write|test|sg";
+        SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
+        registry.upsertFeature(scope, new FeatureContract(
+                "dispute.orderSelected", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.USER_COMPONENT, FeatureContract.Determinism.INTERACTIVE,
+                mapper.createObjectNode(), "", "order-picker-v1", ""));
+        registry.upsertInstruction(scope, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of("result", Map.of("type", "object"), "reasoning", "required")),
+                InstructionContract.Effect.WRITE, "operator:refund-v1",
+                new InstructionContract.WriteGovernance(
+                        "refund-service", "orderId", "recon:refund-v1")));
+        registry.upsertScenario(scope, new ScenarioContract(
+                "scn:refund", List.of("orderId"), ScenarioContract.HitPolicy.UNIQUE,
+                List.of(new ScenarioContract.Rule("R1", mapper.valueToTree(Map.of()),
+                        new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                                "ins:refund", Map.of("orderId", "orderId"), ""))),
+                new ScenarioContract.Outlet(
+                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+        registry.upsertSolution(scope, new SolutionContract(
+                "sol:refund", "Refund an approved dispute.",
+                Map.of("orderId", "dispute.orderSelected"), "scn:refund",
+                List.of("ins:refund"), "caseSet:refund"), false);
+        publishCurrent(registry, "sol:refund");
+        AtomicInteger writes = new AtomicInteger();
+        SolutionAgentTools runtime = new SolutionAgentTools(states, mapper, null, null,
+                (instruction, values, context) -> {
+                    writes.incrementAndGet();
+                    return Map.of("result", Map.of("decision", "WAIVED"), "reasoning", "rule R1");
+                }, null);
+        IntegrationRequestContext identity = runtimeIdentity("project-write");
+        ObjectNode request = mapper.valueToTree(Map.of(
+                "solutionRef", "sol:refund",
+                "inputs", Map.of("orderId", Map.of("value", "O-1", "source", "USER")),
+                "idempotencyKey", "refund-O-1"));
+
+        Map<String, Object> first = runtime.invokeSolution(request, identity);
+        Map<String, Object> replay = runtime.invokeSolution(request, identity);
+
+        assertThat(first).containsEntry("reasoning", "rule R1")
+                .containsEntry("executionStatus", "COMPLETED");
+        assertThat(replay).isEqualTo(first);
+        assertThat(writes).hasValue(1);
+        request.withObject("inputs").withObject("orderId").put("value", "O-2");
+        assertThatThrownBy(() -> runtime.invokeSolution(request, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("IDEMPOTENCY_CONFLICT");
+        assertThat(writes).hasValue(1);
+
+        AtomicInteger ambiguousDispatches = new AtomicInteger();
+        SolutionAgentTools ambiguousRuntime = new SolutionAgentTools(states, mapper, null, null,
+                (instruction, values, context) -> {
+                    ambiguousDispatches.incrementAndGet();
+                    throw new com.leanowtech.bloge.gateway.solution.SolutionContractException(
+                            "DOWNSTREAM_OUTCOME_UNKNOWN", "The downstream outcome is unknown.");
+                }, null);
+        ObjectNode ambiguous = mapper.valueToTree(Map.of(
+                "solutionRef", "sol:refund",
+                "inputs", Map.of("orderId", Map.of("value", "O-2", "source", "USER")),
+                "idempotencyKey", "refund-O-2"));
+        assertThatThrownBy(() -> ambiguousRuntime.invokeSolution(ambiguous, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("DOWNSTREAM_OUTCOME_UNKNOWN");
+        assertThatThrownBy(() -> ambiguousRuntime.invokeSolution(ambiguous, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("SOLUTION_INVOCATION_RECOVERY_REQUIRED");
+        assertThat(ambiguousDispatches).hasValue(1);
+
+        registry.upsertScenario(scope, new ScenarioContract(
+                "scn:refund", List.of("orderId"), ScenarioContract.HitPolicy.UNIQUE,
+                List.of(new ScenarioContract.Rule("R2", mapper.valueToTree(Map.of()),
+                        new ScenarioContract.Outlet(
+                                ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE"))),
+                new ScenarioContract.Outlet(
+                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+        ObjectNode afterRuleDrift = ambiguous.deepCopy().put("idempotencyKey", "refund-O-3");
+        assertThatThrownBy(() -> runtime.invokeSolution(afterRuleDrift, identity))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("SOLUTION_NOT_PUBLISHED");
+        assertThat(writes).hasValue(1);
     }
 
     private void defineStringFeature(
@@ -280,5 +398,34 @@ class SolutionAgentToolsTest {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", projectId, "test", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_AUTHORING", "corr-1");
+    }
+
+    private static IntegrationRequestContext runtimeIdentity(String projectId) {
+        return new IntegrationRequestContext(
+                "tenant-a", "org-a", projectId, "test", "sg", "WORKLOAD", "agent-1",
+                "", "AGENT_TDD_EXECUTION", "corr-1");
+    }
+
+    private void publishCurrent(SolutionEntityRegistry registry, String solutionRef) {
+        String project = solutionRef.equals("sol:refund") ? "project-write" : "project-a";
+        String scope = "tenant-a|org-a|" + project + "|test|sg";
+        SolutionEntityRegistry.RegisteredEntity registered =
+                registry.requireRegisteredSolution(scope, solutionRef);
+        String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
+                registry, mapper, scope, registry.requireSolution(scope, solutionRef));
+        ObjectNode publication = mapper.createObjectNode();
+        publication.put("publicationId", "solution-publication:" + solutionRef.substring(4));
+        publication.put("solutionRef", solutionRef);
+        publication.put("solutionRevision", registered.revision());
+        publication.put("solutionContractFingerprint", registered.contractFingerprint());
+        publication.put("implementationFingerprint", implementationFingerprint);
+        SolutionContract solution = registry.requireSolution(scope, solutionRef);
+        ScenarioContract scenario = registry.requireScenario(scope, solution.rootScenarioRef());
+        publication.set("runtimeSnapshot", mapper.valueToTree(new PublishedSolutionSnapshot(
+                solution, Map.of(scenario.scenarioRef(), scenario),
+                solution.instructions().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        ref -> ref, ref -> registry.requireInstruction(scope, ref))))));
+        states.save(scope, SolutionGovernanceService.PUBLICATION,
+                publication.path("publicationId").asText(), publication);
     }
 }

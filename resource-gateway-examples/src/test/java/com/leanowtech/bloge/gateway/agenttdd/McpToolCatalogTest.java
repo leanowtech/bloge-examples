@@ -32,7 +32,12 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.instruction.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.solution.compose").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.solution.getContract").impact()).isEqualTo(McpToolImpact.READ);
-        assertThat(catalog.require("rg.solution.invoke").impact()).isEqualTo(McpToolImpact.EXECUTE);
+        assertThat(catalog.require("rg.solution.invoke").impact())
+                .isEqualTo(McpToolImpact.RUNTIME_EXECUTE);
+        assertThat(catalog.require("rg.solution.invoke").impact().annotations())
+                .containsEntry("destructiveHint", true)
+                .containsEntry("idempotentHint", true)
+                .containsEntry("openWorldHint", true);
         assertThat(catalog.require("rg.scenario.test").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.solution.baseline").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.solution.commit").impact()).isEqualTo(McpToolImpact.PROPOSE);
@@ -67,6 +72,14 @@ class McpToolCatalogTest {
         Map<?, ?> libraryData = properties(catalog.require("rg.library.upsert").outputSchema(), "data");
         Map<?, ?> functions = (Map<?, ?>) libraryData.get("functions");
         assertThat(((Map<?, ?>) functions.get("items")).get("type")).isEqualTo("object");
+
+        McpToolDefinition invoke = catalog.require("rg.solution.invoke");
+        assertThat(((List<?>) invoke.inputSchema().get("required")).stream()
+                .map(Object::toString).toList())
+                .contains("solutionRef", "inputs", "idempotencyKey");
+        assertThat(stringKeys(properties(invoke.outputSchema(), "data")))
+                .contains("result", "reasoning", "publicationId",
+                        "implementationFingerprint", "executionStatus");
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.solution;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -55,8 +56,23 @@ public final class SolutionInvocationService {
      * caller tokens cannot upgrade an interactive fact into a platform fact.</p>
      */
     public InvocationResult invoke(String scopeKey, String solutionRef, JsonNode suppliedInputs) {
+        PreparedInvocation prepared = prepare(scopeKey, solutionRef, suppliedInputs);
+        return result(execution.invoke(scopeKey, solutionRef, prepared.values()), prepared);
+    }
+
+    /**
+     * Verifies and freezes all caller Feature envelopes without dispatching an Instruction.
+     *
+     * <p>This split lets the governed runtime commit an external-effect reservation after token
+     * verification but before any instruction can reach a downstream system.</p>
+     */
+    public PreparedInvocation prepare(String scopeKey, String solutionRef, JsonNode suppliedInputs) {
         SolutionContract solution = requireSolution(scopeKey, solutionRef);
         if (suppliedInputs == null || !suppliedInputs.isObject()) throw invalidInput();
+        if (suppliedInputs.size() != solution.inputs().size()
+                || !solution.inputs().keySet().stream().allMatch(suppliedInputs::has)) {
+            throw invalidInput();
+        }
         ObjectNode values = mapper.createObjectNode();
         List<String> tokenNonces = new ArrayList<>();
         solution.inputs().forEach((name, featureRef) -> {
@@ -84,9 +100,39 @@ public final class SolutionInvocationService {
             }
             values.set(name, value.deepCopy());
         });
-        SolutionExecutionService.ExecutionResult result = execution.invoke(scopeKey, solutionRef, values);
+        return new PreparedInvocation(solutionRef, values, tokenNonces);
+    }
+
+    /** Executes a verified invocation using an internal platform WRITE authority. */
+    public InvocationResult invokeControlled(
+            String scopeKey,
+            PreparedInvocation prepared,
+            IntegrationRequestContext platformIdentity) {
+        Objects.requireNonNull(prepared, "prepared");
+        return result(execution.executeControlledWrite(
+                scopeKey, prepared.solutionRef(), prepared.values(), platformIdentity), prepared);
+    }
+
+    /** Executes verified values exclusively against an immutable published contract snapshot. */
+    public InvocationResult invokePublished(
+            String scopeKey,
+            PreparedInvocation prepared,
+            PublishedSolutionSnapshot snapshot,
+            IntegrationRequestContext platformIdentity) {
+        Objects.requireNonNull(prepared, "prepared");
+        Objects.requireNonNull(snapshot, "snapshot");
+        if (!prepared.solutionRef().equals(snapshot.solution().solutionRef())) {
+            throw new SolutionContractException(
+                    "SOLUTION_NOT_PUBLISHED", "The published Solution coordinate does not match.");
+        }
+        return result(execution.executePublished(
+                scopeKey, snapshot, prepared.values(), platformIdentity), prepared);
+    }
+
+    private static InvocationResult result(
+            SolutionExecutionService.ExecutionResult result, PreparedInvocation prepared) {
         return new InvocationResult(result.result(), result.reasoning(), result.instructionRef(),
-                result.rulePath(), tokenNonces.size());
+                result.rulePath(), prepared.tokenNonces().size());
     }
 
     private SolutionContract requireSolution(String scopeKey, String solutionRef) {
@@ -142,6 +188,30 @@ public final class SolutionInvocationService {
             reasoning = reasoning == null ? "" : reasoning;
             instructionRef = instructionRef == null ? "" : instructionRef;
             rulePath = List.copyOf(rulePath);
+        }
+    }
+
+    /**
+     * Frozen, already-verified invocation material safe to execute after a durable reservation.
+     *
+     * @param solutionRef canonical Solution reference
+     * @param values raw values stripped from their trust envelopes
+     * @param tokenNonces payload-free nonces used to bind write replay protection
+     */
+    public record PreparedInvocation(String solutionRef, JsonNode values, List<String> tokenNonces) {
+        /** Freezes value material and nonce order. */
+        public PreparedInvocation {
+            solutionRef = solutionRef == null ? "" : solutionRef.trim();
+            values = values == null ? null : values.deepCopy();
+            tokenNonces = tokenNonces == null ? List.of() : List.copyOf(tokenNonces);
+            if (solutionRef.isBlank() || values == null || !values.isObject()) {
+                throw new IllegalArgumentException("prepared invocation is incomplete");
+            }
+        }
+
+        @Override
+        public JsonNode values() {
+            return values.deepCopy();
         }
     }
 }

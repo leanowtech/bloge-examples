@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiFunction;
 
 /**
  * Pure deterministic evaluator for a previously validated unique-hit Scenario tree.
@@ -19,18 +20,36 @@ import java.util.Objects;
  */
 public final class ScenarioTreeEvaluator {
     private final SolutionEntityRegistry registry;
+    private final BiFunction<String, String, ScenarioContract> resolver;
     private final int maximumDepth;
 
     /** Creates an evaluator with the same positive bound used by static validation. */
     public ScenarioTreeEvaluator(SolutionEntityRegistry registry, int maximumDepth) {
         this.registry = Objects.requireNonNull(registry, "registry");
+        this.resolver = registry::requireScenario;
+        if (maximumDepth < 1) throw new IllegalArgumentException("maximumDepth must be positive");
+        this.maximumDepth = maximumDepth;
+    }
+
+    /** Creates an evaluator over an immutable publication snapshot, with no mutable registry reads. */
+    public ScenarioTreeEvaluator(Map<String, ScenarioContract> scenarios, int maximumDepth) {
+        Objects.requireNonNull(scenarios, "scenarios");
+        Map<String, ScenarioContract> frozen = Map.copyOf(scenarios);
+        this.registry = null;
+        this.resolver = (scope, ref) -> {
+            ScenarioContract scenario = frozen.get(ref);
+            if (scenario == null) throw new SolutionEntityRegistry.EntityUnavailableException();
+            return scenario;
+        };
         if (maximumDepth < 1) throw new IllegalArgumentException("maximumDepth must be positive");
         this.maximumDepth = maximumDepth;
     }
 
     /** Validates then evaluates one tree against immutable feature values. */
     public Outcome evaluate(String scopeKey, String rootScenarioRef, JsonNode featureValues) {
-        new ScenarioTreeValidator(registry, maximumDepth).validate(scopeKey, rootScenarioRef);
+        if (registry != null) {
+            new ScenarioTreeValidator(registry, maximumDepth).validate(scopeKey, rootScenarioRef);
+        }
         if (featureValues == null || !featureValues.isObject()) {
             throw new SolutionContractException(
                     "SCENARIO_INPUT_INVALID", "Scenario feature values must be an object.");
@@ -48,7 +67,7 @@ public final class ScenarioTreeEvaluator {
                 "SCENARIO_TREE_TOO_DEEP", "Scenario tree exceeds the configured depth.");
         ScenarioContract scenario;
         try {
-            scenario = registry.requireScenario(scopeKey, scenarioRef);
+            scenario = resolver.apply(scopeKey, scenarioRef);
         } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
             throw new SolutionContractException(
                     "SCENARIO_OUTLET_UNRESOLVED", "A Scenario outlet is unresolved.");

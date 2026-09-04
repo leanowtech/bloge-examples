@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
+import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
@@ -201,6 +203,13 @@ public final class SolutionGovernanceService {
                         "implementationFingerprint", line.implementationFingerprint,
                         "signoffRef", signoffRef), MAX_BYTES)
                 .substring("sha256:".length(), "sha256:".length() + 24);
+        PublishedSolutionSnapshot snapshot = runtimeSnapshot(
+                scope, registry.requireSolution(scope, solutionRef));
+        if (!line.implementationFingerprint.equals(
+                SolutionImplementationIdentity.fingerprint(mapper, snapshot))) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The Solution implementation changed during publication.");
+        }
         ObjectNode data = mapper.createObjectNode();
         data.put("publicationId", publicationId);
         data.put("solutionRef", solutionRef);
@@ -212,10 +221,91 @@ public final class SolutionGovernanceService {
         data.put("signoffRef", signoffRef);
         data.put("publishedBy", identity.actorId());
         data.put("publishedAt", Instant.now().toString());
+        data.set("runtimeSnapshot", mapper.valueToTree(snapshot));
         states.saveIfRevision(scope, PUBLICATION, publicationId, 0, data);
         return Map.of("solutionRef", solutionRef, "publicationId", publicationId,
                 "artifactKind", "SOLUTION", "goldenSetId", line.goldenSetId,
                 "signoffRef", signoffRef);
+    }
+
+    /**
+     * Resolves the immutable publication that still matches the complete live executable closure.
+     *
+     * <p>Runtime invocation never treats the presence of a Solution draft as publication. The
+     * current top-level revision, business contract and Scenario/Instruction
+     * implementation fingerprint must all match one durable publication record. Any later rule,
+     * or binding change therefore fails closed until the changed Solution is tested,
+     * signed and published again.</p>
+     *
+     * @param solutionRef canonical Solution reference
+     * @param identity authenticated runtime caller
+     * @return exact publication coordinates safe to bind into a runtime idempotency reservation
+     */
+    public CurrentPublication requireCurrentPublication(
+            String solutionRef, IntegrationRequestContext identity) {
+        requirePurpose(identity, IntegrationOperation.AGENT_TDD_EXECUTE);
+        String scope = AgentTddMutationService.scopeKey(identity);
+        SolutionEntityRegistry.RegisteredEntity registered = registered(scope, solutionRef);
+        SolutionContract solution;
+        try {
+            solution = registry.requireSolution(scope, solutionRef);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
+        }
+        String implementationFingerprint = implementationFingerprint(scope, solution);
+        return states.list(scope, PUBLICATION).stream()
+                .filter(asset -> solutionRef.equals(asset.data().path("solutionRef").asText()))
+                .filter(asset -> registered.revision()
+                        == asset.data().path("solutionRevision").asLong(-1))
+                .filter(asset -> registered.contractFingerprint().equals(
+                        asset.data().path("solutionContractFingerprint").asText()))
+                .filter(asset -> implementationFingerprint.equals(
+                        asset.data().path("implementationFingerprint").asText()))
+                .map(asset -> currentPublication(
+                        asset, solutionRef, registered, implementationFingerprint))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElseThrow(() -> new AgentTddToolException(
+                        "SOLUTION_NOT_PUBLISHED", "The current Solution is not published."));
+    }
+
+    private CurrentPublication currentPublication(
+            AgentTddStoredAsset asset,
+            String solutionRef,
+            SolutionEntityRegistry.RegisteredEntity registered,
+            String implementationFingerprint) {
+        try {
+            PublishedSolutionSnapshot snapshot = mapper.treeToValue(
+                    asset.data().path("runtimeSnapshot"), PublishedSolutionSnapshot.class);
+            if (!implementationFingerprint.equals(
+                    SolutionImplementationIdentity.fingerprint(mapper, snapshot))) {
+                return null;
+            }
+            return new CurrentPublication(
+                    asset.data().path("publicationId").asText(), solutionRef,
+                    registered.revision(), registered.contractFingerprint(),
+                    implementationFingerprint, snapshot);
+        } catch (Exception invalidSnapshot) {
+            return null;
+        }
+    }
+
+    private PublishedSolutionSnapshot runtimeSnapshot(String scope, SolutionContract solution) {
+        LinkedHashMap<String, ScenarioContract> scenarios = new LinkedHashMap<>();
+        collectScenarios(scope, solution.rootScenarioRef(), scenarios);
+        java.util.TreeSet<String> instructionRefs = new java.util.TreeSet<>(solution.instructions());
+        scenarios.values().forEach(scenario -> instructionRefs.addAll(scenario.referencedInstructions()));
+        LinkedHashMap<String, InstructionContract> instructions = new LinkedHashMap<>();
+        instructionRefs.forEach(ref -> instructions.put(ref, registry.requireInstruction(scope, ref)));
+        return new PublishedSolutionSnapshot(solution, scenarios, instructions);
+    }
+
+    private void collectScenarios(
+            String scope, String scenarioRef, Map<String, ScenarioContract> scenarios) {
+        if (scenarios.containsKey(scenarioRef)) return;
+        ScenarioContract scenario = registry.requireScenario(scope, scenarioRef);
+        scenarios.put(scenarioRef, scenario);
+        scenario.referencedScenarios().forEach(child -> collectScenarios(scope, child, scenarios));
     }
 
     private Readiness assess(String scope, String solutionRef, String requestedSignoffRef) {
@@ -355,6 +445,27 @@ public final class SolutionGovernanceService {
                     "implementationFingerprint", implementationFingerprint,
                     "gates", Map.copyOf(gates),
                     "remainingLimitations", List.copyOf(remaining));
+        }
+    }
+
+    /** Immutable runtime coordinates copied from a still-current publication. */
+    public record CurrentPublication(
+            String publicationId,
+            String solutionRef,
+            long solutionRevision,
+            String solutionContractFingerprint,
+            String implementationFingerprint,
+            PublishedSolutionSnapshot runtimeSnapshot) {
+        /** Normalizes mandatory fingerprints before they enter idempotency material. */
+        public CurrentPublication {
+            publicationId = required(publicationId);
+            solutionRef = required(solutionRef);
+            solutionContractFingerprint = required(solutionContractFingerprint);
+            implementationFingerprint = required(implementationFingerprint);
+            runtimeSnapshot = Objects.requireNonNull(runtimeSnapshot, "runtimeSnapshot");
+            if (solutionRevision <= 0) {
+                throw new IllegalArgumentException("solutionRevision must be positive");
+            }
         }
     }
 }

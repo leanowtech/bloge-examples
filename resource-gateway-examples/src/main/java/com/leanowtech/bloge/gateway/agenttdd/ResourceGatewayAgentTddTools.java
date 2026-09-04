@@ -765,6 +765,9 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "FEATURE_INPUT_INVALID" -> "Feature evaluation inputs do not match the contract.";
             case "FEATURE_OUTPUT_INVALID" -> "Feature evaluation output does not match the contract.";
             case "SOLUTION_INPUT_INVALID" -> "The Solution input envelope is invalid.";
+            case "SOLUTION_NOT_PUBLISHED" -> "The current Solution has no matching publication.";
+            case "SOLUTION_INVOCATION_RECOVERY_REQUIRED" ->
+                    "The Solution invocation outcome requires operator recovery.";
             case "INSTRUCTION_BINDING_UNAVAILABLE" -> "The Instruction runtime binding is unavailable.";
             case "SCENARIO_OUTLET_UNRESOLVED" -> "A scenario outlet is not declared by the solution.";
             case "SCENARIO_TREE_CYCLE" -> "The scenario tree contains a cycle.";

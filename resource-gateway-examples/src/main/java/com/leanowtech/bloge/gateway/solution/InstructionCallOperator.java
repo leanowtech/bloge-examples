@@ -63,6 +63,21 @@ public final class InstructionCallOperator implements Operator<Map<String, Objec
                 ? raw.entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
                         entry -> Objects.toString(entry.getKey()), Map.Entry::getValue))
                 : Map.of();
+        return executeResolved(instruction, values, context);
+    }
+
+    /**
+     * Dispatches an Instruction already frozen inside a governed publication snapshot.
+     *
+     * <p>The authority remains an unforgeable graph-context value. This overload only removes the
+     * mutable registry read between publication validation and downstream dispatch.</p>
+     */
+    Map<String, Object> executeResolved(
+            InstructionContract instruction,
+            Map<String, Object> values,
+            OperatorContext context) throws Exception {
+        Objects.requireNonNull(instruction, "instruction");
+        SolutionExecutionAuthority authority = SolutionExecutionAuthority.require(context.graphContext());
         if (instruction.effect() == InstructionContract.Effect.WRITE
                 && authority.mode() == SolutionExecutionAuthority.Mode.SIMULATE) {
             return InstructionStubFactory.from(instruction);

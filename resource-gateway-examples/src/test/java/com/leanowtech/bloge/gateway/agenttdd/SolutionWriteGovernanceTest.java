@@ -134,8 +134,14 @@ class SolutionWriteGovernanceTest {
                 readiness.get("implementationFingerprint").toString(),
                 proposal.get("proposalFingerprint").toString(), humanIdentity());
 
-        assertThat(governance.publish(
-                "sol:cancel", "signoff:owner-1", humanIdentity())).containsKey("publicationId");
+        Map<String, Object> publication = governance.publish(
+                "sol:cancel", "signoff:owner-1", humanIdentity());
+        assertThat(publication).containsKey("publicationId");
+        SolutionGovernanceService.CurrentPublication current = governance.requireCurrentPublication(
+                "sol:cancel", executeIdentity());
+        assertThat(current.publicationId()).isEqualTo(publication.get("publicationId"));
+        assertThat(current.runtimeSnapshot().scenarios()).containsKey("scn:root");
+        assertThat(current.runtimeSnapshot().instructions()).containsKey("ins:refund");
 
         registry.upsertSolution(SCOPE, new SolutionContract(
                 "sol:cancel", "Resolve cancellation dispute with an amended policy.",
@@ -275,6 +281,10 @@ class SolutionWriteGovernanceTest {
 
     private static IntegrationRequestContext writeIdentity(String environment) {
         return identity("PLATFORM", "system:write-exec-runner", environment, "AGENT_TDD_WRITE_EXEC");
+    }
+
+    private static IntegrationRequestContext executeIdentity() {
+        return identity("WORKLOAD", "runtime-agent", "test", "AGENT_TDD_EXECUTION");
     }
 
     private static IntegrationRequestContext identity(

@@ -271,8 +271,18 @@ Feature、Scenario、Instruction、Solution 的服务端权威约束和可编译
 运行时先调 `rg.solution.getContract`。对 API/DAG/MODEL/INSTRUCTION_RESULT 类输入，Codex 必须
 使用 `rg.feature.evaluate` 返回的原值和 `evaluationToken`；不得改值、换输入或跨项目复用 token。
 USER_COMPONENT/USER_CONVERSATION 不调求值工具，而是采集用户明确选择并向
-`rg.solution.invoke` 传 `source=USER`。确定性特征缺 token 或任一绑定不匹配时，服务端统一返回
+`rg.solution.invoke` 传 `source=USER`，并为一次明确的业务动作传稳定、非敏感的
+`idempotencyKey`（例如 `cancel-O1-attempt-1`）。确定性特征缺 token 或任一绑定不匹配时，服务端统一返回
 `FEATURE_TOKEN_INVALID`，Codex 应重新求值，不应猜测哪个校验字段失败。
+
+运行时只执行仍与当前 Solution revision、contract fingerprint 和完整 Scenario/Instruction
+implementation fingerprint 一致的不可变 publication；草稿存在不等于可调用。同一
+`idempotencyKey` 加同一请求只返回首次持久化结果，不会再次派发；同键换请求返回
+`IDEMPOTENCY_CONFLICT`。服务端在任何 READ/WRITE Instruction 派发前持久化 reservation，WRITE
+使用内部 PLATFORM/`AGENT_TDD_WRITE_EXEC` 身份，Codex 无需也不得持有该用途。若下游结果不明，
+后续同键调用返回 `SOLUTION_INVOCATION_RECOVERY_REQUIRED`；立即停止自动重试并交给平台维护者恢复。
+无效 Feature envelope 会以仅含稳定错误码的拒绝结果完成预留，同键重放仍得到同一拒绝，且不会
+进入下游。工具目录会如实标记该运行时工具可能访问外部系统并产生破坏性效果。
 
 ### 5.2 用例与 Oracle
 
@@ -297,6 +307,9 @@ authoring receipt；伪造或旧 receipt 会被拒绝。人工 owner 在
 看板打开同一提案和 GREEN/对账坐标后签署；Codex 再读取 `rg.solution.readiness`。只有
 `logicGreen`、`implementationBound`、`writeReconciled` 和 `ownerSignoff` 全绿时，才允许
 `rg.solution.publish` 生成不可变 publication。Solution、GOLDEN、证据或 binding 任一变化都会使旧对账和旧签署失效。
+publication 同时冻结 Solution、完整 Scenario 树和 Instruction 合同；运行时从该快照执行，不在
+发布校验与下游派发之间重新读取可变创作注册表。
+
 - 只有持久 `caseSetRef` 中的 `ACTIVE` 行能推进 READY 并形成发布证据。
 - 每个执行行必须有显式 `expect`。实现不能反过来修改 Oracle 以迎合结果。
 - 执行后的并发用例修改会让 READY、evidence、verdict 和 line 一起回滚。

@@ -9,25 +9,30 @@ import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
  * purpose-authenticated {@link IntegrationOperation} from this value before dispatch.</p>
  */
 public enum McpToolImpact {
-    READ(IntegrationOperation.AGENT_TDD_READ, true, false, true),
-    DRAFT_WRITE(IntegrationOperation.AGENT_TDD_DRAFT_WRITE, false, false, true),
-    PROPOSE(IntegrationOperation.AGENT_TDD_PROPOSE, false, false, true),
-    EXECUTE(IntegrationOperation.AGENT_TDD_EXECUTE, false, false, false),
-    GOVERNED_WRITE(IntegrationOperation.AGENT_TDD_GOVERNED_WRITE, false, true, true);
+    READ(IntegrationOperation.AGENT_TDD_READ, true, false, true, false),
+    DRAFT_WRITE(IntegrationOperation.AGENT_TDD_DRAFT_WRITE, false, false, true, false),
+    PROPOSE(IntegrationOperation.AGENT_TDD_PROPOSE, false, false, true, false),
+    EXECUTE(IntegrationOperation.AGENT_TDD_EXECUTE, false, false, false, false),
+    /** Published runtime execution may reach a governed external WRITE binding. */
+    RUNTIME_EXECUTE(IntegrationOperation.AGENT_TDD_EXECUTE, false, true, true, true),
+    GOVERNED_WRITE(IntegrationOperation.AGENT_TDD_GOVERNED_WRITE, false, true, true, false);
 
     private final IntegrationOperation operation;
     private final boolean readOnly;
     private final boolean destructive;
     private final boolean idempotent;
+    private final boolean openWorld;
 
     McpToolImpact(IntegrationOperation operation,
                   boolean readOnly,
                   boolean destructive,
-                  boolean idempotent) {
+                  boolean idempotent,
+                  boolean openWorld) {
         this.operation = operation;
         this.readOnly = readOnly;
         this.destructive = destructive;
         this.idempotent = idempotent;
+        this.openWorld = openWorld;
     }
 
     /** @return purpose-authenticated operation required before the tool may execute */
@@ -41,7 +46,7 @@ public enum McpToolImpact {
                 "readOnlyHint", readOnly,
                 "destructiveHint", destructive,
                 "idempotentHint", idempotent,
-                "openWorldHint", false
+                "openWorldHint", openWorld
         );
     }
 }

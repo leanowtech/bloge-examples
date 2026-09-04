@@ -48,6 +48,7 @@ public final class SolutionAgentTools {
     private final SolutionLowering lowering;
     private final FeatureEvaluationService featureEvaluation;
     private final SolutionInvocationService invocation;
+    private final SolutionLiveInvocationService liveInvocation;
     private final SolutionTestingService testing;
     private final SolutionPerformanceService performance;
     private final EngineeringHandoffService handoffs;
@@ -98,6 +99,8 @@ public final class SolutionAgentTools {
         this.performance = new SolutionPerformanceService(states);
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
         this.governance = new SolutionGovernanceService(states, registry, mapper);
+        this.liveInvocation = new SolutionLiveInvocationService(
+                states, invocation, governance, mapper);
     }
 
     /** Submits the exact current Solution and DSL receipt for independent business review. */
@@ -159,15 +162,17 @@ public final class SolutionAgentTools {
         }
     }
 
-    /** Verifies Feature proofs and invokes one pure Solution with no hidden feature collection. */
+    /**
+     * Verifies Feature proofs and invokes only a current published Solution.
+     *
+     * <p>The caller supplies an idempotency key but never WRITE_EXEC authority. The live boundary
+     * reserves the exact published implementation before deriving an internal platform identity
+     * for the selected Instruction.</p>
+     */
     public Map<String, Object> invokeSolution(JsonNode arguments, IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
-        try {
-            return mapper.convertValue(invocation.invoke(AgentTddMutationService.scopeKey(identity),
-                    requiredText(arguments, "solutionRef"), requiredObject(arguments, "inputs")), OBJECT_MAP);
-        } catch (SolutionContractException failure) {
-            throw new AgentTddToolException(failure.code(), failure.getMessage());
-        }
+        return liveInvocation.invoke(requiredText(arguments, "solutionRef"),
+                requiredObject(arguments, "inputs"), requiredText(arguments, "idempotencyKey"), identity);
     }
 
     /** Runs pure Scenario outlet contract cases using caller-pinned Feature values. */

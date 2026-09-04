@@ -5665,8 +5665,14 @@ and trusted runtime invocation remain outside the pure graph. `rg.solution.getCo
 collection plan. Platform-owned values are produced by a uniquely resolved
 `FeatureEvaluationAdapter`, then protected by a five-minute HS256 token bound to Feature ref,
 input/value fingerprints, and the exact tenant/project/environment scope. Interactive values must
-carry `source=USER`. `rg.solution.invoke` verifies every envelope before entering the graph. Local
-demos use one process-local key; replicated or restart-stable environments must set
+carry `source=USER`. `rg.solution.invoke` requires a business-action `idempotencyKey`, verifies every
+envelope and a still-current immutable publication, durably reserves dispatch, and then executes the
+publication's frozen Solution/Scenario/Instruction snapshot. WRITE is mediated by an internal
+PLATFORM identity; callers never receive `AGENT_TDD_WRITE_EXEC`. Exact retries replay the stored
+response, conflicting key reuse fails closed, and an ambiguous downstream outcome requires operator
+recovery instead of automatic retry. Its MCP annotations therefore honestly report idempotent,
+open-world, potentially destructive execution. Local demos use one process-local key; replicated
+or restart-stable environments must set
 `RG_FEATURE_TOKEN_ACTIVE_KEY_ID` and `RG_FEATURE_TOKEN_KEY_RING` from a secret manager. The key-ring
 format is comma-separated `keyId=base64(32-or-more-byte-secret)` and may retain verify-only keys
 during rotation.
