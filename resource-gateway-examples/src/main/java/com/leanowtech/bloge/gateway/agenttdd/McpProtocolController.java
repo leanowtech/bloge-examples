@@ -38,6 +38,7 @@ public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
     public static final String CODEX_PROTOCOL_VERSION = "2025-06-18";
+    static final String SERVER_VERSION = "1.4.3";
     private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order. Start DSL work with "
             + "rg.dsl.reference.get and treat its "
             + "languageVersion, contracts, examples, and authoringContextFingerprint as authoritative. "
@@ -218,7 +219,7 @@ public final class McpProtocolController {
     private Map<String, Object> discover() {
         return Map.of(
                 "protocolVersion", MODERN_PROTOCOL_VERSION,
-                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.2"),
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
                 "instructions", AGENT_INSTRUCTIONS
         );
@@ -233,7 +234,7 @@ public final class McpProtocolController {
         }
         return Map.of(
                 "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
-                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", "1.4.2"),
+                "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
                 "instructions", AGENT_INSTRUCTIONS
         );

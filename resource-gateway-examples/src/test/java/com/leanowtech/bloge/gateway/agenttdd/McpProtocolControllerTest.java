@@ -379,6 +379,8 @@ class McpProtocolControllerTest {
 
         assertThat(modern.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
+        assertThat(modern.path("result").path("serverInfo").path("version").asText())
+                .isEqualTo("1.4.3");
         assertThat(modern.path("result").path("instructions").asText())
                 .startsWith("Use the Agent TDD tools in order");
         assertThat(modern.path("result").path("instructions").asText())
@@ -389,6 +391,8 @@ class McpProtocolControllerTest {
                         "bind the case set to the toolRef returned by compose");
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
+        assertThat(codex.path("result").path("serverInfo").path("version").asText())
+                .isEqualTo("1.4.3");
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }

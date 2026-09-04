@@ -12,7 +12,7 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
-Resource Gateway 1.4.2 also exposes an authenticated, stateless MCP Agent TDD surface at
+Resource Gateway 1.4.3 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
 cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board with separately authenticated
