@@ -186,7 +186,7 @@ final class DslAuthoringCompiler {
         return new DslPreviewReceipt(new DslPreviewReceipt.AuthoringContext(
                 context.fingerprint(), "CURRENT", context.languageVersion(), context.compilerProfile()),
                 stages, acceptance, safeProjection, roundTrip, bounded, summary, nextAction,
-                receiptFingerprint, accepted, projection);
+                receiptFingerprint, accepted, projection, context);
     }
 
     private DslCompiler semanticCompiler(DslAuthoringContext context) {

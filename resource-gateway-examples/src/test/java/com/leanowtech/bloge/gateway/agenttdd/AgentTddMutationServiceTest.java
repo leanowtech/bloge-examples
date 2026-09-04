@@ -171,6 +171,66 @@ class AgentTddMutationServiceTest {
     }
 
     @Test
+    void mcpComposeMaterializesRuntimeBindingFromTheSameFrozenReceiptContext() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        VisualOperatorCatalog catalog = new VisualOperatorCatalog() {
+            @Override
+            public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                java.util.ArrayList<OperatorDefinition> values = new java.util.ArrayList<>();
+                libraries.all().forEach(library -> values.addAll(library.operators()));
+                runtimeTarget("/quotes-from-frozen-context").ifPresent(values::add);
+                return values;
+            }
+
+            @Override
+            public Optional<OperatorDefinition> find(String operatorRef) {
+                return "resource:shipping-service.quote".equals(operatorRef)
+                        ? runtimeTarget("/quotes-from-later-live-read") : Optional.empty();
+            }
+
+            private Optional<OperatorDefinition> runtimeTarget(String urlTemplate) {
+                return libraries.find("shipping").flatMap(library -> library.operators().stream().findFirst())
+                        .map(contract -> new OperatorDefinition(
+                                "", "resource:shipping-service.quote", "1.0.0", "",
+                                contract.display(), new OperatorDefinition.Source(
+                                        "resource-descriptor", "shipping-service.quote", "GET",
+                                        urlTemplate, true),
+                                contract.ports(), contract.configSchema(), contract.capabilities(), contract.policy(),
+                                new OperatorDefinition.Lowering(
+                                        "resource-descriptor", "httpResource", Map.of()),
+                                List.of()));
+            }
+        };
+        DslImportService projection = new DslImportService(catalog, new OperatorLibraryValidator());
+        VisualGraphSimulationService simulation = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
+                new DynamicGatewayComposerVisualDslRunner(new DefaultOperatorRegistry()));
+        AuthoringPreviewService authoring = new AuthoringPreviewService(
+                new AuthoringCompiler(mapper, new OperatorLibraryValidator()), libraries, mapper);
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        Fixture fixture = new Fixture(new ResourceGatewayAgentTddTools(
+                libraries, drafts, mapper, projection, simulation, states, authoring, null, catalog),
+                libraries, drafts, states);
+        invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(
+                "libraryYaml", boundLibraryYaml(), "idempotencyKey", "frozen-binding-lib")));
+        JsonNode gate = authoringGate(fixture, shippingDsl(), List.of("shipping"));
+
+        JsonNode composed = invoke(fixture, "rg.tool.compose", mapper.valueToTree(Map.of(
+                "toolRef", "frozen-binding-tool",
+                "graph", Map.of("sourceId", "shipping.bloge", "dsl", shippingDsl()),
+                "libraryRefs", List.of("shipping"),
+                "authoringContextFingerprint", gate.at("/data/authoringContext/fingerprint").asText(),
+                "authoringReceiptFingerprint", gate.at("/data/authoringReceiptFingerprint").asText(),
+                "idempotencyKey", "frozen-binding-compose")));
+
+        assertThat(composed.path("ok").asBoolean()).as(composed.toPrettyString()).isTrue();
+        assertThat(drafts.find("frozen-binding-tool").orElseThrow()
+                .operatorSnapshots().get("quote").source().urlTemplate())
+                .isEqualTo("/quotes-from-frozen-context");
+    }
+
+    @Test
     void mcpComposeRejectsChangedSourceForgedReceiptAndClientGraphWithoutWriting() {
         Fixture fixture = hardenedFixture();
         invoke(fixture, "rg.library.upsert", mapper.valueToTree(Map.of(

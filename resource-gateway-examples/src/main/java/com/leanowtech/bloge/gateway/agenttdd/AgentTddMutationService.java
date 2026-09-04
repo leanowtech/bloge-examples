@@ -165,7 +165,7 @@ public final class AgentTddMutationService {
                 throw new AgentTddToolException("SCHEMA_NONCONFORMANT",
                         "MCP compose accepts only a DSL graph envelope.");
             }
-            candidate = resolveRuntimeBindings(candidate);
+            candidate = resolveRuntimeBindings(candidate, receipt == null ? null : receipt.frozenContext());
             requireReferencedLibraries(candidate, refs);
             GraphDraft current = drafts.find(assetRef).orElse(null);
             if (current != null && !identity.matchesDraftScope(current)) {
@@ -461,7 +461,7 @@ public final class AgentTddMutationService {
                 List.of(), "ACCEPTED", Map.of(),
                 new DslPreviewReceipt.RoundTrip(projection.roundTrip().status(), "", "", List.of()),
                 List.of(), new DslPreviewReceipt.DiagnosticSummary(0, false, List.of()),
-                "CONTINUE_TO_COMPOSE", "", true, projection);
+                "CONTINUE_TO_COMPOSE", "", true, projection, null);
     }
 
     private GraphDraft convertGraph(JsonNode graph) {
@@ -472,7 +472,14 @@ public final class AgentTddMutationService {
         }
     }
 
-    private GraphDraft resolveRuntimeBindings(GraphDraft draft) {
+    /**
+     * Materializes runtime bindings from the same catalog snapshot that produced the receipt.
+     *
+     * <p>Legacy internal callers have no authoring context and retain their historical live lookup.
+     * MCP compose always supplies a frozen context, preventing a catalog replacement between
+     * compilation and persistence from changing the admitted implementation.</p>
+     */
+    private GraphDraft resolveRuntimeBindings(GraphDraft draft, DslAuthoringContext frozenContext) {
         Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>(draft.operatorSnapshots());
         Map<String, String> fingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
         Map<String, OperatorDefinition> resolvedTargets = new LinkedHashMap<>();
@@ -481,9 +488,12 @@ public final class AgentTddMutationService {
             if (operator == null) return;
             Object configured = bindingRef(operator);
             if (!(configured instanceof String binding) || binding.isBlank()) return;
-            OperatorDefinition target = projection.resolveOperator(binding)
-                    .or(() -> projection.resolveOperator("resource:" + binding))
-                    .orElse(null);
+            OperatorDefinition target = frozenContext == null
+                    ? projection.resolveOperator(binding)
+                            .or(() -> projection.resolveOperator("resource:" + binding))
+                            .orElse(null)
+                    : frozenContext.operators().getOrDefault(binding,
+                            frozenContext.operators().get("resource:" + binding));
             if (target == null) {
                 if (Set.of("resource-read", "external-write").contains(bindingArchetype(operator))) {
                     missingResourceIds.add(binding.startsWith("resource:")

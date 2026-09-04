@@ -20,6 +20,7 @@ import java.util.Map;
  * @param authoringReceiptFingerprint content address binding source, context and result
  * @param accepted whether every blocking technical gate passed
  * @param serverProjection internal projection that is never serialized to MCP
+ * @param frozenContext internal catalog snapshot used to compile and promote this receipt
  */
 public record DslPreviewReceipt(
         AuthoringContext authoringContext,
@@ -32,7 +33,8 @@ public record DslPreviewReceipt(
         String nextAction,
         String authoringReceiptFingerprint,
         boolean accepted,
-        @JsonIgnore DslVisualProjection serverProjection
+        @JsonIgnore DslVisualProjection serverProjection,
+        @JsonIgnore DslAuthoringContext frozenContext
 ) {
     /** Reference identity echoed without tenant, project or catalog contents. */
     public record AuthoringContext(
