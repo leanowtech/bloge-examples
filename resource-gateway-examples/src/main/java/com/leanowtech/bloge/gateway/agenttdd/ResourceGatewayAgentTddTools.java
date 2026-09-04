@@ -40,6 +40,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final AgentTddWorkflowService workflow;
     private final AgentTddResourceDeclarationService declarations;
     private final AgentTddAttestationService attestations;
+    private final AgentDslAuthoringSupport dslAuthoring;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -146,6 +147,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
+        this.dslAuthoring = catalog == null ? null : new AgentDslAuthoringSupport(catalog, libraries, mapper);
     }
 
     /**
@@ -174,6 +176,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.evidence.get" -> workflow == null
                     ? failure("DRAFT_NOT_FOUND", "No evidence exists for the requested reference.")
                     : executionSuccess(workflow.evidence(safeArguments, identity));
+            case "rg.dsl.reference.get" -> success(dslAuthoring().reference(
+                    new DslReferenceRequest(
+                            requiredStringList(safeArguments, "libraryRefs"),
+                            optionalStringList(safeArguments, "topics"),
+                            optionalStringList(safeArguments, "operatorRefs"),
+                            safeArguments.path("includeExamples").asBoolean(false)), identity));
             case "rg.readiness.get" -> workflow == null
                     ? readiness(safeArguments, identity)
                     : executionSuccess(workflow.readiness(safeArguments, identity));
@@ -442,6 +450,30 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 ? arguments.path(field).asText().trim() : "";
     }
 
+    private static List<String> requiredStringList(JsonNode arguments, String field) {
+        JsonNode value = arguments == null ? null : arguments.get(field);
+        if (value == null || !value.isArray()) {
+            throw new McpProtocolException(-32602, field + " is required");
+        }
+        return stringList(value, field);
+    }
+
+    private static List<String> optionalStringList(JsonNode arguments, String field) {
+        JsonNode value = arguments == null ? null : arguments.get(field);
+        return value == null ? List.of() : stringList(value, field);
+    }
+
+    private static List<String> stringList(JsonNode value, String field) {
+        List<String> values = new java.util.ArrayList<>();
+        for (JsonNode item : value) {
+            if (!item.isTextual() || item.asText().isBlank()) {
+                throw new McpProtocolException(-32602, field + " must contain non-blank strings");
+            }
+            values.add(item.asText().trim());
+        }
+        return List.copyOf(values);
+    }
+
     private static Map<String, Object> success(Object data) {
         return Map.of("ok", true, "data", data, "diagnostics", List.of());
     }
@@ -476,6 +508,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             throw new AgentTddToolException("GATE_REJECTED", "Agent resource declaration is unavailable.");
         }
         return declarations;
+    }
+
+    private AgentDslAuthoringSupport dslAuthoring() {
+        if (dslAuthoring == null) {
+            throw new AgentTddToolException("GATE_REJECTED", "DSL authoring support is unavailable.");
+        }
+        return dslAuthoring;
     }
 
     /** Records logical GREEN first, then lets the platform-only runner attach real-call evidence. */
@@ -549,6 +588,10 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "PUBLISH_GATE_NOT_MET" -> "One or more publication gates are not satisfied.";
             case "SIM_REAL_CALL_DETECTED" -> "Simulation detected a forbidden real invocation.";
             case "COMBINATORIAL_CAP_EXCEEDED" -> "Scenario enumeration exceeds its configured cap.";
+            case "DSL_AUTHORING_CONTEXT_REQUIRED" -> "Fetch the DSL authoring reference before compiling.";
+            case "DSL_LIBRARY_NOT_VISIBLE" -> "A requested DSL library is not visible in this authoring scope.";
+            case "DSL_REFERENCE_TOPIC_UNKNOWN" -> "A requested DSL reference topic is not supported.";
+            case "DSL_REFERENCE_TOO_LARGE" -> "Narrow the requested DSL reference scope.";
             default -> "The requested operation was rejected by a governance gate.";
         };
     }

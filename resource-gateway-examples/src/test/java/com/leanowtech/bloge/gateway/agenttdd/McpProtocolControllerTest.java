@@ -8,6 +8,10 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -15,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,7 +47,8 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(26);
+        assertThat(response.path("result").path("tools")).hasSize(27);
+        assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
         assertThat(response.path("result").fieldNames()).toIterable().containsExactly("tools");
@@ -64,7 +70,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(26);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(27);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -110,6 +116,37 @@ class McpProtocolControllerTest {
                 .path("realExternalCalls").asInt()).isZero();
         assertThat(response.path("result").path("content").get(0).path("type").asText()).isEqualTo("text");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_EXECUTE);
+    }
+
+    @Test
+    void servesTheScopedDslReferenceThroughTheRealStrictMcpBoundary() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        OperatorLibraryRegistry libraries = mock(OperatorLibraryRegistry.class);
+        when(libraries.all()).thenReturn(List.of());
+        when(libraries.find(any())).thenReturn(Optional.empty());
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        when(operators.builtInFunctions(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                libraries, drafts, mapper, null, null, null, null, null, operators);
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, tools);
+
+        JsonNode response = controller.exchange(request(91, "tools/call", Map.of(
+                "name", "rg.dsl.reference.get",
+                "arguments", Map.of("libraryRefs", List.of(), "topics", List.of("graph"),
+                        "includeExamples", true))),
+                modernHeaders("tools/call", "rg.dsl.reference.get")).getBody();
+
+        assertThat(response.path("error").isMissingNode()).isTrue();
+        JsonNode reference = response.path("result").path("structuredContent").path("data");
+        assertThat(reference.path("schemaVersion").asText()).isEqualTo("rg.dslReference.v1");
+        assertThat(reference.path("supportedRootKinds").get(0).asText()).isEqualTo("graph");
+        assertThat(reference.path("authoringContextFingerprint").asText()).startsWith("sha256:");
+        assertThat(reference.toString()).doesNotContain("urlTemplate", "diagnostics", "lowering");
     }
 
     @Test

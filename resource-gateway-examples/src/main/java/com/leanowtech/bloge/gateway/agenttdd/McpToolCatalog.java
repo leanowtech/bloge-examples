@@ -36,6 +36,12 @@ public final class McpToolCatalog {
                 McpToolImpact.READ, props("toolRef", string(), "goldenSetId", string()), List.of("toolRef")));
         values.add(tool("rg.evidence.get", "Get evidence", "Read a classification-filtered execution evidence lens.",
                 McpToolImpact.READ, props("evidenceRef", string(), "view", string()), List.of("evidenceRef")));
+        values.add(tool("rg.dsl.reference.get", "Get DSL reference",
+                "Read the scoped BLOGE graph grammar, contracts and certified examples.",
+                McpToolImpact.READ,
+                props("libraryRefs", stringArray(), "topics", stringArray(),
+                        "operatorRefs", stringArray(), "includeExamples", bool()),
+                List.of("libraryRefs")));
 
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
                 McpToolImpact.DRAFT_WRITE,
@@ -294,6 +300,43 @@ public final class McpToolCatalog {
                 List.of("dimensions"));
     }
 
+    /** Strict, payload-free authoring reference returned by the DSL reference tool. */
+    private static Map<String, Object> dslReference() {
+        Map<String, Object> rule = structuredObject(
+                props("ruleId", string(), "summary", string()), List.of("ruleId", "summary"));
+        Map<String, Object> topic = structuredObject(props(
+                "topicId", string(), "title", string(), "rules", arrayOf(rule),
+                "exampleRefs", stringArray()), List.of("topicId", "title", "rules", "exampleRefs"));
+        Map<String, Object> port = structuredObject(props(
+                "name", string(), "required", bool(), "schemaRef", string()),
+                List.of("name", "required", "schemaRef"));
+        Map<String, Object> operator = structuredObject(props(
+                "operatorRef", string(), "archetype", string(), "effect", string(),
+                "inputs", arrayOf(port), "outputs", arrayOf(port), "configSchema", businessObject(),
+                "contractFingerprint", string(), "bindingState", string()),
+                List.of("operatorRef", "archetype", "effect", "inputs", "outputs", "configSchema",
+                        "contractFingerprint", "bindingState"));
+        Map<String, Object> function = structuredObject(props(
+                "name", string(), "signature", string(), "contractFingerprint", string()),
+                List.of("name", "signature", "contractFingerprint"));
+        Map<String, Object> example = structuredObject(props(
+                "exampleId", string(), "intent", string(), "source", string(),
+                "assertions", stringArray()), List.of("exampleId", "intent", "source", "assertions"));
+        Map<String, Object> limits = structuredObject(props(
+                "maxTopics", integer(), "maxOperatorRefs", integer(), "maxFunctions", integer(),
+                "maxExamples", integer(), "maxResponseBytes", integer()),
+                List.of("maxTopics", "maxOperatorRefs", "maxFunctions", "maxExamples", "maxResponseBytes"));
+        return structuredObject(props(
+                "schemaVersion", string(), "languageVersion", string(), "compilerProfile", string(),
+                "supportedRootKinds", stringArray(), "referenceVersion", string(),
+                "authoringContextFingerprint", string(), "topics", arrayOf(topic),
+                "operators", arrayOf(operator), "functions", arrayOf(function),
+                "examples", arrayOf(example), "limits", limits),
+                List.of("schemaVersion", "languageVersion", "compilerProfile", "supportedRootKinds",
+                        "referenceVersion", "authoringContextFingerprint", "topics", "operators",
+                        "functions", "examples", "limits"));
+    }
+
     private static Map<String, Object> counts() {
         return structuredObject(props("pass", integer(), "fail", integer()), List.of("pass", "fail"));
     }
@@ -377,6 +420,7 @@ public final class McpToolCatalog {
                     List.of("toolRef", "state"));
             case "rg.evidence.get" -> structuredObject(props("toolRef", string(), "operation", string(),
                     "result", businessObject()), List.of("toolRef", "operation", "result"));
+            case "rg.dsl.reference.get" -> dslReference();
             case "rg.library.upsert" -> structuredObject(props("libraryId", string(), "version", string(),
                     "operators", arrayOf(businessObject()), "functions", arrayOf(businessObject()),
                     "types", stringArray(), "canonicalFingerprint", string(),

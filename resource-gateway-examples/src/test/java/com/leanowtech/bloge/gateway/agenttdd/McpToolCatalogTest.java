@@ -17,8 +17,9 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(26);
+        assertThat(catalog.all()).hasSize(27);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.oracle.propose").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.simulate").impact()).isEqualTo(McpToolImpact.EXECUTE);
@@ -114,6 +115,28 @@ class McpToolCatalogTest {
         assertThat(cases.keySet().stream().map(Object::toString).toList())
                 .contains("oneOf").doesNotContain("properties", "required");
         assertThat((List<?>) cases.get("oneOf")).hasSize(2);
+    }
+
+    @Test
+    void publishesAStrictPayloadFreeDslReferenceContract() {
+        McpToolDefinition reference = new McpToolCatalog().require("rg.dsl.reference.get");
+
+        assertThat(stringKeys((Map<?, ?>) reference.inputSchema().get("properties")))
+                .containsExactlyInAnyOrder("libraryRefs", "topics", "operatorRefs", "includeExamples");
+        assertThat(((List<?>) reference.inputSchema().get("required")).stream().map(Object::toString).toList())
+                .containsExactly("libraryRefs");
+
+        Map<?, ?> data = dataProperties(reference);
+        assertThat(stringKeys(data)).containsExactlyInAnyOrder(
+                "schemaVersion", "languageVersion", "compilerProfile", "supportedRootKinds",
+                "referenceVersion", "authoringContextFingerprint", "topics", "operators",
+                "functions", "examples", "limits");
+        Map<?, ?> operator = (Map<?, ?>) ((Map<?, ?>) data.get("operators")).get("items");
+        assertThat(stringKeys((Map<?, ?>) operator.get("properties"))).containsExactlyInAnyOrder(
+                "operatorRef", "archetype", "effect", "inputs", "outputs", "configSchema",
+                "contractFingerprint", "bindingState");
+        assertThat(stringKeys((Map<?, ?>) operator.get("properties")))
+                .doesNotContain("urlTemplate", "description", "examples", "diagnostics", "lowering");
     }
 
     @SuppressWarnings("unchecked")

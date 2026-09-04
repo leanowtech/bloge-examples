@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "rg.dslReferenceBundle.v1",
+  "languageVersion": "bloge-dsl-0.8.9-RC2",
+  "compilerProfile": "resource-gateway-graph-authoring-v1",
+  "supportedRootKinds": ["graph"],
+  "defaultTopics": ["graph", "node", "bindings", "transform", "decision-table"],
+  "topics": [
+    {
+      "topicId": "graph",
+      "title": "Graph root",
+      "rules": [
+        {"ruleId": "GRAPH_ONLY", "summary": "Use exactly one graph root; session and state_machine are not accepted by Resource Gateway authoring."},
+        {"ruleId": "GRAPH_NAME", "summary": "Give the graph a stable identifier followed by a braced member block."}
+      ],
+      "exampleRefs": ["graph-transform-minimal"]
+    },
+    {
+      "topicId": "node",
+      "title": "Operator node",
+      "rules": [
+        {"ruleId": "VISIBLE_OPERATOR", "summary": "Declare each operator node as node name : operatorRef and use only references returned by this snapshot."},
+        {"ruleId": "NODE_BODY", "summary": "Place input, output, dependency, timeout and retry declarations inside the node body."}
+      ],
+      "exampleRefs": ["graph-resource-transform-minimal"]
+    },
+    {
+      "topicId": "bindings",
+      "title": "Input and output bindings",
+      "rules": [
+        {"ruleId": "INPUT_ASSIGNMENT", "summary": "Assign each named input from ctx or an upstream node output inside an input block."},
+        {"ruleId": "DECLARED_PORTS", "summary": "Use only input and output port names returned in the selected operator contracts."}
+      ],
+      "exampleRefs": ["graph-resource-transform-minimal"]
+    },
+    {
+      "topicId": "transform",
+      "title": "Pure transform",
+      "rules": [
+        {"ruleId": "TRANSFORM_FIELDS", "summary": "Declare each output field as name = expression; optional type annotations precede the equals sign."}
+      ],
+      "exampleRefs": ["graph-transform-minimal"]
+    },
+    {
+      "topicId": "decision-table",
+      "title": "Decision table",
+      "rules": [
+        {"ruleId": "DECISION_INPUTS", "summary": "Name every decision input and declare a structured result type."},
+        {"ruleId": "UNIQUE_WITH_OTHERWISE", "summary": "For hit=unique, keep rules non-overlapping and include an otherwise rule when inputs are not exhaustive."}
+      ],
+      "exampleRefs": ["graph-decision-minimal"]
+    },
+    {
+      "topicId": "effects",
+      "title": "Effects and execution claims",
+      "rules": [
+        {"ruleId": "EFFECT_FROM_CONTRACT", "summary": "Treat the effect and bindingState in the operator contract as authoritative; preview does not prove live execution readiness."}
+      ],
+      "exampleRefs": []
+    }
+  ],
+  "examples": [
+    {
+      "exampleId": "graph-transform-minimal",
+      "intent": "Return a value from the request context without external calls",
+      "source": "graph transformExample {\n  transform result {\n    value = ctx.value\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
+      "requiredOperatorRefs": ["bloge:transform"]
+    },
+    {
+      "exampleId": "graph-resource-transform-minimal",
+      "intent": "Read one governed resource and shape its response",
+      "source": "graph resourceExample {\n  node lookup : httpResource {\n    input {\n      resourceId = ctx.resourceId\n      params = {}\n    }\n  }\n  transform result {\n    payload = lookup.output.payload\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
+      "requiredOperatorRefs": ["httpResource", "bloge:transform"]
+    },
+    {
+      "exampleId": "graph-decision-minimal",
+      "intent": "Evaluate an explicit rule matrix with a safe fallback",
+      "source": "graph decisionExample {\n  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {\n    rule (score: score >= 120) -> { decision: \"accept\" }\n    otherwise -> { decision: \"review\" }\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
+      "requiredOperatorRefs": ["bloge:decisionTable"]
+    }
+  ]
+}
