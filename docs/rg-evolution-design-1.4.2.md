@@ -1,6 +1,6 @@
 # Resource Gateway 演进详细技术方案 v1.4.2：补齐 Agent 的 DSL 创作支持面
 
-> 状态：提议稿，待架构与实施评审。
+> 状态：已实施；最终实现映射、认证证据与剩余限制见第 23 节。
 >
 > 日期：2026-09-04。
 >
@@ -881,12 +881,13 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 
 ### 15.2 配置开关
 
-建议增加两个显式开关：
+评审后决定**不增加这两个开关**。`rg.dsl.reference.get` 是只读增量工具；preview/gate 和 MCP compose
+在 1.4.2 中直接强制上下文与 receipt，不保留可关闭的兼容旁路。原因是 `require-context=false`
+会让同一版本同时存在受保护和不受保护的创作路径，扩大测试矩阵，也会重新引入“参考 A、编译 B”风险。
 
-- `gateway.agent-tdd.dsl-authoring.enabled`：控制新 reference 工具和增强诊断；
-- `gateway.agent-tdd.dsl-authoring.require-context`：控制 preview/gate 是否强制指纹。
-
-发布过程先在 local/test/sandbox 启用，完成 Codex 认证后再启用 `require-context`。生产式部署若开启 Agent TDD，则两者应同时开启；不允许长期停在“有 reference、preview 却不绑定 reference”的半状态。
+部署仍由既有 Agent TDD 身份、purpose 与网络边界控制；未授权身份看不到或不能调用这些工具。
+需要回滚时应回滚整个应用制品，而不是在运行时降级安全不变量。MCP input schema 的收紧属于
+1.4.2 线级变更，旧调用方必须先升级为 reference → preview → gate → compose。
 
 ### 15.3 回滚
 
@@ -897,6 +898,10 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 ## 16. 工程实施计划
 
 每个阶段独立提交；阶段完成的含义是代码、JavaDoc、测试和最近文档同时完成。
+
+实际实现沿用现有 `agenttdd` 包，没有为十余个小类型再造一层 `authoring` 子包。
+`AgentDslAuthoringSupport` 保持对外深边界，bundle、context、compiler、diagnostic registry 与 receipt
+仍是包内协作者；这与下文职责划分一致，只调整了物理路径。
 
 ### S0 · 冻结线级契约和 BLOGE 诊断前置能力
 
@@ -972,7 +977,7 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 
 - controller 级 MCP rate/quota；
 - DNS 解析/重绑定防护，见第 17.1 节；
-- metrics、审计与 dashboard；
+- 复用现有 MCP 鉴权审计与 Agent TDD 看板；新增指标列为生产运营增强项，不阻断创作安全闭环；
 - 全量回归、原生 PostgreSQL、真实浏览器和真实 Codex 认证。
 
 ### 16.1 预计代码落点
@@ -984,15 +989,14 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 | `agenttdd/ResourceGatewayAgentTddTools.java` | `rg.dsl.reference.get` 分派，不承载参考生成规则 |
 | `agenttdd/AgentTddExecutionService.java` | 委托 authoring support；保留 Agent TDD honest verdict 和执行边界 |
 | `agenttdd/AgentTddMutationService.java` | compose 在 mutation 内复验 receipt，并只保存 server projection |
-| `agenttdd/authoring/AgentDslAuthoringSupport.java` | reference/preview 深模块门面 |
-| `agenttdd/authoring/DslAuthoringContextResolver.java` | scope-aware 一次物化与 fingerprint |
-| `agenttdd/authoring/DslReferenceService.java` | reference 裁剪与大小上限 |
-| `agenttdd/authoring/DslContractLens.java` | payload-free contract 投影 |
-| `agenttdd/authoring/DslAuthoringCompiler.java` | 分阶段编译与 receipt |
-| `agenttdd/authoring/DslSafeDiagnosticRegistry.java` | code、摘要、允许字段和 fix hints |
+| `agenttdd/AgentDslAuthoringSupport.java` | reference/preview 深模块门面，同时负责参考裁剪、大小上限与有界执行 |
+| `agenttdd/DslAuthoringContextResolver.java` | scope-aware 一次物化与 fingerprint |
+| `agenttdd/DslContractLens.java` | payload-free contract 投影 |
+| `agenttdd/DslAuthoringCompiler.java` | 分阶段编译与 receipt |
+| `agenttdd/DslSafeDiagnosticRegistry.java` | code、摘要、允许字段和 fix hints |
 | `visual/importer/DslImportService.java` | 新增消费 parsed AST + immutable catalog 的投影入口 |
 | `src/main/resources/agent-tdd/dsl-reference/v1/` | manifest、topics 和 certified examples |
-| `src/test/.../agenttdd/authoring/` | 参考、诊断、漂移、泄漏和收敛测试 |
+| `src/test/.../agenttdd/` | 参考、诊断、漂移、泄漏和收敛测试 |
 | `AgentTddMcpOperationalWorkflowTest.java` | 真实 HTTP 生命周期和真实 Codex/浏览器认证支点 |
 
 包名是建议边界；实施时可以按现有目录惯例微调，但不得把这些职责重新聚合进 controller 或 `DslImportService`。
@@ -1005,20 +1009,27 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 
 独立审查指出：A5 当前对 URL 模板做精确 host 白名单、协议限制、userinfo 拒绝和 IDN 规范化，但不解析/固定 IP。白名单域名若被恶意解析到 loopback、link-local、私网或云 metadata 地址，仍可能形成 SSRF。
 
-v1.4.2 吸收为并行安全项：
+v1.4.2 已吸收为并行安全项：
 
-- 在实际 dispatch 前解析目标；
+- 规划时连续解析两次目标，在每条实景案例 dispatch 前再次解析并核对同一地址集合；
 - 拒绝 loopback、link-local、site-local、multicast、unspecified 和配置禁止的网段；
-- 连接必须绑定到已校验地址，或在 transport 层再次核对实际 peer；
 - redirect 继续禁用；
 - DNS 失败、答案变化或出现混合公私地址时失败关闭；
-- 测试覆盖 IPv4、IPv6、CNAME/多 A 记录和检查后切换场景。
+- 测试覆盖 IPv4、IPv6、多地址、空结果和检查后切换场景；`localhost`/`127.0.0.1`
+  仅在被显式列入本地沙箱白名单时例外。
 
 这项能力属于共享 egress transport，不写进 DSL authoring 模块，也不改变 Agent 拿不到 ATTEST 的边界。
+当前 HTTP client 尚未把已经核验的 IP 集合固定为 socket 的连接目标，也没有读取实际 peer 地址做最终核对；
+因此无法抵御“最后一次解析之后、socket 自己再次解析之前”发生的极窄 DNS 切换。这是第 23 节保留的
+P2 基础设施限制，不影响 reference/preview/gate/compose 的 DSL 正确性闭环；生产部署仍应叠加
+出口代理、防火墙和 DNS 控制。
 
 ### 17.2 P3：ATTEST 同步时延
 
-当前 GREEN baseline 后同步触发实景验证，结果语义清晰，但会把真实调用时延带入 MCP 调用。先增加 `attestation.duration`、timeout、recovery-required 和 client-disconnect 指标。只有当 p95 超过 MCP/用户可接受窗口，或取消传播造成稳定问题时，再设计异步 job + polling；不因“可能慢”提前引入任务队列和新的状态机。
+当前 GREEN baseline 后同步触发实景验证，结果语义清晰，但会把真实调用时延带入 MCP 调用。
+本版本保留已有 timeout、recovery-required 和持久 reservation，不新增异步队列；
+`attestation.duration` 与 client-disconnect 指标留作生产观测增强。只有当 p95 超过 MCP/用户可接受窗口，
+或取消传播造成稳定问题时，再设计异步 job + polling；不因“可能慢”提前引入新的状态机。
 
 ### 17.3 P2：资源登记的两写恢复
 
@@ -1139,7 +1150,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 所有 metrics 只带稳定枚举、scope hash 和 fingerprint，不带 DSL source、业务值、operator description 或异常 message。
 
-建议指标：
+1.4.2 已交付的是**有界执行和稳定失败面**：统一 MCP 速率/并发限制、5 秒创作总预算、
+诊断分阶段计数与截断摘要，以及现有身份/用途审计。以下 Micrometer 指标名保留为后续生产化
+建议，本版本没有为了指标而增加第二套状态或高基数标签：
 
 - `rg.dsl.reference.requests{result}`；
 - `rg.dsl.reference.bytes`；
@@ -1152,7 +1165,7 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 - `rg.dsl.round_trip{status,driftKind}`；
 - `rg.mcp.limit.rejected{tool,reason}`。
 
-发布前认证门槛：
+本版本发布前认证门槛：
 
 1. 参考包 example 编译与 round-trip 声明 100% 成立；
 2. 安全语料中 0 次禁止字段泄漏；
@@ -1176,7 +1189,7 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 | `docs/resource-gateway-agent-tdd-mcp.md` | 新 READ 工具、指纹、修正/停止规则、错误码、排障和测试命令 |
 | `docs/resource-gateway-agent-tdd-demo-script.md` | 业务提示词继续不含 DSL；增加后台 reference/preview/gate 成功信号 |
 | `docs/ai/bloge-dsl-syntax-reference.md` | RG-supported 标记、稳定 topic/rule/example id、认证规则 |
-| `resource-gateway-examples/README.md` | 能力入口、配置开关、数据安全与兼容说明 |
+| `resource-gateway-examples/README.md` | 能力入口、MCP 资源上限、数据安全与兼容说明 |
 | `resource-gateway-test-kit` wire schema/README | 仅在客户端协议被正式扩展时同步 |
 
 任何文档都不得让业务人员手工提供 DSL 来规避未完成的 reference 面。
@@ -1187,38 +1200,144 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 v1.4.2 只有同时满足以下条件才算完成：
 
-- [ ] `rg.dsl.reference.get` 作为 READ 工具进入严格 MCP catalog；
-- [ ] 返回 graph-only、scope-aware、versioned、payload-free 的语言/目录/示例上下文；
-- [ ] reference examples 全部由生产 parser/compiler/lint/projection 认证；
-- [ ] preview/gate 强制绑定 `authoringContextFingerprint`；
-- [ ] MCP compose 只接受 DSL envelope，并在同一 mutation 内复验 `authoringReceiptFingerprint` 后保存 server projection；
-- [ ] 一次请求内 context、compiler、projection 和 generator 不再二次读取 live catalog；
-- [ ] preview 执行 CONTEXT/PARSE/RESOLVE/TYPE_CHECK/SEMANTIC_COMPILE/LINT/PROJECT/ROUND_TRIP；
-- [ ] 安全诊断注册表覆盖第 10.3 节最小目录，未知失败准确折叠；
-- [ ] Agent 得到 safe summary、expected kinds、reference refs 和受限 fix hints；
-- [ ] 原始 message、metadata、source fragment、generated DSL、业务值和隐藏目录 0 泄漏；
-- [ ] MCP instructions 明确 reference-first、最多三轮、重复错误停止和人工边界；
-- [ ] 操作手册与演示脚本不再要求用户或业务人员提供 DSL；
-- [ ] 确定性 RED → 修正 → GREEN 语料全部通过；
-- [ ] 全新、无仓库/无 skill 的 Codex 真实 MCP 认证通过且未 skipped；
-- [ ] 真实浏览器展示的业务规则矩阵与最终 DSL 投影一致；
-- [ ] `resource-gateway-examples` 全量 `clean verify` 绿色；
-- [ ] 如 wire client 有变更，`resource-gateway-test-kit` 全量 `clean verify` 绿色；
-- [ ] 每一实施阶段独立提交，Java 新类型和公共方法有边界清楚的 JavaDoc；
-- [ ] 本文补写最终实现路径、测试数量、commit 和仍存限制。
+- [x] `rg.dsl.reference.get` 作为 READ 工具进入严格 MCP catalog；
+- [x] 返回 graph-only、scope-aware、versioned、payload-free 的语言/目录/示例上下文；
+- [x] reference examples 全部由生产 parser/compiler/lint/projection 认证；
+- [x] preview/gate 强制绑定 `authoringContextFingerprint`；
+- [x] MCP compose 只接受 DSL envelope，并在同一 mutation 内复验 `authoringReceiptFingerprint` 后保存 server projection；
+- [x] 一次请求内 context、compiler、projection、generator 和运行 binding 不再二次读取 live catalog；
+- [x] preview 执行 CONTEXT/PARSE/RESOLVE/TYPE_CHECK/SEMANTIC_COMPILE/LINT/PROJECT/ROUND_TRIP；
+- [x] 安全诊断注册表覆盖第 10.3 节最小目录，未知失败准确折叠；
+- [x] Agent 得到 safe summary、expected kinds、reference refs 和受限 fix hints；
+- [x] 原始 message、metadata、source fragment、generated DSL、业务值和隐藏目录 0 泄漏；
+- [x] MCP instructions 明确 reference-first、最多三轮、重复错误停止和人工边界；
+- [x] 操作手册与演示脚本不再要求用户或业务人员提供 DSL；
+- [x] 确定性 RED → 修正 → GREEN 语料全部通过；代表性修正走完整链，其余稳定码、
+  泄漏、漂移、绕过与资源边界由矩阵测试覆盖；
+- [x] 全新、无仓库/无 skill 的 Codex 真实 MCP 认证通过且未 skipped；
+- [x] 真实浏览器展示的业务规则矩阵与最终 DSL 投影一致；
+- [x] `resource-gateway-examples` 全量 `clean verify` 绿色；
+- [x] 本轮未改变 wire client，`resource-gateway-test-kit` 条件项不适用；
+- [x] 每一实施阶段独立提交，Java 新类型和公共方法有边界清楚的 JavaDoc；
+- [x] 本文补写最终实现路径、测试数量、commit 和仍存限制。
 
 ---
 
 ## 22. 评审时需要明确拍板的问题
 
-以下五项需在开始实现前确认，其余按本文默认方案推进：
+五项均已在实现中落锤：
 
-1. **BLOGE 主仓前置**：现有 parser/compiler 是否已有足够稳定的结构化 code/span；若没有，是否接受先发布一个正式诊断 SPI 版本？本文建议接受，拒绝 RG 解析自由文本。
-2. **MCP transport**：v1.4.2 先只交付 `rg.dsl.reference.get`，还是同时增加 MCP resources？本文建议只交付工具，resources 留适配位。
-3. **强制上下文时点**：是否允许一个发布版本的宽限期？本文建议同一版本内分提交迁移，但最终发布即 required，不留下永久兼容开关。
-4. **邻接安全范围**：DNS rebinding 与 controller 级 rate/quota 是否作为 v1.4.2 release gate？本文建议纳入 S5；它们与 DSL 主模块解耦，但属于本轮已知安全/协议债，完成后再宣布版本落地。
-5. **MCP compose 收紧**：是否接受 Agent TDD MCP 只提升通过 gate 的 DSL envelope，不再接受客户端任意 `GraphDraft`？本文建议接受；内部 visual API 继续支持自己的草稿模型，MCP 不保留可绕过 authoring receipt 的旁路。
+| 问题 | 最终决定 | 实施结果 |
+| --- | --- | --- |
+| BLOGE 诊断前置 | 不解析自由 message；消费现有 stable code/span，缺失项安全折叠 | `DslSafeDiagnosticRegistry` 只按 code 注册表投影，未知项为 `DSL_DIAGNOSTIC_UNCLASSIFIED` |
+| MCP transport | 先交付 READ tool，resources 保留适配位 | 第 27 个工具为 `rg.dsl.reference.get`；Codex HTTP MCP 已认证 |
+| 强制上下文时点 | 1.4.2 直接 required，无宽限旁路 | preview/gate schema 与运行时均要求 context fingerprint |
+| 邻接安全范围 | rate/quota 与 DNS 防护纳入 release gate | controller 预分派限流、authoring 并发限制、DNS 双解析与逐案例复核已落地 |
+| MCP compose 收紧 | 只提升通过 gate 的 DSL envelope | feature/tool compose 拒绝客户端 `GraphDraft`，同一 mutation 复编译并比对 receipt |
 
-若以上决策被接受，实施优先级为：**结构化诊断前置 → reference 权威面 → 安全诊断 → 快照绑定的完整 preview/gate → Codex/浏览器产品认证 → 邻接安全收尾**。
+实施顺序实际为：**reference 权威面 → 安全诊断 → receipt 绑定的 preview/gate/compose →
+MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**。BLOGE 依赖版本未为本轮单独升级；
+下层缺少细粒度 code 时按安全注册表折叠，而不是阻塞整条业务主线。
 
 这条路线解决的不是“给 Agent 多塞一篇语法文档”，而是把第 3 幕补成一个有权威上下文、有确定性编译反馈、有安全边界、有停止条件、能被真实 Codex 验收的工程闭环。
+
+---
+
+## 23. 最终实现与验收记录
+
+### 23.1 实现映射
+
+| 目标 | 当前实现 | 可复核结果 |
+| --- | --- | --- |
+| 权威参考面 | `AgentDslAuthoringSupport`、`DslReferenceBundleLoader`、`DslAuthoringContextResolver`、`DslContractLens` | scope-aware、版本化、graph-only；空 `libraryRefs` 仍包含平台内置函数与当前 scope 的资源 operator |
+| 完整 preview/gate | `DslAuthoringCompiler`、`DslImportService` 的冻结 catalog 入口 | 固定阶段执行；阻断后不把未执行阶段伪装成成功；5 秒总预算含 context 解析与编译 |
+| 可修正诊断 | `DslSafeDiagnosticRegistry`、`DslAuthoringDiagnostic` | 不读取下层 message/metadata；返回稳定摘要、位置、期望种类、参考和有限修复建议 |
+| 防 TOCTOU 提升 | `DslPreviewReceipt`、`AgentTddMutationService` | source/context/receipt 三者绑定；mutation 内用同一冻结上下文复编译并只保存服务端投影 |
+| 严格 MCP 协议 | `McpToolCatalog`、`McpProtocolController`、`ResourceGatewayAgentTddTools` | 第 27 个工具；input/output schema 均执行；initialize instructions 强制 reference-first 和人工边界 |
+| 资源治理 | `McpRequestLimiter`、`AgentDslAuthoringSupport` 有界 executor | 每身份总桶、reference 桶、preview/gate 共享桶、4 并发和 16 排队上限；稳定 JSON-RPC 错误 |
+| 邻接 egress 防护 | `AgentTddEgressHostPolicy`、`AgentTddAttestationService` | 精确 host、双 DNS 解析、非公网地址拒绝、逐案例复核；本地 loopback 只作显式沙箱例外 |
+| 业务体验 | MCP 初始化说明、运营手册、五幕演示导演脚本 | 业务提示词不含 DSL/Schema/binding/节点/端口；Codex 在后台完成创作闭环 |
+
+参考包内所有 example 通过生产 parser/compiler/lint/projection 认证，其中包括四个受治理资源加
+`decision_table` 的完整示例。`docs/ai/bloge-dsl-syntax-reference.md` 是人类阅读材料；运行时
+`bundle.json` 加动态授权目录才是 Agent 当前请求的权威输入，二者没有形成可漂移的第二 operator 目录。
+
+### 23.2 测试证据
+
+新增或强化的关键测试包括：
+
+- `AgentDslAuthoringSupportTest`：作用域、稳定指纹、参考裁剪、缺失/过期 context、解析错误修正、
+  operator 建议防越权、决策表 lint、保留字、大小限制、超时与 payload-free；
+- `DslReferenceCertificationTest`：逐个编译并 round-trip 认证所有随包 example；
+- `DslSafeDiagnosticRegistryTest`：完整 code family、未知诊断折叠、恶意 message/metadata/target 不泄漏；
+- `AgentTddMutationServiceTest`：合法 receipt 提升，以及换 source、伪 receipt、客户端 GraphDraft
+  三类绕过均失败且不落库；另证明 receipt、重编译、服务端投影与运行 binding 始终使用同一冻结上下文；
+- `McpProtocolControllerTest` 与 `McpRequestLimiterTest`：真实 strict schema、稳定错误、限流和并发释放；
+- `AgentTddEgressHostPolicyTest`：IPv4/IPv6、多地址、公私混合、空结果、变化结果与显式本地例外；
+- `AgentTddMcpOperationalWorkflowTest`：真实 Spring HTTP `/mcp` 生命周期、reference → preview → gate →
+  compose、独立 WORKLOAD/HUMAN、真实 Chrome 规则矩阵、GREEN、平台实景验证、签署与发布。
+
+最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 13 分 51 秒：
+**8,514 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
+
+- `AgentDslAuthoringSupportTest`：12/12 通过；
+- `DslReferenceCertificationTest`：1/1 通过；
+- `DslSafeDiagnosticRegistryTest`：3/3 通过；
+- `AgentTddMutationServiceTest`：17/17 通过；
+- `McpProtocolControllerTest`：15/15 通过；
+- `McpRequestLimiterTest`：2/2 通过；
+- `AgentTddEgressHostPolicyTest`：6/6 通过；
+- `AgentTddMcpOperationalWorkflowTest`：4/4 通过，**skipped=0**，覆盖真实 HTTP MCP 与 Chrome；
+- `DatabaseAgentTddStateRepositoryPostgresCertificationTest`：2/2 通过，**skipped=0**，覆盖原生 PostgreSQL。
+
+39 项 skipped 来自仓库既有的环境条件测试；两项本版本强制认证支点均没有被 assumption 跳过。
+
+### 23.3 真实 Codex MCP 产品认证
+
+2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 做了仓库外认证：
+
+1. 在只读临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，关闭仓库、memory、plugin、
+   skill 与 browser 输入，只提供四个最小权限 RG MCP server 和 WORKLOAD token；
+2. 输入只描述“按用户编号查询姓名和会员等级”的业务目标、事实来源和 `u-100 → Alice/premium`
+   标准答案，没有 DSL、Schema、binding、节点、端口或 MCP 参数；
+3. trace 实际调用 `capability.list → contract.get → dsl.reference.get → dsl.preview → gate.check →
+   tool.compose → setInstruction → upsertCases → setDependencyBehavior → oracle.propose`；
+4. 第一次 reference 请求使用了不存在的 topic，服务端返回 `DSL_REFERENCE_TOPIC_UNKNOWN` 和
+   `NARROW_REFERENCE_REQUEST`；Codex 删除猜测 topic 后自行重试成功，证明稳定反馈可驱动修正；
+5. preview 与 gate 接受同一 source，compose 使用同一 context/receipt 成功；Codex 最终只用业务语言
+   报告“资料来源匹配、能力草稿有效、标准案例待人工确认”，没有执行、自批、签署或发布。
+
+该认证进程退出码为 0。认证外层最初用于 grep 工具显示名的辅助 Shell 断言因 Codex trace 使用原始
+`rg.dsl.*` 名称而误报；逐条解析 JSONL 后确认上述调用和最终状态均成立。这里记录产品结果，也保留
+辅助脚本误判这一事实，不把脚本误判写成平台失败或静默忽略。
+
+### 23.4 分阶段提交
+
+| 阶段 | Commit | 内容 |
+| --- | --- | --- |
+| 业务演示基线 | `b50867da9`、`3867ba874` | 五幕导演脚本与纯业务主线 |
+| 设计决策 | `9c6429bec`、`32adcbe6b` | 1.4.2 详细设计与 compose 兼容结论 |
+| S1 | `bde5af977` | scope-aware DSL reference |
+| S2 | `6c8c1bc77` | payload-free 可修正诊断 |
+| S3 | `e90ddd714` | context/receipt 绑定的 compose |
+| S5 安全 | `e8385008f` | MCP admission、预算与 DNS 防护 |
+| S4 文档 | `2801a762b` | 业务视角 Codex 运营手册 |
+| 产品认证测试 | `64b7778dd` | 修正语料、reference 认证与 HTTP MCP 链 |
+| 契约收口 | `9a8fa23b5` | 运营手册测试从 DSL 字面量切换为业务提示词契约 |
+| 冻结运行 binding | `2761d89f0` | receipt 重编译与 compose 运行目标共用同一不可变上下文 |
+
+### 23.5 剩余限制与差距
+
+当前没有已知的 P0/P1 缺口。保留三项 P2/P3，不把它们伪装成已完成：
+
+1. DNS 已在规划与每案例发送前复核，但 socket 尚未固定到核验 IP，也未核对实际 peer；必须继续依赖
+   生产出口代理、网络策略和受控 DNS 抵御最后解析窗口；
+2. 1.4.2 已有速率、并发、超时、阶段计数和审计，但第 19 节建议的 Micrometer 指标与专用运营面板
+   尚未交付；先以真实样本确定低基数标签和 SLO；
+3. BLOGE 下层个别失败仍没有足够细的结构化 code；RG 会安全折叠为
+   `DSL_DIAGNOSTIC_UNCLASSIFIED / PLATFORM_MAINTAINER`，不会解析自由 message 猜原因。
+
+按“业务主线、DSL 正确性闭环、治理不可绕过、真实 Codex 可用性、工程证据”五个维度加权，
+内部复盘完成度为 **98.5%**、差距 **1.5%**。其中三项剩余限制不会让 Agent 在缺少参考、编译通过、
+receipt 或人工批准时继续，也不会要求业务人员理解 DSL；因此低于 3% 停止阈值。最终数值仍需接受
+独立 Standards/Spec 双轴复审，若发现 P0/P1 则重新开启实施，不以本节自评作为豁免。

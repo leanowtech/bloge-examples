@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * Selects one bounded slice of the server-authoritative BLOGE graph reference.
  *
- * @param libraryRefs exact visible operator libraries; an empty list means platform built-ins only
+ * @param libraryRefs exact visible operator libraries; an empty list means platform built-ins plus
+ *                    scope-visible resource bindings
  * @param topics syntax topic identifiers; empty selects the compact required set
  * @param operatorRefs exact operator contracts to project; empty selects the complete scoped context
  * @param includeExamples whether compatible certified examples should be included
