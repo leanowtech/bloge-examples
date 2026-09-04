@@ -18,7 +18,8 @@ class DslSafeDiagnosticRegistryTest {
     private final DslSafeDiagnosticRegistry registry = new DslSafeDiagnosticRegistry(mapper);
     private final DslAuthoringContext context = new DslAuthoringContext(
             "rg.dslAuthoringContext.v1", "test", "test", Set.of("graph"),
-            List.of(), Map.of(), Map.of(), "sha256:reference", "sha256:context");
+            List.of(), Map.of(), Map.of(), "sha256:reference", "sha256:context",
+            new DslAuthoringContext.AuthoringScope("tenant-a", "project-a", "test"));
 
     @Test
     void mapsEveryVisualDiagnosticFamilyToOneStablePhaseAndResolutionClass() {

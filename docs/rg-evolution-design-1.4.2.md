@@ -206,6 +206,8 @@ DSL 参考不是一篇长文，而是三类事实的合成：
 
 三者共同计算 `authoringContextFingerprint`。Agent preview 时必须回传该指纹。服务端重新一次性物化当前上下文并比较；不一致则返回 `DSL_AUTHORING_CONTEXT_STALE`，不拿新目录偷偷编译旧候选。
 
+静态参考包的 `languageVersion` 还必须与构建中固定的 `bloge.version` 一致。启动加载器执行精确比较，认证测试再从 Maven POM 读取依赖版本核对编译期常量；任一侧单独升级都会失败，而不是把旧语法参考交给新编译器。
+
 ### D3 · 安全诊断注册表，而不是“编译期 message 白名单”
 
 下层异常消息可能包含源码片段、用户写入的标识、业务常量、schema 内容或 provider 材料。即使错误发生在 parser/compiler，也不能推定 message 安全。
@@ -309,7 +311,8 @@ public record DslAuthoringContext(
         Map<String, OperatorDefinition> operators,
         Map<String, BuiltInFunction> functions,
         String referenceVersion,
-        String fingerprint) { }
+        String fingerprint,
+        @JsonIgnore AuthoringScope scope) { }
 ```
 
 关键约束：
@@ -317,6 +320,7 @@ public record DslAuthoringContext(
 - 只含当前身份可见的数据；
 - `operators/functions` 排序后冻结，不暴露可变 registry；
 - 后续编译、建议和投影均使用此对象，不二次 `catalog.find`；
+- `scope` 冻结认证得到的 tenant/project/environment，仅供服务端把 transport-neutral 投影重绑定后再做 policy 校验，不进入 MCP JSON；
 - 不包含 fixture material、真实 URL、credential、schema default/example、业务样例值或运行响应；
 - 同一内容必得同一 fingerprint，集合顺序不影响结果。
 
@@ -824,7 +828,7 @@ sequenceDiagram
     end
 ```
 
-关键点：比较指纹后，编译器、投影器和 round-trip generator 都使用 `context B`；它们不能再调用 live catalog。这样 catalog 并发 replace 最多让请求得到 STALE，不会产生“证明的是 A、实际编译的是 C”。
+关键点：比较指纹后，编译器、投影器和 round-trip generator 都使用 `context B`；它们不能再调用 live catalog。投影器产生的中性草稿必须先用 `context B` 的 tenant/project/environment 重绑定，随后才能进入 `GraphDraftValidator`，否则合法的项目级 operator 会被 demo scope 误拒绝。这样 catalog 并发 replace 最多让请求得到 STALE，不会产生“证明的是 A、实际编译的是 C”。
 
 ---
 

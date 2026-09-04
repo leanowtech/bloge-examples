@@ -73,10 +73,10 @@ final class DslAuthoringCompiler {
         long deadline = System.nanoTime() + PREVIEW_BUDGET.toNanos();
         DslAuthoringContextCatalog frozenCatalog = new DslAuthoringContextCatalog(context);
         DslImportService importer = new DslImportService(frozenCatalog, new OperatorLibraryValidator());
-        DslVisualProjection projection = importer.preview(new DslImportPreviewRequest(
+        DslVisualProjection projection = scopeProjection(importer.preview(new DslImportPreviewRequest(
                 request.sourceId(), request.source(), context.libraries().stream()
                 .map(DslAuthoringContext.LibrarySnapshot::libraryId).toList(), List.of(),
-                "agent-tdd", Map.of()));
+                "agent-tdd", Map.of())), context);
 
         LinkedHashMap<String, List<DslSafeDiagnosticRegistry.MappedDiagnostic>> byPhase = new LinkedHashMap<>();
         PHASES.forEach(phase -> byPhase.put(phase, new ArrayList<>()));
@@ -199,6 +199,22 @@ final class DslAuthoringCompiler {
                 context.fingerprint(), "CURRENT", context.languageVersion(), context.compilerProfile()),
                 stages, acceptance, safeProjection, roundTrip, bounded, summary, nextAction,
                 receiptFingerprint, accepted, projection, context);
+    }
+
+    /**
+     * Rebinds the transport-neutral importer result to the authenticated authoring scope before any
+     * policy validator sees it. The returned projection preserves the source map, coverage,
+     * round-trip assessment and diagnostics exactly as produced by the server compiler.
+     */
+    private static DslVisualProjection scopeProjection(
+            DslVisualProjection projection, DslAuthoringContext context) {
+        DslAuthoringContext.AuthoringScope scope = context.scope();
+        return new DslVisualProjection(
+                projection.schemaVersion(), projection.sourceId(),
+                projection.draft().withScope(
+                        scope.tenantId(), scope.projectId(), scope.environmentId()),
+                projection.sourceMap(), projection.coverage(), projection.roundTrip(),
+                projection.diagnostics());
     }
 
     private DslCompiler semanticCompiler(DslAuthoringContext context) {

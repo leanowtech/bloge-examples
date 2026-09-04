@@ -23,11 +23,24 @@ import static org.mockito.Mockito.when;
 class DslReferenceCertificationTest {
 
     @Test
+    void packagedReferenceVersionMatchesTheMavenBlogeDependencyAndRejectsDrift() throws IOException {
+        Path repositoryRoot = repositoryRoot();
+        String pom = Files.readString(repositoryRoot.resolve("resource-gateway-examples/pom.xml"));
+        String dependencyVersion = textBetween(pom, "<bloge.version>", "</bloge.version>");
+
+        assertThat(DslReferenceBundleLoader.SUPPORTED_LANGUAGE_VERSION)
+                .isEqualTo("bloge-dsl-" + dependencyVersion);
+        assertThat(new DslReferenceBundleLoader(new ObjectMapper()).bundle().languageVersion())
+                .isEqualTo(DslReferenceBundleLoader.SUPPORTED_LANGUAGE_VERSION);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new DslReferenceBundleLoader(new ObjectMapper(), "bloge-dsl-drifted"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Packaged DSL reference does not match the BLOGE DSL runtime");
+    }
+
+    @Test
     void humanReferenceNamesEveryStableRuntimeTopic() throws IOException {
-        Path repositoryRoot = Path.of(System.getProperty("user.dir"));
-        if (!Files.isDirectory(repositoryRoot.resolve("docs"))) {
-            repositoryRoot = repositoryRoot.getParent();
-        }
+        Path repositoryRoot = repositoryRoot();
         String humanReference = Files.readString(
                 repositoryRoot.resolve("docs/ai/bloge-dsl-syntax-reference.md"));
 
@@ -93,5 +106,17 @@ class DslReferenceCertificationTest {
                         .isEqualTo("SUPPORTED");
             }
         });
+    }
+
+    private static Path repositoryRoot() {
+        Path root = Path.of(System.getProperty("user.dir"));
+        return Files.isDirectory(root.resolve("docs")) ? root : root.getParent();
+    }
+
+    private static String textBetween(String value, String start, String end) {
+        int from = value.indexOf(start);
+        int to = value.indexOf(end, from + start.length());
+        if (from < 0 || to < 0) throw new IllegalStateException("Maven BLOGE version is missing");
+        return value.substring(from + start.length(), to).trim();
     }
 }

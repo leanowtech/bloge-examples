@@ -130,7 +130,9 @@ final class DslAuthoringContextResolver {
         return new DslAuthoringContext(
                 "rg.dslAuthoringContext.v1", bundle.languageVersion(), bundle.compilerProfile(),
                 Set.copyOf(bundle.supportedRootKinds()), librarySnapshots, Map.copyOf(operators),
-                Map.copyOf(functions), bundle.fingerprint(), fingerprint);
+                Map.copyOf(functions), bundle.fingerprint(), fingerprint,
+                new DslAuthoringContext.AuthoringScope(
+                        identity.tenantId(), identity.projectId(), identity.environmentId()));
     }
 
     private String libraryFingerprint(OperatorLibrary library,

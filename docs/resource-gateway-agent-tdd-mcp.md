@@ -244,7 +244,7 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 2. Codex 调用 `rg.dsl.reference.get`，显式传入 `libraryRefs`；空依赖也是 `[]`。
 3. 如果业务描述允许产生实质不同的业务结果，Codex 必须在生成 DSL 前报告 `BUSINESS_CLARIFICATION_REQUIRED`，只问一个业务问题，不得自行选择，也不得向业务人员解释 DSL、schema 或 operator。
 4. Codex 只使用返回的 graph 语法、可见 operator/function contract、certified examples 和 `authoringContextFingerprint` 生成 DSL。
-5. Codex 对同一份 source 执行 preview。收到 `AGENT_CAN_REVISE` 时，按安全摘要、reference refs 和 fix hints 修正；最多修正三轮。同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
+5. Codex 对同一份 source 执行 preview。服务端会先把投影绑定回当前认证的 tenant/project/environment 再校验项目级 operator；收到 `AGENT_CAN_REVISE` 时，按安全摘要、reference refs 和 fix hints 修正。目录真实变化会使上下文指纹变化并要求重新取参考；最多修正三轮，同一阻断 `diagnosticFingerprint` 连续出现两次时停止。
 6. preview 接受后，Codex 对同一份 source 执行 gate。`HUMAN_OR_PLATFORM_REQUIRED` 或 `PLATFORM_MAINTAINER` 不能靠猜测继续。
 7. compose 必须提交 gate 接受的原 source、`authoringContextFingerprint` 和 `authoringReceiptFingerprint`。服务端会在同一 mutation 中重跑编译并比较 receipt；source A 的 receipt 不能保存 source B。
 8. 创建该工具的持久 GOLDEN case set 时，Codex 必须使用 compose 返回的 `toolRef` 建立归属；不得创建没有工具归属的标准案例集。
@@ -299,6 +299,7 @@ DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`c
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
 | `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
 | `DSL_AUTHORING_CONTEXT_REQUIRED` / `DSL_AUTHORING_CONTEXT_STALE` | 未先读取 DSL 参考，或目录在生成期间变化 | 重新调用 `rg.dsl.reference.get`，不要复用旧 fingerprint |
+| 服务启动时报 DSL reference/runtime version mismatch | 随包语法参考与 Maven 固定的 BLOGE DSL 版本未同步 | 同一提交更新依赖版本、参考包版本与认证示例；不得跳过启动门禁 |
 | `DSL_PREVIEW_TIMEOUT` / `DSL_PREVIEW_CAPACITY_EXCEEDED` | 候选超出 5 秒预算，或预览容量暂时耗尽 | 缩小候选；按退避策略重试，不要无限循环 |
 | JSON-RPC `-32029` / `-32030` | 单身份速率或 authoring 并发超过上限 | 停止批量重试，等待当前分钟窗口或在容量评审后调整配置；过期窗口和已空闲身份会自动释放，不需要重启服务 |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +73,36 @@ class AgentDslAuthoringSupportTest {
         assertThat(first.examples()).isEmpty();
         assertThat(mapper.valueToTree(first).toString())
                 .doesNotContain("secret.internal", "business-example-value", "urlTemplate", "description");
+    }
+
+    @Test
+    void validatesAndProjectsAnAuthorizedLibraryOperatorInTheAuthenticatedProjectScope() {
+        OperatorDefinition visible = operator("ride:lookup", "ride-policy",
+                new OperatorDefinition.Policy(List.of("tenant-a"), List.of("project-a"), List.of("test")));
+        AgentDslAuthoringSupport support = support(
+                List.of(visible), List.of(library("ride-policy", List.of(visible))));
+        IntegrationRequestContext identity = identity("project-a");
+        DslReferenceSnapshot reference = support.reference(new DslReferenceRequest(
+                List.of("ride-policy"), List.of("graph", "bindings"), List.of("ride:lookup"), false),
+                identity);
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge", """
+                graph candidate {
+                  node lookup : "ride:lookup" {
+                    input { input = { secretField: "example" } }
+                  }
+                }
+                """, List.of("ride-policy"), reference.authoringContextFingerprint()), identity);
+
+        assertThat(receipt.authoringDiagnostics())
+                .noneMatch(diagnostic -> diagnostic.code().equals("DSL_EFFECT_NOT_ALLOWED"));
+        assertThat(receipt.accepted()).as("diagnostics: %s", receipt.authoringDiagnostics()).isTrue();
+        assertThat(receipt.serverProjection().draft().tenantId()).isEqualTo("tenant-a");
+        assertThat(receipt.serverProjection().draft().namespace()).isEqualTo("project-a");
+        assertThat(receipt.serverProjection().draft().environment()).isEqualTo("test");
+        assertThat(mapper.valueToTree(receipt).toString())
+                .doesNotContain("tenant-a", "project-a", "secret.internal");
     }
 
     @Test
@@ -509,6 +540,49 @@ class AgentDslAuthoringSupportTest {
                 "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
                 List.of(), refreshed), identity("project-a"))
                 .accepted()).isTrue();
+    }
+
+    @Test
+    void rejectsARealCatalogDriftThenAcceptsOnlyAfterFetchingTheNewContext() {
+        OperatorDefinition transform = operator(
+                "bloge:transform", "", OperatorDefinition.Policy.unrestricted());
+        OperatorDefinition decision = operator(
+                "bloge:decisionTable", "", OperatorDefinition.Policy.unrestricted());
+        AtomicReference<List<OperatorDefinition>> visible = new AtomicReference<>(List.of(transform));
+        VisualOperatorCatalog changingCatalog = new VisualOperatorCatalog() {
+            @Override public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                return visible.get().stream().filter(operator -> operator.policy().allows(
+                        query.tenantId(), query.namespace(), query.environment())).toList();
+            }
+            @Override public Optional<OperatorDefinition> find(String operatorRef) {
+                return visible.get().stream()
+                        .filter(operator -> operator.operatorRef().equals(operatorRef)).findFirst();
+            }
+        };
+        AgentDslAuthoringSupport support = new AgentDslAuthoringSupport(
+                changingCatalog, new FixedLibraries(List.of()), mapper);
+        IntegrationRequestContext identity = identity("project-a");
+        String oldContext = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity).authoringContextFingerprint();
+
+        visible.set(List.of(transform, decision));
+
+        assertThatThrownBy(() -> support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
+                List.of(), oldContext), identity))
+                .isInstanceOfSatisfying(AgentTddToolException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo("DSL_AUTHORING_CONTEXT_STALE");
+                    assertThat(failure.retryable()).isTrue();
+                    assertThat(failure.details()).containsEntry("nextAction", "REFETCH_DSL_REFERENCE");
+                });
+        DslReferenceSnapshot refreshed = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity);
+        assertThat(refreshed.authoringContextFingerprint()).isNotEqualTo(oldContext);
+        assertThat(refreshed.operators()).extracting(DslReferenceSnapshot.OperatorContract::operatorRef)
+                .containsExactly("bloge:decisionTable", "bloge:transform");
+        assertThat(support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { transform result { value = \"ready\" } }",
+                List.of(), refreshed.authoringContextFingerprint()), identity).accepted()).isTrue();
     }
 
     @Test

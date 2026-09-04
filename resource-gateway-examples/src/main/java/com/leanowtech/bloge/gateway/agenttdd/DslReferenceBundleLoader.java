@@ -13,12 +13,23 @@ import java.util.Set;
 /** Loads and validates the versioned, server-owned DSL syntax and example bundle. */
 final class DslReferenceBundleLoader {
     static final String RESOURCE = "agent-tdd/dsl-reference/v1/bundle.json";
+    static final String SUPPORTED_LANGUAGE_VERSION = "bloge-dsl-0.8.9-RC2";
     private static final int MAX_STATIC_BUNDLE_BYTES = 256 * 1024;
 
     private final Bundle bundle;
 
     /** Fails closed when the packaged reference cannot be read or violates its structural contract. */
     DslReferenceBundleLoader(ObjectMapper mapper) {
+        this(mapper, SUPPORTED_LANGUAGE_VERSION);
+    }
+
+    /**
+     * Fails closed when the packaged reference does not describe the linked BLOGE DSL version.
+     *
+     * @param mapper canonical JSON mapper
+     * @param expectedLanguageVersion build-certified BLOGE DSL language version
+     */
+    DslReferenceBundleLoader(ObjectMapper mapper, String expectedLanguageVersion) {
         try (InputStream input = DslReferenceBundleLoader.class.getClassLoader().getResourceAsStream(RESOURCE)) {
             if (input == null) {
                 throw new IllegalStateException("Packaged DSL reference is missing");
@@ -28,7 +39,7 @@ final class DslReferenceBundleLoader {
                 throw new IllegalStateException("Packaged DSL reference exceeds its startup size limit");
             }
             JsonNode root = mapper.readTree(bytes);
-            this.bundle = decode(mapper, root);
+            this.bundle = decode(mapper, root, expectedLanguageVersion);
         } catch (IOException failure) {
             throw new IllegalStateException("Packaged DSL reference cannot be loaded", failure);
         }
@@ -39,11 +50,15 @@ final class DslReferenceBundleLoader {
         return bundle;
     }
 
-    private static Bundle decode(ObjectMapper mapper, JsonNode root) {
+    private static Bundle decode(ObjectMapper mapper, JsonNode root, String expectedLanguageVersion) {
         if (!root.isObject() || !"rg.dslReferenceBundle.v1".equals(root.path("schemaVersion").asText())
                 || root.path("languageVersion").asText().isBlank()
                 || root.path("compilerProfile").asText().isBlank()) {
             throw new IllegalStateException("Packaged DSL reference has an unsupported schema");
+        }
+        if (expectedLanguageVersion == null || expectedLanguageVersion.isBlank()
+                || !expectedLanguageVersion.equals(root.path("languageVersion").asText())) {
+            throw new IllegalStateException("Packaged DSL reference does not match the BLOGE DSL runtime");
         }
         List<String> roots = strings(root.path("supportedRootKinds"));
         if (!roots.equals(List.of("graph"))) {

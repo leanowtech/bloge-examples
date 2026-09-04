@@ -225,6 +225,24 @@ public record GraphDraft(
     }
 
     /**
+     * Returns a copy bound to the authenticated repository scope.
+     *
+     * <p>Importers may create transport-neutral drafts before an authenticated application boundary
+     * is available. That boundary must call this method before policy validation or persistence so
+     * placeholder demo scope can never authorize or reject a real operator.</p>
+     *
+     * @param newTenantId authenticated tenant id
+     * @param newNamespace authenticated project/namespace id
+     * @param newEnvironment authenticated environment id
+     * @return draft with identical graph semantics and the supplied scope
+     */
+    public GraphDraft withScope(String newTenantId, String newNamespace, String newEnvironment) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, newTenantId, newNamespace,
+                newEnvironment, status, inputSchema, outputSchema, nodes, edges, visualLayout, nodeFixtures,
+                output, operatorFingerprints, operatorSnapshots, revisionMetadata);
+    }
+
+    /**
      * Returns a copy carrying the operator fingerprints observed when the draft was saved/submitted.
      *
      * @param fingerprints operator fingerprints keyed by node id
