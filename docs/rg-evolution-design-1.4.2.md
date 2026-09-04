@@ -1299,15 +1299,15 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 最终运行 `mvn -f resource-gateway-examples/pom.xml clean verify`，耗时 14 分 48 秒：
 **8,532 tests，0 failures，0 errors，39 skipped，BUILD SUCCESS**。其中：
 
-- `AgentDslAuthoringSupportTest`：20/20 通过；
-- `DslReferenceCertificationTest`：2/2 通过；
+- `AgentDslAuthoringSupportTest`：22/22 通过；
+- `DslReferenceCertificationTest`：3/3 通过；
 - `DslSafeDiagnosticRegistryTest`：6/6 通过；
 - `DslAuthoringRepairMatrixTest`：1/1 通过，索引 20 行可执行修正语料；
 - `AgentTddMutationServiceTest`：17/17 通过；
 - `McpProtocolControllerTest`：15/15 通过；
 - `McpRequestLimiterTest`：4/4 通过；
 - `AgentTddEgressHostPolicyTest`：7/7 通过；
-- `AgentTddCodexCertificationArtifactTest`：2/2 通过；Python trace reducer 行为测试 3/3 通过；
+- `AgentTddCodexCertificationArtifactTest`：3/3 通过；Python trace reducer 行为测试 8/8 通过；
 - `AgentTddMcpOperationalWorkflowTest`：4/4 通过，**skipped=0**，覆盖真实 HTTP MCP 与 Chrome；
 - `DatabaseAgentTddStateRepositoryPostgresCertificationTest`：2/2 通过，**skipped=0**，覆盖原生 PostgreSQL。
 
@@ -1315,7 +1315,8 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 
 ### 23.3 真实 Codex MCP 产品认证
 
-最终认证必须从待认证的干净提交自举，不能复用前一提交或当前机器上碰巧运行的 RG：
+2026-09-04 使用本机 Codex CLI `0.150.0-alpha.8` 对干净 commit `ae2c5b26b` 完成认证；认证从
+该提交自举，没有复用前一提交或当前机器上碰巧运行的 RG：
 
 1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，从固定
    HEAD 构建、启动并最终停止 loopback RG；Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
@@ -1325,9 +1326,10 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
    Codex `-C` 参数前触碰继承的仓库目录；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
-3. 安全化 trace 必须按顺序包含 capability/contract discovery、accepted preview、accepted gate、
-   compose、instruction、upsertCases、dependency behavior 与 listCases；首次 preview 通过时记录
-   `firstPassAccepted`，否则必须证明同一工具从失败/`accepted=false` 到成功的有序自修正；
+3. 安全化 trace 实际记录 `capability.list × 2 → contract.get → dsl.reference.get(失败) →
+   dsl.reference.get(成功) → dsl.preview × 3 → gate.check → tool.compose → setInstruction →
+   upsertCases → listCases → contract.get`；第三次 preview 被接受，认证记录了同一 reference 工具的
+   有序失败到成功修正，且没有伪称首次通过；
 4. 认证器不再拼接任意历史成功调用：它要求 preview/gate 的 `accepted=true`，逐项比较 reference、
    preview、gate 与 compose 的 source、library refs、context 和 receipt，再比较 compose、instruction、
    upsert、dependency behavior 与 listCases 的 Tool、CaseSet 和 case 归属；只有同一案例同时具备 stub
@@ -1337,10 +1339,10 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 
 原始 JSONL 只在 `0700` 临时目录以 `0600` 权限处理，默认在结束时删除；认证器只输出
 工具身份、顺序、状态、布尔断言和一次性密钥 HMAC 关联指纹，不输出参数、结果、消息、真实 ID 或
-业务载荷。完整证书由 Draft 2020-12 validator 校验，不再只手写抽查字段。认证完成后入库的严格证书为
+业务载荷。完整证书由 Draft 2020-12 validator 校验，不再只手写抽查字段。本轮入库的严格证书为
 `docs/acceptance/agent-tdd/codex-certification-v1.json`，Schema 为
-`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`；提交号、Codex 版本、调用序列和
-证书指纹必须取自本轮新证书，不能沿用旧值。
+`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`，证书指纹为
+`sha256:7d218bf750d96080af62f8ca3923c3e10b001bef112afb65c6ff05974fa625a8`。
 
 ### 23.4 分阶段提交
 
@@ -1363,6 +1365,10 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 | 安全与资源有界 | `250de8ab0` | 限流状态回收、RFC 特殊地址、阻断诊断优先级与文档同步 |
 | 修正矩阵 | `ee238d21b` | 20 行修正语料、显式 literal 类型检查与 graph-only profile 诊断 |
 | 真实 Codex 认证 | `6901bb4c1` | 业务提示词、可重复产品脚本、载荷零泄漏证书与正反例测试 |
+| 作用域与版本收口 | `a75b47f59` | 认证 scope 投影、真实 catalog 漂移与 BLOGE DSL 版本门禁 |
+| 认证链硬化 | `274ce08e7`、`a6db76540`、`493d95828`、`f9b4bf789` | 自启固定提交 RG、OS 仓库隔离、全链关联与纯业务 contract-first 提示 |
+| 阻断诊断 | `7c3cfc6c8` | 显式 `blocking` 协议事实、指纹和停止规则 |
+| 诚实首轮语义 | `ae2c5b26b` | 自修正与首次通过互补记录，不人为制造错误 |
 
 ### 23.5 剩余限制与差距
 
