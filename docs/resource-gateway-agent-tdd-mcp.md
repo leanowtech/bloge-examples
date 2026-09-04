@@ -369,8 +369,8 @@ contract-first 行为；不会把 `rg.contract.get`、MCP 参数或其他实现�
 仅允许 Codex 通过父进程预先打开的 stdout 文件描述符写该 trace，不允许读取它，也不允许启动
 shell 或其他子进程绕过边界；结束时删除；
 仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中
-比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言和使用一次性随机密钥生成的
-HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
+比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言、服务提交/JAR 摘要、实例
+nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
 或业务值。证书不保留参数、结果、消息和业务载荷。已审核样例见
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](acceptance/agent-tdd/codex-certification-v1.json)，
 严格 Schema 见

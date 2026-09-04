@@ -1,8 +1,16 @@
 {
   "schemaVersion": "rg.agentTddCodexCertification.v1",
-  "certifiedAt": "2026-09-04T05:58:40Z",
-  "repositoryCommit": "95adb71d2ecd723c0f61a5755ee483a08cbd4f2d",
+  "certifiedAt": "2026-09-04T06:34:35Z",
+  "repositoryCommit": "e408b83f78d0e279827b94b9540f0736e4aa6b43",
   "codexVersion": "codex-cli 0.150.0-alpha.8",
+  "runtimeIdentity": {
+    "schemaVersion": "rg.agentTddCertificationInstance.v1",
+    "instanceNonceFingerprint": "sha256:2b7a494f1789ff893d4ebaf15c3f5b62f4357810cc92cbdb58e57d0910fbb77a",
+    "repositoryCommit": "e408b83f78d0e279827b94b9540f0736e4aa6b43",
+    "jarSha256": "sha256:1399d9f0619f3877bc62adb0bd71d4f9a13a2d28a9998d0259b7aadd731ed97f",
+    "processOwnershipVerified": true,
+    "verifiedBeforeAndAfterTurn": true
+  },
   "transport": {
     "kind": "HTTP_MCP",
     "endpointClass": "LOOPBACK",
@@ -22,13 +30,13 @@
     ],
     "successfulPositions": [
       1,
-      3,
-      5,
+      2,
+      4,
+      6,
+      7,
+      8,
       9,
-      10,
-      11,
-      12,
-      13
+      10
     ],
     "observedCalls": [
       {
@@ -40,25 +48,25 @@
       {
         "ordinal": 2,
         "server": "rg_read",
-        "tool": "rg.capability.list",
+        "tool": "rg.contract.get",
         "status": "completed"
       },
       {
         "ordinal": 3,
         "server": "rg_read",
-        "tool": "rg.contract.get",
-        "status": "completed"
+        "tool": "rg.dsl.reference.get",
+        "status": "failed"
       },
       {
         "ordinal": 4,
         "server": "rg_read",
         "tool": "rg.dsl.reference.get",
-        "status": "failed"
+        "status": "completed"
       },
       {
         "ordinal": 5,
         "server": "rg_read",
-        "tool": "rg.dsl.reference.get",
+        "tool": "rg.dsl.preview",
         "status": "completed"
       },
       {
@@ -70,80 +78,56 @@
       {
         "ordinal": 7,
         "server": "rg_read",
-        "tool": "rg.dsl.preview",
-        "status": "completed"
-      },
-      {
-        "ordinal": 8,
-        "server": "rg_read",
-        "tool": "rg.dsl.reference.get",
-        "status": "completed"
-      },
-      {
-        "ordinal": 9,
-        "server": "rg_read",
-        "tool": "rg.dsl.preview",
-        "status": "completed"
-      },
-      {
-        "ordinal": 10,
-        "server": "rg_read",
         "tool": "rg.gate.check",
         "status": "completed"
       },
       {
-        "ordinal": 11,
+        "ordinal": 8,
         "server": "rg_author",
         "tool": "rg.tool.compose",
         "status": "completed"
       },
       {
-        "ordinal": 12,
+        "ordinal": 9,
         "server": "rg_author",
         "tool": "rg.tool.setInstruction",
         "status": "completed"
       },
       {
-        "ordinal": 13,
+        "ordinal": 10,
         "server": "rg_author",
         "tool": "rg.scenario.upsertCases",
         "status": "completed"
       },
       {
-        "ordinal": 14,
-        "server": "rg_author",
-        "tool": "rg.scenario.setDependencyBehavior",
+        "ordinal": 11,
+        "server": "rg_read",
+        "tool": "rg.contract.get",
         "status": "completed"
       },
       {
-        "ordinal": 15,
-        "server": "rg_author",
-        "tool": "rg.oracle.propose",
-        "status": "completed"
-      },
-      {
-        "ordinal": 16,
+        "ordinal": 12,
         "server": "rg_read",
         "tool": "rg.scenario.listCases",
         "status": "completed"
       },
       {
-        "ordinal": 17,
+        "ordinal": 13,
         "server": "rg_read",
-        "tool": "rg.contract.get",
+        "tool": "rg.capability.list",
         "status": "completed"
       }
     ]
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "candidate": "hmac-sha256:864d5bc0a64bbd418b7361a52ae21352d01b8733b05727c0ec38ea506853af3a",
-    "authoringContext": "hmac-sha256:bac34017592ff3d7058aca1ddf2a9f2dfcf0d3b51c0bf100349ea6521c3ea80e",
-    "authoringReceipt": "hmac-sha256:f297149798f5f24feedbad1aa007bfe68919e12a8730919b03ac7c33ebc32740",
-    "tool": "hmac-sha256:3325603de4ae86a7179c4e19155f91cae641b3604501e80d5bdbea660ad461ac",
-    "caseSet": "hmac-sha256:2e78818b509fb4101472d0e2925f03e132a149cd51736b1b64f15ce808665841",
+    "candidate": "hmac-sha256:670739efbf2840fe20a3d773972dfd5ab9d5a917b3945516bfc67c520e0021c7",
+    "authoringContext": "hmac-sha256:e4762abb9534b56ceca211fc3b1a3468a377d063cd1ab1e4c005604b664283f2",
+    "authoringReceipt": "hmac-sha256:01ed73b11efe7f75f2c9fda58695fda9c11b13f96def444eba7f03e54866c0cc",
+    "tool": "hmac-sha256:9ca346a89d2349b9c6f24590fcb2f06ab2dbe89a08a0790df297672ca83360d1",
+    "caseSet": "hmac-sha256:c04309fa5d506049d2742a4c9850b3a0b1f293165a65748507574149a3967f01",
     "cases": [
-      "hmac-sha256:78c5c5f8d228935a9936cbf03aa26eaea853f57dee99eb3348cde738642580bd"
+      "hmac-sha256:e69924ce88b698ff03ce34000eca33ab4f9306e38d3abbc8a879d6baf368822b"
     ]
   },
   "assertions": {
@@ -160,8 +144,9 @@
     "selfRepairOrFirstPassAccepted": true,
     "boundedRepairPolicyRespected": true,
     "sameCandidateReceiptAndAssets": true,
-    "rawArgumentsResultsAndMessagesOmitted": true
+    "rawArgumentsResultsAndMessagesOmitted": true,
+    "spawnedRuntimeIdentityVerified": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:be1fe1558a72ef962a15355f9d393df05cad969c455a07df9b0f12cf1c9de343"
+  "certificateFingerprint": "sha256:571f53ed65a2f6b9c77bbcf15f8ddaaf7cac67283d31cb1457006b072d9cd6e7"
 }
