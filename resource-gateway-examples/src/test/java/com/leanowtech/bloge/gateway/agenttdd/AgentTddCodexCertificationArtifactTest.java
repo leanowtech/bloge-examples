@@ -83,7 +83,7 @@ class AgentTddCodexCertificationArtifactTest {
         String prompt = script.substring(promptStart, script.indexOf("\nEOF\n", promptStart));
 
         assertThat(script).contains(
-                "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox read-only",
+                "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox danger-full-access",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
                 "git -C \"${ROOT_DIR}\" diff --quiet", "ls-files --others --exclude-standard",

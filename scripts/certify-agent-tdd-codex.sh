@@ -141,7 +141,7 @@ if [ -n "${CODEX_MODEL:-}" ]; then
 fi
 CODEX_ARGS+=(
     --ephemeral --json --ignore-user-config --ignore-rules --skip-git-repo-check
-    --sandbox read-only -C "${WORKSPACE_DIR}" -o "${FINAL_FILE}"
+    --sandbox danger-full-access -C "${WORKSPACE_DIR}" -o "${FINAL_FILE}"
     -c "mcp_servers.rg_read.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_read.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ"}'

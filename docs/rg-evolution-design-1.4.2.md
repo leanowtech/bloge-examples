@@ -1317,7 +1317,9 @@ MCP admission 与 DNS 防护 → 业务手册和真实 Codex/浏览器认证**�
 
 1. `certify-agent-tdd-codex.sh` 拒绝脏工作区、既有 RG 和占用端口，自行生成一次性双身份，从固定
    HEAD 构建、启动并最终停止 loopback RG；Codex 在 macOS `sandbox-exec` 的仓库 read/write deny
-   下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token；
+   下从临时目录运行 `codex exec --ephemeral`，忽略用户配置和规则，只得到 WORKLOAD token。Codex
+   内层 sandbox 设为 `danger-full-access` 以避免嵌套 Seatbelt；权威外层 profile 已先用仓库读取负测
+   证明有效，并继续拒绝仓库 read/write；
 2. 提示词只描述“按用户编号查询姓名和会员等级”的目标、事实来源、使用时机、业务失败
    说明和 `u-100 → Alice/premium` 标准答案，不向业务人员要求 DSL、Schema、binding、节点、端口或 MCP 参数；
 3. 安全化 trace 必须按顺序包含 capability/contract discovery、失败后成功的同工具自修正、accepted
