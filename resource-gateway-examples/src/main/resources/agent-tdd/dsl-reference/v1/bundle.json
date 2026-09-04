@@ -47,7 +47,7 @@
         {"ruleId": "DECISION_INPUTS", "summary": "Name every decision input and declare a structured result type."},
         {"ruleId": "UNIQUE_WITH_OTHERWISE", "summary": "For hit=unique, keep rules non-overlapping and include an otherwise rule when inputs are not exhaustive."}
       ],
-      "exampleRefs": ["graph-decision-minimal"]
+      "exampleRefs": ["graph-decision-minimal", "graph-four-resource-decision"]
     },
     {
       "topicId": "effects",
@@ -79,6 +79,13 @@
       "source": "graph decisionExample {\n  decision_table policy(score = ctx.score) hit=unique -> { decision: String } {\n    rule (score: score >= 120) -> { decision: \"accept\" }\n    otherwise -> { decision: \"review\" }\n  }\n}",
       "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
       "requiredOperatorRefs": ["bloge:decisionTable"]
+    },
+    {
+      "exampleId": "graph-four-resource-decision",
+      "intent": "Read and combine four governed payloads, then apply an explicit policy matrix",
+      "source": "graph cancelPolicyExample {\n  node order : httpResource {\n    input {\n      resourceId = ctx.orderResourceId\n      params = {}\n    }\n  }\n  node liability : httpResource {\n    input {\n      resourceId = ctx.liabilityResourceId\n      params = {}\n    }\n  }\n  node cityPolicy : httpResource {\n    input {\n      resourceId = ctx.cityPolicyResourceId\n      params = {}\n    }\n  }\n  node history : httpResource {\n    input {\n      resourceId = ctx.historyResourceId\n      params = {}\n    }\n  }\n  decision_table policy(malicious = ctx.malicious, responsibility = ctx.responsibility) hit=unique -> { decision: String } {\n    rule (malicious: malicious == true) -> { decision: \"MANUAL_REVIEW\" }\n    rule (malicious: malicious == false, responsibility: responsibility == \"DRIVER\") -> { decision: \"WAIVE_FULL\" }\n    otherwise -> { decision: \"RETAIN\" }\n  }\n  transform facts {\n    orderPayload = order.output.payload\n    liabilityPayload = liability.output.payload\n    cityPolicyPayload = cityPolicy.output.payload\n    historyPayload = history.output.payload\n  }\n}",
+      "assertions": ["COMPILES", "ROUND_TRIP_SUPPORTED"],
+      "requiredOperatorRefs": ["httpResource", "bloge:transform", "bloge:decisionTable"]
     }
   ]
 }

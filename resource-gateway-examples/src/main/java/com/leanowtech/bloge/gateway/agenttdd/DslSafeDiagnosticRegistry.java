@@ -29,6 +29,11 @@ final class DslSafeDiagnosticRegistry {
 
     /** Maps one visual importer or validator diagnostic without consuming its prose or metadata. */
     MappedDiagnostic visual(VisualDiagnostic source, DslAuthoringContext context) {
+        return visual(source, context, "");
+    }
+
+    /** Maps a visual diagnostic and ranks only safe visible suggestions near an internal rejected ref. */
+    MappedDiagnostic visual(VisualDiagnostic source, DslAuthoringContext context, String rejectedOperatorRef) {
         String lowerCode = source == null ? "" : source.code();
         String phase;
         String code;
@@ -57,9 +62,9 @@ final class DslSafeDiagnosticRegistry {
             summary = "An operator reference is not visible in this authoring context.";
             expected = List.of("VISIBLE_OPERATOR_REF");
             references = List.of("topic:node");
-            fixes = context.operators().keySet().stream().sorted().limit(MAX_FIX_HINTS)
+            fixes = rankedOperatorCandidates(rejectedOperatorRef, context.operators().keySet()).stream()
                     .map(value -> new DslAuthoringDiagnostic.FixHint(
-                            "USE_VISIBLE_OPERATOR", value, "VISIBLE_IN_AUTHORING_CONTEXT"))
+                            "REPLACE_OPERATOR_REF", value, "AUTHORIZED_CONTRACT_COMPATIBLE"))
                     .toList();
         } else if ("visual.dslImport.functionMissing".equals(lowerCode)) {
             phase = "RESOLVE";
@@ -123,6 +128,14 @@ final class DslSafeDiagnosticRegistry {
                 "ERROR".equals(level) || unresolved || code.equals("DSL_PROJECTION_UNSUPPORTED"));
     }
 
+    /** Creates the stable parse diagnostic for a keyword used where an identifier is required. */
+    MappedDiagnostic identifierReserved(int line, int column) {
+        return mapped("ERROR", "PARSE", "DSL_IDENTIFIER_RESERVED", "", span(line, column),
+                "A declaration identifier uses a reserved BLOGE keyword.",
+                List.of("IDENTIFIER"), List.of("topic:graph"), List.of(),
+                "AGENT_CAN_REVISE", false, true);
+    }
+
     /** Maps explicit structured compiler fields and never invokes message-derived fallback accessors. */
     MappedDiagnostic compiler(CompilationDiagnostic source) {
         String rule = source == null || source.ruleId() == null ? "" : source.ruleId();
@@ -168,7 +181,8 @@ final class DslSafeDiagnosticRegistry {
             blocking = source != null && source.severity() == LintDiagnostic.Severity.ERROR;
         }
         String level = blocking ? "ERROR" : source == null ? "WARNING" : source.severity().name();
-        return mapped(level, "LINT", code, "",
+        String phase = code.startsWith("DSL_DECISION_") ? "SEMANTIC_COMPILE" : "LINT";
+        return mapped(level, phase, code, "",
                 span(source == null ? 0 : source.line(), source == null ? 0 : source.column()),
                 summary, List.of(), List.of("topic:decision-table"), List.of(),
                 "AGENT_CAN_REVISE", false, blocking);
@@ -239,6 +253,33 @@ final class DslSafeDiagnosticRegistry {
     private static String joinTarget(String node, String field) {
         if (node == null || node.isBlank()) return field == null ? "" : "/field";
         return field == null || field.isBlank() ? "/node" : "/node/field";
+    }
+
+    private static List<String> rankedOperatorCandidates(String rejected, java.util.Set<String> visible) {
+        String normalized = rejected == null ? "" : rejected.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) return List.of();
+        int threshold = Math.max(2, normalized.length() / 4);
+        return visible.stream().map(candidate -> Map.entry(candidate,
+                        editDistance(normalized, candidate.toLowerCase(Locale.ROOT))))
+                .filter(candidate -> candidate.getValue() <= threshold)
+                .sorted(java.util.Comparator.comparingInt((Map.Entry<String, Integer> value) -> value.getValue())
+                        .thenComparing(Map.Entry::getKey))
+                .limit(MAX_FIX_HINTS).map(Map.Entry::getKey).toList();
+    }
+
+    private static int editDistance(String left, String right) {
+        int[] prior = java.util.stream.IntStream.rangeClosed(0, right.length()).toArray();
+        for (int row = 1; row <= left.length(); row++) {
+            int[] current = new int[right.length() + 1];
+            current[0] = row;
+            for (int column = 1; column <= right.length(); column++) {
+                int replace = prior[column - 1]
+                        + (left.charAt(row - 1) == right.charAt(column - 1) ? 0 : 1);
+                current[column] = Math.min(Math.min(prior[column] + 1, current[column - 1] + 1), replace);
+            }
+            prior = current;
+        }
+        return prior[right.length()];
     }
 
     /** Safe diagnostic plus whether it blocks the current phase. */

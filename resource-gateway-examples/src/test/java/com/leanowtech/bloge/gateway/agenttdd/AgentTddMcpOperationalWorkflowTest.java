@@ -327,7 +327,7 @@ class AgentTddMcpOperationalWorkflowTest {
                 .filter(value -> value.contains("wallet-service.getBalance"))
                 .findFirst().orElseThrow();
         composeThroughAuthoringGate(
-                toolRef, graph(bindingRef), List.of(), "compose-wallet-browser-test");
+                toolRef, walletGraph(bindingRef), List.of(), "compose-wallet-browser-test");
         invoke("rg.scenario.upsertCases", Map.of(
                 "caseSetRef", caseSetRef,
                 "toolRef", toolRef,
@@ -474,7 +474,7 @@ class AgentTddMcpOperationalWorkflowTest {
         return result;
     }
 
-    /** Follows the Codex authoring contract: reference, gate, then promote the exact receipt. */
+    /** Follows the Codex authoring contract: reference, preview, gate, then exact receipt promotion. */
     private JsonNode composeThroughAuthoringGate(String toolRef,
                                                  String dsl,
                                                  List<String> libraryRefs,
@@ -482,11 +482,16 @@ class AgentTddMcpOperationalWorkflowTest {
         JsonNode reference = invoke("rg.dsl.reference.get",
                 Map.of("libraryRefs", libraryRefs, "includeExamples", true), "AGENT_TDD_READ");
         String contextFingerprint = reference.at("/data/authoringContextFingerprint").asText();
-        JsonNode gate = invoke("rg.gate.check", Map.of(
+        Map<String, Object> authoringRequest = Map.of(
                 "source", Map.of("sourceId", toolRef + ".bloge", "dsl", dsl),
                 "libraryRefs", libraryRefs,
-                "authoringContextFingerprint", contextFingerprint), "AGENT_TDD_READ");
+                "authoringContextFingerprint", contextFingerprint);
+        JsonNode preview = invoke("rg.dsl.preview", authoringRequest, "AGENT_TDD_READ");
+        assertThat(preview.at("/data/accepted").asBoolean()).as(preview.toPrettyString()).isTrue();
+        JsonNode gate = invoke("rg.gate.check", authoringRequest, "AGENT_TDD_READ");
         assertThat(gate.at("/data/accepted").asBoolean()).as(gate.toPrettyString()).isTrue();
+        assertThat(gate.at("/data/authoringReceiptFingerprint"))
+                .isEqualTo(preview.at("/data/authoringReceiptFingerprint"));
         return invoke("rg.tool.compose", Map.of(
                 "toolRef", toolRef,
                 "graph", Map.of("sourceId", toolRef + ".bloge", "dsl", dsl),
@@ -601,6 +606,21 @@ class AgentTddMcpOperationalWorkflowTest {
                   transform response {
                     name = profile.output.payload.name
                     tier = profile.output.payload.tier
+                  }
+                }
+                """.formatted(bindingRef);
+    }
+
+    private static String walletGraph(String bindingRef) {
+        return """
+                graph codexWalletBalance {
+                  input { userId: String }
+                  node wallet : "%s" {
+                    input { params = { userId: ctx.userId } }
+                  }
+                  transform response {
+                    amount = wallet.output.payload.amount
+                    currency = wallet.output.payload.currency
                   }
                 }
                 """.formatted(bindingRef);

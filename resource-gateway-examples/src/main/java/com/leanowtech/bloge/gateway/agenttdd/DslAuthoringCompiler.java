@@ -8,9 +8,13 @@ import com.leanowtech.bloge.dsl.ast.AstNode;
 import com.leanowtech.bloge.dsl.compiler.CompilationMode;
 import com.leanowtech.bloge.dsl.compiler.CompilationResult;
 import com.leanowtech.bloge.dsl.compiler.DslCompiler;
+import com.leanowtech.bloge.dsl.lexer.Lexer;
+import com.leanowtech.bloge.dsl.lexer.Token;
+import com.leanowtech.bloge.dsl.lexer.TokenType;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryValidator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportPreviewRequest;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.importer.DslVisualProjection;
@@ -75,9 +79,20 @@ final class DslAuthoringCompiler {
 
         LinkedHashMap<String, List<DslSafeDiagnosticRegistry.MappedDiagnostic>> byPhase = new LinkedHashMap<>();
         PHASES.forEach(phase -> byPhase.put(phase, new ArrayList<>()));
+        List<DslSafeDiagnosticRegistry.MappedDiagnostic> reservedIdentifiers = reservedIdentifiers(request.source());
+        List<String> missingOperatorRefs = projection.draft().nodes().stream()
+                .map(GraphDraft.DraftNode::operatorRef)
+                .filter(ref -> !ref.isBlank() && !context.operators().containsKey(ref))
+                .distinct().sorted().toList();
         projection.diagnostics().stream().filter(java.util.Objects::nonNull)
-                .map(value -> diagnostics.visual(value, context))
+                .map(value -> diagnostics.visual(value, context,
+                        missingOperatorRefs.isEmpty() ? "" : missingOperatorRefs.getFirst()))
                 .forEach(value -> byPhase.get(value.diagnostic().phase()).add(value));
+        if (!reservedIdentifiers.isEmpty()) {
+            byPhase.get("PARSE").removeIf(value ->
+                    "DSL_PARSE_EXPECTED_CONSTRUCT".equals(value.diagnostic().code()));
+            byPhase.get("PARSE").addAll(reservedIdentifiers);
+        }
 
         List<DslPreviewReceipt.Stage> stages = new ArrayList<>();
         List<DslSafeDiagnosticRegistry.MappedDiagnostic> emitted = new ArrayList<>();
@@ -113,16 +128,16 @@ final class DslAuthoringCompiler {
             } catch (RuntimeException failure) {
                 byPhase.get("SEMANTIC_COMPILE").add(diagnostics.platformDefect("SEMANTIC_COMPILE"));
             }
+            try {
+                new LintRunner().lintSource(request.source()).stream().map(diagnostics::lint)
+                        .forEach(value -> byPhase.get(value.diagnostic().phase()).add(value));
+            } catch (RuntimeException failure) {
+                byPhase.get("LINT").add(diagnostics.platformDefect("LINT"));
+            }
             failedPhase = runCollected("SEMANTIC_COMPILE", byPhase, stages, emitted);
         }
 
         if (failedPhase == null) {
-            try {
-                new LintRunner().lintSource(request.source()).stream().map(diagnostics::lint)
-                        .forEach(byPhase.get("LINT")::add);
-            } catch (RuntimeException failure) {
-                byPhase.get("LINT").add(diagnostics.platformDefect("LINT"));
-            }
             failedPhase = runCollected("LINT", byPhase, stages, emitted);
         }
         if (failedPhase == null) failedPhase = runCollected("PROJECT", byPhase, stages, emitted);
@@ -182,6 +197,26 @@ final class DslAuthoringCompiler {
         context.functions().values().stream().sorted(Comparator.comparing(OperatorLibrary.BuiltInFunction::name))
                 .forEach(function -> compiler.registerFunction(functionStub(function)));
         return compiler;
+    }
+
+    private List<DslSafeDiagnosticRegistry.MappedDiagnostic> reservedIdentifiers(String source) {
+        try {
+            List<Token> tokens = new Lexer(source).tokenize();
+            Set<TokenType> declarations = Set.of(TokenType.GRAPH, TokenType.NODE, TokenType.BRANCH,
+                    TokenType.DECISION_TABLE, TokenType.SCHEMA, TokenType.TRANSFORM, TokenType.FOREACH,
+                    TokenType.LOOP, TokenType.WAIT, TokenType.AWAIT, TokenType.SCRIPT);
+            List<DslSafeDiagnosticRegistry.MappedDiagnostic> result = new ArrayList<>();
+            for (int index = 0; index + 1 < tokens.size(); index++) {
+                Token next = tokens.get(index + 1);
+                if (declarations.contains(tokens.get(index).type())
+                        && Lexer.isReservedIdentifierKeywordToken(next.type())) {
+                    result.add(diagnostics.identifierReserved(next.line(), next.column()));
+                }
+            }
+            return result;
+        } catch (RuntimeException malformed) {
+            return List.of();
+        }
     }
 
     private static ExpressionFunction functionStub(OperatorLibrary.BuiltInFunction definition) {

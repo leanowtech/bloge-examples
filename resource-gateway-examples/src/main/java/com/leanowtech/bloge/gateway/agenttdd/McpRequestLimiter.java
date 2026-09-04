@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +34,7 @@ public final class McpRequestLimiter {
     private final ConcurrentHashMap<String, Semaphore> authoringPermits = new ConcurrentHashMap<>();
 
     /** Creates the configured application limiter. */
+    @Autowired
     public McpRequestLimiter(
             @Value("${gateway.agent-tdd.mcp-limits.common-per-minute:120}") int commonPerWindow,
             @Value("${gateway.agent-tdd.mcp-limits.reference-per-minute:60}") int referencePerWindow,

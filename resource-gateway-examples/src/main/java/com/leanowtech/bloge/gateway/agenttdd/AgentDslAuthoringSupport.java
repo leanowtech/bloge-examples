@@ -15,10 +15,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -35,8 +35,10 @@ public final class AgentDslAuthoringSupport {
     static final int MAX_FUNCTIONS = 256;
     static final int MAX_EXAMPLES = 8;
     static final int MAX_RESPONSE_BYTES = 1024 * 1024;
-    private static final ExecutorService PREVIEW_EXECUTOR = Executors.newFixedThreadPool(
-            4, Thread.ofVirtual().name("agent-dsl-preview-", 0).factory());
+    private static final ThreadPoolExecutor PREVIEW_EXECUTOR = new ThreadPoolExecutor(
+            4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16),
+            Thread.ofVirtual().name("agent-dsl-preview-", 0).factory(),
+            new ThreadPoolExecutor.AbortPolicy());
 
     private final ObjectMapper mapper;
     private final DslReferenceBundleLoader.Bundle bundle;
@@ -164,15 +166,17 @@ public final class AgentDslAuthoringSupport {
                     "Fetch the current DSL reference before previewing source.",
                     Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
         }
-        DslAuthoringContext context = contexts.resolve(request.libraryRefs(), identity);
-        if (!context.fingerprint().equals(request.authoringContextFingerprint())) {
-            throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_STALE",
-                    "The DSL authoring context changed after the reference was fetched.",
-                    Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
-        }
         Future<DslPreviewReceipt> task;
         try {
-            task = PREVIEW_EXECUTOR.submit(() -> compiler.preview(request, context));
+            task = PREVIEW_EXECUTOR.submit(() -> {
+                DslAuthoringContext context = contexts.resolve(request.libraryRefs(), identity);
+                if (!context.fingerprint().equals(request.authoringContextFingerprint())) {
+                    throw new AgentTddToolException("DSL_AUTHORING_CONTEXT_STALE",
+                            "The DSL authoring context changed after the reference was fetched.",
+                            Map.of("nextAction", "REFETCH_DSL_REFERENCE"), true);
+                }
+                return compiler.preview(request, context);
+            });
         } catch (RejectedExecutionException saturated) {
             throw new AgentTddToolException("DSL_PREVIEW_CAPACITY_EXCEEDED",
                     "The DSL preview capacity is temporarily exhausted.",
@@ -182,11 +186,13 @@ public final class AgentDslAuthoringSupport {
             return task.get(previewBudget.toNanos(), TimeUnit.NANOSECONDS);
         } catch (TimeoutException timeout) {
             task.cancel(true);
+            PREVIEW_EXECUTOR.purge();
             throw new AgentTddToolException("DSL_PREVIEW_TIMEOUT",
                     "The DSL preview exceeded its bounded execution time.",
                     Map.of("nextAction", "NARROW_DSL_SOURCE"), true);
         } catch (InterruptedException interrupted) {
             task.cancel(true);
+            PREVIEW_EXECUTOR.purge();
             Thread.currentThread().interrupt();
             throw new AgentTddToolException("DSL_PREVIEW_INTERRUPTED",
                     "The DSL preview was interrupted before completion.",

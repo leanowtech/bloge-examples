@@ -27,7 +27,8 @@ class AgentDslAuthoringSupportTest {
     void emptyLibraryRefsExposeOnlyBuiltInsAndNeverLeakRuntimeMaterial() {
         OperatorDefinition builtIn = operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted());
         OperatorDefinition library = operator("ride:lookup", "ride-policy", OperatorDefinition.Policy.unrestricted());
-        AgentDslAuthoringSupport support = support(List.of(builtIn, library), List.of());
+        OperatorDefinition resource = resourceOperator("resource:ride-order.get");
+        AgentDslAuthoringSupport support = support(List.of(builtIn, library, resource), List.of());
 
         DslReferenceSnapshot reference = support.reference(
                 new DslReferenceRequest(List.of(), List.of("graph", "bindings"),
@@ -36,7 +37,7 @@ class AgentDslAuthoringSupportTest {
         assertThat(reference.schemaVersion()).isEqualTo("rg.dslReference.v1");
         assertThat(reference.supportedRootKinds()).containsExactly("graph");
         assertThat(reference.operators()).extracting(DslReferenceSnapshot.OperatorContract::operatorRef)
-                .containsExactly("bloge:transform");
+                .containsExactly("bloge:transform", "resource:ride-order.get");
         assertThat(reference.authoringContextFingerprint()).startsWith("sha256:");
         assertThat(mapper.valueToTree(reference).toString())
                 .doesNotContain("secret.internal", "unsafe operator description", "business-example-value",
@@ -182,8 +183,47 @@ class AgentDslAuthoringSupportTest {
 
         assertThat(receipt.authoringDiagnostics()).extracting(DslAuthoringDiagnostic::code)
                 .contains("DSL_DECISION_UNIQUE_OVERLAP", "DSL_DECISION_OTHERWISE_REQUIRED");
+        assertThat(receipt.authoringDiagnostics().stream()
+                .filter(value -> value.code().startsWith("DSL_DECISION_")))
+                .allMatch(value -> value.phase().equals("SEMANTIC_COMPILE"));
         assertThat(mapper.valueToTree(receipt).toString())
                 .doesNotContain("review-secret", "accept-secret", "policyGraph");
+    }
+
+    @Test
+    void classifiesReservedDeclarationIdentifiersWithoutEchoingTheKeyword() {
+        AgentDslAuthoringSupport support = support(List.of(), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph graph {}", List.of(), context), identity("project-a"));
+
+        assertThat(receipt.authoringDiagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("DSL_IDENTIFIER_RESERVED");
+            assertThat(diagnostic.phase()).isEqualTo("PARSE");
+            assertThat(diagnostic.expectedKinds()).containsExactly("IDENTIFIER");
+            assertThat(diagnostic.safeSummary()).doesNotContain("graph graph");
+        });
+    }
+
+    @Test
+    void withholdsLowConfidenceOperatorSuggestions() {
+        AgentDslAuthoringSupport support = support(List.of(
+                operator("bloge:transform", "", OperatorDefinition.Policy.unrestricted()),
+                operator("bloge:decisionTable", "", OperatorDefinition.Policy.unrestricted())), List.of());
+        String context = support.reference(new DslReferenceRequest(
+                List.of(), List.of(), List.of(), false), identity("project-a"))
+                .authoringContextFingerprint();
+
+        DslPreviewReceipt receipt = support.preview(new DslPreviewRequest(
+                "candidate.bloge", "graph candidate { node value : \"unrelated:opaqueThing\" {} }",
+                List.of(), context), identity("project-a"));
+
+        assertThat(receipt.authoringDiagnostics().stream()
+                .filter(value -> value.code().equals("DSL_OPERATOR_NOT_FOUND")))
+                .singleElement().satisfies(diagnostic -> assertThat(diagnostic.fixHints()).isEmpty());
     }
 
     @Test
@@ -291,6 +331,17 @@ class AgentDslAuthoringSupportTest {
                 OperatorDefinition.Capabilities.pure(), policy,
                 new OperatorDefinition.Lowering(libraryId.isBlank() ? "dsl" : "design", ref,
                         Map.of("bindingRef", "secret-binding")), List.of());
+    }
+
+    private static OperatorDefinition resourceOperator(String ref) {
+        OperatorDefinition base = operator(ref, "", OperatorDefinition.Policy.unrestricted());
+        return new OperatorDefinition(base.schemaVersion(), base.operatorRef(), base.operatorVersion(),
+                base.display(), new OperatorDefinition.Source("resource", "ride-order.get", "GET",
+                "https://secret.internal/business-example-value", false, ""), base.ports(),
+                base.configSchema(), new OperatorDefinition.Capabilities(
+                "READ_EXTERNAL", "IDEMPOTENT", false, false, false), base.policy(),
+                new OperatorDefinition.Lowering("runtime", "httpResource",
+                        Map.of("bindingRef", "resource:ride-order.get")), List.of());
     }
 
     private static OperatorLibrary library(String id, List<OperatorDefinition> operators) {

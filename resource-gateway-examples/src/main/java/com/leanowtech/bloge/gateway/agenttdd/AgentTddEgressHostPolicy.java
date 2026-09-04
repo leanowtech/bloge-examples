@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,7 @@ public final class AgentTddEgressHostPolicy {
      *
      * @param configuredHosts hostnames only; schemes, paths and wildcard suffixes are not accepted
      */
+    @Autowired
     public AgentTddEgressHostPolicy(
             @Value("${gateway.agent-tdd.attestation.allowed-hosts:localhost,127.0.0.1}") String configuredHosts) {
         this(configuredHosts, host -> List.of(InetAddress.getAllByName(host)));

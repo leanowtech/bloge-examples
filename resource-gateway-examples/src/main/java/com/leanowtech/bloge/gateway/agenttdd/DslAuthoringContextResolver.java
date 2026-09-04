@@ -43,7 +43,8 @@ final class DslAuthoringContextResolver {
     /**
      * Materializes the exact catalog used by one reference or compile request.
      *
-     * @param requestedLibraryRefs explicit libraries; empty means built-ins only
+     * @param requestedLibraryRefs explicit authored libraries; empty still includes platform built-ins and
+     *                             scope-visible resource bindings
      * @param identity authenticated tenant, project and environment
      * @return frozen context and canonical fingerprint
      */
@@ -74,7 +75,7 @@ final class DslAuthoringContextResolver {
                 .filter(operator -> operator.policy().allows(
                         identity.tenantId(), identity.projectId(), identity.environmentId()))
                 .filter(operator -> libraryRefs.isEmpty()
-                        ? platformBuiltIn(operator)
+                        ? platformOwned(operator)
                         : operator.source().libraryId().isBlank()
                                 || libraryRefs.contains(operator.source().libraryId()))
                 .forEach(operator -> operators.putIfAbsent(operator.operatorRef(), operator));
@@ -147,10 +148,10 @@ final class DslAuthoringContextResolver {
         return VisualBundleFingerprint.fromCanonicalValue(mapper, material, MAX_CONTEXT_BYTES);
     }
 
-    private static boolean platformBuiltIn(OperatorDefinition operator) {
+    private static boolean platformOwned(OperatorDefinition operator) {
         return operator.source().libraryId().isBlank()
-                && operator.source().resourceId().isBlank()
-                && Set.of("built-in", "bloge-dsl", "bloge-operator").contains(operator.source().kind());
+                && (!operator.source().resourceId().isBlank()
+                || Set.of("built-in", "bloge-dsl", "bloge-operator").contains(operator.source().kind()));
     }
 
     private static List<String> normalize(List<String> values) {
