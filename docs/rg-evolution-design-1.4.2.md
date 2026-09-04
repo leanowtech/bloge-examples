@@ -688,7 +688,7 @@ mutation 内部顺序固定为：
 - 每阶段和总数都有硬上限；
 - blocking ERROR 优先，其次 WARNING、INFO；
 - 同 code + target + span 去重；
-- 截断时返回 `diagnosticSummary.truncated=true` 和各阶段计数；
+- 截断时返回 `diagnosticSummary.truncated=true`；`total` 和各阶段计数表示去重后的原始总量，不能只报告保留下来的行数；
 - 截断不改变 `technicalAcceptance`，也不把剩余错误视为通过。
 
 ---
@@ -859,6 +859,8 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 | 单身份 preview + gate | 合计 30 次/分钟，最多 4 个并发 |
 
 达到限制时返回稳定、payload-free 错误码。这里同时承接 v1.4.0 遗留的 MCP 配额/速率要求，但实现应是 controller 级共用控制，不只保护 DSL 工具。
+固定窗口只保留尚未过期的 identity hash；容量临界时先淘汰过期窗口。authoring semaphore 在最后一个并发调用释放后立即按 identity
+移除，防止历史身份把容量永久占满。并发获取、释放和淘汰必须在同一临界区，不能删除仍被请求持有的 semaphore。
 
 ---
 
@@ -1010,7 +1012,9 @@ reference 不需要业务输入，因此不应接收它。preview 必须接收 D
 v1.4.2 已吸收为并行安全项：
 
 - 规划时连续解析两次目标，在每条实景案例 dispatch 前再次解析并核对同一地址集合；
-- 拒绝 loopback、link-local、site-local、multicast、unspecified 和配置禁止的网段；
+- 拒绝 loopback、link-local、site-local、multicast、unspecified，以及 RFC 6890/IANA special-purpose 中不应作为公网
+  egress 目标的 IPv4/IPv6 网段；至少包括 shared、benchmark、documentation、protocol-assignment、discard-only、
+  deprecated 6to4、unique-local 和 reserved 地址；
 - redirect 继续禁用；
 - DNS 失败、答案变化或出现混合公私地址时失败关闭；
 - 测试覆盖 IPv4、IPv6、多地址、空结果和检查后切换场景；`localhost`/`127.0.0.1`

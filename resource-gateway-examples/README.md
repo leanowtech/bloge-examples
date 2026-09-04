@@ -28,7 +28,10 @@ parser/compiler/linter/projection pipeline and persists only the matching server
 state intent, rules and expected outcomes; they are not asked to write DSL or interpret compiler prose.
 Preview is bounded to 512 KiB, 5 seconds, 25 diagnostics per phase and 100 total. Per authenticated identity,
 MCP defaults to 120 total calls/minute, 60 reference calls/minute, and 30 shared preview/gate calls/minute
-with four concurrent authoring calls; the `RG_AGENT_TDD_MCP_*` settings may lower those limits.
+with four concurrent authoring calls; expired rate windows and fully released identity semaphores are evicted so
+historical clients cannot permanently consume admission capacity. The `RG_AGENT_TDD_MCP_*` settings may lower those limits.
+Sandbox attestation also rejects stable or mixed DNS answers in private and RFC special-purpose ranges, including
+documentation, benchmark, protocol-assignment, discard-only, transition and reserved addresses.
 The board derives each Tool's position and next business action along the five-act journey from
 existing readiness and case-set facts; it does not create a second workflow state or perform extra reads.
 Decision-table nodes are projected as business-readable rule matrices with a fixed prose flow summary;

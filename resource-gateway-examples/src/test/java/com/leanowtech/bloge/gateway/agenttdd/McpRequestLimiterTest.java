@@ -47,6 +47,30 @@ class McpRequestLimiterTest {
         fourth.close();
     }
 
+    @Test
+    void evictsIdleAuthoringIdentitySemaphoresInsteadOfPermanentlyExhaustingCapacity() {
+        McpRequestLimiter limiter = new McpRequestLimiter(
+                Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, 1, System::nanoTime);
+
+        for (int index = 0; index <= 10_000; index++) {
+            limiter.acquire(identity("agent-" + index), "rg.dsl.preview").close();
+        }
+    }
+
+    @Test
+    void evictsExpiredRateWindowsBeforeRejectingANewIdentity() {
+        AtomicLong time = new AtomicLong();
+        McpRequestLimiter limiter = new McpRequestLimiter(
+                Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, 1, time::get);
+        for (int index = 0; index < 15_000; index++) {
+            limiter.acquire(identity("agent-" + index), "rg.dsl.reference.get").close();
+        }
+
+        time.addAndGet(McpRequestLimiter.WINDOW.toNanos());
+
+        limiter.acquire(identity("fresh-agent"), "rg.dsl.reference.get").close();
+    }
+
     private static void assertRateLimited(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
         assertThatThrownBy(call).isInstanceOfSatisfying(McpProtocolException.class,
                 failure -> org.assertj.core.api.Assertions.assertThat(failure.code()).isEqualTo(-32029));

@@ -173,7 +173,7 @@ final class DslAuthoringCompiler {
                 safeGeneratedSemanticFingerprint,
                 projection.roundTrip().supported() ? List.of()
                         : designOnly ? List.of("DESIGN_ONLY_OPERATOR") : List.of("SEMANTIC_PROJECTION"));
-        DslPreviewReceipt.DiagnosticSummary summary = summary(bounded, truncated);
+        DslPreviewReceipt.DiagnosticSummary summary = summary(emitted, truncated);
         String receiptFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "schemaVersion", "rg.dslAuthoringReceipt.v1",
                 "contextFingerprint", context.fingerprint(),
@@ -251,11 +251,21 @@ final class DslAuthoringCompiler {
         }
     }
 
-    private static List<DslAuthoringDiagnostic> bounded(
+    static List<DslAuthoringDiagnostic> bounded(
             List<DslSafeDiagnosticRegistry.MappedDiagnostic> source) {
         LinkedHashMap<String, DslAuthoringDiagnostic> distinct = new LinkedHashMap<>();
         Map<String, Integer> phaseCounts = new LinkedHashMap<>();
-        for (DslSafeDiagnosticRegistry.MappedDiagnostic mapped : source) {
+        List<DslSafeDiagnosticRegistry.MappedDiagnostic> prioritized = source.stream()
+                .sorted(java.util.Comparator
+                        .comparing(DslSafeDiagnosticRegistry.MappedDiagnostic::blocking).reversed()
+                        .thenComparingInt(mapped -> levelRank(mapped.diagnostic().level()))
+                        .thenComparingInt(mapped -> phaseRank(mapped.diagnostic().phase()))
+                        .thenComparing(mapped -> mapped.diagnostic().code())
+                        .thenComparing(mapped -> mapped.diagnostic().target())
+                        .thenComparingInt(mapped -> mapped.diagnostic().span().startLine())
+                        .thenComparingInt(mapped -> mapped.diagnostic().span().startColumn()))
+                .toList();
+        for (DslSafeDiagnosticRegistry.MappedDiagnostic mapped : prioritized) {
             DslAuthoringDiagnostic value = mapped.diagnostic();
             String key = value.code() + "|" + value.target() + "|" + value.span();
             if (distinct.containsKey(key)) continue;
@@ -267,6 +277,19 @@ final class DslAuthoringCompiler {
         return List.copyOf(distinct.values());
     }
 
+    private static int levelRank(String level) {
+        return switch (level) {
+            case "ERROR" -> 0;
+            case "WARNING" -> 1;
+            default -> 2;
+        };
+    }
+
+    private static int phaseRank(String phase) {
+        int index = PHASES.indexOf(phase);
+        return index < 0 ? PHASES.size() : index;
+    }
+
     private static Set<String> deduplicated(List<DslSafeDiagnosticRegistry.MappedDiagnostic> source) {
         Set<String> result = new LinkedHashSet<>();
         source.forEach(value -> result.add(value.diagnostic().code() + "|"
@@ -274,13 +297,18 @@ final class DslAuthoringCompiler {
         return result;
     }
 
-    private static DslPreviewReceipt.DiagnosticSummary summary(
-            List<DslAuthoringDiagnostic> diagnostics, boolean truncated) {
-        Map<String, Long> counts = diagnostics.stream().collect(java.util.stream.Collectors.groupingBy(
+    static DslPreviewReceipt.DiagnosticSummary summary(
+            List<DslSafeDiagnosticRegistry.MappedDiagnostic> source, boolean truncated) {
+        LinkedHashMap<String, DslAuthoringDiagnostic> distinct = new LinkedHashMap<>();
+        source.forEach(mapped -> {
+            DslAuthoringDiagnostic value = mapped.diagnostic();
+            distinct.putIfAbsent(value.code() + "|" + value.target() + "|" + value.span(), value);
+        });
+        Map<String, Long> counts = distinct.values().stream().collect(java.util.stream.Collectors.groupingBy(
                 DslAuthoringDiagnostic::phase, LinkedHashMap::new, java.util.stream.Collectors.counting()));
         List<DslPreviewReceipt.PhaseCount> byPhase = PHASES.stream().filter(counts::containsKey)
                 .map(phase -> new DslPreviewReceipt.PhaseCount(phase, counts.get(phase).intValue())).toList();
-        return new DslPreviewReceipt.DiagnosticSummary(diagnostics.size(), truncated, byPhase);
+        return new DslPreviewReceipt.DiagnosticSummary(distinct.size(), truncated, byPhase);
     }
 
     private Map<String, Object> safeProjection(DslVisualProjection projection,

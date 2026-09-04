@@ -86,6 +86,16 @@ class AgentTddEgressHostPolicyTest {
         assertResolutionRejected(host -> List.of(InetAddress.getByName("fd00::1")));
     }
 
+    @Test
+    void rejectsDocumentationBenchmarkTransitionAndProtocolAssignmentRanges() throws Exception {
+        for (String address : List.of(
+                "0.1.2.3", "192.0.0.8", "192.0.2.1", "192.88.99.1",
+                "198.18.0.1", "198.51.100.1", "203.0.113.1", "240.0.0.1",
+                "64:ff9b:1::1", "100::1", "2001::1", "2001:db8::1", "2002::1")) {
+            assertResolutionRejected(host -> List.of(InetAddress.getByName(address)));
+        }
+    }
+
     private static void assertRejected(AgentTddEgressHostPolicy policy, String url) {
         assertThatThrownBy(() -> policy.requireAllowed(url))
                 .isInstanceOfSatisfying(AgentTddToolException.class, failure ->

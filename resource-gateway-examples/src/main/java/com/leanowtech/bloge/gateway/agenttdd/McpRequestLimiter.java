@@ -78,28 +78,52 @@ public final class McpRequestLimiter {
         }
         if ("rg.dsl.preview".equals(toolName) || "rg.gate.check".equals(toolName)) {
             requireRate(subject + "|authoring", authoringPerWindow);
-            if (!authoringPermits.containsKey(subject)
-                    && authoringPermits.size() >= MAX_TRACKED_AUTHORING_IDENTITIES) {
-                throw new McpProtocolException(-32030, "MCP authoring concurrency capacity exceeded");
+            Semaphore semaphore;
+            synchronized (authoringPermits) {
+                semaphore = authoringPermits.get(subject);
+                if (semaphore == null) {
+                    if (authoringPermits.size() >= MAX_TRACKED_AUTHORING_IDENTITIES) {
+                        throw new McpProtocolException(-32030, "MCP authoring concurrency capacity exceeded");
+                    }
+                    semaphore = new Semaphore(authoringConcurrency);
+                    authoringPermits.put(subject, semaphore);
+                }
+                if (!semaphore.tryAcquire()) {
+                    throw new McpProtocolException(-32030, "MCP authoring concurrency limit exceeded");
+                }
             }
-            Semaphore semaphore = authoringPermits.computeIfAbsent(subject,
-                    ignored -> new Semaphore(authoringConcurrency));
-            if (!semaphore.tryAcquire()) {
-                throw new McpProtocolException(-32030, "MCP authoring concurrency limit exceeded");
-            }
-            return semaphore::release;
+            Semaphore acquired = semaphore;
+            return () -> releaseAuthoring(subject, acquired);
         }
         return Permit.NONE;
     }
 
     private void requireRate(String key, int maximum) {
         long now = nanoTime.getAsLong();
-        if (!windows.containsKey(key) && windows.size() >= MAX_TRACKED_BUCKETS) {
-            throw new McpProtocolException(-32029, "MCP request rate-limit capacity exceeded");
+        synchronized (windows) {
+            Window window = windows.get(key);
+            if (window == null) {
+                if (windows.size() >= MAX_TRACKED_BUCKETS) {
+                    windows.entrySet().removeIf(entry -> entry.getValue().expired(now));
+                }
+                if (windows.size() >= MAX_TRACKED_BUCKETS) {
+                    throw new McpProtocolException(-32029, "MCP request rate-limit capacity exceeded");
+                }
+                window = new Window(now);
+                windows.put(key, window);
+            }
+            if (!window.tryAcquire(now, maximum)) {
+                throw new McpProtocolException(-32029, "MCP request rate limit exceeded");
+            }
         }
-        Window window = windows.computeIfAbsent(key, ignored -> new Window(now));
-        if (!window.tryAcquire(now, maximum)) {
-            throw new McpProtocolException(-32029, "MCP request rate limit exceeded");
+    }
+
+    private void releaseAuthoring(String subject, Semaphore semaphore) {
+        synchronized (authoringPermits) {
+            semaphore.release();
+            if (semaphore.availablePermits() == authoringConcurrency) {
+                authoringPermits.remove(subject, semaphore);
+            }
         }
     }
 
@@ -140,6 +164,10 @@ public final class McpRequestLimiter {
             if (count >= maximum) return false;
             count++;
             return true;
+        }
+
+        private synchronized boolean expired(long now) {
+            return now < startedAt || now - startedAt >= WINDOW.toNanos();
         }
     }
 }

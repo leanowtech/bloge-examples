@@ -5,6 +5,7 @@ import com.leanowtech.bloge.dsl.compiler.CompilationDiagnostic;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -82,6 +83,34 @@ class DslSafeDiagnosticRegistryTest {
         assertThat(mapped.diagnostic().level()).isEqualTo("INFO");
         assertThat(mapper.valueToTree(mapped.diagnostic()).toString())
                 .doesNotContain("customer-secret", "token-value", "provider payload");
+    }
+
+    @Test
+    void truncationKeepsLateBlockingErrorsAndReportsTheUntruncatedTotals() {
+        List<DslSafeDiagnosticRegistry.MappedDiagnostic> diagnostics = new ArrayList<>();
+        for (int index = 0; index < 100; index++) {
+            diagnostics.add(mapped("INFO", "LINT", "INFO_" + index, index + 1, false));
+        }
+        diagnostics.add(mapped("ERROR", "TYPE_CHECK", "LATE_BLOCKING_ERROR", 101, true));
+
+        List<DslAuthoringDiagnostic> bounded = DslAuthoringCompiler.bounded(diagnostics);
+        DslPreviewReceipt.DiagnosticSummary summary = DslAuthoringCompiler.summary(diagnostics, true);
+
+        assertThat(bounded).hasSize(26);
+        assertThat(bounded.getFirst().code()).isEqualTo("LATE_BLOCKING_ERROR");
+        assertThat(summary.total()).isEqualTo(101);
+        assertThat(summary.byPhase()).extracting(DslPreviewReceipt.PhaseCount::phase,
+                        DslPreviewReceipt.PhaseCount::count)
+                .contains(org.assertj.core.groups.Tuple.tuple("TYPE_CHECK", 1),
+                        org.assertj.core.groups.Tuple.tuple("LINT", 100));
+    }
+
+    private static DslSafeDiagnosticRegistry.MappedDiagnostic mapped(
+            String level, String phase, String code, int line, boolean blocking) {
+        return new DslSafeDiagnosticRegistry.MappedDiagnostic(new DslAuthoringDiagnostic(
+                level, phase, code, "", new DslAuthoringDiagnostic.Span(true, line, 1, line, 1),
+                "Safe summary", List.of(), List.of(), List.of(), "AGENT_CAN_REVISE", false,
+                "sha256:" + "a".repeat(64)), blocking);
     }
 
     private void assertMapped(String lowerCode,

@@ -271,14 +271,14 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 ### 5.4 证据和隐私
 
-DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`code`、`phase`、`span`、`safeSummary`、`expectedKinds`、`referenceRefs`、受限 `fixHints`、`resolutionClass` 和 `diagnosticFingerprint`。兼容字段 `target/line/column` 暂时保留。底层异常文案、metadata、source fragment、regenerated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
+DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`code`、`phase`、`span`、`safeSummary`、`expectedKinds`、`referenceRefs`、受限 `fixHints`、`resolutionClass` 和 `diagnosticFingerprint`。兼容字段 `target/line/column` 暂时保留。截断前先保留 blocking ERROR，再保留 WARNING、INFO；`diagnosticSummary.total/byPhase` 表示去重后的原始数量。底层异常文案、metadata、source fragment、regenerated DSL、operator snapshot、fixture material 和业务响应体不会穿过 MCP 边界。不要把 token 或业务 payload 写进提示词、提交信息和日志。
 
 ### 5.5 实景验证边界
 
 - 只接受 `local`、`test`、`sandbox` 环境；`prod` 失败关闭。
 - 只执行 descriptor-backed 的 `READ_EXTERNAL`。HTTP `GET`、`HEAD`、`OPTIONS` 可进入验证；外部写一律返回 `WRITE_EFFECT_NOT_ALLOWED`。
 - host 必须精确命中 `RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS`。不支持通配符、后缀匹配、URL user-info、非 HTTP(S) 或 host 模板。
-- 平台在规划实景验证时连续解析两次目标，并在每条案例执行前再次核对同一地址集合。DNS 失败、答案变化、混合公私地址和非公网地址均失败关闭；只有显式 `localhost` 或 `127.0.0.1` 保留本地沙箱例外。
+- 平台在规划实景验证时连续解析两次目标，并在每条案例执行前再次核对同一地址集合。DNS 失败、答案变化、混合公私地址，以及 RFC special-purpose 的私网、shared、benchmark、documentation、protocol-assignment、discard-only、6to4、reserved 等非公网地址均失败关闭；只有显式 `localhost` 或 `127.0.0.1` 保留本地沙箱例外。
 - catalog operator snapshot、resource descriptor 和 GREEN 身份分别冻结；HTTP 算子在发送前复核执行期 descriptor，注册表并发替换会让本次运行失败，不能把旧批准用于新地址。
 - `realExternalCalls` 只统计通过全部发送前检查后进入 HTTP transport 的 `HTTP_TRANSPORT_DISPATCHED` 事件。节点开始、重试或 fallback 本身不算真实调用。
 - 自动验证不在 MCP `tools/list` 中。异常重跑只能由 HUMAN/USER 在看板确认，服务端重新读取当前 GREEN，调用方不能提交 rows、binding 或 URL。
@@ -298,7 +298,7 @@ DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`c
 | `LIBRARY_NOT_FOUND` | libraryRefs 或 runtime binding 不存在 | 显式依赖并重新 discovery |
 | `DSL_AUTHORING_CONTEXT_REQUIRED` / `DSL_AUTHORING_CONTEXT_STALE` | 未先读取 DSL 参考，或目录在生成期间变化 | 重新调用 `rg.dsl.reference.get`，不要复用旧 fingerprint |
 | `DSL_PREVIEW_TIMEOUT` / `DSL_PREVIEW_CAPACITY_EXCEEDED` | 候选超出 5 秒预算，或预览容量暂时耗尽 | 缩小候选；按退避策略重试，不要无限循环 |
-| JSON-RPC `-32029` / `-32030` | 单身份速率或 authoring 并发超过上限 | 停止批量重试，等待当前分钟窗口或在容量评审后调整配置 |
+| JSON-RPC `-32029` / `-32030` | 单身份速率或 authoring 并发超过上限 | 停止批量重试，等待当前分钟窗口或在容量评审后调整配置；过期窗口和已空闲身份会自动释放，不需要重启服务 |
 | `SIM_REAL_CALL_DETECTED` | 非纯节点发生真实调用 | 立即停止；这是隔离缺陷 |
 | `ATTESTATION_ENVIRONMENT_NOT_ALLOWED` | 环境不是 local/test/sandbox | 切换到受控沙箱；不能放宽到 prod |
 | `WRITE_EFFECT_NOT_ALLOWED` / `EGRESS_NOT_ALLOWED` | 依赖是写操作、未登记或 host 未精确放行 | 建只读沙箱资源或修正精确白名单；不要让 Agent 绕过 |

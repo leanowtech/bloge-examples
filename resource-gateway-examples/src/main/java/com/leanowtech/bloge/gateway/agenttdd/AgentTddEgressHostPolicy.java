@@ -119,12 +119,39 @@ public final class AgentTddEgressHostPolicy {
         if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
                 || address.isSiteLocalAddress() || address.isMulticastAddress()) return true;
         byte[] bytes = address.getAddress();
-        if (bytes.length == 16) return (bytes[0] & 0xfe) == 0xfc; // IPv6 unique-local fc00::/7
+        if (bytes.length == 16) return forbiddenIpv6(bytes);
         int first = Byte.toUnsignedInt(bytes[0]);
         int second = Byte.toUnsignedInt(bytes[1]);
-        return (first == 100 && second >= 64 && second <= 127) // shared address space
+        int third = Byte.toUnsignedInt(bytes[2]);
+        return first == 0 // current network / unspecified range
+                || (first == 100 && second >= 64 && second <= 127) // shared address space
+                || (first == 192 && second == 0 && third == 0) // IETF protocol assignments
+                || (first == 192 && second == 0 && third == 2) // documentation TEST-NET-1
+                || (first == 192 && second == 88 && third == 99) // deprecated 6to4 relay anycast
                 || (first == 198 && (second == 18 || second == 19)) // benchmark network
+                || (first == 198 && second == 51 && third == 100) // documentation TEST-NET-2
+                || (first == 203 && second == 0 && third == 113) // documentation TEST-NET-3
                 || first >= 240; // reserved/limited broadcast space
+    }
+
+    private static boolean forbiddenIpv6(byte[] bytes) {
+        int first = Byte.toUnsignedInt(bytes[0]);
+        int second = Byte.toUnsignedInt(bytes[1]);
+        int third = Byte.toUnsignedInt(bytes[2]);
+        return (first & 0xfe) == 0xfc // unique-local fc00::/7
+                || prefix(bytes, 0x00, 0x64, 0xff, 0x9b, 0x00, 0x01) // local-use NAT64 /48
+                || prefix(bytes, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00) // discard-only /64
+                || (first == 0x20 && second == 0x01 && (third & 0xfe) == 0) // special 2001::/23
+                || prefix(bytes, 0x20, 0x01, 0x0d, 0xb8) // documentation 2001:db8::/32
+                || prefix(bytes, 0x20, 0x02); // deprecated 6to4 2002::/16
+    }
+
+    private static boolean prefix(byte[] address, int... prefix) {
+        if (address.length < prefix.length) return false;
+        for (int index = 0; index < prefix.length; index++) {
+            if (Byte.toUnsignedInt(address[index]) != prefix[index]) return false;
+        }
+        return true;
     }
 
     private static String normalizedHost(String host) {
