@@ -56,6 +56,7 @@ class TraceCertificateTest(unittest.TestCase):
         tool = "private-tool"
         case_set = "private-case-set"
         case = "private-case"
+        second_case = "private-second-case"
         events = [
             completed_call("rg_read", "rg.capability.list", {}, {"capabilities": []}),
             completed_call("rg_read", "rg.contract.get", {"assetRef": "private-source"},
@@ -86,7 +87,9 @@ class TraceCertificateTest(unittest.TestCase):
                            {"toolRef": tool}),
             completed_call("rg_author", "rg.scenario.upsertCases", {
                 "toolRef": tool, "caseSetRef": case_set,
-            }, {"caseSetRef": case_set, "rows": [{"caseId": case}]}),
+            }, {"caseSetRef": case_set, "rows": [
+                {"caseId": case}, {"caseId": second_case},
+            ]}),
             completed_call("rg_author", "rg.scenario.setDependencyBehavior", {
                 "caseSetRef": case_set, "caseId": case, "nodeId": "private-node",
             }, {"caseSetRef": case_set, "caseId": case, "nodeId": "private-node"}),
@@ -95,6 +98,10 @@ class TraceCertificateTest(unittest.TestCase):
                     "caseId": case,
                     "stubs": {"private-node": {"behavior": "RETURN"}},
                     "proposedOracle": {"status": "PENDING", "value": "Alice-secret"},
+                }, {
+                    "caseId": second_case,
+                    "stubs": {"private-node": {"behavior": "RETURN"}},
+                    "proposedOracle": {"status": "PENDING", "value": "Bob-secret"},
                 }],
             }),
         ]
@@ -105,6 +112,21 @@ class TraceCertificateTest(unittest.TestCase):
         ])
         return events
 
+    @staticmethod
+    def board_projection(tool: str = "private-tool") -> dict:
+        return {
+            "payloadPolicy": "STRUCTURE_ONLY",
+            "tools": [{
+                "toolRef": tool,
+                "ruleMatrices": [{"rules": [{"id": "R1"}, {"id": "otherwise"}]}],
+                "flowSummary": "接收用户编号 → 读取资料 → 按会员等级决定接待方式 → 返回结果",
+                "caseTable": [
+                    {"caseSetRef": "private-case-set", "caseId": "private-case"},
+                    {"caseSetRef": "private-case-set", "caseId": "private-second-case"},
+                ],
+            }],
+        }
+
     def test_emits_only_safe_structure_for_a_complete_human_bounded_journey(self) -> None:
         certificate = MODULE.certify(self.write_trace(self.happy_events()), {
             "repositoryCommit": "abc123",
@@ -113,6 +135,7 @@ class TraceCertificateTest(unittest.TestCase):
             "exitCode": 0,
             "runtimeInstanceNonce": "d" * 32,
             "runtimeJarSha256": "sha256:" + "e" * 64,
+            "boardProjection": self.board_projection(),
         })
 
         serialized = json.dumps(certificate, ensure_ascii=False)
@@ -122,6 +145,10 @@ class TraceCertificateTest(unittest.TestCase):
         self.assertTrue(certificate["assertions"]["businessOracleProposed"])
         self.assertTrue(certificate["assertions"]["stoppedBeforeExecutionGovernanceAndPublication"])
         self.assertTrue(certificate["assertions"]["sameCandidateReceiptAndAssets"])
+        self.assertTrue(certificate["assertions"]["businessDecisionTableAuthored"])
+        self.assertTrue(certificate["assertions"]["sameToolBoardProjectionObserved"])
+        self.assertTrue(certificate["assertions"]["businessFlowSummaryProjected"])
+        self.assertTrue(certificate["assertions"]["sameCasesVisibleOnBoard"])
         self.assertTrue(certificate["assertions"]["selfRepairObserved"])
         self.assertEqual("EPHEMERAL_HMAC_SHA256", certificate["correlation"]["method"])
         self.assertTrue(certificate["correlation"]["cases"])
@@ -144,6 +171,7 @@ class TraceCertificateTest(unittest.TestCase):
             "exitCode": 0,
             "runtimeInstanceNonce": "d" * 32,
             "runtimeJarSha256": "sha256:" + "e" * 64,
+            "boardProjection": self.board_projection(),
         })
 
         self.assertFalse(certificate["assertions"]["selfRepairObserved"])
@@ -182,6 +210,49 @@ class TraceCertificateTest(unittest.TestCase):
                 "codexVersion": "codex-cli test",
                 "certifiedAt": "2026-09-04T00:00:00Z",
                 "exitCode": 0,
+            })
+
+    def test_rejects_a_board_projection_from_a_different_tool(self) -> None:
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "same composed Tool"):
+            MODULE.certify(self.write_trace(self.happy_events()), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+                "runtimeInstanceNonce": "d" * 32,
+                "runtimeJarSha256": "sha256:" + "e" * 64,
+                "boardProjection": self.board_projection("other-tool"),
+            })
+
+    def test_rejects_a_same_tool_board_without_a_business_rule_matrix(self) -> None:
+        board = self.board_projection()
+        board["tools"][0]["ruleMatrices"] = []
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "business rule matrix"):
+            MODULE.certify(self.write_trace(self.happy_events()), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+                "runtimeInstanceNonce": "d" * 32,
+                "runtimeJarSha256": "sha256:" + "e" * 64,
+                "boardProjection": board,
+            })
+
+    def test_rejects_branch_cases_projected_from_another_case_set(self) -> None:
+        board = self.board_projection()
+        for row in board["tools"][0]["caseTable"]:
+            row["caseSetRef"] = "other-case-set"
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "not visible on the same Tool"):
+            MODULE.certify(self.write_trace(self.happy_events()), {
+                "repositoryCommit": "abc123",
+                "codexVersion": "codex-cli test",
+                "certifiedAt": "2026-09-04T00:00:00Z",
+                "exitCode": 0,
+                "runtimeInstanceNonce": "d" * 32,
+                "runtimeJarSha256": "sha256:" + "e" * 64,
+                "boardProjection": board,
             })
 
     def test_rejects_execution_before_human_approval(self) -> None:
@@ -312,6 +383,7 @@ class TraceCertificateTest(unittest.TestCase):
             "exitCode": 0,
             "runtimeInstanceNonce": "d" * 32,
             "runtimeJarSha256": "sha256:" + "e" * 64,
+            "boardProjection": self.board_projection(),
         })
 
         self.assertTrue(certificate["assertions"]["onlyMcpExternalActionsObserved"])

@@ -15,8 +15,9 @@ usage() {
     cat <<'EOF'
 Usage: scripts/certify-agent-tdd-codex.sh [certificate.json]
 
-Builds and starts Resource Gateway from the current clean commit, then certifies the first
-business journey through a repository-blind Codex process. RG_CERT_PORT defaults to 18081.
+Builds and starts Resource Gateway from the current clean commit, then certifies a branched
+business-rule journey through a repository-blind Codex process and the same Tool's board
+projection. RG_CERT_PORT defaults to 18081.
 The private raw Codex trace is removed by default. Set KEEP_RAW_CODEX_TRACE=true only for
 an approved local investigation; the script then prints its mode-0600 temporary path.
 EOF
@@ -124,6 +125,8 @@ TRACE_FILE="${PRIVATE_DIR}/trace.jsonl"
 PROMPT_FILE="${PRIVATE_DIR}/prompt.txt"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
+BOARD_FILE="${PRIVATE_DIR}/board.json"
+BOARD_CURL_CONFIG="${PRIVATE_DIR}/board-curl.conf"
 touch "${TRACE_FILE}"
 chmod 600 "${TRACE_FILE}"
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
@@ -276,15 +279,15 @@ curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/d
 
 BATCH_LABEL="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 cat > "${PROMPT_FILE}" <<EOF
-请把“按用户编号查询用户姓名和会员等级”做成客服助手可用的业务能力。这次演示批次是 ${BATCH_LABEL}，请创建一份独立草稿，不要复用旧草稿。
+请把“按用户编号决定客服接待方式”做成客服助手可用的业务能力。这次演示批次是 ${BATCH_LABEL}，请创建一份独立草稿，不要复用旧草稿。
 
 用户资料由公司现有的用户资料服务负责。请在已经连接的平台中自行查找可用的只读来源；如果找不到，只告诉我应该找哪类系统负责人，不要让我填写地址或数据结构。
 
 确定资料来源后，请先单独查看并核对它当前公开的输入信息和返回信息说明，再开始设计能力；不能只根据来源名称猜测。
 
-这项能力接收一个用户编号，返回用户姓名和会员等级。请同时为客服助手写清楚什么时候使用、需要用户提供什么、会返回什么，以及资料暂时不可用时应该如何向业务人员说明。
+这项能力接收一个用户编号，返回用户姓名、会员等级和接待方式。会员等级为 premium 时使用“优先服务”，其余情况使用“常规服务”；请把两条分支形成清晰、可供业务人员审阅的业务规则表。请同时为客服助手写清楚什么时候使用、需要用户提供什么、会返回什么，以及资料暂时不可用时应该如何向业务人员说明。
 
-典型案例是：查询用户 u-100 时，资料来源返回 Alice，会员等级为 premium；能力也应返回 Alice 和 premium。请把它整理成待我确认的标准案例，并确认标准案例确实归属于刚创建的能力。
+请准备两条待我确认的标准案例，并确认它们确实归属于刚创建的能力：查询用户 u-100 时，资料来源返回 Alice、会员等级 premium，能力应返回 Alice、premium 和“优先服务”；查询用户 u-200 时，资料来源返回 Bob、会员等级 standard，能力应返回 Bob、standard 和“常规服务”。
 
 请自行完成平台需要的工作和检查，不要向我展示过程或真实用户资料。完成后只用业务语言告诉我：资料来源是否匹配、能力草稿是否有效、标准案例是否已提交，以及我接下来需要在看板完成什么。不要替我确认标准案例，也不要开始验证或发布。
 EOF
@@ -352,6 +355,20 @@ if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
     exit 1
 fi
 
+cat > "${BOARD_CURL_CONFIG}" <<EOF
+url = "${RG_MCP_ENDPOINT%/mcp}/api/agent-tdd/board"
+header = "Authorization: Bearer ${AGENT_TOKEN}"
+header = "X-Purpose: AGENT_TDD_READ"
+fail
+silent
+show-error
+output = "${BOARD_FILE}"
+EOF
+chmod 600 "${BOARD_CURL_CONFIG}"
+curl --config "${BOARD_CURL_CONFIG}"
+rm -f "${BOARD_CURL_CONFIG}"
+chmod 600 "${BOARD_FILE}"
+
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/agent_tdd_codex_trace_certificate.py" "${TRACE_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
@@ -359,6 +376,7 @@ python3 "${ROOT_DIR}/scripts/agent_tdd_codex_trace_certificate.py" "${TRACE_FILE
     --certified-at "${CERTIFIED_AT}" \
     --runtime-instance-nonce "${INSTANCE_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \
+    --board-projection "${BOARD_FILE}" \
     --exit-code "${CODEX_EXIT}" > "${TEMP_OUTPUT}"
 chmod 600 "${TEMP_OUTPUT}"
 mv "${TEMP_OUTPUT}" "${OUTPUT_FILE}"

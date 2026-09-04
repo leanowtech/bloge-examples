@@ -214,7 +214,8 @@ def follows_blocking_authoring_rejection_with_acceptance(calls: list[dict[str, A
     return False
 
 
-def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int]) -> dict[str, Any]:
+def correlate_authoring_chain(
+        calls: list[dict[str, Any]], positions: list[int]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Bind reference, accepted source, gate, Tool, CaseSet and cases into one candidate chain."""
     selected = {tool: calls[position] for tool, position in zip(REQUIRED_SEQUENCE, positions, strict=True)}
     reference = selected["rg.dsl.reference.get"]
@@ -310,13 +311,13 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
         and call["arguments"].get("caseId") == call["data"].get("caseId")
     })
     correlated_cases = sorted(set(case_ids) & (dependency_cases | cases_with_stubs) & cases_with_oracle)
-    if not correlated_cases:
-        raise CertificationFailure("no single correlated standard case has both a stub and Oracle proposal")
+    if len(correlated_cases) < 2:
+        raise CertificationFailure("fewer than two correlated branch cases have both stubs and Oracle proposals")
 
     key = secrets.token_bytes(32)
     opaque = lambda label, value: "hmac-sha256:" + hmac.new(  # noqa: E731
         key, f"{label}\0{value}".encode("utf-8"), hashlib.sha256).hexdigest()
-    return {
+    correlation = {
         "method": "EPHEMERAL_HMAC_SHA256",
         "candidate": opaque("candidate", source),
         "authoringContext": opaque("context", context),
@@ -325,6 +326,40 @@ def correlate_authoring_chain(calls: list[dict[str, Any]], positions: list[int])
         "caseSet": opaque("case-set", case_set_ref),
         "cases": [opaque("case", case_id) for case_id in correlated_cases],
     }
+    return correlation, {
+        "toolRef": tool_ref,
+        "caseSetRef": case_set_ref,
+        "caseIds": correlated_cases,
+    }
+
+
+def verify_board_projection(board: Any, chain: dict[str, Any]) -> None:
+    """Require the same composed Tool to project a reviewable decision matrix and cases."""
+    if not isinstance(board, dict) or board.get("payloadPolicy") != "STRUCTURE_ONLY":
+        raise CertificationFailure("the structure-only board projection is missing")
+    tools = board.get("tools")
+    if not isinstance(tools, list):
+        raise CertificationFailure("the board did not return Tool cards")
+    matches = [tool for tool in tools if isinstance(tool, dict)
+               and tool.get("toolRef") == chain["toolRef"]]
+    if len(matches) != 1:
+        raise CertificationFailure("the board did not project the same composed Tool")
+    card = matches[0]
+    matrices = card.get("ruleMatrices")
+    if not isinstance(matrices, list) or not matrices:
+        raise CertificationFailure("the same Tool has no business rule matrix")
+    if not any(isinstance(matrix, dict) and isinstance(matrix.get("rules"), list)
+               and len(matrix["rules"]) >= 2 for matrix in matrices):
+        raise CertificationFailure("the business rule matrix does not contain two decision branches")
+    if not isinstance(card.get("flowSummary"), str) or not card["flowSummary"].strip():
+        raise CertificationFailure("the same Tool has no business flow summary")
+    rows = card.get("caseTable")
+    if not isinstance(rows, list):
+        raise CertificationFailure("the same Tool has no board case table")
+    visible = {(row.get("caseSetRef"), row.get("caseId")) for row in rows if isinstance(row, dict)}
+    expected = {(chain["caseSetRef"], case_id) for case_id in chain["caseIds"]}
+    if not expected.issubset(visible):
+        raise CertificationFailure("the correlated branch cases are not visible on the same Tool board")
 
 
 def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -341,7 +376,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     forbidden = sorted({call["tool"] for call in calls if call["tool"] in FORBIDDEN_TOOLS})
     if forbidden or any(call["server"] in {"rg_execute", "rg_govern"} for call in calls):
         raise CertificationFailure("Codex crossed the required human approval boundary")
-    correlation = correlate_authoring_chain(calls, positions)
+    correlation, chain = correlate_authoring_chain(calls, positions)
     if not final_message.strip():
         raise CertificationFailure("Codex produced no final business summary")
     if TECHNICAL_FINAL_PATTERN.search(final_message):
@@ -352,6 +387,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     first_pass = bool(preview_calls) and stage_accepted(preview_calls[0], "rg.dsl.preview")
     if not (self_repair or first_pass):
         raise CertificationFailure("Codex neither repaired a rejected preview nor passed its first preview")
+    verify_board_projection(metadata.get("boardProjection"), chain)
     runtime_nonce = required_text(metadata.get("runtimeInstanceNonce"), "runtime instance nonce")
     runtime_jar = required_text(metadata.get("runtimeJarSha256"), "runtime JAR digest")
     if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce):
@@ -402,6 +438,10 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "selfRepairOrFirstPassAccepted": True,
             "boundedRepairPolicyRespected": True,
             "sameCandidateReceiptAndAssets": True,
+            "businessDecisionTableAuthored": True,
+            "sameToolBoardProjectionObserved": True,
+            "businessFlowSummaryProjected": True,
+            "sameCasesVisibleOnBoard": True,
             "rawArgumentsResultsAndMessagesOmitted": True,
             "spawnedRuntimeIdentityVerified": True,
         },
@@ -421,8 +461,13 @@ def main() -> int:
     parser.add_argument("--exit-code", required=True, type=int)
     parser.add_argument("--runtime-instance-nonce", required=True)
     parser.add_argument("--runtime-jar-sha256", required=True)
+    parser.add_argument("--board-projection", required=True, type=Path)
     arguments = parser.parse_args()
     try:
+        if not arguments.board_projection.is_file() \
+                or arguments.board_projection.stat().st_size > 2 * 1024 * 1024:
+            raise CertificationFailure("board projection is missing or exceeds its safe size limit")
+        board_projection = json.loads(arguments.board_projection.read_text(encoding="utf-8"))
         certificate = certify(arguments.trace, {
             "repositoryCommit": arguments.repository_commit,
             "codexVersion": arguments.codex_version,
@@ -430,8 +475,9 @@ def main() -> int:
             "exitCode": arguments.exit_code,
             "runtimeInstanceNonce": arguments.runtime_instance_nonce,
             "runtimeJarSha256": arguments.runtime_jar_sha256,
+            "boardProjection": board_projection,
         })
-    except (CertificationFailure, OSError) as failure:
+    except (CertificationFailure, json.JSONDecodeError, OSError) as failure:
         print(f"Certification failed: {failure}", file=sys.stderr)
         return 1
     json.dump(certificate, sys.stdout, ensure_ascii=False, indent=2)

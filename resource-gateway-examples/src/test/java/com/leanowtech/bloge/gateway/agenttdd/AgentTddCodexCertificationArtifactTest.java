@@ -112,6 +112,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
+                "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
                 "PRIVATE_JAR", "chflags uchg", "expected-jar-sha256");
         assertThat(cleanupTrap).isGreaterThanOrEqualTo(0).isLessThan(firstTemporaryDirectory);
@@ -120,9 +121,10 @@ class AgentTddCodexCertificationArtifactTest {
                 "--sandbox danger-full-access", "example-services.sh\" start resource-gateway",
                 "example-services.sh\" stop resource-gateway");
         assertThat(prompt).contains(
-                "按用户编号查询用户姓名和会员等级", "公开的输入信息和返回信息说明",
+                "按用户编号决定客服接待方式", "公开的输入信息和返回信息说明",
                 "不能只根据来源名称猜测", "什么时候使用", "待我确认的标准案例",
-                "不要替我确认标准案例", "不要开始验证或发布");
+                "优先服务", "常规服务", "业务规则表", "不要替我确认标准案例",
+                "不要开始验证或发布");
         assertThat(prompt).doesNotContain(
                 "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
     }
@@ -136,7 +138,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 12 tests", "OK");
+        assertThat(output).contains("Ran 15 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {
