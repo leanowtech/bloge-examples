@@ -166,8 +166,11 @@ CODEX_ARGS+=(
 )
 
 set +e
-sandbox-exec -f "${SANDBOX_PROFILE}" \
-    "${CODEX_BIN}" "${CODEX_ARGS[@]}" < "${PROMPT_FILE}" > "${TRACE_FILE}"
+(
+    cd "${PRIVATE_DIR}"
+    sandbox-exec -f "${SANDBOX_PROFILE}" \
+        "${CODEX_BIN}" "${CODEX_ARGS[@]}"
+) < "${PROMPT_FILE}" > "${TRACE_FILE}"
 CODEX_EXIT=$?
 set -e
 

@@ -87,6 +87,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
                 "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
                 "git -C \"${ROOT_DIR}\" diff --quiet", "ls-files --others --exclude-standard",
+                "cd \"${PRIVATE_DIR}\"",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "example-services.sh\" start resource-gateway",
                 "example-services.sh\" stop resource-gateway",
