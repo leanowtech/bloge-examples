@@ -132,6 +132,11 @@ class CancelDisputeSolutionOperationalJourneyTest {
         for (String caseId : List.of("G1-free-none", "G2-driver", "G3-passenger", "G4-platform")) {
             JsonNode detail = reviewGet("/api/agent-tdd/reviews/oracles/" + CASE_SET + "/" + caseId
                     + "?expectedRevision=" + revision);
+            assertThat(detail.has("intent")).isTrue();
+            assertThat(detail.has("given")).isTrue();
+            assertThat(detail.has("stubs")).isTrue();
+            assertThat(detail.has("expect")).isTrue();
+            assertThat(detail.has("businessIntent")).isFalse();
             JsonNode approved = reviewPost("/api/agent-tdd/reviews/oracles/" + CASE_SET + "/"
                     + caseId + "/approve", Map.of("expectedRevision", revision,
                     "proposalFingerprint", detail.path("proposalFingerprint").asText()));

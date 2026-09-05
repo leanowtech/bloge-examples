@@ -185,6 +185,10 @@ class AgentTddMcpOperationalWorkflowTest {
         JsonNode oracleReview = reviewGet("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
                 + "/profile-premium?expectedRevision=" + cases.at("/data/revision").asLong());
         assertThat(oracleReview.path("intent").asText()).contains("premium customer");
+        assertThat(oracleReview.has("given")).isTrue();
+        assertThat(oracleReview.has("stubs")).isTrue();
+        assertThat(oracleReview.has("expect")).isTrue();
+        assertThat(oracleReview.has("businessIntent")).isFalse();
         assertAgentCannotApprove("/api/agent-tdd/reviews/oracles/" + CASE_SET_REF
                 + "/profile-premium/approve", Map.of(
                 "expectedRevision", cases.at("/data/revision").asLong(),
@@ -495,6 +499,11 @@ class AgentTddMcpOperationalWorkflowTest {
                 "idempotencyKey", "cases-solution-browser-ops"), "AGENT_TDD_AUTHORING");
         JsonNode oracle = reviewGet("/api/agent-tdd/reviews/oracles/" + caseSetRef
                 + "/cancel-none-browser?expectedRevision=" + cases.at("/data/revision").asLong());
+        assertThat(oracle.has("intent")).isTrue();
+        assertThat(oracle.has("given")).isTrue();
+        assertThat(oracle.has("stubs")).isTrue();
+        assertThat(oracle.has("expect")).isTrue();
+        assertThat(oracle.has("businessIntent")).isFalse();
         reviewPost("/api/agent-tdd/reviews/oracles/" + caseSetRef
                 + "/cancel-none-browser/approve", Map.of(
                 "expectedRevision", cases.at("/data/revision").asLong(),
@@ -671,7 +680,14 @@ class AgentTddMcpOperationalWorkflowTest {
 
         JsonNode review = reviewGet("/api/agent-tdd/reviews/oracles/" + caseSetRef
                 + "/late-cancel?expectedRevision=1");
-        assertThat(review.path("intent").asText()).isEqualTo("乘客超时取消由乘客承担");
+        assertThat(review.path("businessIntent").asText()).isEqualTo("乘客超时取消由乘客承担");
+        assertThat(review.has("givenFacts")).isTrue();
+        assertThat(review.has("dependencyAssumptions")).isTrue();
+        assertThat(review.has("expectedOutcome")).isTrue();
+        assertThat(review.has("intent")).isFalse();
+        assertThat(review.has("given")).isFalse();
+        assertThat(review.has("stubs")).isFalse();
+        assertThat(review.has("expect")).isFalse();
         reviewPost("/api/agent-tdd/reviews/oracles/" + caseSetRef + "/late-cancel/approve", Map.of(
                 "expectedRevision", 1,
                 "proposalFingerprint", review.path("proposalFingerprint").asText()));

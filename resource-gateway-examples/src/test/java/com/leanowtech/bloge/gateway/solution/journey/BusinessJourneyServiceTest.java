@@ -140,8 +140,10 @@ class BusinessJourneyServiceTest {
         AgentTddReviewService reviews = new AgentTddReviewService(states, materials);
         Map<String, Object> review = reviews.oracleReview(
                 proposed.get("caseSetRef").toString(), "g1", 1, reviewer());
-        assertThat(mapper.valueToTree(review).path("intent").asText())
+        assertThat(mapper.valueToTree(review).path("businessIntent").asText())
                 .isEqualTo("乘客超时取消由乘客承担");
+        assertThat(review).containsKeys("givenFacts", "dependencyAssumptions", "expectedOutcome")
+                .doesNotContainKeys("given", "stubs", "expect", "controlledAssumptions");
         AgentTddStoredAsset approved = reviews.approveOracle(
                 proposed.get("caseSetRef").toString(), "g1", 1,
                 summary.get("goldenCaseFingerprint").toString(), reviewer());
