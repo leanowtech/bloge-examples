@@ -385,6 +385,7 @@ implementation fingerprint 一致的不可变 publication；草稿存在不等�
 - Solution 使用同一个 `rg.scenario.upsertCases`，但 `toolRef` 填 Solution ref；服务端会在当前作用域解析它，不需要伪造一个同名 Tool draft。
 - `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
 - `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。业务旅程中的案例必须同时具有完整案例指纹和受保护 material receipt；执行时才在服务端内存中恢复 `given`、依赖假设和 Oracle。旧明文或仅有 `expect` 批准的行不能推进新旅程，返回 `LEGACY_GOLDEN_REAPPROVAL_REQUIRED`。
+- 业务旅程的 baseline 响应返回 `journeyRevision`、`solutionContextFingerprint`、`planFingerprint`、`compilerVersion` 和 `egressPolicy=DENY_ALL`。持久 evidence 还绑定当前 scope、排序后的 GOLDEN 指纹以及冻结的 Feature/Instruction revision 与契约指纹。任一坐标变化后，旧 evidence 不能推进签署或发布。
 - Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。
 
 WRITE Instruction 在 GREEN baseline 中始终使用服务端从输出契约合成的桩，`realExternalCalls=0`。

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.InstructionStubFactory;
 import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
+import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
@@ -24,6 +25,10 @@ import java.util.Objects;
 public final class SolutionTestingService {
     /** Durable payload-free Solution baseline evidence kind. */
     public static final String SOLUTION_EVIDENCE = "SOLUTION_EVIDENCE";
+    /** Version of the controlled Scenario/Solution test compiler represented in evidence. */
+    public static final String COMPILER_VERSION = "rg.solution-controlled-test.v1";
+    /** External-call policy enforced by every controlled Solution baseline. */
+    public static final String EGRESS_POLICY = "DENY_ALL";
     private static final int MAX_BYTES = 16 * 1024 * 1024;
 
     private final AgentTddStateRepository states;
@@ -92,7 +97,15 @@ public final class SolutionTestingService {
     /** Runs a baseline with the caller identity used only to resolve protected case material. */
     public Map<String, Object> baseline(String scopeKey, String solutionRef, String caseSetRef,
                                         String side, IntegrationRequestContext identity) {
+        return baseline(scopeKey, solutionRef, caseSetRef, side, identity, null);
+    }
+
+    /** Runs a baseline bound to an optional server-locked business journey coordinate. */
+    public Map<String, Object> baseline(String scopeKey, String solutionRef, String caseSetRef,
+                                        String side, IntegrationRequestContext identity,
+                                        BaselineContext baselineContext) {
         String normalizedSide = side == null ? "" : side.trim().toUpperCase(java.util.Locale.ROOT);
+        if (baselineContext != null) baselineContext.requireComplete();
         if (!List.of("RED", "GREEN").contains(normalizedSide)) throw schemaFailure();
         AgentTddStoredAsset caseSet = states.find(scopeKey, AgentTddMutationService.CASE_SET, caseSetRef)
                 .filter(asset -> solutionRef.equals(asset.data().path("toolRef").asText()))
@@ -105,7 +118,8 @@ public final class SolutionTestingService {
             throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
         }
         return states.executeAtomically(() -> baselineLocked(
-                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), solution, identity));
+                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), solution,
+                identity, baselineContext));
     }
 
     private Map<String, Object> baselineLocked(
@@ -115,7 +129,8 @@ public final class SolutionTestingService {
             String normalizedSide,
             long expectedRevision,
             SolutionEntityRegistry.RegisteredEntity expectedSolution,
-            IntegrationRequestContext identity) {
+            IntegrationRequestContext identity,
+            BaselineContext baselineContext) {
         AgentTddStoredAsset caseSet = states.lockRevision(
                 scopeKey, AgentTddMutationService.CASE_SET, caseSetRef, expectedRevision);
         if (!solutionRef.equals(caseSet.data().path("toolRef").asText())) {
@@ -135,12 +150,21 @@ public final class SolutionTestingService {
         });
         if (golden.isEmpty()) throw new AgentTddToolException(
                 "GOLDEN_REQUIRES_APPROVAL", "Approved Solution GOLDEN cases are required.");
+        SolutionContract solutionContract = registry.requireSolution(scopeKey, solutionRef);
+        List<Map<String, Object>> frozenFeatures = freezeContracts(scopeKey,
+                SolutionEntityRegistry.FEATURE, solutionContract.inputs().values());
+        List<Map<String, Object>> frozenInstructions = freezeContracts(scopeKey,
+                SolutionEntityRegistry.INSTRUCTION, solutionContract.instructions());
         List<Map<String, Object>> cases = new ArrayList<>();
         List<Map<String, Object>> backlog = new ArrayList<>();
+        List<Map.Entry<String, String>> controlledPlans = new ArrayList<>();
         LinkedHashMap<String, Integer> hitDistribution = new LinkedHashMap<>();
         for (JsonNode metadata : golden) {
             JsonNode row = approvedMaterial(metadata, identity);
             String caseId = requiredText(row, "caseId");
+            controlledPlans.add(Map.entry(caseId, VisualBundleFingerprint.fromCanonicalValue(mapper,
+                    Map.of("caseId", caseId, "controlledAssumptions",
+                            row.path("controlledAssumptions")), MAX_BYTES)));
             SolutionExecutionService.ExecutionResult result;
             try {
                 SolutionExecutionService execution = controlledExecution(row);
@@ -179,16 +203,38 @@ public final class SolutionTestingService {
             persistedCaseRevision = states.saveIfRevision(scopeKey, AgentTddMutationService.CASE_SET,
                     caseSetRef, caseSet.revision(), updated).revision();
         }
-        String goldenSetId = VisualBundleFingerprint.fromCanonicalValue(mapper,
-                golden.stream().map(row -> row.path("goldenCaseFingerprint").asText(
-                        VisualBundleFingerprint.fromCanonicalValue(mapper, row, MAX_BYTES))).toList(), MAX_BYTES);
+        List<String> orderedGoldenFingerprints = golden.stream()
+                .map(row -> row.path("goldenCaseFingerprint").asText(
+                        VisualBundleFingerprint.fromCanonicalValue(mapper, row, MAX_BYTES)))
+                .sorted().toList();
+        String goldenSetId = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, orderedGoldenFingerprints, MAX_BYTES);
+        List<String> controlledPlanFingerprints = controlledPlans.stream()
+                .sorted(Map.Entry.comparingByKey()).map(Map.Entry::getValue).toList();
+        String planFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, controlledPlanFingerprints, MAX_BYTES);
+        String scopeFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, scopeKey, MAX_BYTES);
         ObjectNode evidence = mapper.createObjectNode();
+        evidence.put("scopeFingerprint", scopeFingerprint);
+        if (baselineContext != null) {
+            evidence.put("journeyRef", baselineContext.journeyRef());
+            evidence.put("journeyRevision", baselineContext.journeyRevision());
+            evidence.put("solutionContextFingerprint", baselineContext.solutionContextFingerprint());
+        }
         evidence.put("solutionRef", solutionRef);
         evidence.put("caseSetRef", caseSetRef);
         evidence.put("caseSetRevision", persistedCaseRevision);
         evidence.put("solutionRevision", expectedSolution.revision());
         evidence.put("solutionContractFingerprint", expectedSolution.contractFingerprint());
         evidence.put("goldenSetId", goldenSetId);
+        evidence.set("orderedGoldenCaseFingerprints", mapper.valueToTree(orderedGoldenFingerprints));
+        evidence.set("controlledAssumptionPlanFingerprints",
+                mapper.valueToTree(controlledPlanFingerprints));
+        evidence.put("planFingerprint", planFingerprint);
+        evidence.set("frozenFeatureContracts", mapper.valueToTree(frozenFeatures));
+        evidence.set("frozenInstructionContracts", mapper.valueToTree(frozenInstructions));
+        evidence.put("compilerVersion", COMPILER_VERSION);
+        evidence.put("egressPolicy", EGRESS_POLICY);
         evidence.put("side", normalizedSide);
         evidence.set("cases", mapper.valueToTree(cases));
         evidence.set("businessBacklog", mapper.valueToTree(backlog));
@@ -201,6 +247,15 @@ public final class SolutionTestingService {
         response.put("caseSetRevision", persistedCaseRevision);
         response.put("solutionRevision", expectedSolution.revision());
         response.put("solutionContractFingerprint", expectedSolution.contractFingerprint());
+        response.put("scopeFingerprint", scopeFingerprint);
+        if (baselineContext != null) {
+            response.put("journeyRef", baselineContext.journeyRef());
+            response.put("journeyRevision", baselineContext.journeyRevision());
+            response.put("solutionContextFingerprint", baselineContext.solutionContextFingerprint());
+        }
+        response.put("planFingerprint", planFingerprint);
+        response.put("compilerVersion", COMPILER_VERSION);
+        response.put("egressPolicy", EGRESS_POLICY);
         response.put("goldenSetId", goldenSetId);
         response.put("evidenceRef", stored.assetRef() + "@" + stored.revision());
         response.put("side", normalizedSide);
@@ -211,6 +266,21 @@ public final class SolutionTestingService {
         response.put("realExternalCalls", 0);
         response.put("status", backlog.isEmpty() ? "GO" : "NO_GO");
         return Map.copyOf(response);
+    }
+
+    private List<Map<String, Object>> freezeContracts(
+            String scopeKey, String kind, java.util.Collection<String> refs) {
+        return refs.stream().distinct().sorted().map(ref -> {
+            AgentTddStoredAsset observed = states.find(scopeKey, kind, ref)
+                    .orElseThrow(() -> new AgentTddToolException(
+                            "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable."));
+            AgentTddStoredAsset locked = states.lockRevision(scopeKey, kind, ref, observed.revision());
+            String contractFingerprint = locked.data().path("contractFingerprint").asText();
+            if (contractFingerprint.isBlank()) throw new AgentTddToolException(
+                    "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable.");
+            return Map.<String, Object>of("assetRef", ref, "revision", locked.revision(),
+                    "contractFingerprint", contractFingerprint);
+        }).toList();
     }
 
     private JsonNode approvedMaterial(JsonNode metadata, IntegrationRequestContext identity) {
@@ -275,6 +345,21 @@ public final class SolutionTestingService {
             return true;
         }
         return actual.equals(expected);
+    }
+
+    /** Server-locked journey identity supplied only by the business journey action boundary. */
+    public record BaselineContext(
+            String journeyRef,
+            long journeyRevision,
+            String solutionContextFingerprint
+    ) {
+        /** Rejects incomplete or caller-fabricated-looking coordinates before execution. */
+        void requireComplete() {
+            if (journeyRef == null || journeyRef.isBlank() || journeyRevision < 1
+                    || solutionContextFingerprint == null || solutionContextFingerprint.isBlank()) {
+                throw schemaFailure();
+            }
+        }
     }
 
     private static String requiredText(JsonNode node, String field) {

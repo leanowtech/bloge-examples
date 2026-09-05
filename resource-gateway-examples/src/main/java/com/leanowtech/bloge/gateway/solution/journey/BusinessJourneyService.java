@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -85,6 +86,19 @@ public final class BusinessJourneyService {
     public Map<String, Object> executeAction(String toolName, JsonNode arguments,
                                              IntegrationRequestContext identity,
                                              Supplier<Map<String, Object>> action) {
+        return executeActionWithContext(toolName, arguments, identity, ignored -> action.get());
+    }
+
+    /**
+     * Executes one journey action and supplies the server-locked coordinate to the action body.
+     *
+     * <p>The context is constructed after the revision lock and cannot be supplied by the MCP
+     * caller. Controlled baseline evidence uses it to bind the result to the exact journey and
+     * four-entity context that authorized the run.</p>
+     */
+    public Map<String, Object> executeActionWithContext(
+            String toolName, JsonNode arguments, IntegrationRequestContext identity,
+            Function<ActionContext, Map<String, Object>> action) {
         AgentTddStoredAsset observed = require(arguments, identity);
         long expected = arguments.path("expectedJourneyRevision").asLong(-1);
         if (expected != observed.revision()) throw stale();
@@ -106,7 +120,9 @@ public final class BusinessJourneyService {
                     mutable.put("authoringContextFingerprint", supplied);
                 }
             }
-            Map<String, Object> result = action.get();
+            ActionContext context = new ActionContext(locked.assetRef(), locked.revision(),
+                    fingerprint(scope), projection.solutionContextFingerprint());
+            Map<String, Object> result = action.apply(context);
             ObjectNode updated = (ObjectNode) locked.data().deepCopy();
             associate(updated, result);
             states.saveIfRevision(scope, JOURNEY, locked.assetRef(), expected, updated);
@@ -301,6 +317,7 @@ public final class BusinessJourneyService {
         List<Map<String, Object>> vector = new ArrayList<>();
         for (JsonNode association : journey.data().path("associations")) {
             String kind = association.path("assetKind").asText();
+            if (!List.of("FEATURE", "SCENARIO", "INSTRUCTION", "SOLUTION").contains(kind)) continue;
             String ref = association.path("assetRef").asText();
             states.find(journey.scopeKey(), storageKind(kind), ref).ifPresent(asset -> vector.add(Map.of(
                     "kind", kind, "ref", ref, "revision", asset.revision(),
@@ -372,4 +389,12 @@ public final class BusinessJourneyService {
                               List<String> blockingReasons, List<String> allowedNextTools,
                               List<String> forbiddenUntilResolved, String solutionContextFingerprint,
                               String responsibleRole, String businessQuestion, String nextAction) { }
+
+    /** Exact server-derived journey coordinate made available only inside an atomic action. */
+    public record ActionContext(
+            String journeyRef,
+            long journeyRevision,
+            String scopeFingerprint,
+            String solutionContextFingerprint
+    ) { }
 }

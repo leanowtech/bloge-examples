@@ -685,6 +685,12 @@ class AgentTddMcpOperationalWorkflowTest {
         assertThat(green.at("/data/status").asText()).isEqualTo("GO");
         assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
         assertThat(green.at("/data/cases/0/verdict").asText()).isEqualTo("GREEN_PASS");
+        assertThat(green.at("/data/journeyRef").asText()).isEqualTo(journeyRef);
+        assertThat(green.at("/data/journeyRevision").asLong()).isEqualTo(6L);
+        assertThat(green.at("/data/solutionContextFingerprint").asText())
+                .isEqualTo(testing.at("/data/solutionContextFingerprint").asText());
+        assertThat(green.at("/data/planFingerprint").asText()).startsWith("sha256:");
+        assertThat(green.at("/data/egressPolicy").asText()).isEqualTo("DENY_ALL");
         assertThat(invokeBusiness("rg.journey.next", Map.of(
                 "journeyRef", journeyRef, "expectedRevision", 7), "AGENT_TDD_READ")
                 .at("/data/stage").asText()).isEqualTo("WAITING_SIGNOFF");

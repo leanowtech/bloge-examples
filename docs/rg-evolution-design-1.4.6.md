@@ -1350,7 +1350,7 @@ resource-gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile；journey 新写入拒绝自由文本兼容投影；旧版 UNKNOWN/PARTIAL 只读兼容；matcher 按 profile 比较封闭业务维度；多 EXACT 歧义停止；实现 binding 排除于业务身份；四实体业务定义纳入契约指纹和服务端创作模板 |
-| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效、零外呼测试及真实 HTTP MCP 主线认证 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效；GREEN evidence 绑定 scope、journey revision、solution context、排序后的 GOLDEN 指纹、受控计划指纹、冻结 Feature/Instruction revision 与契约指纹、测试编译器版本及 `DENY_ALL`；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 核心完成 | 当前提交真实 Codex 已完成“业务意图→发现→两项 Feature→Scenario→三项 Instruction→Solution→两条 GOLDEN→人工队列读回”；机器证书绑定 clean commit、独立 JAR、前后运行身份、服务端模板/库快照前置读取和同一资产链，严格 Schema、30 个证书正反例、可视化过程报告和截图已留存；`recallAt3` 与 `clarificationRate` 的多话语集量化仍为后续增强，不在单一清晰创作话语上伪造数值 |
 
 ## 21. 审阅决策点

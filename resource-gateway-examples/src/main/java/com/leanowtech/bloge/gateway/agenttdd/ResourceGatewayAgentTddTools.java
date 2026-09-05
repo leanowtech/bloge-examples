@@ -450,8 +450,11 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         com.fasterxml.jackson.databind.node.ObjectNode resolved = (com.fasterxml.jackson.databind.node.ObjectNode)
                 arguments.deepCopy();
         resolved.put("caseSetRef", journeys().associatedCaseSet(arguments, identity));
-        return journeys().executeAction("rg.solution.baseline", arguments, identity,
-                () -> solutionTools().baselineSolution(resolved, identity));
+        return journeys().executeActionWithContext("rg.solution.baseline", arguments, identity,
+                context -> solutionTools().baselineSolution(resolved, identity,
+                        new SolutionTestingService.BaselineContext(
+                                context.journeyRef(), context.journeyRevision(),
+                                context.solutionContextFingerprint())));
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {

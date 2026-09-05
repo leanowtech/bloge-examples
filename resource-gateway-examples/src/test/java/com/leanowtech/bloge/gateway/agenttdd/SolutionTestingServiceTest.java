@@ -1,8 +1,10 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
@@ -32,6 +34,14 @@ class SolutionTestingServiceTest {
 
     @BeforeEach
     void defineTree() {
+        registry.upsertFeature(SCOPE, new FeatureContract(
+                "responsibility.party", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "resource:party", "", ""));
+        registry.upsertFeature(SCOPE, new FeatureContract(
+                "dispute.orderSelected", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "resource:order", "", ""));
         registry.upsertInstruction(SCOPE, new InstructionContract(
                 "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
                 mapper.valueToTree(Map.of(
@@ -93,6 +103,29 @@ class SolutionTestingServiceTest {
 
         assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
         assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void bindsJourneyBaselineEvidenceToTheFrozenPlanAndBusinessContracts() {
+        storeControlledCases(Map.of("ins:refund", Map.of("outcome", "SUCCEEDS_WITHOUT_EFFECT")));
+        SolutionTestingService.BaselineContext context = new SolutionTestingService.BaselineContext(
+                "journey:cancel", 7, "sha256:solution-context");
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN", null, context);
+
+        assertThat(result).containsEntry("journeyRef", "journey:cancel")
+                .containsEntry("journeyRevision", 7L)
+                .containsEntry("solutionContextFingerprint", "sha256:solution-context")
+                .containsEntry("compilerVersion", "rg.solution-controlled-test.v1")
+                .containsEntry("egressPolicy", "DENY_ALL")
+                .containsKeys("scopeFingerprint", "planFingerprint");
+        JsonNode evidence = states.find(
+                SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel").orElseThrow().data();
+        assertThat(evidence.path("controlledAssumptionPlanFingerprints")).hasSize(1);
+        assertThat(evidence.path("frozenFeatureContracts")).hasSize(2);
+        assertThat(evidence.path("frozenInstructionContracts")).hasSize(1);
+        assertThat(evidence.toString()).doesNotContain("SUCCEEDS_WITHOUT_EFFECT", "O-1");
     }
 
     @Test

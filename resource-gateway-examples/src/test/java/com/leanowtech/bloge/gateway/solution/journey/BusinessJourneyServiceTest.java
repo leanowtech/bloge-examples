@@ -86,6 +86,24 @@ class BusinessJourneyServiceTest {
     }
 
     @Test
+    void suppliesTheLockedJourneyCoordinateToAnAtomicAction() {
+        String ref = journeys.start(startRequest("journey-action-context"), agent())
+                .get("journeyRef").toString();
+
+        Map<String, Object> observed = journeys.executeActionWithContext(
+                "rg.feature.define", action(ref, 1), agent(), context -> Map.of(
+                        "featureId", "responsibility.party",
+                        "revision", 1,
+                        "observedJourneyRef", context.journeyRef(),
+                        "observedJourneyRevision", context.journeyRevision(),
+                        "observedScopeFingerprint", context.scopeFingerprint()));
+
+        assertThat(observed).containsEntry("observedJourneyRef", ref)
+                .containsEntry("observedJourneyRevision", 1L);
+        assertThat(observed.get("observedScopeFingerprint").toString()).startsWith("sha256:");
+    }
+
+    @Test
     void proposesSummaryOnlyCasesAndRequiresIndependentHumanApprovalBeforeTesting() {
         String ref = journeys.start(startRequest("journey-start-2"), agent()).get("journeyRef").toString();
         associate(ref, 1, "rg.feature.define", Map.of("featureId", "responsibility.party", "revision", 1));

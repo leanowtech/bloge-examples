@@ -217,11 +217,17 @@ public final class SolutionAgentTools {
 
     /** Runs the approved Solution GOLDEN line with WRITE effects stubbed and zero real calls. */
     public Map<String, Object> baselineSolution(JsonNode arguments, IntegrationRequestContext identity) {
+        return baselineSolution(arguments, identity, null);
+    }
+
+    /** Runs a journey baseline and binds its evidence to the server-locked business context. */
+    Map<String, Object> baselineSolution(JsonNode arguments, IntegrationRequestContext identity,
+                                         SolutionTestingService.BaselineContext baselineContext) {
         Objects.requireNonNull(identity, "identity").requireComplete();
         String scope = AgentTddMutationService.scopeKey(identity);
         Map<String, Object> baseline = testing.baseline(scope,
                 requiredText(arguments, "solutionRef"), requiredText(arguments, "caseSetRef"),
-                requiredText(arguments, "side"), identity);
+                requiredText(arguments, "side"), identity, baselineContext);
         if (writeRunner == null || !"GREEN".equals(baseline.get("side"))
                 || !"GO".equals(baseline.get("status"))
                 || states.find(scope, EngineeringHandoffService.HANDOFF,
