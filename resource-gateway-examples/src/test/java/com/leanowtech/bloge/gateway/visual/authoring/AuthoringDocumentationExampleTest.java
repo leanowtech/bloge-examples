@@ -61,22 +61,23 @@ class AuthoringDocumentationExampleTest {
     }
 
     @Test
-    void cancellationDemoRequiresTheContractLibraryBeforeBindingAndComposition() throws Exception {
+    void cancellationDemoIntroducesBusinessFactsBeforeRulesAndEngineeringHandoffs() throws Exception {
         String script = Files.readString(Path.of(
                 "..", "docs", "resource-gateway-agent-tdd-demo-script.md"));
 
-        int createLibrary = script.indexOf("在平台中创建 `ride-cancellation` 契约库");
-        int bindSameLibrary = script.indexOf("更新第 1 幕的同一个 `ride-cancellation` 契约库");
-        int composeFromLibrary = script.indexOf("只使用前两幕已经形成并接入的 `ride-cancellation` 契约库");
+        int discoverFacts = script.indexOf("建立“责任方”“是否在免费取消时段”“当前选择的争议订单”三项事实契约");
+        int defineRules = script.indexOf("建立含四条规则和兜底分支的场景");
+        int approveGolden = script.indexOf("提议四条 GOLDEN 标准案例");
 
-        assertThat(createLibrary).isNotNegative();
-        assertThat(bindSameLibrary).isGreaterThan(createLibrary);
-        assertThat(composeFromLibrary).isGreaterThan(bindSameLibrary);
+        assertThat(discoverFacts).isNotNegative();
+        assertThat(defineRules).isGreaterThan(discoverFacts);
+        assertThat(approveGolden).isGreaterThan(defineRules);
         assertThat(script).contains(
-                "没有契约库，不进入第二幕",
-                "不要把该 YAML 粘进小李的提示词",
-                "前一幕的交接门未通过时不得继续");
-        assertThat(script).doesNotContain("并在后台保存为后续设计可复用的业务契约");
+                "先读取当前作用域的业务积木概览",
+                "缺少系统实现时请建立工程交接",
+                "Codex 没有询问接口地址、字段类型、DSL 或 YAML",
+                "不能因为写实现尚未完成而让 Codex自行填一个“看起来像”的实现引用");
+        assertThat(script).doesNotContain("ride-cancellation` 契约库");
     }
 
     private AuthoringCompileResult compile(String name) throws Exception {

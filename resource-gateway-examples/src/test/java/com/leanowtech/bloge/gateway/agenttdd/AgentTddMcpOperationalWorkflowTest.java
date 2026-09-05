@@ -6,7 +6,6 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
-import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.ReconciliationAdapter;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -78,9 +77,6 @@ class AgentTddMcpOperationalWorkflowTest {
 
     @Autowired
     private TestRestTemplate http;
-
-    @Autowired
-    private SolutionWriteExecutionRunner solutionWrites;
 
     @LocalServerPort
     private int port;
@@ -475,9 +471,13 @@ class AgentTddMcpOperationalWorkflowTest {
                 "AGENT_TDD_AUTHORING");
         assertThat(handoff.at("/data/items/0/state").asText()).isEqualTo("DESIGN_ONLY");
 
-        invoke("rg.instruction.define", Map.of(
-                "instructionYaml", solutionInstruction(instructionRef, "operator:refund-browser-v1"),
-                "idempotencyKey", "instruction-binding-browser-ops"), "AGENT_TDD_AUTHORING");
+        ResponseEntity<JsonNode> implemented = postAs(
+                "/api/agent-tdd/engineering-handoffs/" + solutionRef + "/instructions/"
+                        + instructionRef + "/fulfil",
+                Map.of("bindingRef", "operator:refund-browser-v1"),
+                "bloge-instruction-engineer-demo-token", "AGENT_TDD_INSTRUCTION_ENG");
+        assertThat(implemented.getStatusCode().is2xxSuccessful()).as(implemented.toString()).isTrue();
+        assertThat(implemented.getBody().path("status").asText()).isEqualTo("IMPLEMENTED");
         JsonNode cases = invoke("rg.scenario.upsertCases", Map.of(
                 "caseSetRef", caseSetRef,
                 "toolRef", solutionRef,
@@ -503,17 +503,13 @@ class AgentTddMcpOperationalWorkflowTest {
                 "AGENT_TDD_EXECUTION");
         assertThat(green.at("/data/status").asText()).isEqualTo("GO");
         assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
+        assertThat(green.at("/data/writeReconciliation/status").asText()).isEqualTo("RECONCILED");
+        assertThat(green.at("/data/writeReconciliation/writeCount").asInt()).isEqualTo(1);
         JsonNode proposal = invoke("rg.solution.commit", Map.of(
                 "solutionRef", solutionRef,
                 "authoringReceiptFingerprint", composed.at("/data/authoringReceiptFingerprint").asText(),
                 "idempotencyKey", "commit-solution-browser-ops"), "AGENT_TDD_AUTHORING");
         assertThat(proposal.at("/data/proposalStatus").asText()).isEqualTo("PENDING");
-
-        Map<String, Object> reconciled = solutionWrites.execute(solutionRef,
-                new IntegrationRequestContext(
-                        "tenant-a", "knowledge-governance", "tool-studio", "test", "local",
-                        "PLATFORM", "solution-write-runner", "", "AGENT_TDD_WRITE_EXEC", "corr-browser"));
-        assertThat(reconciled).containsEntry("status", "RECONCILED").containsEntry("writeCount", 1);
 
         JsonNode board = agentGet("/api/agent-tdd/board");
         assertThat(solutionCard(board, solutionRef).path("problem").asText())
