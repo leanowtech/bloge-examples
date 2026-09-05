@@ -157,8 +157,9 @@ class AgentTddCodexCertificationArtifactTest {
 
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
-                certificate.path("repositoryCommit").asText(), "25", "2 + 1 + 3",
-                "两条完整标准案例", "未批准、未执行、未发布");
+                certificate.path("repositoryCommit").asText(), "24", "2 + 1 + 3",
+                "两条完整标准案例", "服务端模板先读", "指纹已关联",
+                "未批准、未执行、未发布");
         var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
         assertThat(screenshot).isNotNull();
         assertThat(screenshot.getWidth()).isEqualTo(1440);
