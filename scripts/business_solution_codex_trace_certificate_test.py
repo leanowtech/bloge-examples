@@ -561,6 +561,13 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "business display"):
             self.certify(events)
 
+    def test_accepts_json_style_business_display(self) -> None:
+        events = valid_events()
+        events[6]["item"]["arguments"]["instructionYaml"] = (
+            '{"instruction:test":{"display":{"businessName":"test",'
+            '"description":"test"}}}')
+        self.certify(events)
+
     def test_rejects_cross_journey_asset(self) -> None:
         events = valid_events()
         events[6]["item"]["arguments"]["journeyRef"] = "journey:other"

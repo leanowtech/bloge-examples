@@ -237,7 +237,8 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
                 "four-entity authoring was not bound to the server-validated template context")
         if call["tool"] in four_entity_tools:
             source = call["arguments"].get(source_fields[call["tool"]])
-            if not isinstance(source, str) or "\n  display:" not in source:
+            display_key = re.compile(r'(?m)(?:^[ \t]+display\s*:|["\']display["\']\s*:)')
+            if not isinstance(source, str) or not display_key.search(source):
                 raise CertificationFailure(
                     "four-entity authoring omitted the server-required business display")
         revision += 1
