@@ -421,24 +421,6 @@ if not final_message.strip() or module.TECHNICAL_FINAL_PATTERN.search(final_mess
 module.verify_board(json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8")), chain)
 PY
 
-# Seed recall-only distractors after the clean authoring turn so certification fixtures cannot
-# influence whether Codex creates the primary four-entity business solution.
-stop_owned_service
-start_owned_service "${SETUP_TOKEN}"
-wait_owned_service
-python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
-    --endpoint "${RG_MCP_ENDPOINT}" \
-    --author-token "${SETUP_TOKEN}" \
-    --review-token "${REVIEW_TOKEN}" \
-    --fixture "${SETUP_FIXTURE_FILE}" \
-    --output "${SETUP_MANIFEST_FILE}"
-chmod 600 "${SETUP_MANIFEST_FILE}"
-stop_owned_service
-start_owned_service "${AGENT_TOKEN}"
-wait_owned_service
-export RG_MCP_TOKEN="${AGENT_TOKEN}"
-curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
-
 python3 - "${FAMILY_SUITE_FILE}" <<'PY'
 import json
 import sys
@@ -452,6 +434,25 @@ if len(families) != 15 or len({entry.get("familyId") for entry in families}) != 
 PY
 
 while IFS=$'\t' read -r FAMILY_ID FAMILY_EXPECTED; do
+    if [ "${FAMILY_ID}" = "near-meaning-distractor" ]; then
+        # The first synonym turn must recall the primary Feature without certification-only
+        # distractors. Seed the remaining adversarial families only after that proof exists.
+        stop_owned_service
+        start_owned_service "${SETUP_TOKEN}"
+        wait_owned_service
+        python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
+            --endpoint "${RG_MCP_ENDPOINT}" \
+            --author-token "${SETUP_TOKEN}" \
+            --review-token "${REVIEW_TOKEN}" \
+            --fixture "${SETUP_FIXTURE_FILE}" \
+            --output "${SETUP_MANIFEST_FILE}"
+        chmod 600 "${SETUP_MANIFEST_FILE}"
+        stop_owned_service
+        start_owned_service "${AGENT_TOKEN}"
+        wait_owned_service
+        export RG_MCP_TOKEN="${AGENT_TOKEN}"
+        curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
+    fi
     FAMILY_PROMPT_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.prompt.txt"
     FAMILY_TRACE_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.trace.jsonl"
     python3 - "${FAMILY_SUITE_FILE}" "${FAMILY_ID}" > "${FAMILY_PROMPT_FILE}" <<'PY'
