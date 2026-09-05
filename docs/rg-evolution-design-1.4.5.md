@@ -234,7 +234,7 @@ final class TicketReconciliationAdapter implements ReconciliationAdapter { /* ti
 | Q1 特征契约交接 | 已实现 | `FeatureHandoffService` + `rg.feature.handoff` + 非 MCP `FEATURE_ENG` 履行端点；OPEN→IMPLEMENTED→VERIFIED、输出类型、幂等与跨 scope 零泄漏测试 |
 | Q2 审阅看板投影 | 后端已实现 | `BoardProjectionService` 五面板 + HUMAN/GOVERNANCE no-store HTTP；无 DSL/图实现引用与跨证据 join 测试。前端五面板和两门交互待实现 |
 | Q3 表意工作台 | 前端已实现 | `/workbench/?create=business-solution` 双栏双模、三步引导、切换保留、上下文漂移失败关闭、熟练度提示和无 DSL 四实体预览；Agent-host 编译桥接的真实端到端证据并入 Q5 |
-| Q4 运营回流 | 计划 | OperationsInsightService 聚合 + 信号零泄漏 |
+| Q4 运营回流 | 后端已实现 | `OperationsInsightService` 由首次成功的发布态调用幂等落 `SOLUTION_OPERATIONS_SIGNAL`；测试证据不计入运行分布，重放不重复计数，信号无 inputs/result/reasoning，输出含 policyGaps。运营前端待实现 |
 | Q5 场景后端适配器 | 计划 | 求值后端 + 对账适配器 + 剧本端到端零外呼 |
 
 ## 附录 甲 · 工程细粒度展开

@@ -798,13 +798,21 @@ public final class McpToolCatalog {
                 "ruleId", string(), "count", integer(), "share", Map.of("type", "number")),
                 List.of("ruleId", "count", "share"));
         Map<String, Object> disposition = structuredObject(props(
-                "instructionRef", string(), "count", integer(), "share", Map.of("type", "number")),
-                List.of("instructionRef", "count", "share"));
+                "resultKind", enumString("NULL", "OBJECT", "ARRAY", "BOOLEAN", "NUMBER", "TEXT", "UNKNOWN"),
+                "count", integer(), "share", Map.of("type", "number")),
+                List.of("resultKind", "count", "share"));
+        Map<String, Object> gap = structuredObject(props(
+                "ruleId", string(), "caseId", string(), "symptom", string(),
+                "suggestedRevision", string()),
+                List.of("ruleId", "symptom", "suggestedRevision"));
         return structuredObject(props(
-                "solutionRef", string(), "evidenceFingerprint", string(), "totalCases", integer(),
+                "solutionRef", string(), "signalFingerprint", string(),
+                "evidenceFingerprint", string(), "totalInvocations", integer(), "totalCases", integer(),
                 "hitDistribution", arrayOf(hit), "dispositionDistribution", arrayOf(disposition),
-                "escalationRate", Map.of("type", "number"), "redGolden", stringArray()),
-                List.of("solutionRef", "evidenceFingerprint", "totalCases", "hitDistribution",
-                        "dispositionDistribution", "escalationRate", "redGolden"));
+                "escalationRate", Map.of("type", "number"), "redGolden", stringArray(),
+                "policyGaps", arrayOf(gap)),
+                List.of("solutionRef", "signalFingerprint", "evidenceFingerprint",
+                        "totalInvocations", "totalCases", "hitDistribution",
+                        "dispositionDistribution", "escalationRate", "redGolden", "policyGaps"));
     }
 }

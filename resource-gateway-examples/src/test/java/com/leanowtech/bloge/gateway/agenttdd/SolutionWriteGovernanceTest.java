@@ -231,7 +231,7 @@ class SolutionWriteGovernanceTest {
         Map<?, ?> solution = (Map<?, ?>) ((List<?>) board.get("solutions")).getFirst();
         assertThat(solution.get("solutionRef")).isEqualTo("sol:cancel");
         assertThat(solution.get("problem")).isEqualTo("Resolve cancellation dispute.");
-        assertThat(solution.get("performance").toString()).contains("R1", "ins:refund");
+        assertThat(solution.get("performance").toString()).contains("totalInvocations=0");
         assertThat(solution.get("scenario").toString()).contains("party", "none", "ins:refund");
         assertThat(solution.get("instructions").toString())
                 .contains("WRITE", "BOUND", "refund-service");

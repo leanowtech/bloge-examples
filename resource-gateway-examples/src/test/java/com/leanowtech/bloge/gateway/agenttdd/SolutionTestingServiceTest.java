@@ -101,7 +101,7 @@ class SolutionTestingServiceTest {
     }
 
     @Test
-    void derivesPayloadFreePerformanceFromTheLatestEvidence() {
+    void keepsTestFailuresVisibleWithoutCountingThemAsLivePerformance() {
         storeCases("ACTIVE", Map.of("result", Map.of("decision", "UPHELD")));
         testing.baseline(SCOPE, "sol:cancel", "caseSet:cancel", "RED");
 
@@ -109,12 +109,12 @@ class SolutionTestingServiceTest {
                 .performance("sol:cancel", readIdentity());
 
         assertThat(performance).containsEntry("totalCases", 1)
+                .containsEntry("totalInvocations", 0)
                 .containsEntry("escalationRate", 0.0d);
         assertThat(((List<?>) performance.get("redGolden")).stream().map(Object::toString).toList())
                 .containsExactly("g1");
-        assertThat(performance.get("hitDistribution").toString()).contains("R1", "count=1");
-        assertThat(performance.get("dispositionDistribution").toString())
-                .contains("ins:refund", "count=1");
+        assertThat((List<?>) performance.get("hitDistribution")).isEmpty();
+        assertThat((List<?>) performance.get("dispositionDistribution")).isEmpty();
         assertThat(performance.toString()).doesNotContain("UPHELD", "party=none", "O-1");
     }
 

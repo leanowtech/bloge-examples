@@ -22,6 +22,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionLowering;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
 import com.leanowtech.bloge.gateway.solution.SolutionInvocationService;
 import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffService;
+import com.leanowtech.bloge.gateway.solution.ops.OperationsInsightService;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -51,7 +52,7 @@ public final class SolutionAgentTools {
     private final SolutionInvocationService invocation;
     private final SolutionLiveInvocationService liveInvocation;
     private final SolutionTestingService testing;
-    private final SolutionPerformanceService performance;
+    private final OperationsInsightService performance;
     private final EngineeringHandoffService handoffs;
     private final FeatureHandoffService featureHandoffs;
     private final SolutionGovernanceService governance;
@@ -98,12 +99,12 @@ public final class SolutionAgentTools {
         this.invocation = new SolutionInvocationService(registry, tokens,
                 new SolutionExecutionService(registry, mapper, safeChannel), mapper);
         this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
-        this.performance = new SolutionPerformanceService(states);
+        this.performance = new OperationsInsightService(states, mapper);
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
         this.featureHandoffs = new FeatureHandoffService(states, registry, safeBackend, mapper);
         this.governance = new SolutionGovernanceService(states, registry, mapper);
         this.liveInvocation = new SolutionLiveInvocationService(
-                states, invocation, governance, mapper);
+                states, invocation, governance, mapper, performance);
     }
 
     /** Submits the exact current Solution and DSL receipt for independent business review. */

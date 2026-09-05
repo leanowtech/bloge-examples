@@ -70,6 +70,12 @@ in guided mode, asks only for decision facts, rules, and dispositions, preserves
 owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is
 delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
 is rejected before a result can become `READY_FOR_TEST`.
+`rg.solution.performance` now distinguishes live operations from test evidence. Each first successful
+published invocation appends one idempotent `SOLUTION_OPERATIONS_SIGNAL` containing only the Solution
+reference, rule path, Instruction reference, and structural result kind. Raw Feature inputs, returned
+values, reasoning, tokens, URLs, and failures are never stored in that signal. The read model aggregates
+live hit, escalation, and disposition distributions, then combines them with current red-GOLDEN identifiers
+to propose policy-review gaps; a baseline by itself leaves `totalInvocations` at zero.
 The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
 for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
 an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.

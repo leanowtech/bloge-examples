@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionInvocationService;
+import com.leanowtech.bloge.gateway.solution.ops.OperationsInsightService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.util.LinkedHashMap;
@@ -34,17 +35,20 @@ public final class SolutionLiveInvocationService {
     private final SolutionInvocationService invocation;
     private final SolutionGovernanceService governance;
     private final ObjectMapper mapper;
+    private final OperationsInsightService operations;
 
     /** Creates the live boundary from durable state, token verification and publication governance. */
     public SolutionLiveInvocationService(
             AgentTddStateRepository states,
             SolutionInvocationService invocation,
             SolutionGovernanceService governance,
-            ObjectMapper mapper) {
+            ObjectMapper mapper,
+            OperationsInsightService operations) {
         this.states = Objects.requireNonNull(states, "states");
         this.invocation = Objects.requireNonNull(invocation, "invocation");
         this.governance = Objects.requireNonNull(governance, "governance");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.operations = Objects.requireNonNull(operations, "operations");
     }
 
     /**
@@ -82,7 +86,9 @@ public final class SolutionLiveInvocationService {
                     "The invocation outcome is ambiguous and requires operator recovery.");
         }
         if (reservation.status() == AgentTddStateRepository.ExternalExecutionStatus.COMPLETED) {
-            return completedResponse(reservation.response());
+            Map<String, Object> replay = completedResponse(reservation.response());
+            operations.record(scope, solutionRef, requestFingerprint, replay);
+            return replay;
         }
         SolutionInvocationService.PreparedInvocation prepared;
         try {
@@ -108,6 +114,7 @@ public final class SolutionLiveInvocationService {
         }
         JsonNode completed = states.completeExternalExecution(
                 scope, OPERATION, normalizedKey, requestFingerprint, mapper.valueToTree(response));
+        operations.record(scope, solutionRef, requestFingerprint, response);
         return mapper.convertValue(completed, OBJECT_MAP);
     }
 

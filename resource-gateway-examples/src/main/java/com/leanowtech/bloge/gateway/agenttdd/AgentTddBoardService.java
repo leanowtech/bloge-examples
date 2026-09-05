@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.ops.OperationsInsightService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -28,7 +29,7 @@ public final class AgentTddBoardService {
     private final AgentTddWorkflowService workflow;
     private final ObjectMapper mapper;
     private final SolutionGovernanceService solutionGovernance;
-    private final SolutionPerformanceService solutionPerformance;
+    private final OperationsInsightService solutionPerformance;
     private final SolutionEntityRegistry solutionRegistry;
 
     /** Creates the board projection from authoritative drafts and durable Agent overlays. */
@@ -42,7 +43,7 @@ public final class AgentTddBoardService {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.solutionRegistry = new SolutionEntityRegistry(states, mapper);
         this.solutionGovernance = new SolutionGovernanceService(states, solutionRegistry, mapper);
-        this.solutionPerformance = new SolutionPerformanceService(states);
+        this.solutionPerformance = new OperationsInsightService(states, mapper);
     }
 
     /** Returns scoped Tool readiness cards and pending human decisions without fixture payloads. */

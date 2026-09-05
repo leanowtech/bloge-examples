@@ -86,6 +86,8 @@ class McpToolCatalogTest {
                 .containsExactlyInAnyOrder("ticketId", "featureName", "requiredOutput",
                         "requiredInputs", "evaluationKind", "businessSemantics", "status",
                         "acceptanceRef", "revision");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.solution.performance"))))
+                .contains("signalFingerprint", "totalInvocations", "policyGaps");
     }
 
     @Test

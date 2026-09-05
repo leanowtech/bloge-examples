@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.ops.OperationsInsightService;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -369,6 +370,12 @@ class SolutionAgentToolsTest {
                 .containsEntry("executionStatus", "COMPLETED");
         assertThat(replay).isEqualTo(first);
         assertThat(writes).hasValue(1);
+        assertThat(runtime.performanceSolution(mapper.valueToTree(Map.of("solutionRef", "sol:refund")),
+                readIdentity("project-write"))).containsEntry("totalInvocations", 1);
+        assertThat(states.list(scope, OperationsInsightService.OPERATIONS_SIGNAL)).singleElement()
+                .satisfies(signal -> assertThat(signal.data().toString())
+                        .contains("R1", "ins:refund", "OBJECT")
+                        .doesNotContain("WAIVED", "rule R1", "O-1"));
         request.withObject("inputs").withObject("orderId").put("value", "O-2");
         assertThatThrownBy(() -> runtime.invokeSolution(request, identity))
                 .isInstanceOf(AgentTddToolException.class)
@@ -432,6 +439,12 @@ class SolutionAgentToolsTest {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", projectId, "test", "sg", "WORKLOAD", "agent-1",
                 "", "AGENT_TDD_EXECUTION", "corr-1");
+    }
+
+    private static IntegrationRequestContext readIdentity(String projectId) {
+        return new IntegrationRequestContext(
+                "tenant-a", "org-a", projectId, "test", "sg", "WORKLOAD", "ops-1",
+                "", "AGENT_TDD_READ", "corr-1");
     }
 
     private void publishCurrent(SolutionEntityRegistry registry, String solutionRef) {
