@@ -274,7 +274,7 @@ stop_owned_service() {
     SERVICE_PID=""
 }
 
-start_owned_service "${SETUP_TOKEN}"
+start_owned_service "${AGENT_TOKEN}"
 
 verify_runtime_identity() {
     local actual_identity
@@ -315,16 +315,6 @@ wait_owned_service() {
     fi
 }
 
-wait_owned_service
-python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
-    --endpoint "${RG_MCP_ENDPOINT}" \
-    --author-token "${SETUP_TOKEN}" \
-    --review-token "${REVIEW_TOKEN}" \
-    --fixture "${SETUP_FIXTURE_FILE}" \
-    --output "${SETUP_MANIFEST_FILE}"
-chmod 600 "${SETUP_MANIFEST_FILE}"
-stop_owned_service
-start_owned_service "${AGENT_TOKEN}"
 wait_owned_service
 export RG_MCP_TOKEN="${AGENT_TOKEN}"
 curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
@@ -399,6 +389,24 @@ if ! verify_runtime_identity; then
     echo "The owned Resource Gateway identity changed or disappeared during the authoring turn." >&2
     exit 1
 fi
+
+# Seed recall-only distractors after the clean authoring turn so certification fixtures cannot
+# influence whether Codex creates the primary four-entity business solution.
+stop_owned_service
+start_owned_service "${SETUP_TOKEN}"
+wait_owned_service
+python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
+    --endpoint "${RG_MCP_ENDPOINT}" \
+    --author-token "${SETUP_TOKEN}" \
+    --review-token "${REVIEW_TOKEN}" \
+    --fixture "${SETUP_FIXTURE_FILE}" \
+    --output "${SETUP_MANIFEST_FILE}"
+chmod 600 "${SETUP_MANIFEST_FILE}"
+stop_owned_service
+start_owned_service "${AGENT_TOKEN}"
+wait_owned_service
+export RG_MCP_TOKEN="${AGENT_TOKEN}"
+curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
 
 python3 - "${FAMILY_SUITE_FILE}" <<'PY'
 import json

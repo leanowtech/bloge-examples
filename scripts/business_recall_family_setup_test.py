@@ -78,6 +78,17 @@ class FakeApi:
 
 
 class BusinessRecallSetupTest(unittest.TestCase):
+
+    def test_certification_authors_primary_solution_before_seeding_distractors(self):
+        script = Path(__file__).with_name("certify-agent-tdd-codex.sh").read_text(
+            encoding="utf-8")
+
+        authoring = script.index('run_codex_turn "${PROMPT_FILE}" "${TRACE_FILE}"')
+        setup = script.index('python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py"')
+        families = script.index("while IFS=$'\\t' read -r FAMILY_ID FAMILY_EXPECTED")
+
+        self.assertLess(authoring, setup)
+        self.assertLess(setup, families)
     def setUp(self) -> None:
         self.fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
