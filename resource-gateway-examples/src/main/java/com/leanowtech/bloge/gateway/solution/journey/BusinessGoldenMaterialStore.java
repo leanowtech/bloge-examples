@@ -29,9 +29,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Stores payload-bearing business GOLDEN material in the existing authenticated-encryption vault.
- * Case sets retain only the exact receipt and review metadata; the vault being disabled or
- * unavailable is a hard failure and never falls back to plaintext state assets.
+ * Stores original business GOLDEN cases in the existing authenticated-encryption vault.
+ * Case sets retain only the exact receipt and review metadata. Compiled Feature aliases,
+ * Instruction references, stubs and controlled execution plans never enter this material. The
+ * vault being disabled or unavailable is a hard failure and never falls back to plaintext state.
  */
 @Service
 public class BusinessGoldenMaterialStore {
@@ -51,7 +52,11 @@ public class BusinessGoldenMaterialStore {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
-    /** Writes one immutable case payload and returns only its exact protected-material receipt. */
+    /**
+     * Writes one immutable original business case and returns only its exact protected receipt.
+     *
+     * @param payload original BusinessGoldenCase plus its business and approval fingerprints
+     */
     public JsonNode write(String solutionRef, long solutionRevision, String solutionFingerprint,
                           String caseId, String goldenFingerprint, String proposalFingerprint, JsonNode payload,
                           IntegrationRequestContext caller) {
@@ -62,14 +67,14 @@ public class BusinessGoldenMaterialStore {
                         "proposalFingerprint", proposalFingerprint), MAX_BYTES);
         String materialId = "business-golden-" + materialIdentity.substring("sha256:".length(), 30);
         String schemaFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper,
-                Map.of("schema", "rg.businessGoldenMaterial.v1"), MAX_BYTES);
+                Map.of("schema", "rg.businessGoldenMaterial.v2"), MAX_BYTES);
         Instant expires = Instant.now().plus(30, ChronoUnit.DAYS);
         try {
             Receipt receipt = service.write(new WriteRequest(
                     WriteRequest.SCHEMA_VERSION, materialId, 0,
                     new FixtureSource(SourceKind.SAMPLE, null), FixtureSubject.SCENARIO,
                     new ExactTargetRef(TargetKind.GRAPH, solutionRef, solutionRevision, solutionFingerprint),
-                    new ExactSchemaRef("rg.businessGoldenMaterial.v1", 1, schemaFingerprint),
+                    new ExactSchemaRef("rg.businessGoldenMaterial.v2", 2, schemaFingerprint),
                     "INTERNAL", new RetentionDescriptor("rg.businessGolden.30d", 30, expires),
                     new RedactionDescriptor("rg.businessGolden.redaction.v1", List.of(), true),
                     mapper.convertValue(payload, Object.class)), platform(caller,

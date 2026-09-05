@@ -66,6 +66,43 @@ public final class BusinessFixtureCompiler {
         return states.executeAtomically(() -> compileLocked(scope, solutionRef, fixtureCase));
     }
 
+    /**
+     * Resolves and validates a proposed business case without creating an execution plan.
+     *
+     * <p>This operation exists for the pre-approval boundary. It checks unique business-name
+     * resolution, value schemas and dependency outcomes, but returns only stable semantic keys and
+     * business contract fingerprints. Solution aliases, entity references, revisions and compiled
+     * dependency maps are not part of the approval subject.</p>
+     *
+     * @param scope server-derived integration scope
+     * @param solutionRef current Solution selected by the journey
+     * @param fixtureCase complete original business case
+     * @return validated business contract identities plus an internal material target coordinate
+     */
+    public BusinessCaseValidation validateBusinessCase(
+            String scope, String solutionRef, JsonNode fixtureCase) {
+        if (!fixtureCase.path("givenFacts").isArray()
+                || !fixtureCase.path("dependencyAssumptions").isArray()) throw schema();
+        return states.executeAtomically(() -> validateBusinessCaseLocked(
+                scope, solutionRef, fixtureCase));
+    }
+
+    private BusinessCaseValidation validateBusinessCaseLocked(
+            String scope, String solutionRef, JsonNode fixtureCase) {
+        FrozenClosure closure = freeze(scope, solutionRef);
+        List<JsonNode> vector = new ArrayList<>();
+        fixtureCase.path("givenFacts").forEach(fact -> validateFact(closure, fact, vector));
+        fixtureCase.path("dependencyAssumptions")
+                .forEach(assumption -> validateDependency(
+                        assumption, closure.instructions(), vector));
+        List<JsonNode> stableVector = vector.stream()
+                .map(value -> (JsonNode) value.deepCopy())
+                .sorted(Comparator.comparing(BusinessFixtureCompiler::semanticCoordinateOrder))
+                .toList();
+        return new BusinessCaseValidation(stableVector, closure.solution().contract().solutionRef(),
+                closure.solution().revision(), closure.solution().contractFingerprint());
+    }
+
     private ControlledAssumptionPlan compileLocked(
             String scope, String solutionRef, JsonNode fixtureCase) {
         FrozenClosure closure = freeze(scope, solutionRef);
@@ -177,6 +214,26 @@ public final class BusinessFixtureCompiler {
                 match.feature().contract().businessDefinition().semanticKey()));
     }
 
+    private void validateFact(FrozenClosure closure, JsonNode fact, List<JsonNode> vector) {
+        String name = requiredText(fact, "factName");
+        List<InputFeature> matches = closure.solution().contract().inputs().entrySet().stream()
+                .map(entry -> new InputFeature(
+                        entry.getKey(), closure.features().get(entry.getValue())))
+                .filter(input -> input.feature() != null
+                        && featureMatches(input.feature().contract(), name,
+                        input.alias(), input.feature().ref()))
+                .toList();
+        if (matches.size() != 1 || !fact.has("value")) throw ambiguous("fact");
+        InputFeature match = matches.getFirst();
+        if (!SolutionValueSchemaValidator.featureValueMatches(
+                match.feature().contract().output(), fact.path("value"))) {
+            throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
+                    "A supplied business fact value does not match its current contract.");
+        }
+        vector.add(stableBusinessCoordinate(match.feature().contract()
+                .businessDefinition().semanticKey(), match.feature().contractFingerprint()));
+    }
+
     private void compileDependency(JsonNode assumption,
                                    List<FrozenEntity<InstructionContract>> reachable,
                                    ObjectNode dependencies,
@@ -206,6 +263,35 @@ public final class BusinessFixtureCompiler {
                 instruction.businessDefinition().semanticKey()));
     }
 
+    private void validateDependency(JsonNode assumption,
+                                    List<FrozenEntity<InstructionContract>> reachable,
+                                    List<JsonNode> vector) {
+        String name = requiredText(assumption, "capabilityName");
+        List<FrozenEntity<InstructionContract>> matches = reachable.stream()
+                .filter(instruction -> instructionMatches(instruction.contract(), name)).toList();
+        if (matches.size() != 1) throw ambiguous("dependency");
+        FrozenEntity<InstructionContract> frozen = matches.getFirst();
+        validateDependencyOutcome(assumption, frozen.contract());
+        vector.add(stableBusinessCoordinate(
+                frozen.contract().businessDefinition().semanticKey(), frozen.contractFingerprint()));
+    }
+
+    private static void validateDependencyOutcome(
+            JsonNode assumption, InstructionContract instruction) {
+        String outcome = requiredText(assumption, "outcome").toUpperCase(Locale.ROOT);
+        if (!OUTCOMES.contains(outcome)) throw schema();
+        if ("RETURNS".equals(outcome) && instruction.effect() == InstructionContract.Effect.WRITE) {
+            throw new AgentTddToolException("BUSINESS_ASSUMPTION_EFFECT_INVALID",
+                    "A write capability cannot be represented as a returned fact.");
+        }
+        if ("RETURNS".equals(outcome) && (!assumption.path("value").isObject()
+                || !assumption.path("value").has("result")
+                || !assumption.path("value").has("reasoning"))) {
+            throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
+                    "A returned dependency result must contain result and reasoning.");
+        }
+    }
+
     private boolean featureMatches(FeatureContract feature, String name,
                                    String inputAlias, String featureRef) {
         return inputAlias.equalsIgnoreCase(name) || featureRef.equalsIgnoreCase(name)
@@ -231,6 +317,13 @@ public final class BusinessFixtureCompiler {
         return coordinate;
     }
 
+    private JsonNode stableBusinessCoordinate(String semanticKey, String contractFingerprint) {
+        ObjectNode coordinate = mapper.createObjectNode();
+        coordinate.put("semanticKey", semanticKey);
+        coordinate.put("contractFingerprint", contractFingerprint);
+        return coordinate;
+    }
+
     private JsonNode closureCoordinate(String kind, FrozenEntity<?> entity) {
         ObjectNode coordinate = mapper.createObjectNode();
         coordinate.put("assetKind", kind);
@@ -248,6 +341,11 @@ public final class BusinessFixtureCompiler {
         return coordinate.path("semanticKey").asText() + '\u001f'
                 + coordinate.path("assetKind").asText() + '\u001f'
                 + coordinate.path("assetRef").asText();
+    }
+
+    private static String semanticCoordinateOrder(JsonNode coordinate) {
+        return coordinate.path("semanticKey").asText() + '\u001f'
+                + coordinate.path("contractFingerprint").asText();
     }
 
     private static AgentTddToolException ambiguous(String kind) {
@@ -279,6 +377,39 @@ public final class BusinessFixtureCompiler {
                                  List<JsonNode> coordinates) { }
 
     private record InputFeature(String alias, FrozenEntity<FeatureContract> feature) { }
+
+    /**
+     * Immutable pre-approval validation result without any controlled execution plan.
+     *
+     * @param businessContractVector stable semantic keys and business contract fingerprints
+     * @param solutionRef internal protected-material target
+     * @param solutionRevision internal protected-material target revision
+     * @param solutionContractFingerprint internal protected-material target fingerprint
+     */
+    public record BusinessCaseValidation(
+            List<JsonNode> businessContractVector,
+            String solutionRef,
+            long solutionRevision,
+            String solutionContractFingerprint
+    ) {
+        /** Freezes validation coordinates and rejects incomplete material targets. */
+        public BusinessCaseValidation {
+            businessContractVector = businessContractVector == null ? List.of()
+                    : businessContractVector.stream()
+                    .map(value -> (JsonNode) value.deepCopy()).toList();
+            solutionRef = ControlledAssumptionPlan.requiredText(solutionRef, "solutionRef");
+            if (solutionRevision < 1) throw new IllegalArgumentException("Solution revision is invalid");
+            solutionContractFingerprint = ControlledAssumptionPlan.requiredFingerprint(
+                    solutionContractFingerprint);
+        }
+
+        /** Returns copies so callers cannot mutate the approved semantic vector. */
+        @Override
+        public List<JsonNode> businessContractVector() {
+            return businessContractVector.stream()
+                    .map(value -> (JsonNode) value.deepCopy()).toList();
+        }
+    }
 
     /**
      * Immutable payload-bearing plan kept inside the protected material boundary.

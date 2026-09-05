@@ -67,14 +67,20 @@ public final class AgentTddReviewService {
         }
         JsonNode proposal = selected.path("proposedOracle");
         JsonNode material = protectedMaterial(selected, identity);
+        boolean completeBusinessCase = material != null && material.path("businessIntent").isTextual()
+                && material.path("givenFacts").isArray()
+                && material.path("dependencyAssumptions").isArray()
+                && material.path("expectedOutcome").isObject()
+                && material.path("oracleOwner").isTextual();
         JsonNode materialProposal = material == null ? proposal : material.path("proposedOracle");
-        if (!"PENDING".equals(proposal.path("status").asText()) || !materialProposal.has("expect")) {
+        boolean reviewable = completeBusinessCase || materialProposal.has("expect");
+        if (!"PENDING".equals(proposal.path("status").asText()) || !reviewable) {
             throw new AgentTddToolException("GOLDEN_REQUIRES_APPROVAL",
                     "The GOLDEN case has no pending Oracle proposal.");
         }
         requireIndependentHuman(identity, proposal.path("proposedBy").asText());
         requireProposalFingerprint(proposal, proposalFingerprint);
-        if (material == null) selected.set("expect", proposal.path("expect").deepCopy());
+        if (!completeBusinessCase) selected.set("expect", materialProposal.path("expect").deepCopy());
         selected.put("oracleOwner", proposal.path("oracleOwner").asText());
         selected.put("lifecycle", "ACTIVE");
         ((ObjectNode) proposal).put("status", "APPROVED");
@@ -180,11 +186,13 @@ public final class AgentTddReviewService {
     }
 
     /**
-     * Returns the exact pending Oracle material to a separately authenticated human reviewer.
+     * Returns the exact pending business case to a separately authenticated human reviewer.
      *
      * <p>This payload-bearing projection is deliberately not an MCP tool and is protected by the
-     * governed-write identity boundary. The returned fingerprint must be echoed by approval so the
-     * decision is bound to what the reviewer actually opened.</p>
+     * governed-write identity boundary. New business cases are projected only through the business
+     * vocabulary supplied by the proposer. Compiled aliases, entity references, stubs and execution
+     * plans are never returned. The fingerprint must be echoed by approval so the decision is bound
+     * to the complete case and current business contracts that the reviewer opened.</p>
      */
     public synchronized Map<String, Object> oracleReview(String caseSetRef,
                                                          String caseId,
@@ -202,6 +210,21 @@ public final class AgentTddReviewService {
             JsonNode material = protectedMaterial(row, identity);
             JsonNode reviewRow = material == null ? row : material;
             JsonNode reviewProposal = reviewRow.path("proposedOracle");
+            if (reviewRow.path("businessIntent").isTextual()) {
+                return Map.ofEntries(
+                        Map.entry("caseSetRef", caseSetRef),
+                        Map.entry("caseId", caseId),
+                        Map.entry("revision", current.revision()),
+                        Map.entry("businessIntent", reviewRow.path("businessIntent").deepCopy()),
+                        Map.entry("givenFacts", reviewRow.path("givenFacts").deepCopy()),
+                        Map.entry("dependencyAssumptions",
+                                reviewRow.path("dependencyAssumptions").deepCopy()),
+                        Map.entry("expectedOutcome", reviewRow.path("expectedOutcome").deepCopy()),
+                        Map.entry("oracleOwner", proposal.path("oracleOwner").asText()),
+                        Map.entry("proposedBy", proposal.path("proposedBy").asText()),
+                        Map.entry("proposalFingerprint",
+                                proposal.path("proposalFingerprint").asText()));
+            }
             return Map.of(
                     "caseSetRef", caseSetRef,
                     "caseId", caseId,

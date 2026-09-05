@@ -20,9 +20,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Adapts complete business-language GOLDEN cases to the existing governed case-set authority.
- * MCP responses expose only counts, lifecycle and fingerprints; fact values and expected outcomes
- * stay inside the durable review material and current controlled execution.
+ * Adapts complete business-language GOLDEN cases to the governed case-set authority.
+ * MCP responses expose only counts, lifecycle and fingerprints. The protected material contains
+ * the original business case, while every implementation-bound controlled plan is ephemeral and
+ * can be recompiled after rules or bindings change without changing the business approval.
  */
 @Service
 public final class BusinessGoldenService {
@@ -62,10 +63,8 @@ public final class BusinessGoldenService {
             data.put("toolRef", solutionRef);
             data.put("journeyRef", requiredText(arguments, "journeyRef"));
             ArrayNode rows = data.putArray("rows");
-            cases.forEach(raw -> {
-                ObjectNode compiled = compileCase(scope, solutionRef, raw, identity);
-                rows.add(protectCase(compiled, requestFingerprint, identity));
-            });
+            cases.forEach(raw -> rows.add(protectCase(
+                    prepareCase(scope, solutionRef, raw), requestFingerprint, identity)));
             AgentTddStoredAsset stored = states.save(scope, AgentTddMutationService.CASE_SET, caseSetRef, data);
             return mapper.valueToTree(Map.of("caseSetRef", caseSetRef, "revision", stored.revision(),
                     "caseSummaries", summaries(stored.data().path("rows")),
@@ -74,39 +73,47 @@ public final class BusinessGoldenService {
         return mapper.convertValue(response, new com.fasterxml.jackson.core.type.TypeReference<>() { });
     }
 
-    private ObjectNode protectCase(ObjectNode compiled,
+    private ObjectNode protectCase(PreparedCase prepared,
                                    String proposalFingerprint,
                                    IntegrationRequestContext identity) {
-        String goldenFingerprint = compiled.path("goldenCaseFingerprint").asText();
-        JsonNode receipt = materials.write(compiled.path("solutionRef").asText(),
-                compiled.path("solutionRevision").asLong(),
-                compiled.path("solutionContractFingerprint").asText(),
-                compiled.path("caseId").asText(), goldenFingerprint,
-                proposalFingerprint, compiled, identity);
+        ObjectNode businessCase = prepared.businessCase();
+        BusinessFixtureCompiler.BusinessCaseValidation validation = prepared.validation();
+        String businessFingerprint = businessCase.path("businessCaseFingerprint").asText();
+        String goldenFingerprint = businessApprovalFingerprint(businessCase, validation);
+        businessCase.put("goldenCaseFingerprint", goldenFingerprint);
+        JsonNode receipt = materials.write(validation.solutionRef(), validation.solutionRevision(),
+                validation.solutionContractFingerprint(), businessCase.path("caseId").asText(),
+                goldenFingerprint, proposalFingerprint, businessCase, identity);
         ObjectNode metadata = mapper.createObjectNode();
-        metadata.put("caseId", compiled.path("caseId").asText());
+        metadata.put("caseId", businessCase.path("caseId").asText());
         metadata.put("category", "GOLDEN");
         metadata.put("layer", "integration");
-        metadata.put("oracleOwner", compiled.path("oracleOwner").asText());
+        metadata.put("oracleOwner", businessCase.path("oracleOwner").asText());
         metadata.put("lifecycle", "DRAFT");
         metadata.put("qualityState", "DESIGNED_NOT_RUN");
+        metadata.put("businessCaseFingerprint", businessFingerprint);
         metadata.put("goldenCaseFingerprint", goldenFingerprint);
-        metadata.put("factCount", compiled.path("given").size());
-        metadata.put("assumptionCount", compiled.path("controlledAssumptions").size());
-        metadata.put("expectedShapeFingerprint", fingerprint(compiled.at("/proposedOracle/expect")));
-        metadata.put("controlledAssumptionPlanFingerprint",
-                compiled.path("controlledAssumptionPlanFingerprint").asText());
-        metadata.put("featureValuesFingerprint", compiled.path("featureValuesFingerprint").asText());
-        metadata.put("dependencyPlanFingerprint", compiled.path("dependencyPlanFingerprint").asText());
-        metadata.put("frozenContextFingerprint", compiled.path("frozenContextFingerprint").asText());
-        metadata.set("businessContractVector", compiled.path("businessContractVector").deepCopy());
+        metadata.put("factCount", businessCase.path("givenFacts").size());
+        metadata.put("assumptionCount", businessCase.path("dependencyAssumptions").size());
+        metadata.put("expectedShapeFingerprint", fingerprint(businessCase.path("expectedOutcome")));
+        metadata.set("businessContractVector",
+                mapper.valueToTree(validation.businessContractVector()));
         metadata.set("materialReceipt", receipt);
         ObjectNode proposal = metadata.putObject("proposedOracle");
         proposal.put("status", "PENDING");
-        proposal.put("oracleOwner", compiled.at("/proposedOracle/oracleOwner").asText());
-        proposal.put("proposedBy", compiled.at("/proposedOracle/proposedBy").asText());
+        proposal.put("oracleOwner", businessCase.path("oracleOwner").asText());
+        proposal.put("proposedBy", identity.actorId());
         proposal.put("proposalFingerprint", goldenFingerprint);
         return metadata;
+    }
+
+    private String businessApprovalFingerprint(
+            JsonNode businessCase, BusinessFixtureCompiler.BusinessCaseValidation validation) {
+        ObjectNode approval = mapper.createObjectNode();
+        approval.put("businessCaseFingerprint", businessCase.path("businessCaseFingerprint").asText());
+        approval.set("referencedBusinessContractVector",
+                mapper.valueToTree(validation.businessContractVector()));
+        return fingerprint(approval);
     }
 
     /** Lists safe summaries without returning business case material. */
@@ -128,50 +135,25 @@ public final class BusinessGoldenService {
                 "caseSummaries", values, "approvalState", active ? "APPROVED" : "PENDING");
     }
 
-    private ObjectNode compileCase(String scope, String solutionRef, JsonNode raw,
-                                   IntegrationRequestContext identity) {
+    private PreparedCase prepareCase(String scope, String solutionRef, JsonNode raw) {
         String caseId = requiredText(raw, "caseId");
         String intent = requiredText(raw, "businessIntent");
         String owner = requiredText(raw, "oracleOwner");
         if (!raw.path("givenFacts").isArray() || !raw.path("expectedOutcome").isObject()
                 || !raw.path("dependencyAssumptions").isArray()) throw schema();
-        BusinessFixtureCompiler.ControlledAssumptionPlan plan = fixtureCompiler.compile(
-                scope, solutionRef, raw);
+        BusinessFixtureCompiler.BusinessCaseValidation validation =
+                fixtureCompiler.validateBusinessCase(scope, solutionRef, raw);
         ObjectNode expected = (ObjectNode) raw.path("expectedOutcome").deepCopy();
         if (!expected.has("result") || !expected.has("reasoningClass")) throw schema();
-        ObjectNode expect = mapper.createObjectNode();
-        expect.set("result", expected.path("result").deepCopy());
-        expect.set("reasoning", expected.path("reasoningClass").deepCopy());
-        ObjectNode fingerprintMaterial = mapper.createObjectNode();
-        fingerprintMaterial.put("businessIntent", intent);
-        fingerprintMaterial.set("canonicalGivenFacts", plan.given());
-        fingerprintMaterial.set("canonicalDependencyAssumptions", plan.dependencyAssumptions());
-        fingerprintMaterial.set("expectedOutcome", expected);
-        fingerprintMaterial.put("oracleOwner", owner);
-        fingerprintMaterial.set("referencedBusinessContractVector",
-                mapper.valueToTree(plan.businessContractVector()));
-        fingerprintMaterial.put("controlledAssumptionPlanFingerprint", plan.planFingerprint());
-        fingerprintMaterial.put("caseId", caseId);
-        String goldenFingerprint = fingerprint(fingerprintMaterial);
-
-        ObjectNode row = mapper.createObjectNode();
-        row.put("caseId", caseId); row.put("category", "GOLDEN"); row.put("layer", "integration");
-        row.put("intent", intent); row.set("given", plan.given()); row.set("stubs", mapper.createObjectNode());
-        row.set("controlledAssumptions", plan.dependencyAssumptions()); row.put("oracleOwner", owner);
-        row.put("lifecycle", "DRAFT"); row.put("qualityState", "DESIGNED_NOT_RUN");
-        row.put("goldenCaseFingerprint", goldenFingerprint);
-        row.set("businessContractVector", mapper.valueToTree(plan.businessContractVector()));
-        row.put("featureValuesFingerprint", plan.featureValuesFingerprint());
-        row.put("dependencyPlanFingerprint", plan.dependencyPlanFingerprint());
-        row.put("frozenContextFingerprint", plan.frozenContextFingerprint());
-        row.put("controlledAssumptionPlanFingerprint", plan.planFingerprint());
-        row.put("solutionRef", plan.solutionRef());
-        row.put("solutionRevision", plan.solutionRevision());
-        row.put("solutionContractFingerprint", plan.solutionContractFingerprint());
-        ObjectNode proposal = row.putObject("proposedOracle");
-        proposal.set("expect", expect); proposal.put("oracleOwner", owner); proposal.put("status", "PENDING");
-        proposal.put("proposedBy", identity.actorId()); proposal.put("proposalFingerprint", goldenFingerprint);
-        return row;
+        ObjectNode businessCase = mapper.createObjectNode();
+        businessCase.put("caseId", caseId);
+        businessCase.put("businessIntent", intent);
+        businessCase.set("givenFacts", raw.path("givenFacts").deepCopy());
+        businessCase.set("dependencyAssumptions", raw.path("dependencyAssumptions").deepCopy());
+        businessCase.set("expectedOutcome", expected);
+        businessCase.put("oracleOwner", owner);
+        businessCase.put("businessCaseFingerprint", fingerprint(businessCase));
+        return new PreparedCase(businessCase, validation);
     }
 
     private List<Map<String, Object>> summaries(JsonNode rows) {
@@ -199,5 +181,21 @@ public final class BusinessGoldenService {
     }
     private static String requiredText(JsonNode node, String field) {
         String value = text(node, field); if (value.isBlank()) throw schema(); return value;
+    }
+
+    /** Separates the durable business approval subject from its disposable execution plan. */
+    private record PreparedCase(
+            ObjectNode businessCase,
+            BusinessFixtureCompiler.BusinessCaseValidation validation
+    ) {
+        private PreparedCase {
+            businessCase = Objects.requireNonNull(businessCase, "businessCase").deepCopy();
+            validation = Objects.requireNonNull(validation, "validation");
+        }
+
+        @Override
+        public ObjectNode businessCase() {
+            return businessCase.deepCopy();
+        }
     }
 }

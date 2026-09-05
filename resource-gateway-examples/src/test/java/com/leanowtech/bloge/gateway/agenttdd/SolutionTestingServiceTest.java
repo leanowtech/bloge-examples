@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -130,6 +132,71 @@ class SolutionTestingServiceTest {
     }
 
     @Test
+    void recompilesApprovedBusinessMaterialAfterAnImplementationRevision() {
+        JsonNode businessCase = mapper.valueToTree(Map.ofEntries(
+                Map.entry("caseId", "g-business"),
+                Map.entry("businessIntent", "乘客无责时免除取消费"),
+                Map.entry("givenFacts", List.of(
+                        Map.of("factName", "responsibility.party", "value", "none"),
+                        Map.of("factName", "dispute.orderSelected", "value", "O-1"))),
+                Map.entry("dependencyAssumptions", List.of(Map.of(
+                        "capabilityName", "ins:refund", "outcome", "SUCCEEDS_WITHOUT_EFFECT"))),
+                Map.entry("expectedOutcome", Map.of(
+                        "result", Map.of("decision", "WAIVED"), "reasoningClass", "STUBBED_WRITE")),
+                Map.entry("oracleOwner", "cx-ops"),
+                Map.entry("businessCaseFingerprint", "sha256:" + "a".repeat(64)),
+                Map.entry("goldenCaseFingerprint", "sha256:" + "b".repeat(64))));
+        BusinessFixtureCompiler.BusinessCaseValidation validation =
+                new BusinessFixtureCompiler(states, mapper)
+                        .validateBusinessCase(SCOPE, "sol:cancel", businessCase);
+        ObjectNode caseSet = mapper.createObjectNode();
+        caseSet.put("caseSetRef", "caseSet:cancel");
+        caseSet.put("toolRef", "sol:cancel");
+        caseSet.set("rows", mapper.valueToTree(List.of(Map.ofEntries(
+                Map.entry("caseId", "g-business"), Map.entry("category", "GOLDEN"),
+                Map.entry("lifecycle", "ACTIVE"), Map.entry("qualityState", "DESIGNED_NOT_RUN"),
+                Map.entry("oracleOwner", "cx-ops"),
+                Map.entry("businessCaseFingerprint", "sha256:" + "a".repeat(64)),
+                Map.entry("goldenCaseFingerprint", "sha256:" + "b".repeat(64)),
+                Map.entry("businessContractVector", validation.businessContractVector()),
+                Map.entry("materialReceipt", Map.of("materialRef", "business:g-business")),
+                Map.entry("proposedOracle", Map.of("status", "APPROVED"))))));
+        states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", caseSet);
+        assertThat(caseSet.toString()).doesNotContain("controlledAssumptionPlanFingerprint",
+                "featureValuesFingerprint", "dependencyPlanFingerprint", "frozenContextFingerprint");
+        BusinessGoldenMaterialStore materials = new FixedBusinessMaterialStore(mapper, businessCase);
+        SolutionTestingService protectedTesting = new SolutionTestingService(
+                states, registry, mapper, (instruction, values, context) -> {
+                    throw new AssertionError("Protected baseline must never use the runtime channel.");
+                }, materials);
+
+        protectedTesting.baseline(SCOPE, "sol:cancel", "caseSet:cancel", "GREEN", readIdentity());
+        String firstCompiledPlan = states.find(
+                SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel")
+                .orElseThrow().data().at("/controlledAssumptionPlanFingerprints/0").asText();
+        registry.upsertScenario(SCOPE, new ScenarioContract(
+                "scn:root", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
+                List.of(new ScenarioContract.Rule("R1",
+                        mapper.valueToTree(Map.of("party", Map.of("eq", "none"))),
+                        new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                                "ins:refund", Map.of("orderId", "orderId"), ""))),
+                new ScenarioContract.Outlet(
+                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+
+        protectedTesting.baseline(SCOPE, "sol:cancel", "caseSet:cancel", "GREEN", readIdentity());
+        String recompiledPlan = states.find(
+                SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel")
+                .orElseThrow().data().at("/controlledAssumptionPlanFingerprints/0").asText();
+
+        assertThat(recompiledPlan).isNotEqualTo(firstCompiledPlan);
+        JsonNode approvedMetadata = states.find(
+                SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel").orElseThrow().data().at("/rows/0");
+        assertThat(approvedMetadata.path("lifecycle").asText()).isEqualTo("ACTIVE");
+        assertThat(approvedMetadata.at("/proposedOracle/status").asText()).isEqualTo("APPROVED");
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
     void failsClosedWhenAnApprovedCaseForbidsTheSelectedDependency() {
         storeControlledCases(Map.of("ins:refund", Map.of("outcome", "MUST_NOT_BE_USED")));
 
@@ -204,5 +271,20 @@ class SolutionTestingServiceTest {
     private static IntegrationRequestContext readIdentity() {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "sg",
                 "WORKLOAD", "agent-1", "", "AGENT_TDD_READ", "corr-1");
+    }
+
+    private static final class FixedBusinessMaterialStore extends BusinessGoldenMaterialStore {
+        private final JsonNode payload;
+
+        private FixedBusinessMaterialStore(ObjectMapper mapper, JsonNode payload) {
+            super((com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService) null,
+                    mapper);
+            this.payload = payload.deepCopy();
+        }
+
+        @Override
+        public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
+            return payload.deepCopy();
+        }
     }
 }

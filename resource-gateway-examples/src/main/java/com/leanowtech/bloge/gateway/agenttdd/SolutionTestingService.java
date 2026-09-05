@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenContractGuard;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
@@ -162,7 +163,7 @@ public final class SolutionTestingService {
         List<Map.Entry<String, String>> controlledPlans = new ArrayList<>();
         LinkedHashMap<String, Integer> hitDistribution = new LinkedHashMap<>();
         for (JsonNode metadata : golden) {
-            JsonNode row = approvedMaterial(metadata, identity);
+            JsonNode row = approvedMaterial(scopeKey, solutionRef, metadata, identity);
             String caseId = requiredText(row, "caseId");
             String compiledPlan = row.path("controlledAssumptionPlanFingerprint").asText();
             controlledPlans.add(Map.entry(caseId, compiledPlan.isBlank()
@@ -292,21 +293,45 @@ public final class SolutionTestingService {
         }).toList();
     }
 
-    private JsonNode approvedMaterial(JsonNode metadata, IntegrationRequestContext identity) {
+    private JsonNode approvedMaterial(String scopeKey, String solutionRef, JsonNode metadata,
+                                      IntegrationRequestContext identity) {
         if (!metadata.path("materialReceipt").isObject()) return metadata;
         if (goldenMaterials == null || identity == null) throw new AgentTddToolException(
                 "FIXTURE_MATERIAL_UNAVAILABLE", "Protected business case material is unavailable.");
-        BusinessGoldenContractGuard.requireCurrent(states,
-                AgentTddMutationService.scopeKey(identity), metadata);
+        BusinessGoldenContractGuard.requireCurrent(states, scopeKey, metadata);
         JsonNode material = goldenMaterials.read(metadata.path("materialReceipt"), identity);
         if (!metadata.path("goldenCaseFingerprint").asText().equals(
                 material.path("goldenCaseFingerprint").asText())) {
             throw new AgentTddToolException("FIXTURE_MATERIAL_UNAVAILABLE",
                     "Protected business case material does not match its case metadata.");
         }
-        ObjectNode approved = (ObjectNode) material.deepCopy();
+        if (!material.path("businessIntent").isTextual()) {
+            ObjectNode approved = (ObjectNode) material.deepCopy();
+            approved.put("lifecycle", metadata.path("lifecycle").asText());
+            approved.set("expect", material.at("/proposedOracle/expect").deepCopy());
+            return approved;
+        }
+        if (!metadata.path("businessCaseFingerprint").asText().equals(
+                material.path("businessCaseFingerprint").asText())) {
+            throw new AgentTddToolException("FIXTURE_MATERIAL_UNAVAILABLE",
+                    "Protected business case material does not match its case metadata.");
+        }
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan =
+                new BusinessFixtureCompiler(states, mapper).compile(scopeKey, solutionRef, material);
+        ObjectNode approved = mapper.createObjectNode();
+        approved.put("caseId", requiredText(material, "caseId"));
+        approved.put("oracleOwner", requiredText(material, "oracleOwner"));
         approved.put("lifecycle", metadata.path("lifecycle").asText());
-        approved.set("expect", material.at("/proposedOracle/expect").deepCopy());
+        approved.set("given", plan.given());
+        approved.set("controlledAssumptions", plan.dependencyAssumptions());
+        ObjectNode expect = approved.putObject("expect");
+        expect.set("result", material.at("/expectedOutcome/result").deepCopy());
+        expect.set("reasoning", material.at("/expectedOutcome/reasoningClass").deepCopy());
+        approved.put("controlledAssumptionPlanFingerprint", plan.planFingerprint());
+        approved.put("featureValuesFingerprint", plan.featureValuesFingerprint());
+        approved.put("dependencyPlanFingerprint", plan.dependencyPlanFingerprint());
+        approved.put("frozenContextFingerprint", plan.frozenContextFingerprint());
+        approved.set("businessContractVector", mapper.valueToTree(plan.businessContractVector()));
         return approved;
     }
 
