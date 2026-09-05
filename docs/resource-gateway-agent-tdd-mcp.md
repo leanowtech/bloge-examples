@@ -101,7 +101,8 @@ url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.library.overview.get", "rg.solution.getContract",
+  "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
+  "rg.solution.getContract",
   "rg.solution.readiness", "rg.solution.performance"
 ]
 required = true
@@ -146,6 +147,8 @@ tool_timeout_sec = 120
 上面的项目配置固定使用 `BUSINESS_SOLUTION`。服务端在 `tools/list` 和 `tools/call` 两处执行同一可见性判定，并与已认证 purpose 取交集。业务会话不会列出，也不能直接调用 DSL、Graph/Tool、fixture、stub 或底层 `rg.scenario.test`。需要维护算子库或底层 Tool 时，应在独立 Codex 会话中把 Header 改为 `PLATFORM_AUTHORING`，并只启用该任务需要的工具；不要在业务会话中同时配置两个 surface。只读运维会话使用 `OPERATIONS`。
 
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
+
+跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。首次自然语言召回只返回 `PARTIAL` 和业务澄清问题，不会仅凭名称相似声称可直接复用。确认候选前使用 `rg.entity.get` 阅读业务契约；该响应不包含 binding、DSL、URL 或持久化内部字段。
 
 兼容期内，缺少 `X-RG-Surface` 的旧客户端仍能看到原目录，服务端记录 `rg.mcp.surface.requests{surface="legacy_all"}`。显式传入未知 surface 会返回 JSON-RPC `-32602`；直接调用当前 surface 不可见的工具返回 `-32031 / TOOL_NOT_VISIBLE_IN_SURFACE`。兼容模式不应出现在新的 Codex 配置中。
 

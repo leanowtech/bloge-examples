@@ -1346,9 +1346,9 @@ resource-gateway:
 
 | 阶段 | 当前状态 | 完成证据 |
 |---|---|---|
-| P0 目录真相统一 | 已完成 | 43 项 catalog 与 invoker 对齐；`rg.library.overview.get` 严格输入/输出 Schema；目录生成初始化说明；config、分发器、脚本和手册一致性测试；真实 MCP 边界调用测试 |
+| P0 目录真相统一 | 已完成 | 46 项 catalog 与 invoker 对齐；`rg.library.overview.get` 严格输入/输出 Schema；目录生成初始化说明；config、分发器、脚本和手册一致性测试；真实 MCP 边界调用测试 |
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具 |
-| P2 统一能力索引 | 待实施 | 五类资产统一发现；scope、snapshot、cursor 测试 |
+| P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
 | P3 Feature 语义契约 v2 | 待实施 | 字段级 matcher；旧版 PARTIAL；工程履约不改业务定义 |
 | P4 journey 与受控测试 | 待实施 | 完整状态机、回退、CAS、allowed tools、业务 compose context、完整 GOLDEN 批准、旧案例迁移、受控假设编译和 `DENY_ALL` 测试 |
 | P5 真实召回认证 | 待实施 | §14.4 指标全部通过；假设话语集；当前 HEAD 证书；演示与手册同步 |

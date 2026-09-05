@@ -16,6 +16,9 @@ import java.util.Map;
 @Component
 public final class McpToolCatalog {
     public static final String LIBRARY_OVERVIEW = "rg.library.overview.get";
+    public static final String CAPABILITY_SEARCH = "rg.capability.search";
+    public static final String ENTITY_LIST = "rg.entity.list";
+    public static final String ENTITY_GET = "rg.entity.get";
     public static final String FEATURE_HANDOFF = "rg.feature.handoff";
     public static final String ENGINEERING_HANDOFF = "rg.engineering.handoff";
     public static final String DSL_REFERENCE = "rg.dsl.reference.get";
@@ -34,6 +37,19 @@ public final class McpToolCatalog {
         values.add(tool(LIBRARY_OVERVIEW, "Get business library overview",
                 "Read payload-free business building blocks, world types, operations and sample descriptors.",
                 McpToolImpact.READ, props("includeSamples", bool()), List.of()));
+        values.add(tool(CAPABILITY_SEARCH, "Search business capabilities",
+                "Recall scoped business capabilities and explain whether more business context is required.",
+                McpToolImpact.READ,
+                props("query", businessObject(), "assetKinds", stringArray(), "limit", integer()),
+                List.of("query")));
+        values.add(tool(ENTITY_LIST, "List business entities",
+                "List reusable business entities and publications from one stable scoped snapshot.",
+                McpToolImpact.READ,
+                props("entityKinds", stringArray(), "lifecycle", string(), "cursor", string(), "limit", integer()),
+                List.of("entityKinds")));
+        values.add(tool(ENTITY_GET, "Get business entity",
+                "Read one business contract and readiness projection without implementation details.",
+                McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool("rg.contract.get", "Get business contract", "Read the business contract for an asset.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool("rg.tool.getInstruction", "Get tool instruction", "Read the Agent-facing tool contract.",
@@ -559,6 +575,19 @@ public final class McpToolCatalog {
                     "operators", arrayOf(businessObject()), "speccing", bool()), List.of("library", "operators"));
             case "rg.library.list" -> structuredObject(props("libraries", arrayOf(businessObject())), List.of("libraries"));
             case LIBRARY_OVERVIEW -> libraryOverview();
+            case CAPABILITY_SEARCH -> capabilitySearch();
+            case ENTITY_LIST -> structuredObject(props(
+                    "entities", arrayOf(capabilityCard()), "nextCursor", string(),
+                    "snapshotFingerprint", string()),
+                    List.of("entities", "nextCursor", "snapshotFingerprint"));
+            case ENTITY_GET -> structuredObject(props(
+                    "card", capabilityCard(), "businessContract", businessObject(),
+                    "dependencies", stringArray(), "readiness", structuredObject(props(
+                            "lifecycle", string(), "runtimeState", string(), "speccing", bool()),
+                            List.of("lifecycle", "runtimeState", "speccing")),
+                    "contractFingerprint", string(), "revision", integer()),
+                    List.of("card", "businessContract", "dependencies", "readiness",
+                            "contractFingerprint", "revision"));
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
                     "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
@@ -713,6 +742,40 @@ public final class McpToolCatalog {
                 "buildingBlocks", arrayOf(block), "worldModel", worldModel,
                 "samples", arrayOf(sample), "snapshotFingerprint", string()),
                 List.of("buildingBlocks", "worldModel", "samples", "snapshotFingerprint"));
+    }
+
+    /** Strict business-only card shared by list, get and search output schemas. */
+    private static Map<String, Object> capabilityCard() {
+        Map<String, Object> source = structuredObject(props(
+                "registry", string(), "implementationVisible", bool()),
+                List.of("registry", "implementationVisible"));
+        return structuredObject(props(
+                "assetRef", string(), "assetKind", string(), "display", businessObject(),
+                "business", businessObject(), "lifecycle", string(), "speccing", bool(),
+                "runtimeState", string(), "owner", string(), "contractFingerprint", string(),
+                "revision", integer(), "source", source),
+                List.of("assetRef", "assetKind", "display", "business", "lifecycle", "speccing",
+                        "runtimeState", "owner", "contractFingerprint", "revision", "source"));
+    }
+
+    /** Strict search projection. Candidate contracts remain payload-free business summaries. */
+    private static Map<String, Object> capabilitySearch() {
+        Map<String, Object> candidate = structuredObject(props(
+                "assetRef", string(), "assetKind", string(), "businessName", string(),
+                "matchType", enumString("EXACT", "PARTIAL", "CONFLICT"),
+                "matchedFacets", stringArray(), "missingFacets", stringArray(),
+                "conflicts", stringArray(), "reuseAllowed", bool(),
+                "contractFingerprint", string(), "lifecycle", string()),
+                List.of("assetRef", "assetKind", "businessName", "matchType", "matchedFacets",
+                        "missingFacets", "conflicts", "reuseAllowed", "contractFingerprint", "lifecycle"));
+        Map<String, Object> clarification = structuredObject(props(
+                "required", bool(), "dimension", string(), "question", string()),
+                List.of("required", "dimension", "question"));
+        return structuredObject(props(
+                "status", enumString("EXACT", "AMBIGUOUS", "INCOMPLETE", "NONE"),
+                "snapshotFingerprint", string(), "candidates", arrayOf(candidate),
+                "clarification", clarification),
+                List.of("status", "snapshotFingerprint", "candidates", "clarification"));
     }
 
     private static Map<String, Object> scenarioDefinitionOutput() {

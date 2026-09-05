@@ -25,9 +25,12 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(43);
+        assertThat(catalog.all()).hasSize(46);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.overview.get").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.capability.search").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.entity.list").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.entity.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.oracle.propose").impact()).isEqualTo(McpToolImpact.PROPOSE);
@@ -97,6 +100,10 @@ class McpToolCatalogTest {
         assertThat(stringKeys(dataProperties(overview)))
                 .containsExactlyInAnyOrder(
                         "buildingBlocks", "worldModel", "samples", "snapshotFingerprint");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.entity.list"))))
+                .containsExactlyInAnyOrder("entities", "nextCursor", "snapshotFingerprint");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.entity.get"))))
+                .doesNotContain("bindingRef", "dsl", "loweredDraft", "urlTemplate");
         assertThat(stringKeys(dataProperties(catalog.require("rg.feature.handoff"))))
                 .containsExactlyInAnyOrder("ticketId", "featureName", "requiredOutput",
                         "requiredInputs", "evaluationKind", "businessSemantics", "status",

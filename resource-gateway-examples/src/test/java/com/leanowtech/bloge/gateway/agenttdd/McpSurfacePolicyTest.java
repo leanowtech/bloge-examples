@@ -16,6 +16,10 @@ class McpSurfacePolicyTest {
     void businessSurfaceExposesBusinessToolsAndRejectsPlatformAuthoringTools() {
         assertThat(policy.visible(catalog.require("rg.library.overview.get"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isTrue();
+        assertThat(policy.visible(catalog.require("rg.capability.search"),
+                McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isTrue();
+        assertThat(policy.visible(catalog.require("rg.entity.get"),
+                McpSurfacePolicy.Surface.OPERATIONS, identity("AGENT_TDD_READ"))).isTrue();
         assertThat(policy.visible(catalog.require("rg.solution.compose"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_AUTHORING"))).isTrue();
         assertThat(policy.visible(catalog.require("rg.tool.compose"),

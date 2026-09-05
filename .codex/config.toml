@@ -7,7 +7,8 @@ url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.library.overview.get", "rg.solution.getContract",
+  "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
+  "rg.solution.getContract",
   "rg.solution.readiness", "rg.solution.performance"
 ]
 required = true

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.FeatureEvaluationBackend;
 import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
+import com.leanowtech.bloge.gateway.solution.capability.BusinessCapabilityIndex;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -47,6 +48,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final AgentDslAuthoringSupport dslAuthoring;
     private final SolutionAgentTools solutionTools;
     private final AgentTddLibraryOverviewService libraryOverview;
+    private final BusinessCapabilityIndex capabilityIndex;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -180,11 +182,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectProvider<InstructionDispatchChannel> instructionChannels,
                                         ObjectProvider<FeatureTokenKeyProvider> tokenKeys,
                                         ObjectProvider<SolutionWriteExecutionRunner> writeRunners,
-                                        AgentTddLibraryOverviewService libraryOverview) {
+                                        AgentTddLibraryOverviewService libraryOverview,
+                                        BusinessCapabilityIndex capabilityIndex) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
-                writeRunners.getIfUnique(), libraryOverview);
+                writeRunners.getIfUnique(), libraryOverview, capabilityIndex);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -205,7 +208,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          SolutionWriteExecutionRunner writeRunner) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
-                tokenKeys, writeRunner, null);
+                tokenKeys, writeRunner, null, null);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -224,7 +227,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          InstructionDispatchChannel instructionChannel,
                                          FeatureTokenKeyProvider tokenKeys,
                                          SolutionWriteExecutionRunner writeRunner,
-                                         AgentTddLibraryOverviewService libraryOverview) {
+                                         AgentTddLibraryOverviewService libraryOverview,
+                                         BusinessCapabilityIndex capabilityIndex) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -245,6 +249,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.libraryOverview = libraryOverview != null
                 ? libraryOverview
                 : catalog == null ? null : new AgentTddLibraryOverviewService(catalog);
+        this.capabilityIndex = capabilityIndex;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
                 states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner);
     }
@@ -268,6 +273,9 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.library.list" -> success(Map.of("libraries", librarySummaries()));
             case "rg.library.overview.get" -> success(libraryOverview().overview(
                     identity, safeArguments.path("includeSamples").asBoolean(false)));
+            case "rg.capability.search" -> success(capabilityIndex().search(safeArguments, identity));
+            case "rg.entity.list" -> success(capabilityIndex().list(safeArguments, identity));
+            case "rg.entity.get" -> success(capabilityIndex().get(safeArguments, identity));
             case "rg.contract.get" -> contract(safeArguments, identity);
             case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
             case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
@@ -359,6 +367,14 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     "GATE_REJECTED", "The business library overview is unavailable.");
         }
         return libraryOverview;
+    }
+
+    private BusinessCapabilityIndex capabilityIndex() {
+        if (capabilityIndex == null) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The business capability index is unavailable.");
+        }
+        return capabilityIndex;
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {

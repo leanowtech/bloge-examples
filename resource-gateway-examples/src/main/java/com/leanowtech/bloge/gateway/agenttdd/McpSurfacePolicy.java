@@ -16,6 +16,7 @@ import java.util.Set;
 public final class McpSurfacePolicy {
     private static final Set<String> BUSINESS_SOLUTION = Set.of(
             "rg.library.overview.get",
+            "rg.capability.search", "rg.entity.list", "rg.entity.get",
             "rg.feature.define", "rg.feature.handoff", "rg.feature.evaluate",
             "rg.scenario.define", "rg.instruction.define", "rg.engineering.handoff",
             "rg.solution.compose", "rg.solution.getContract", "rg.solution.invoke",
@@ -23,6 +24,7 @@ public final class McpSurfacePolicy {
             "rg.solution.performance", "rg.solution.publish");
     private static final Set<String> OPERATIONS = Set.of(
             "rg.contract.get", "rg.verdict.get", "rg.evidence.get", "rg.readiness.get",
+            "rg.capability.search", "rg.entity.list", "rg.entity.get",
             "rg.solution.getContract", "rg.solution.readiness", "rg.solution.performance");
     private final AgentTddAuthoringTelemetry telemetry;
 
