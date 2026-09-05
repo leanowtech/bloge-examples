@@ -119,7 +119,9 @@ class AgentTddCodexCertificationArtifactTest {
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
                 "X-RG-Surface\"=\"BUSINESS_SOLUTION",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
+                "RG_CORRECTNESS_AUTHORING_ENABLED=true",
                 "PRIVATE_JAR", "chflags uchg", "expected-jar-sha256");
+        assertThat(script).doesNotContain("RG_CORRECTNESS_ENABLED=true");
         assertThat(cleanupTrap).isGreaterThanOrEqualTo(0).isLessThan(firstTemporaryDirectory);
         assertThat(cleanupTrap).isLessThan(authenticationCopy);
         assertThat(script).doesNotContain(
