@@ -17,7 +17,7 @@ class BusinessContractMatcherTest {
         BusinessContractMatcher.Match exact = matcher.match(contract, contract);
 
         assertThat(exact.type()).isEqualTo(BusinessContractMatcher.MatchType.EXACT);
-        assertThat(exact.matchedFacets()).contains("semanticKey", "businessObject", "resultDomain",
+        assertThat(exact.matchedFacets()).contains("schemaVersion", "semanticKey", "businessObject", "resultDomain",
                 "asOf", "unknownPolicy", "acquisitionOwner", "requiredContext");
         assertThat(exact.missingFacets()).isEmpty();
         assertThat(exact.conflicts()).isEmpty();
@@ -74,9 +74,35 @@ class BusinessContractMatcherTest {
         assertThat(result.missingFacets()).contains("requiredContext");
     }
 
+    @Test
+    void differentBusinessProfilesConflictEvenWhenTheirSharedEnvelopeMatches() throws Exception {
+        JsonNode feature = contract();
+        JsonNode instruction = contract().deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) instruction)
+                .put("schemaVersion", "rg.businessInstructionSemanticContract.v1");
+
+        BusinessContractMatcher.Match result = matcher.match(instruction, feature);
+
+        assertThat(result.type()).isEqualTo(BusinessContractMatcher.MatchType.CONFLICT);
+        assertThat(result.conflicts()).contains("schemaVersion");
+    }
+
+    @Test
+    void missingBusinessProfileCanRecallButCannotBeExact() throws Exception {
+        JsonNode feature = contract();
+        JsonNode legacyQuery = feature.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) legacyQuery).remove("schemaVersion");
+
+        BusinessContractMatcher.Match result = matcher.match(legacyQuery, feature);
+
+        assertThat(result.type()).isEqualTo(BusinessContractMatcher.MatchType.PARTIAL);
+        assertThat(result.missingFacets()).contains("schemaVersion");
+    }
+
     private JsonNode contract() throws Exception {
         return mapper.readTree("""
                 {
+                  "schemaVersion":"rg.businessFactSemanticContract.v1",
                   "semanticKey":"ride.cancel.party",
                   "intent":"判断取消责任",
                   "domain":"ride-cancellation",

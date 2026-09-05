@@ -17,7 +17,7 @@ import java.util.Set;
 @Component
 public final class BusinessContractMatcher {
     private static final List<String> COMMON = List.of(
-            "semanticKey", "intent", "domain", "businessObject");
+            "schemaVersion", "semanticKey", "intent", "domain", "businessObject");
     private static final List<String> FACT = List.of(
             "requiredContext", "resultDomain", "asOf", "unknownPolicy", "acquisitionOwner",
             "authoritySource", "freshness", "effect");
@@ -30,7 +30,14 @@ public final class BusinessContractMatcher {
             "problemClass", "requiredFactKeys", "scenarioSemanticKey",
             "dispositionSemanticKeys", "runtimeUse");
 
-    /** Compares a normalized search query with one candidate semantic definition. */
+    /**
+     * Compares a normalized search query with one candidate semantic definition.
+     *
+     * <p>{@code schemaVersion} is part of the common business identity. This prevents a Feature,
+     * Scenario, Instruction, or Solution profile from being reused as another profile even when
+     * their shared envelope happens to match. A legacy query without an explicit profile can
+     * still participate in recall, but is intentionally limited to {@link MatchType#PARTIAL}.</p>
+     */
     public Match match(JsonNode query, JsonNode candidate) {
         JsonNode definition = candidate.path("businessDefinition").isObject()
                 ? candidate.path("businessDefinition") : candidate;
