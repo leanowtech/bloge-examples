@@ -6,6 +6,7 @@ import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,6 +25,14 @@ class AgentTddCodexCertificationArtifactTest {
             "docs/acceptance/agent-tdd/codex-certification-v1.json");
     private static final Path SCHEMA = REPOSITORY.resolve(
             "docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json");
+    private static final Path BUSINESS_CERTIFICATE = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json");
+    private static final Path BUSINESS_SCHEMA = REPOSITORY.resolve(
+            "docs/schemas/resource-gateway-business-recall-certification-v1.schema.json");
+    private static final Path BUSINESS_REPORT = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd/business-solution-codex-certification-v1.html");
+    private static final Path BUSINESS_SCREENSHOT = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd/business-solution-codex-certification-v1.png");
     private static final Path SCRIPT = REPOSITORY.resolve("scripts/certify-agent-tdd-codex.sh");
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -93,6 +102,60 @@ class AgentTddCodexCertificationArtifactTest {
         String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(canonical(unsigned).getBytes(StandardCharsets.UTF_8)));
         assertThat(certificate.path("certificateFingerprint").asText()).isEqualTo("sha256:" + digest);
+
+    }
+
+    @Test
+    void checkedInBusinessCertificateProvesOneCorrelatedHumanReviewJourney() throws Exception {
+        JsonNode certificate = mapper.readTree(BUSINESS_CERTIFICATE.toFile());
+        JsonNode schema = mapper.readTree(BUSINESS_SCHEMA.toFile());
+
+        assertThat(SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+                .getSchema(schema).validate(certificate))
+                .as("the business certificate must satisfy its complete Draft 2020-12 schema")
+                .isEmpty();
+        assertThat(certificate.path("schemaVersion").asText())
+                .isEqualTo("rg.businessRecallCertification.v1");
+        assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
+        assertThat(certificate.path("repositoryCommit").asText())
+                .isEqualTo(certificate.at("/runtimeIdentity/repositoryCommit").asText());
+        assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
+                "rg.feature.define", "rg.scenario.define", "rg.instruction.define",
+                "rg.solution.compose", "rg.solution.golden.propose");
+        assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
+                call.path("tool").asText().equals("rg.feature.define")
+                        && call.path("status").asText().equals("completed")).hasSize(2);
+        assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
+                call.path("tool").asText().equals("rg.instruction.define")
+                        && call.path("status").asText().equals("completed")).hasSize(3);
+        assertThat(certificate.at("/journey/observedCalls")).anySatisfy(call -> {
+            assertThat(call.path("tool").asText()).isEqualTo("rg.solution.golden.list");
+            assertThat(call.path("status").asText()).isEqualTo("completed");
+        });
+        assertThat(certificate.at("/assertions").properties()).allSatisfy(entry ->
+                assertThat(entry.getValue().asBoolean()).as(entry.getKey()).isTrue());
+        assertThat(certificate.at("/metrics/recallAt3").isNull()).isTrue();
+        assertThat(certificate.at("/metrics/clarificationRate").isNull()).isTrue();
+        assertThat(certificate.at("/correlation/cases")).hasSize(2);
+
+        String serialized = mapper.writeValueAsString(certificate);
+        assertThat(serialized).doesNotContain(
+                "arguments", "structured_content", "messages", "featureYaml", "scenarioYaml",
+                "instructionYaml", "solutionYaml", "prompt.txt", "trace.jsonl");
+        JsonNode unsigned = certificate.deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) unsigned).remove("certificateFingerprint");
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(canonical(unsigned).getBytes(StandardCharsets.UTF_8)));
+        assertThat(certificate.path("certificateFingerprint").asText()).isEqualTo("sha256:" + digest);
+
+        String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
+        assertThat(report).contains(
+                certificate.path("repositoryCommit").asText(), "25", "2 + 1 + 3",
+                "两条完整标准案例", "未批准、未执行、未发布");
+        var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
+        assertThat(screenshot).isNotNull();
+        assertThat(screenshot.getWidth()).isEqualTo(1440);
+        assertThat(screenshot.getHeight()).isEqualTo(1440);
     }
 
     @Test

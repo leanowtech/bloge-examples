@@ -529,6 +529,8 @@ nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。�
 严格 Schema 见
 [`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。证书中的 `recallAt3` 和 `clarificationRate` 只有在真实话语集中出现对应样本时才写数值；当前单旅程证据没有覆盖这两类样本，因此写 `null`，不伪造满分。
 
+仓库留存当前通过证据：[机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)、[可视化过程报告](acceptance/agent-tdd/business-solution-codex-certification-v1.html) 和 [过程截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png)。截图从同一 payload-free 证书渲染，展示能力发现、两项事实、一个规则场景、三项处置、Solution、两条待确认案例和一次 revision 自修复。截图便于人工审阅，不替代 JSON Schema、JAR 指纹、进程所有权和前后运行身份校验。
+
 脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”。清理 `trap` 在创建第一个临时目录之前
 安装，因此后续 `mktemp`、权限调整、凭据复制、随机量生成、构建或认证任一步失败，均会清理已经
 创建的一次性目录；服务一旦创建还会被停止。仅在显式保留 trace 时留下私有诊断目录。

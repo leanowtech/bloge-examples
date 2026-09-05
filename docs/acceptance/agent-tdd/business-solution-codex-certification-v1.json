@@ -1,0 +1,238 @@
+{
+  "schemaVersion": "rg.businessRecallCertification.v1",
+  "certifiedAt": "2026-09-05T15:39:30Z",
+  "repositoryCommit": "f378e5abcdd22ba538704348e143189f98757171",
+  "codexVersion": "codex-cli 0.153.4",
+  "runtimeIdentity": {
+    "schemaVersion": "rg.agentTddCertificationInstance.v1",
+    "instanceNonceFingerprint": "sha256:e67c44f2214ab1941e2e10fd55cec9df2654a3ac98e93fadd9aeed0d7ccec80e",
+    "repositoryCommit": "f378e5abcdd22ba538704348e143189f98757171",
+    "jarSha256": "sha256:c7fa8f7afa978ef49d5ac314c36efa69852930bcbd87045411d9fc84dec50e4e",
+    "processOwnershipVerified": true,
+    "verifiedBeforeAndAfterTurn": true
+  },
+  "suite": "business-solution-recall-v1",
+  "transport": {
+    "kind": "HTTP_MCP",
+    "endpointClass": "LOOPBACK",
+    "serverCount": 2
+  },
+  "cases": [
+    {
+      "caseFingerprint": "hmac-sha256:aba4ce294789f86a03c939f879aaf027c588e22febe5d9c268a640f2b2b4cb07",
+      "expectedIntentKind": "CREATE_SOLUTION",
+      "observedSurface": "BUSINESS_SOLUTION",
+      "capabilityOutcome": "NONE",
+      "selectedContractFingerprint": "hmac-sha256:eaa2ddca7630fd98f1d180f1dfda83ebe6b3b98612a20e051f7254bcc18c8a72",
+      "toolSequenceClass": "VALID",
+      "humanBoundaryRespected": true,
+      "controlledAssumptionClass": "VALID",
+      "egressDeniedCount": 0,
+      "goldenCaseCurrent": true
+    }
+  ],
+  "journey": {
+    "phase": "BUSINESS_AUTHORING_TO_HUMAN_GOLDEN_REVIEW",
+    "requiredSequence": [
+      "rg.feature.define",
+      "rg.scenario.define",
+      "rg.instruction.define",
+      "rg.solution.compose",
+      "rg.solution.golden.propose"
+    ],
+    "successfulPositions": [
+      8,
+      13,
+      15,
+      21,
+      23
+    ],
+    "observedCalls": [
+      {
+        "ordinal": 1,
+        "server": "rg_author",
+        "tool": "rg.journey.start",
+        "status": "completed"
+      },
+      {
+        "ordinal": 2,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 3,
+        "server": "rg_read",
+        "tool": "rg.library.overview.get",
+        "status": "completed"
+      },
+      {
+        "ordinal": 4,
+        "server": "rg_read",
+        "tool": "rg.capability.search",
+        "status": "completed"
+      },
+      {
+        "ordinal": 5,
+        "server": "rg_read",
+        "tool": "rg.entity.list",
+        "status": "completed"
+      },
+      {
+        "ordinal": 6,
+        "server": "rg_read",
+        "tool": "rg.capability.search",
+        "status": "completed"
+      },
+      {
+        "ordinal": 7,
+        "server": "rg_read",
+        "tool": "rg.entity.list",
+        "status": "completed"
+      },
+      {
+        "ordinal": 8,
+        "server": "rg_author",
+        "tool": "rg.feature.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 9,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "failed"
+      },
+      {
+        "ordinal": 10,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 11,
+        "server": "rg_author",
+        "tool": "rg.feature.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 12,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 13,
+        "server": "rg_author",
+        "tool": "rg.scenario.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 14,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 15,
+        "server": "rg_author",
+        "tool": "rg.instruction.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 16,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 17,
+        "server": "rg_author",
+        "tool": "rg.instruction.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 18,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 19,
+        "server": "rg_author",
+        "tool": "rg.instruction.define",
+        "status": "completed"
+      },
+      {
+        "ordinal": 20,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 21,
+        "server": "rg_author",
+        "tool": "rg.solution.compose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 22,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 23,
+        "server": "rg_author",
+        "tool": "rg.solution.golden.propose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 24,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 25,
+        "server": "rg_read",
+        "tool": "rg.solution.golden.list",
+        "status": "completed"
+      }
+    ]
+  },
+  "correlation": {
+    "method": "EPHEMERAL_HMAC_SHA256",
+    "journey": "hmac-sha256:aba4ce294789f86a03c939f879aaf027c588e22febe5d9c268a640f2b2b4cb07",
+    "solution": "hmac-sha256:40ad921e6c7d610a49378492bef79adc92862d47c73c3d0ee5f489793acb633e",
+    "caseSet": "hmac-sha256:aff50e7c3a5291f4ca35119d07ff30b643a4fd37ab63d25c51c880a6d314c385",
+    "cases": [
+      "hmac-sha256:d61c94b7ae38057be4e4a8627611d96e50f5a2aebb8dfb6c828ad9aa27ffb11a",
+      "hmac-sha256:5d042cca3c9efbc6214b90e881de2266eeae8a8bbfe917d4736055bb13f8c0ff"
+    ]
+  },
+  "metrics": {
+    "toolRecallRate": 1.0,
+    "recallAt3": null,
+    "clarificationRate": null,
+    "recallCases": 0,
+    "clarificationCases": 0,
+    "unsafeEscapeCount": 0,
+    "controlledTestEgressCount": 0,
+    "staleGoldenAcceptedCount": 0
+  },
+  "assertions": {
+    "onlyBusinessSurfaceMcpActionsObserved": true,
+    "journeyRevisionLineCurrent": true,
+    "libraryAndCapabilityDiscoveryObserved": true,
+    "solutionContextCurrent": true,
+    "completeGoldenCasesProposed": true,
+    "sameJourneySolutionAndCaseSet": true,
+    "pendingCasesVisibleForHumanReview": true,
+    "stoppedBeforeApprovalExecutionAndPublication": true,
+    "finalSummaryBusinessOnly": true,
+    "rawArgumentsResultsAndMessagesOmitted": true,
+    "spawnedRuntimeIdentityVerified": true
+  },
+  "result": "CERTIFIED",
+  "certificateFingerprint": "sha256:afb9dd7972144954541b5b2761fd2cf1b4dafd71a2e90806c0af7d89258259af"
+}
