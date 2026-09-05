@@ -15,6 +15,8 @@ import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenContractGuard;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +45,7 @@ public final class SolutionWriteExecutionRunner {
     private final ObjectMapper mapper;
     private final SolutionExecutionService execution;
     private final EngineeringHandoffService handoffs;
+    private final BusinessGoldenMaterialStore goldenMaterials;
 
     /** Creates the non-MCP execution boundary; a missing Instruction channel fails closed. */
     @Autowired
@@ -52,12 +55,13 @@ public final class SolutionWriteExecutionRunner {
             ReconciliationAdapterRegistry adapters,
             ObjectMapper mapper,
             ObjectProvider<InstructionDispatchChannel> channels,
-            EngineeringHandoffService handoffs) {
+            EngineeringHandoffService handoffs,
+            BusinessGoldenMaterialStore goldenMaterials) {
         this(states, registry, adapters, mapper, channels.getIfUnique(() ->
                 (instruction, values, context) -> {
                     throw new SolutionContractException(
                             "INSTRUCTION_BINDING_UNAVAILABLE", "Instruction execution is unavailable.");
-                }), handoffs);
+                }), handoffs, goldenMaterials);
     }
 
     /** Focused constructor used by certification tests with explicit controlled adapters. */
@@ -68,7 +72,7 @@ public final class SolutionWriteExecutionRunner {
             ObjectMapper mapper,
             InstructionDispatchChannel channel) {
         this(states, registry, adapters, mapper, channel,
-                new EngineeringHandoffService(states, registry, mapper));
+                new EngineeringHandoffService(states, registry, mapper), null);
     }
 
     /** Focused constructor with an explicit handoff lifecycle collaborator. */
@@ -79,12 +83,25 @@ public final class SolutionWriteExecutionRunner {
             ObjectMapper mapper,
             InstructionDispatchChannel channel,
             EngineeringHandoffService handoffs) {
+        this(states, registry, adapters, mapper, channel, handoffs, null);
+    }
+
+    /** Focused constructor that resolves protected GOLDEN material before real WRITE execution. */
+    SolutionWriteExecutionRunner(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ReconciliationAdapterRegistry adapters,
+            ObjectMapper mapper,
+            InstructionDispatchChannel channel,
+            EngineeringHandoffService handoffs,
+            BusinessGoldenMaterialStore goldenMaterials) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.adapters = Objects.requireNonNull(adapters, "adapters");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.execution = new SolutionExecutionService(registry, mapper, channel);
         this.handoffs = Objects.requireNonNull(handoffs, "handoffs");
+        this.goldenMaterials = goldenMaterials;
     }
 
     /**
@@ -161,9 +178,10 @@ public final class SolutionWriteExecutionRunner {
         }
         List<Map<String, Object>> results = new ArrayList<>();
         int writeCount = 0;
-        for (JsonNode row : iterable(caseSet.data().path("rows"))) {
-            if (!"GOLDEN".equals(row.path("category").asText())
-                    || !"ACTIVE".equals(row.path("lifecycle").asText())) continue;
+        for (JsonNode metadata : iterable(caseSet.data().path("rows"))) {
+            if (!"GOLDEN".equals(metadata.path("category").asText())
+                    || !"ACTIVE".equals(metadata.path("lifecycle").asText())) continue;
+            JsonNode row = approvedMaterial(scope, metadata, identity);
             ScenarioTreeEvaluator.Outcome outcome = new ScenarioTreeEvaluator(registry, 8)
                     .evaluate(scope, solution.rootScenarioRef(), row.path("given"));
             if (!"INSTRUCTION".equals(outcome.outletKind())) continue;
@@ -210,6 +228,24 @@ public final class SolutionWriteExecutionRunner {
         response.put("writeCount", writeCount);
         response.set("cases", mapper.valueToTree(results));
         return response;
+    }
+
+    /** Resolves payload-bearing case material only inside the platform WRITE boundary. */
+    private JsonNode approvedMaterial(String scope, JsonNode metadata, IntegrationRequestContext identity) {
+        if (!metadata.path("materialReceipt").isObject()) return metadata;
+        if (goldenMaterials == null) throw new AgentTddToolException(
+                "FIXTURE_MATERIAL_UNAVAILABLE", "Protected business case material is unavailable.");
+        BusinessGoldenContractGuard.requireCurrent(states, scope, metadata);
+        JsonNode material = goldenMaterials.read(metadata.path("materialReceipt"), identity);
+        if (!metadata.path("goldenCaseFingerprint").asText().equals(
+                material.path("goldenCaseFingerprint").asText())) {
+            throw new AgentTddToolException("FIXTURE_MATERIAL_UNAVAILABLE",
+                    "Protected business case material does not match its case metadata.");
+        }
+        ObjectNode approved = (ObjectNode) material.deepCopy();
+        approved.put("lifecycle", metadata.path("lifecycle").asText());
+        approved.set("expect", material.at("/proposedOracle/expect").deepCopy());
+        return approved;
     }
 
     private Map<String, Object> persistAndConvert(String scope, String solutionRef, JsonNode response) {

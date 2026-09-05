@@ -152,9 +152,9 @@ public final class SolutionTestingService {
                 "GOLDEN_REQUIRES_APPROVAL", "Approved Solution GOLDEN cases are required.");
         SolutionContract solutionContract = registry.requireSolution(scopeKey, solutionRef);
         List<Map<String, Object>> frozenFeatures = freezeContracts(scopeKey,
-                SolutionEntityRegistry.FEATURE, solutionContract.inputs().values());
+                SolutionEntityRegistry.FEATURE, solutionContract.inputs().values(), baselineContext != null);
         List<Map<String, Object>> frozenInstructions = freezeContracts(scopeKey,
-                SolutionEntityRegistry.INSTRUCTION, solutionContract.instructions());
+                SolutionEntityRegistry.INSTRUCTION, solutionContract.instructions(), true);
         List<Map<String, Object>> cases = new ArrayList<>();
         List<Map<String, Object>> backlog = new ArrayList<>();
         List<Map.Entry<String, String>> controlledPlans = new ArrayList<>();
@@ -269,17 +269,19 @@ public final class SolutionTestingService {
     }
 
     private List<Map<String, Object>> freezeContracts(
-            String scopeKey, String kind, java.util.Collection<String> refs) {
-        return refs.stream().distinct().sorted().map(ref -> {
-            AgentTddStoredAsset observed = states.find(scopeKey, kind, ref)
-                    .orElseThrow(() -> new AgentTddToolException(
-                            "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable."));
+            String scopeKey, String kind, java.util.Collection<String> refs, boolean requireAll) {
+        return refs.stream().distinct().sorted().flatMap(ref -> {
+            java.util.Optional<AgentTddStoredAsset> candidate = states.find(scopeKey, kind, ref);
+            if (candidate.isEmpty() && !requireAll) return java.util.stream.Stream.empty();
+            AgentTddStoredAsset observed = candidate.orElseThrow(() -> new AgentTddToolException(
+                    "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable."));
             AgentTddStoredAsset locked = states.lockRevision(scopeKey, kind, ref, observed.revision());
             String contractFingerprint = locked.data().path("contractFingerprint").asText();
             if (contractFingerprint.isBlank()) throw new AgentTddToolException(
                     "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable.");
-            return Map.<String, Object>of("assetRef", ref, "revision", locked.revision(),
-                    "contractFingerprint", contractFingerprint);
+            return java.util.stream.Stream.of(Map.<String, Object>of(
+                    "assetRef", ref, "revision", locked.revision(),
+                    "contractFingerprint", contractFingerprint));
         }).toList();
     }
 

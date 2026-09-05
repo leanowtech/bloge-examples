@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
@@ -9,6 +10,7 @@ import com.leanowtech.bloge.gateway.solution.ReconciliationAdapterRegistry;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -90,6 +92,47 @@ class SolutionWriteGovernanceTest {
         assertThat(gates.get("implementationBound")).isEqualTo(true);
         assertThat(gates.get("writeReconciled")).isEqualTo(true);
         assertThat(gates.get("ownerSignoff")).isEqualTo(false);
+    }
+
+    @Test
+    void controlledWriteResolvesProtectedGoldenMaterialWithoutPersistingItsPayload() {
+        JsonNode protectedPayload = mapper.valueToTree(Map.ofEntries(
+                Map.entry("caseId", "g-protected"),
+                Map.entry("goldenCaseFingerprint", "sha256:protected-case"),
+                Map.entry("given", Map.of("party", "none", "orderId", "O-PROTECTED")),
+                Map.entry("controlledAssumptions", Map.of("ins:refund", Map.of(
+                        "outcome", "SUCCEEDS_WITHOUT_EFFECT"))),
+                Map.entry("proposedOracle", Map.of("expect", Map.of(
+                        "result", Map.of("decision", "WAIVED"))))));
+        TestMaterialStore materials = new TestMaterialStore(mapper, protectedPayload);
+        String instructionFingerprint = states.find(
+                SCOPE, SolutionEntityRegistry.INSTRUCTION, "ins:refund")
+                .orElseThrow().data().path("contractFingerprint").asText();
+        ObjectNode protectedSet = mapper.createObjectNode();
+        protectedSet.put("caseSetRef", "caseSet:cancel");
+        protectedSet.put("toolRef", "sol:cancel");
+        Map<String, Object> protectedMetadata = Map.ofEntries(
+                Map.entry("caseId", "g-protected"), Map.entry("category", "GOLDEN"),
+                Map.entry("lifecycle", "ACTIVE"), Map.entry("qualityState", "DESIGNED_NOT_RUN"),
+                Map.entry("goldenCaseFingerprint", "sha256:protected-case"),
+                Map.entry("materialReceipt", Map.of("materialRef", "protected:g1")),
+                Map.entry("businessContractVector", List.of(Map.of(
+                        "assetKind", "INSTRUCTION", "assetRef", "ins:refund",
+                        "contractFingerprint", instructionFingerprint))));
+        protectedSet.set("rows", mapper.valueToTree(List.of(protectedMetadata)));
+        states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", protectedSet);
+        new SolutionTestingService(states, registry, mapper,
+                (instruction, values, context) -> {
+                    throw new AssertionError("Protected GREEN baseline must remain zero-egress.");
+                }, materials).baseline(SCOPE, "sol:cancel", "caseSet:cancel", "GREEN", authorIdentity());
+
+        Map<String, Object> result = runner(adapter(Map.of("decision", "WAIVED")), materials)
+                .execute("sol:cancel", writeIdentity("test"));
+
+        assertThat(result).containsEntry("status", "RECONCILED").containsEntry("writeCount", 1);
+        assertThat(writes).hasValue(1);
+        assertThat(states.find(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel")
+                .orElseThrow().data().toString()).doesNotContain("O-PROTECTED", "WAIVED");
     }
 
     @Test
@@ -295,6 +338,11 @@ class SolutionWriteGovernanceTest {
     }
 
     private SolutionWriteExecutionRunner runner(ReconciliationAdapter adapter) {
+        return runner(adapter, null);
+    }
+
+    private SolutionWriteExecutionRunner runner(
+            ReconciliationAdapter adapter, BusinessGoldenMaterialStore materials) {
         StaticListableBeanFactory beans = new StaticListableBeanFactory();
         beans.addBean("adapter", adapter);
         ReconciliationAdapterRegistry adapters = new ReconciliationAdapterRegistry(
@@ -303,7 +351,21 @@ class SolutionWriteGovernanceTest {
                 (instruction, values, context) -> {
                     writes.incrementAndGet();
                     return Map.of("result", Map.of("decision", "WAIVED"), "reasoning", "rule R1");
-                });
+                }, new EngineeringHandoffService(states, registry, mapper), materials);
+    }
+
+    private static final class TestMaterialStore extends BusinessGoldenMaterialStore {
+        private final JsonNode payload;
+
+        private TestMaterialStore(ObjectMapper mapper, JsonNode payload) {
+            super((com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService) null, mapper);
+            this.payload = payload.deepCopy();
+        }
+
+        @Override
+        public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
+            return payload.deepCopy();
+        }
     }
 
     private static ReconciliationAdapter adapter(Map<String, Object> effect) {
