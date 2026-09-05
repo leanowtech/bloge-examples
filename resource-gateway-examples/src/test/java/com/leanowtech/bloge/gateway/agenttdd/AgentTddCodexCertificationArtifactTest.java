@@ -220,6 +220,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "example-services.sh\" stop resource-gateway");
         assertThat(prompt).contains(
                 "取消费争议", "平台已经具备哪些业务积木", "取消责任方",
+                "取消归责", "谁导致取消",
                 "不要复用名称相近但业务含义不同", "乘客超时取消", "司机导致取消",
                 "等待我确认的标准案例", "重新查看待确认案例清单",
                 "不要替我批准案例", "不要开始验证、签署或发布");
