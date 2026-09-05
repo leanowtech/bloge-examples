@@ -12,7 +12,7 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
-Resource Gateway 1.4.4 also exposes an authenticated, stateless MCP Agent TDD surface at
+Resource Gateway 1.4.5 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
 cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board with separately authenticated
@@ -33,7 +33,7 @@ business flow plus a decision table with at least two reviewable branches before
 certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
-The 41-tool catalog includes `rg.dsl.reference.get` plus the four-entity solution authoring
+The 42-tool catalog includes `rg.dsl.reference.get` plus the four-entity solution authoring
 operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
 `rg.solution.compose`. Each mutation uses the existing exact-response idempotency authority and
 stores canonical revisions within the authenticated tenant/project/environment scope. Solution
@@ -60,6 +60,14 @@ feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil`
 against the declared Feature type, and promotes only a passing implementation to `VERIFIED` / `READY`.
 Interactive user Features remain ready through their native component or conversation contract and do not
 receive an evaluator binding.
+Design-only WRITE Instructions use the same separation. The Agent may create
+`rg.engineering.handoff`, but only a separately authenticated accountable engineer can call
+`POST /api/agent-tdd/engineering-handoffs/{solutionRef}/instructions/{instructionRef}/fulfil`
+with `AGENT_TDD_INSTRUCTION_ENG`. This transition preserves the reviewed business contract, changes
+only the implementation binding, and is revision-fenced. After a GREEN Solution baseline, Resource Gateway
+automatically derives platform-only sandbox write authority, executes only approved GOLDEN writes, reconciles
+the observed downstream effects, and closes the handoff. Neither engineering purpose nor write authority is
+present in the MCP catalog or Agent credential.
 Human reviewers can open `GET /api/agent-tdd/solutions/{solutionRef}/board` with the separate
 governance credential. The no-store response joins the approved business cases with payload-free
 execution evidence and returns five business panels: rule matrix, dispositions, red/green cases,

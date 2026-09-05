@@ -2,7 +2,7 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成世界观与积木发现、资源登记、样例提供、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、平台实景验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.4 会在 MCP 初始化说明中要求 Codex 先读取当前 DSL 参考，再自行生成、预览和修正实现；通过检查后，服务端才允许保存同一份候选。1.4.4 的创作主线把业务对象拆成 Feature（事实采集契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合），并由服务端在组合时解析同一作用域内的引用。
+业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.5 会在 MCP 初始化说明中要求 Codex 先按业务语言补齐目标、判断依据、规则、兜底处置与代表案例，再自行建立 Feature（事实契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合）。只有处理底层 Tool DSL 时才读取当前 DSL 参考、预览并按服务端安全诊断修正；业务人员不承担这些技术步骤。
 
 需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。五幕共享同一条服务端资产线：第 1 幕先创建并回读设计态契约库，第 2 幕在同一库上补齐事实来源，第 3 幕以后才基于该库编排、验证和发布；前一幕的交接门未通过时不得继续。
 
@@ -30,12 +30,19 @@ printf 'Local Agent token: '
 IFS= read -rs RG_AGENT_DEMO_TOKEN
 printf '\nLocal reviewer token: '
 IFS= read -rs RG_REVIEW_DEMO_TOKEN
+printf '\nLocal feature engineer token: '
+IFS= read -rs RG_FEATURE_ENGINEER_DEMO_TOKEN
+printf '\nLocal instruction engineer token: '
+IFS= read -rs RG_INSTRUCTION_ENGINEER_DEMO_TOKEN
 printf '\n'
 
 RG_INTEGRATION_DEMO_IDENTITY_ENABLED=true \
 RG_INTEGRATION_DEMO_TOKEN="${RG_AGENT_DEMO_TOKEN}" \
 RG_INTEGRATION_DEMO_REVIEW_TOKEN="${RG_REVIEW_DEMO_TOKEN}" \
+RG_INTEGRATION_DEMO_FEATURE_ENGINEER_TOKEN="${RG_FEATURE_ENGINEER_DEMO_TOKEN}" \
+RG_INTEGRATION_DEMO_INSTRUCTION_ENGINEER_TOKEN="${RG_INSTRUCTION_ENGINEER_DEMO_TOKEN}" \
 RG_INTEGRATION_ALLOWED_PURPOSES='AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE' \
+RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED=true \
 RG_AGENT_TDD_ATTEST_ALLOWED_HOSTS='localhost,127.0.0.1' \
 RG_AGENT_TDD_MCP_COMMON_PER_MINUTE=120 \
 RG_AGENT_TDD_MCP_REFERENCE_PER_MINUTE=60 \
@@ -46,7 +53,8 @@ RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
 RESOURCE_GATEWAY_PORT=8081 \
 ./scripts/start-examples.sh resource-gateway
 
-unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
+unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN \
+  RG_FEATURE_ENGINEER_DEMO_TOKEN RG_INSTRUCTION_ENGINEER_DEMO_TOKEN
 
 ./scripts/example-services.sh status resource-gateway
 ```
@@ -77,7 +85,9 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN
 ./scripts/stop-examples.sh resource-gateway
 ```
 
-两个 token 必须不同。`RG_INTEGRATION_DEMO_TOKEN` 映射到 `WORKLOAD` Agent；`RG_INTEGRATION_DEMO_REVIEW_TOKEN` 映射到 `HUMAN` reviewer，且只允许 READ/GOVERNANCE。上面的 inline 环境只传给启动脚本，不会把 reviewer token 导出到父 Shell。Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器。
+四个 token 必须彼此不同。`RG_INTEGRATION_DEMO_TOKEN` 映射到 `WORKLOAD` Agent；`RG_INTEGRATION_DEMO_REVIEW_TOKEN` 映射到 `HUMAN` reviewer；另外两份分别只允许特征工程履约与写指令工程履约。三份人工/工程凭据都不得传给 Codex。上面的 inline 环境只传给启动脚本，不会把它们导出到父 Shell。Demo identity 只能用于本机演示。生产环境必须关闭它并使用受信 JWT 或自定义身份解析器。
+
+取消费演示开关默认关闭。只有设置 `RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED=true` 才会装配本地责任判定、免费时段、退款、工单和对账适配器；这些适配器只操作进程内 demo ledger。生产部署不得开启。
 
 Codex 只需要上表四个 `AGENT_TDD_*` 用途。Fixture material 的底层 `CORRECTNESS_FIXTURE_MATERIAL_WRITE` 由服务端在验证 `AGENT_TDD_GOVERNANCE` 后派生，不能加入 Codex token 的用途列表。外部 PostgreSQL 应由正式迁移工具依次应用仓库中所需的版本化 migration，至少包括 `V20260815_005` 至 `V20260816_010` 的 Correctness 表，以及 `V20260903_020__agent_tdd_runtime.sql`；应用不会在外部数据源上自行执行 DDL。嵌入式 H2 的本地启动器会校验并执行完整 authoring migration 集，checksum 漂移或缺表时失败关闭。
 
@@ -91,7 +101,7 @@ url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_READ" }
 enabled_tools = [
-  "rg.capability.list", "rg.library.get", "rg.library.list",
+  "rg.capability.list", "rg.library.get", "rg.library.list", "rg.library.overview.get",
   "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
   "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get", "rg.dsl.preview",
   "rg.gate.check", "rg.readiness.get", "rg.solution.getContract",
@@ -110,7 +120,7 @@ enabled_tools = [
   "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
   "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec",
   "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
-  "rg.solution.commit", "rg.engineering.handoff"
+  "rg.solution.commit", "rg.feature.handoff", "rg.engineering.handoff"
 ]
 required = true
 startup_timeout_sec = 10
@@ -147,13 +157,68 @@ printf 'Local Agent token: '
 IFS= read -rs RG_MCP_TOKEN
 printf '\n'
 export RG_MCP_TOKEN
-unset RG_REVIEW_TOKEN RG_INTEGRATION_DEMO_REVIEW_TOKEN
+unset RG_REVIEW_TOKEN RG_INTEGRATION_DEMO_REVIEW_TOKEN \
+  RG_FEATURE_ENGINEER_TOKEN RG_INSTRUCTION_ENGINEER_TOKEN \
+  RG_INTEGRATION_DEMO_FEATURE_ENGINEER_TOKEN RG_INTEGRATION_DEMO_INSTRUCTION_ENGINEER_TOKEN
 codex
 ```
 
 Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_TOKEN`，然后完全退出并重新打开。不要从终端 A 启动 Desktop、CLI 或 IDE；也不要把 reviewer token 存进能被 Codex 进程继承的全局 Shell 配置。
 
-**绝对不要把 reviewer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。Codex 的 governance server 只暴露 Fixture 治理和门禁后的 `tool.publish`；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批也会被拒绝。
+**绝对不要把 reviewer、feature-engineer 或 instruction-engineer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。两类工程 token 只由演示保障人员在独立终端调用履约端点。Codex 的 governance server 只暴露 Fixture 治理和门禁后的发布工具；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批或工程履约也会被拒绝。
+
+### 3.1 两类工程交接怎么完成
+
+Codex 遇到缺少求值实现的业务事实时，应创建特征交接单并停在“等待特征工程”，不能向业务负责人索要接口或自行填写 evaluator。保障人员在独立终端使用 feature-engineer token 调用：
+
+```bash
+printf 'Feature engineer token: '
+IFS= read -rs RG_FEATURE_ENGINEER_TOKEN
+printf '\n'
+
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RG_FEATURE_ENGINEER_TOKEN}" \
+  -H 'X-Purpose: AGENT_TDD_FEATURE_ENG' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8081/api/agent-tdd/feature-handoffs/responsibility.party.v145/fulfil \
+  -d '{"evaluationRef":"demo:ride-responsibility-v1","fixtureInputs":{"orderId":"O-FREE-NONE"}}'
+
+# 第二项事实用同一工程身份履约。
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RG_FEATURE_ENGINEER_TOKEN}" \
+  -H 'X-Purpose: AGENT_TDD_FEATURE_ENG' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8081/api/agent-tdd/feature-handoffs/cancel.withinFree.v145/fulfil \
+  -d '{"evaluationRef":"demo:cancel-within-free-v1","fixtureInputs":{"orderId":"O-FREE-NONE"}}'
+
+unset RG_FEATURE_ENGINEER_TOKEN
+```
+
+写处置缺少实现时，Codex 只创建写工程交接单。通用工程师从交接单确认业务结果、下游系统与对账键后，以 instruction-engineer token 逐项绑定已部署实现：
+
+```bash
+printf 'Instruction engineer token: '
+IFS= read -rs RG_INSTRUCTION_ENGINEER_TOKEN
+printf '\n'
+
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RG_INSTRUCTION_ENGINEER_TOKEN}" \
+  -H 'X-Purpose: AGENT_TDD_INSTRUCTION_ENG' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8081/api/agent-tdd/engineering-handoffs/sol:cancel-dispute-v145/instructions/ins:refund-waive-full-v145/fulfil \
+  -d '{"bindingRef":"demo:refund-waive-full-v1"}'
+
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RG_INSTRUCTION_ENGINEER_TOKEN}" \
+  -H 'X-Purpose: AGENT_TDD_INSTRUCTION_ENG' \
+  -H 'Content-Type: application/json' \
+  http://localhost:8081/api/agent-tdd/engineering-handoffs/sol:cancel-dispute-v145/instructions/ins:escalate-human-v145/fulfil \
+  -d '{"bindingRef":"demo:escalate-human-ticket-v1"}'
+
+unset RG_INSTRUCTION_ENGINEER_TOKEN
+```
+
+写交接单全部履行后为 `IMPLEMENTED`。随后 Codex 发起的 `rg.solution.baseline(side=GREEN)` 仍保持逻辑验证 `realExternalCalls=0`；只有结果为 `GO` 时，平台才以不可下发的内部权限消费当前 ACTIVE GOLDEN，在 sandbox 做受控写与回读。成功后响应含 `writeReconciliation.status=RECONCILED`，交接单变为 `CLOSED`。重复 GREEN 不会重放 CLOSED 交接。
 
 检查配置：
 
@@ -261,7 +326,7 @@ GREEN 只表示“冻结的可执行绑定在批准用例和受控依赖下满�
 
 业务人员只核对业务流程、规则表和标准案例。不要为了绕过失败而让业务人员提供 DSL。
 
-面向 v1.4.4 四实体创作时，Codex 应请求 `solution-authoring` 主题。该参考包已给出
+面向 v1.4.5 四实体创作时，Codex 应请求 `solution-authoring` 主题。该参考包已给出
 Feature、Scenario、Instruction、Solution 的服务端权威约束和可编译片段；Codex 根据业务意图
 生成四实体文档，不向业务人员索要 BLOGE DSL。`rg.solution.compose` 会在服务端对完整
 场景树做引用、无环、深度和指令绑定校验，然后降级为固定的

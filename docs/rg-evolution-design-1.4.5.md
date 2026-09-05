@@ -30,7 +30,7 @@
 ## 4 产品架构总纲
 - **分层**:前门层(v1.4.5 新建)叠加于运行时层(v1.4.4 复用)。前门不改运行时契约。
 - **工作流九阶段**:意图表达 → 特征供给 → 编译预检 → 分层测试 → 应然批准门 → 写效应交接 → 发布签署门 → 运行时处置 → 运营回流。
-- **角色六类 + 用途门**:业务负责人(AUTHORING)、特征工程(**FEATURE_ENG,新增**)、通用工程(非 MCP)、一线客服 Agent(EXECUTION)、运营(READ)、业主签署人(GOVERNANCE)。
+- **角色六类 + 用途门**:业务负责人(AUTHORING)、特征工程(**FEATURE_ENG**)、通用工程(**INSTRUCTION_ENG**,非 MCP)、一线客服 Agent(EXECUTION)、运营(READ)、业主签署人(GOVERNANCE)。
 - **架构基石(承 1.4.4)**:纯函数解法 + Agent 编排采集 + 特征非图节点 + 内建算子 scenarioCall/instructionCall + 子场景有界递归。
 - **前门原则**:业务不见 DSL(P2);审阅业务语言(P1);契约优先(P6);可测性即信任(P4);双人双门(P9);熟练度自适应(P10)。
 
@@ -57,7 +57,7 @@
   ops/OperationsInsightService.java           # 运营信号聚合
   demo/{RideResponsibilityBackend,CancelWithinFreeBackend}.java  # 场景求值后端
   demo/{RefundReconciliationAdapter,TicketReconciliationAdapter}.java  # 对账适配器
-鉴权:IntegrationOperation 增 AGENT_TDD_FEATURE_ENG
+鉴权:IntegrationOperation 增 `AGENT_TDD_FEATURE_ENG` 与 `AGENT_TDD_INSTRUCTION_ENG`;两者都不进入 MCP 目录
 MCP:ResourceGatewayAgentTddTools 增 rg.feature.handoff;rg.solution.performance 接真实回流
 ```
 
@@ -176,13 +176,15 @@ final class TicketReconciliationAdapter implements ReconciliationAdapter { /* ti
 
 ### 6.7 存储与鉴权
 - 特征交接单 → 通用表 `agent_asset` kind=`FEATURE_HANDOFF`(复用仓储,无新表)。
-- 用途门:`IntegrationOperation.AGENT_TDD_FEATURE_ENG(Set.of("AGENT_TDD_FEATURE_ENG"))`;履行特征求值绑定;非 Agent 创作/执行门。
+- 用途门:`AGENT_TDD_FEATURE_ENG` 履行特征求值绑定;`AGENT_TDD_INSTRUCTION_ENG` 履行写指令实现绑定;两者要求 USER/HUMAN 可追责工程身份,均不属于 Agent 创作/执行门。
+- Agent 只创建交接单。工程履行分别走 `/api/agent-tdd/feature-handoffs/{featureRef}/fulfil` 与 `/api/agent-tdd/engineering-handoffs/{solutionRef}/instructions/{instructionRef}/fulfil`;写指令履行以 handoff revision + instruction revision + contract fingerprint 做原子围栏,只允许改变 `bindingRef`。
 - 运营信号:`agent_asset` kind=`OPERATIONS_SIGNAL`(或专表,若查询量大)。
 
 ### 6.8 MCP 接线
 - 新增 `rg.feature.handoff`(PROPOSE 提交;FEATURE_ENG 履行 endpoint 非 Agent 目录)。
 - `rg.solution.performance` 接 `OperationsInsightService`。
-- `McpToolCatalog` 工具数 +1;`AGENT_TDD_FEATURE_ENG` 履行不入 Agent 目录。
+- `McpToolCatalog` 工具数为 42;`AGENT_TDD_FEATURE_ENG`、`AGENT_TDD_INSTRUCTION_ENG` 与平台 `WRITE_EXEC` 均不入 Agent 目录。
+- `rg.solution.baseline(side=GREEN)` 仅在结果为 GO 且写交接单为 IMPLEMENTED 时触发平台内部受控写;输入只来自当前 ACTIVE GOLDEN。对账成功后交接单原子推进为 CLOSED;重复 GREEN 不重放 CLOSED 交接。
 
 ### 6.9 测试策略
 | 区 | 关键测试 |
@@ -193,6 +195,7 @@ final class TicketReconciliationAdapter implements ReconciliationAdapter { /* ti
 | 运营回流 | 聚合分布正确;OperationsSignal 无 suppliedFacts(零泄漏) |
 | 场景后端 | party/withinFree 求值 + 令牌;refund/ticket 对账 match/mismatch |
 | 端到端 | §8 剧本:表意 → 审阅 → 两门 → 发布 → 运行时,零外呼,无 skipped/mock |
+| 角色边界 | Agent 调两类 fulfil 均 403;工程 token 不交给 Codex;写交接契约漂移与重复履行失败关闭 |
 
 ## 7 MCP 工具面(v1.4.5 增量)
 | 工具 | 影响 | in | out | 状态 |
@@ -232,10 +235,10 @@ final class TicketReconciliationAdapter implements ReconciliationAdapter { /* ti
 | 阶段 | 当前状态 | 计划证据 |
 |---|---|---|
 | Q1 特征契约交接 | 已实现 | `FeatureHandoffService` + `rg.feature.handoff` + 非 MCP `FEATURE_ENG` 履行端点；OPEN→IMPLEMENTED→VERIFIED、输出类型、幂等与跨 scope 零泄漏测试 |
-| Q2 审阅看板投影 | 后端已实现 | `BoardProjectionService` 五面板 + HUMAN/GOVERNANCE no-store HTTP；无 DSL/图实现引用与跨证据 join 测试。前端五面板和两门交互待实现 |
-| Q3 表意工作台 | 前端已实现 | `/workbench/?create=business-solution` 双栏双模、三步引导、切换保留、上下文漂移失败关闭、熟练度提示和无 DSL 四实体预览；Agent-host 编译桥接的真实端到端证据并入 Q5 |
-| Q4 运营回流 | 后端已实现 | `OperationsInsightService` 由首次成功的发布态调用幂等落 `SOLUTION_OPERATIONS_SIGNAL`；测试证据不计入运行分布，重放不重复计数，信号无 inputs/result/reasoning，输出含 policyGaps。运营前端待实现 |
-| Q5 场景后端适配器 | 计划 | 求值后端 + 对账适配器 + 剧本端到端零外呼 |
+| Q2 审阅看板投影 | 已实现 | `BoardProjectionService` + `agent-tdd.html` 真实五面板 dialog + HUMAN/GOVERNANCE no-store HTTP；Chrome 经按钮打开并核对规则、处置、事实、红绿与发布卡,`skipped=0` |
+| Q3 表意工作台 | 已实现 | `/workbench/?create=business-solution` 双栏双模、三步引导、切换保留、上下文漂移失败关闭、熟练度提示和无 DSL 四实体预览；MCP 1.4.5 初始化指引要求 Codex 从业务意图自产四实体、不得索要 YAML/DSL/binding；真实外部 Codex 自然语言质量仍由认证脚本作为部署证据 |
+| Q4 运营回流 | 已实现 | `OperationsInsightService` 幂等落 `SOLUTION_OPERATIONS_SIGNAL`;重放不重复计数,信号无 inputs/result/reasoning；运营前端展示命中、升级、处置与 policyGaps |
+| Q5 场景后端适配器 | 已实现 | opt-in 取消费 demo 的 party/withinFree 求值、refund/ticket 派发与对账；真实 HTTP MCP initialize→tools/list→tools/call、独立工程履行、4 GOLDEN、零外呼 GREEN、平台受控写、真实 Chrome 审阅、发布、运行复用、运营聚合与 token 篡改拒绝，聚焦测试 `28/0/0/0` |
 
 ## 附录 甲 · 工程细粒度展开
 

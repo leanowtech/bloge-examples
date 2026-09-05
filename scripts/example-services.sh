@@ -20,6 +20,7 @@ RG_CORRECTNESS_AUTHORING_ENABLED="${RG_CORRECTNESS_AUTHORING_ENABLED:-false}"
 RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED="${RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED:-false}"
 RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID="${RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID:-resource-gateway-local-fixture-v1}"
 RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="${RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING:-}"
+RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED="${RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED:-false}"
 
 if [ -z "${MVN:-}" ]; then
     if [ -x "/opt/apache-maven-3.9.16/bin/mvn" ]; then
@@ -49,6 +50,7 @@ Environment:
   RG_INTEGRATION_ENVIRONMENT_ID default: local for zero-egress Agent TDD execution
   RG_CORRECTNESS_AUTHORING_ENABLED default: false; set true for Agent TDD sample provision
   RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED default: false; set true with correctness authoring
+  RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED default: false; set true for the v1.4.5 demo adapters
   The local launcher creates a private AES-256 key when Fixture material is enabled without a key ring.
   Set an authoring variable to false to disable that surface.
 EOF
@@ -388,6 +390,7 @@ start_service() {
                 export RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED
                 export RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID
                 export RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING
+                export RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED
                 nohup "${JAVA_BIN}" --enable-preview -jar "${jar}" \
                     "--server.address=${RESOURCE_GATEWAY_ADDRESS}" "--server.port=${port}" > "${log}" 2>&1 &
                 echo $! > "$(pid_file "${service}")"

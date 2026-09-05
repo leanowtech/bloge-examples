@@ -15,6 +15,8 @@ class ExampleServicesScriptTest {
             .toAbsolutePath().normalize();
     private static final Path AGENT_TDD_GUIDE = Path.of("..", "docs", "resource-gateway-agent-tdd-mcp.md")
             .toAbsolutePath().normalize();
+    private static final Path CODEX_CONFIG = Path.of("..", ".codex", "config.toml")
+            .toAbsolutePath().normalize();
 
     @Test
     void standardLauncherDefaultsAuthoringFeaturesOnWithoutRemovingExplicitOverrides()
@@ -28,6 +30,7 @@ class ExampleServicesScriptTest {
                 "RG_INTEGRATION_ENVIRONMENT_ID=\"${RG_INTEGRATION_ENVIRONMENT_ID:-local}\"",
                 "RG_CORRECTNESS_AUTHORING_ENABLED=\"${RG_CORRECTNESS_AUTHORING_ENABLED:-false}\"",
                 "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=\"${RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED:-false}\"",
+                "RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED=\"${RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED:-false}\"",
                 "prepare_local_fixture_material_key",
                 "openssl rand -base64 32",
                 "target/example-secrets",
@@ -39,6 +42,7 @@ class ExampleServicesScriptTest {
                 "export RG_CORRECTNESS_AUTHORING_ENABLED",
                 "export RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED",
                 "export RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING",
+                "export RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED",
                 "--server.address=${RESOURCE_GATEWAY_ADDRESS}");
 
         Process process = new ProcessBuilder("bash", SCRIPT.toString(), "--help")
@@ -53,6 +57,7 @@ class ExampleServicesScriptTest {
                         "RG_INTEGRATION_ENVIRONMENT_ID default: local",
                         "RG_CORRECTNESS_AUTHORING_ENABLED default: false",
                         "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED default: false",
+                        "RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED default: false",
                         "RESOURCE_GATEWAY_ADDRESS default: 127.0.0.1",
                         "Set an authoring variable to false to disable that surface");
     }
@@ -133,6 +138,7 @@ class ExampleServicesScriptTest {
                 "RG_INTEGRATION_ENVIRONMENT_ID=local",
                 "RG_CORRECTNESS_AUTHORING_ENABLED=true",
                 "RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true",
+                "RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED=true",
                 "业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数",
                 "请把“按用户编号查询用户姓名和会员等级”做成客服助手可用的业务能力",
                 "请自行完成平台需要的工作和检查，不要向我展示过程或真实用户资料",
@@ -140,5 +146,23 @@ class ExampleServicesScriptTest {
                 "人工停点二：签署发布证据",
                 "`realExternalCalls` 必须为 `0`",
                 "artifactKind=EXECUTABLE");
+    }
+
+    @Test
+    void projectCodexConfigExposesTheCompleteBusinessFrontDoorWithoutHumanSecrets() throws Exception {
+        String config = Files.readString(CODEX_CONFIG, StandardCharsets.UTF_8);
+
+        assertThat(config).contains(
+                "[mcp_servers.rg_read]", "[mcp_servers.rg_author]",
+                "[mcp_servers.rg_execute]", "[mcp_servers.rg_govern]",
+                "bearer_token_env_var = \"RG_MCP_TOKEN\"",
+                "\"rg.library.overview.get\"", "\"rg.feature.handoff\"",
+                "\"rg.scenario.define\"", "\"rg.instruction.define\"",
+                "\"rg.solution.compose\"", "\"rg.solution.baseline\"",
+                "\"rg.solution.readiness\"", "\"rg.solution.publish\"");
+        assertThat(config).doesNotContain(
+                "bloge-aneke-demo-token", "bloge-reviewer-demo-token",
+                "RG_INTEGRATION_DEMO_REVIEW_TOKEN", "FEATURE_ENGINEER_TOKEN",
+                "INSTRUCTION_ENGINEER_TOKEN");
     }
 }

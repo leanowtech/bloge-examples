@@ -84,7 +84,7 @@
 |---|---|---|---|
 | 业务负责人 | 客服政策 owner | 表意、审阅、应然批准(maker) | 写代码;触发真实写 |
 | 特征工程 | 建确定性特征求值实现的工程角色 | 建求值后端、履行特征交接单 | 改政策规则 |
-| 通用工程 | 建写指令实现的工程角色 | 补写实现、建对账适配器 | 改政策规则;经工具面操作 |
+| 通用工程 | 建写指令实现的工程角色 | 经独立工程端点补实现、建对账适配器 | 改政策规则;经 Agent MCP 操作 |
 | 一线客服 Agent | 运行时自动化角色 | 采集事实、调解法 | 写执行;伪造事实 |
 | 运营 | 表现监控角色 | 只读监控、应然批准(checker) | 创作、发布 |
 | 业主签署人 | 发布责任人 | 发布签署(checker) | 创作 |
@@ -345,7 +345,7 @@ stateDiagram-v2
 
 边界用例:令牌篡改 → 拒且不派发;重放 idempotencyKey → 回放同结果;交互事实冒充 PLATFORM → 拒绝。
 
-### 9.9 运营回流 — 运营看板(可运营闭环;首发不含)
+### 9.9 运营回流 — 运营看板(可运营闭环;首发已含)
 **输入契约 `OperationsSignalInput`** = {solutionRef, window, dispositions[{rulePath,instructionRef,result}]}。
 **输出契约 `OperationsInsight`** = {hitDistribution[{ruleId,share}], escalationRate, dispositionDistribution[{result,share}], redGolden[{caseId}], policyGaps[{ruleId,symptom,suggestedRevision}]}。
 **处理规则**:聚合处置 → 命中/升级/处置分布;红应然=当前失败用例;高升级 ruleId + 红应然 → 建议修订 → 触发阶段 9.1。
@@ -425,12 +425,16 @@ stateDiagram-v2
 ## 15 范围边界
 | 首发含 | 首发不含 |
 |---|---|
-| 取消费纠纷单场景;特征供给;解法定义;写交接与发布;运行时处置 | 运营回流闭环;存量图迁移;多解法降级链;客服全域;恶意信号 + 司机责任子场景;交互组件标准化库 |
+| 取消费纠纷单场景;特征供给;解法定义;写交接与发布;运行时处置;运营回流闭环 | 存量图迁移;多解法降级链;客服全域;恶意信号 + 司机责任子场景;交互组件标准化库 |
 
 ## 16 实现映射(已建 vs 新建)
 工程无需从零;核心引擎约 70% 已实现。
 **已建(复用)**:四实体契约解码/注册(SolutionAuthoringDecoder/SolutionEntityRegistry)· 编译 lowering(SolutionLowering→2 算子图)+ 七阶段预检(DslImportService)· scenarioCall/instructionCall 算子 · 分层测试+golden(SolutionTestingService)· 信任令牌(FeatureValueTokenService)+ 验签接入(SolutionInvocationService)· 写治理(EngineeringHandoffService/SolutionWriteExecutionRunner/ReconciliationAdapter)· 发布治理(SolutionGovernanceService,快照+漂移失效)· 运行时(SolutionLiveInvocationService,published-only+内部派生写授权+崩溃安全)· MCP 工具面(ResourceGatewayAgentTddTools)。
-**已建(1.4.5 Q1/Q2/Q4 后端、Q3 前端)**:特征交接工具 `rg.feature.handoff` · 独立 `AGENT_TDD_FEATURE_ENG` 履行端点 · OPEN→IMPLEMENTED→VERIFIED 状态机 · 受控样例输出类型校验 · 审阅看板五面板业务投影及 HUMAN no-store 接口 · 表意工作台双模状态机、上下文漂移守卫与无 DSL 草案预览 · 发布态真实运营信号、分布聚合与政策缺口建议。
+**已建(1.4.5 Q1–Q5)**:特征交接工具 `rg.feature.handoff` · 独立 `AGENT_TDD_FEATURE_ENG` 履行端点 · OPEN→IMPLEMENTED→VERIFIED 状态机 · 受控样例输出类型校验 · 审阅看板五面板业务投影、HUMAN no-store 接口和真实 Chrome 交互 · 表意工作台双模状态机、上下文漂移守卫与无 DSL 草案预览 · 发布态真实运营信号、分布聚合、政策缺口建议和运营前端 · 取消费 opt-in 求值/派发/对账适配器 · MCP 1.4.5 业务优先初始化协议。
+
+**写工程边界已补齐**:Agent 只能提交 `rg.engineering.handoff`;通用工程持独立 `AGENT_TDD_INSTRUCTION_ENG` 凭据,经非 MCP 端点为 handoff 中的精确 Instruction 绑定实现。服务端以交接单 revision、Instruction revision 与 contract fingerprint 防漂移,保留全部业务语义与治理字段,只改变 `bindingRef`。GREEN=GO 后平台才以内部 `AGENT_TDD_WRITE_EXEC` 在 sandbox 消费 ACTIVE GOLDEN,完成真实写回读后把交接单从 IMPLEMENTED 关为 CLOSED。Agent、业务负责人和工程师都拿不到平台写执行权。
+
+**仓内验收证据**:`CancelDisputeSolutionOperationalJourneyTest` 通过真实 HTTP 完成 initialize/initialized/tools-list/tools-call,并使用彼此隔离的 Agent、特征工程、通用工程和 HUMAN reviewer 身份;四条 GOLDEN 逐条人工批准;GREEN 外部调用为 0;平台自动受控写对账;真实 Chrome 打开五面板后签署;最终发布并验证运行信号幂等及特征 token 篡改拒绝。该测试要求 ChromeDriver,不允许 assumption skip。
 
 **待建(增量)**:表意工作台 Agent-host 真实编排验收 · 审阅看板五面板交互(FE)· 交互特征标准化(选单组件契约+对话协议)· 运营看板(FE) · 场景求值后端(party/withinFree)+ 对账适配器(refund/ticket)。
 
@@ -473,6 +477,8 @@ stateDiagram-v2
 | AGENT_TDD_EXECUTION | evaluate / scenario.test / baseline / invoke |
 | AGENT_TDD_GOVERNANCE | publish |
 | AGENT_TDD_FEATURE_ENG | 特征求值后端绑定 |
+| AGENT_TDD_INSTRUCTION_ENG | 写指令实现绑定;非 MCP;USER/HUMAN 工程身份 |
+| AGENT_TDD_WRITE_EXEC | 平台内部 sandbox 受控写与对账;不发给 Agent/工程师 |
 | AGENT_TDD_WRITE_EXEC | 受控写执行(非 Agent) |
 
 令牌 Bearer → 身份;digest 常量时间比较。隔离:按 scopeKey;跨 scope → REFERENCE_UNRESOLVED(不泄名)。双人:门①/门② actorId 相异。
