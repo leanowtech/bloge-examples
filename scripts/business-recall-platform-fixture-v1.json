@@ -44,7 +44,7 @@
     "sourceId": "legacy-cancel-responsibility-test.bloge",
     "searchIntent": "取消归责",
     "idempotencyKey": "recall-seed-legacy-v1",
-    "dsl": "graph legacyCancelResponsibilityTest {\n  input { orderId: String }\n  output { party: String }\n  transform response { party = ctx.orderId }\n}\n"
+    "dsl": "graph legacyCancelResponsibilityTest {\n  transform response {\n    party: String = ctx.orderId\n  }\n}\n"
   },
   "semanticDrift": {
     "featureRole": "semanticDriftFeature",
