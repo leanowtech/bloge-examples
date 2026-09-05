@@ -60,6 +60,11 @@ feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil`
 against the declared Feature type, and promotes only a passing implementation to `VERIFIED` / `READY`.
 Interactive user Features remain ready through their native component or conversation contract and do not
 receive an evaluator binding.
+Human reviewers can open `GET /api/agent-tdd/solutions/{solutionRef}/board` with the separate
+governance credential. The no-store response joins the approved business cases with payload-free
+execution evidence and returns five business panels: rule matrix, dispositions, red/green cases,
+Feature cards, and publication gates. It never returns DSL, graph drafts, evaluator references, or
+Instruction bindings.
 The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
 for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
 an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.

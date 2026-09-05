@@ -44,7 +44,8 @@ import java.util.function.Supplier;
  * honest four-dimensional verdict that distinguishes accepted authoring from unproved behavior.</p>
  */
 public final class AgentTddMutationService {
-    static final String CASE_SET = "CASE_SET";
+    /** Durable asset kind for governed scenario and Solution case sets. */
+    public static final String CASE_SET = "CASE_SET";
     static final String TOOL_INSTRUCTION = "TOOL_INSTRUCTION";
     private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() { };
     private static final int MAX_BYTES = 16 * 1024 * 1024;
