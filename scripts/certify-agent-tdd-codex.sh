@@ -15,8 +15,8 @@ usage() {
     cat <<'EOF'
 Usage: scripts/certify-agent-tdd-codex.sh [certificate.json]
 
-Builds and starts Resource Gateway from the current clean commit, then certifies a business-language
-Solution journey through a repository-blind Codex process and the BUSINESS_SOLUTION MCP surface.
+Builds and starts Resource Gateway from the current clean commit, then certifies one business-language
+Solution journey and all 15 semantic recall families through repository-blind Codex processes.
 RG_CERT_PORT defaults to 18081.
 The private raw Codex trace is removed by default. Set KEEP_RAW_CODEX_TRACE=true only for
 an approved local investigation; the script then prints its mode-0600 temporary path.
@@ -68,8 +68,8 @@ WORKSPACE_DIR=""
 ISOLATED_CODEX_DIR=""
 CODEX_RUNTIME_DIR=""
 TRACE_FILE=""
-RECALL_TRACE_FILE=""
-CLARIFICATION_TRACE_FILE=""
+FAMILY_TRACE_DIR=""
+FAMILY_MANIFEST_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
 SERVICE_PID=""
@@ -125,16 +125,18 @@ chmod 700 "${PRIVATE_DIR}"
 chmod 700 "${ISOLATED_CODEX_DIR}" "${CODEX_RUNTIME_DIR}"
 TRACE_FILE="${PRIVATE_DIR}/trace.jsonl"
 PROMPT_FILE="${PRIVATE_DIR}/prompt.txt"
-RECALL_TRACE_FILE="${PRIVATE_DIR}/recall-trace.jsonl"
-RECALL_PROMPT_FILE="${PRIVATE_DIR}/recall-prompt.txt"
-CLARIFICATION_TRACE_FILE="${PRIVATE_DIR}/clarification-trace.jsonl"
-CLARIFICATION_PROMPT_FILE="${PRIVATE_DIR}/clarification-prompt.txt"
+FAMILY_TRACE_DIR="${PRIVATE_DIR}/families"
+FAMILY_MANIFEST_FILE="${PRIVATE_DIR}/family-manifest.json"
+FAMILY_RUN_INDEX="${PRIVATE_DIR}/family-run-index.tsv"
+FAMILY_SUITE_FILE="${ROOT_DIR}/scripts/business-solution-recall-family-suite-v1.json"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
 BOARD_FILE="${PRIVATE_DIR}/board.json"
 BOARD_CURL_CONFIG="${PRIVATE_DIR}/board-curl.conf"
-touch "${TRACE_FILE}" "${RECALL_TRACE_FILE}" "${CLARIFICATION_TRACE_FILE}"
-chmod 600 "${TRACE_FILE}" "${RECALL_TRACE_FILE}" "${CLARIFICATION_TRACE_FILE}"
+mkdir -p "${FAMILY_TRACE_DIR}"
+chmod 700 "${FAMILY_TRACE_DIR}"
+touch "${TRACE_FILE}" "${FAMILY_RUN_INDEX}"
+chmod 600 "${TRACE_FILE}" "${FAMILY_RUN_INDEX}"
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
 chmod 500 "${WORKSPACE_DIR}"
 umask 077
@@ -181,8 +183,7 @@ cat > "${SANDBOX_PROFILE}" <<EOF
 (allow process-exec (literal "${CODE_MODE_EXECUTABLE}"))
 (deny file-write*)
 (allow file-write* (literal "${TRACE_FILE}"))
-(allow file-write* (literal "${RECALL_TRACE_FILE}"))
-(allow file-write* (literal "${CLARIFICATION_TRACE_FILE}"))
+(allow file-write* (subpath "${FAMILY_TRACE_DIR}"))
 (allow file-write* (subpath "${ISOLATED_CODEX_DIR}"))
 (allow file-write* (subpath "${CODEX_RUNTIME_DIR}"))
 (deny file-read* (subpath "${ROOT_DIR}"))
@@ -307,18 +308,6 @@ cat > "${PROMPT_FILE}" <<EOF
 请自行使用平台提供的创作说明完成结构化定义，不要让我提供格式、字段或技术引用。不要替我批准案例，不要开始验证、签署或发布。完成后只用业务语言告诉我：复用了还是新建了哪些业务能力、规则是否完整、两条案例是否已提交，以及我下一步需要确认什么。
 EOF
 
-cat > "${RECALL_PROMPT_FILE}" <<'EOF'
-现在只做一次业务能力查找，不创建或修改任何内容。请用“谁造成了取消”这句业务说法，找出已经定义的、用于判断取消归责的业务事实。
-
-请先核对候选的业务含义；如果只有一项含义吻合，就告诉我应复用哪项业务事实。若仍有歧义，只问我一个业务问题。全程只用业务语言说明结果。
-EOF
-
-cat > "${CLARIFICATION_PROMPT_FILE}" <<'EOF'
-我还想定义一项业务事实，用于判断取消责任方。目前只确认它可能是“乘客”或“司机”，无法判断时怎么处理、由谁提供这个事实，我还没有决定。
-
-请先了解平台的创作要求。信息不完整时先停下，不创建或修改任何内容，只向我问一个最关键的业务问题。全程只用业务语言。
-EOF
-
 CODEX_VERSION="$(CODEX_HOME="${ISOLATED_CODEX_DIR}" TMPDIR="${CODEX_RUNTIME_DIR}" \
     sandbox-exec -f "${SANDBOX_PROFILE}" "${CODEX_EXECUTABLE}" --version | head -1)"
 CERTIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -377,26 +366,73 @@ if ! verify_runtime_identity; then
     exit 1
 fi
 
-set +e
-run_codex_turn "${RECALL_PROMPT_FILE}" "${RECALL_TRACE_FILE}" \
-    "${READ_MCP_ARGS[@]}"
-RECALL_CODEX_EXIT=$?
-set -e
-if ! verify_runtime_identity; then
-    echo "The owned Resource Gateway identity changed or disappeared during the recall turn." >&2
-    exit 1
-fi
+python3 - "${FAMILY_SUITE_FILE}" <<'PY'
+import json
+import sys
 
-set +e
-run_codex_turn "${CLARIFICATION_PROMPT_FILE}" "${CLARIFICATION_TRACE_FILE}" \
-    "${READ_MCP_ARGS[@]}" "${AUTHOR_MCP_ARGS[@]}"
-CLARIFICATION_CODEX_EXIT=$?
-set -e
+suite = json.load(open(sys.argv[1], encoding="utf-8"))
+families = suite.get("families")
+if suite.get("schemaVersion") != "rg.businessRecallFamilySuite.v1" or not isinstance(families, list):
+    raise SystemExit("Recall family suite has an unsupported shape.")
+if len(families) != 15 or len({entry.get("familyId") for entry in families}) != 15:
+    raise SystemExit("Recall family suite must define 15 unique families.")
+PY
 
-if ! verify_runtime_identity; then
-    echo "The owned Resource Gateway identity changed or disappeared during the clarification turn." >&2
-    exit 1
-fi
+while IFS=$'\t' read -r FAMILY_ID FAMILY_EXPECTED; do
+    FAMILY_PROMPT_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.prompt.txt"
+    FAMILY_TRACE_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.trace.jsonl"
+    python3 - "${FAMILY_SUITE_FILE}" "${FAMILY_ID}" > "${FAMILY_PROMPT_FILE}" <<'PY'
+import json
+import sys
+
+suite = json.load(open(sys.argv[1], encoding="utf-8"))
+entry = next(item for item in suite["families"] if item["familyId"] == sys.argv[2])
+print(entry["prompt"])
+PY
+    chmod 600 "${FAMILY_PROMPT_FILE}"
+    touch "${FAMILY_TRACE_FILE}"
+    chmod 600 "${FAMILY_TRACE_FILE}"
+    set +e
+    run_codex_turn "${FAMILY_PROMPT_FILE}" "${FAMILY_TRACE_FILE}" \
+        "${READ_MCP_ARGS[@]}" "${AUTHOR_MCP_ARGS[@]}"
+    FAMILY_EXIT=$?
+    set -e
+    printf '%s\t%s\t%s\t%s\n' "${FAMILY_ID}" "${FAMILY_EXPECTED}" \
+        "${FAMILY_TRACE_FILE}" "${FAMILY_EXIT}" >> "${FAMILY_RUN_INDEX}"
+    if ! verify_runtime_identity; then
+        echo "The owned Resource Gateway identity changed during family ${FAMILY_ID}." >&2
+        exit 1
+    fi
+done < <(python3 - "${FAMILY_SUITE_FILE}" <<'PY'
+import json
+import sys
+
+for entry in json.load(open(sys.argv[1], encoding="utf-8"))["families"]:
+    print(f'{entry["familyId"]}\t{entry["expectedBehaviorClass"]}')
+PY
+)
+
+python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" <<'PY'
+import json
+import sys
+
+families = []
+with open(sys.argv[1], encoding="utf-8") as source:
+    for line in source:
+        family_id, expected, trace_file, exit_code = line.rstrip("\n").split("\t")
+        families.append({
+            "familyId": family_id,
+            "expectedBehaviorClass": expected,
+            "traceFile": trace_file,
+            "exitCode": int(exit_code),
+        })
+with open(sys.argv[2], "w", encoding="utf-8") as target:
+    json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1", "families": families},
+              target, ensure_ascii=False, indent=2)
+    target.write("\n")
+PY
+chmod 600 "${FAMILY_MANIFEST_FILE}"
+
 if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
         || ! repository_is_clean; then
     echo "Repository commit, tracked files or untracked sources changed during certification." >&2
@@ -419,8 +455,7 @@ chmod 600 "${BOARD_FILE}"
 
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TRACE_FILE}" \
-    --recall-trace "${RECALL_TRACE_FILE}" \
-    --clarification-trace "${CLARIFICATION_TRACE_FILE}" \
+    --family-manifest "${FAMILY_MANIFEST_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
     --certified-at "${CERTIFIED_AT}" \
@@ -428,9 +463,7 @@ python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TR
     --runtime-jar-sha256 "${JAR_SHA256}" \
     --production-tree-fingerprint "${PRODUCTION_TREE_FINGERPRINT}" \
     --board-projection "${BOARD_FILE}" \
-    --exit-code "${CODEX_EXIT}" \
-    --recall-exit-code "${RECALL_CODEX_EXIT}" \
-    --clarification-exit-code "${CLARIFICATION_CODEX_EXIT}" > "${TEMP_OUTPUT}"
+    --exit-code "${CODEX_EXIT}" > "${TEMP_OUTPUT}"
 chmod 600 "${TEMP_OUTPUT}"
 mv "${TEMP_OUTPUT}" "${OUTPUT_FILE}"
 TEMP_OUTPUT=""

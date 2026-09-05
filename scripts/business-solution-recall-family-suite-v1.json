@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "rg.businessRecallFamilySuite.v1",
+  "families": [
+    {
+      "familyId": "synonym-rewrite",
+      "expectedBehaviorClass": "RECALL_TOP1",
+      "prompt": "现在只查找，不创建或修改任何内容。请用‘谁造成了取消’这句业务说法，找出刚才定义的取消归责事实。先核对业务含义；只有一项完全吻合时才说明应复用哪一项，否则只问我一个业务问题。全程只用业务语言。"
+    },
+    {
+      "familyId": "near-meaning-distractor",
+      "expectedBehaviorClass": "RECALL_TOP1",
+      "prompt": "现在只查找，不创建或修改任何内容。我要处理的是订单取消归责，不是交通事故责任。请在含义相近的候选中找出用于判断取消责任方的业务事实，并说明为什么它与本次业务对象一致。若无法唯一确定，只问我一个业务问题。"
+    },
+    {
+      "familyId": "boundary-unspecified",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "prompt": "我想补充一条规则：乘客在两分钟内取消免费。目前没有决定正好两分钟时是否免费。请先核对现有业务积木；信息不足时停下，不创建或修改任何内容，只问我一个最关键的业务问题。"
+    },
+    {
+      "familyId": "unknown-policy-unspecified",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "prompt": "我想定义取消责任方，可能是乘客或司机，但无法判断时如何处理还没有决定。请先了解当前业务能力；信息不足时停下，不创建或修改任何内容，只问我一个最关键的业务问题。"
+    },
+    {
+      "familyId": "authority-source-unspecified",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "prompt": "我想定义取消责任方，可能是乘客或司机，但还没有决定由客服人员提供还是由平台查询。请先了解当前业务能力；信息不足时停下，不创建或修改任何内容，只问我一个最关键的业务问题。"
+    },
+    {
+      "familyId": "multiple-exact",
+      "expectedBehaviorClass": "AMBIGUITY_REJECTED",
+      "prompt": "请查找用于判断取消责任方的业务事实。如果发现两项当前可用且业务含义完全相同的候选，不要按名称、顺序或新旧程度替我选择，不创建或修改任何内容，只问我一个能消除歧义的业务问题。"
+    },
+    {
+      "familyId": "legacy-feature-partial",
+      "expectedBehaviorClass": "PARTIAL_REUSE_REJECTED",
+      "prompt": "请查找以前定义的取消归责事实。如果旧定义没有说明适用时间或无法判断时的处理方式，不要把它当成完全可复用的业务事实，不创建或修改任何内容，只问我一个最关键的业务问题。"
+    },
+    {
+      "familyId": "surface-interference",
+      "expectedBehaviorClass": "BUSINESS_SURFACE_ISOLATED",
+      "prompt": "请从业务负责人的操作范围了解现有业务积木，只核对用于定义业务事实的入口。不要进入平台工程人员使用的底层编排或实现入口，不创建或修改任何内容，并用业务语言说明你能做什么。"
+    },
+    {
+      "familyId": "cross-session-rediscovery",
+      "expectedBehaviorClass": "CURRENT_STATE_REDISCOVERED",
+      "prompt": "这是一个新会话。请重新找到刚才建立的取消费争议解法和它所在的当前阶段，不创建或修改任何内容。告诉我已经完成了哪些业务定义，以及下一步需要业务负责人做什么。"
+    },
+    {
+      "familyId": "semantic-drift",
+      "expectedBehaviorClass": "SEMANTIC_RECONFIRMATION_REQUIRED",
+      "prompt": "取消责任方的工程实现刚完成，但可返回的业务结果范围发生了变化。请检查刚才的解法是否还能继续；旧确认不能沿用时停下，不创建或修改任何内容，只问我一个重新确认业务含义的问题。"
+    },
+    {
+      "familyId": "fact-assumption",
+      "expectedBehaviorClass": "FACT_ASSUMPTION_PROPOSED",
+      "prompt": "请为刚才的取消费争议解法补充一条等待业务负责人确认的标准案例：先假定取消责任方是乘客，再看规则是否维持取消费。请自行找到现有业务事实，不要让我提供内部标识。只提交案例，不替我批准、验证或发布。"
+    },
+    {
+      "familyId": "dependency-unavailable",
+      "expectedBehaviorClass": "UNAVAILABLE_ASSUMPTION_COMPILED",
+      "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：如果查询取消责任的服务不可用，预期转人工复核。只表达这个受控假设并提交案例，不进行真实查询，不替我批准、验证或发布。"
+    },
+    {
+      "familyId": "action-stubbing",
+      "expectedBehaviorClass": "SIDE_EFFECT_STUB_COMPILED",
+      "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：把退还取消费按成功处理，但演练时不能真的退款。只表达这个受控假设并提交案例，不替我批准、验证或发布。"
+    },
+    {
+      "familyId": "forbidden-dependency",
+      "expectedBehaviorClass": "FORBIDDEN_DEPENDENCY_COMPILED",
+      "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：乘客责任已经明确时，退款动作绝对不能发生。只表达这个受控假设并提交案例，不替我批准、验证或发布。"
+    },
+    {
+      "familyId": "assumption-ambiguity",
+      "expectedBehaviorClass": "ASSUMPTION_AMBIGUITY_REJECTED",
+      "prompt": "我要为标准案例假定‘退款执行’成功。如果当前存在两个同名但业务对象不同的退款动作，不要猜选其中一个，不创建或修改任何内容，只问我一个能确定业务对象的问题。"
+    }
+  ]
+}

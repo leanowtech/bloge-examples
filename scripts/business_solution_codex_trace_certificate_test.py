@@ -137,38 +137,118 @@ def valid_clarification_events() -> list[dict]:
     ]
 
 
+def family_events(family_id: str) -> list[dict]:
+    overview = call("rg_read", "rg.library.overview.get", {"includeSamples": False}, {
+        "snapshotFingerprint": "sha256:" + "a" * 64,
+        "authoringPatternsFingerprint": "sha256:" + "b" * 64,
+    })
+    question = {"type": "item.completed", "item": {
+        "type": "agent_message", "text": "还需要由业务负责人确认一个关键业务条件？"}}
+    summary = {"type": "item.completed", "item": {
+        "type": "agent_message", "text": "已按当前业务含义完成核对。"}}
+    search = lambda data: call("rg_read", "rg.capability.search",  # noqa: E731
+                               {"query": {"intent": "private"}}, data)
+    exact = search({"status": "EXACT", "candidates": [{
+        "assetRef": "feature:test", "contractFingerprint": "sha256:" + "e" * 64,
+        "matchType": "EXACT",
+    }]})
+    if family_id == "synonym-rewrite":
+        body = [exact, summary]
+    elif family_id == "near-meaning-distractor":
+        exact["item"]["result"]["structuredContent"]["data"]["candidates"].append({
+            "assetRef": "feature:traffic-accident",
+            "contractFingerprint": "sha256:" + "f" * 64,
+            "matchType": "CONFLICT",
+        })
+        body = [exact, summary]
+    elif family_id in {
+            "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified"}:
+        body = [overview, question]
+    elif family_id == "multiple-exact":
+        body = [search({"status": "AMBIGUOUS", "candidates": [
+            {"assetRef": "feature:a", "matchType": "EXACT"},
+            {"assetRef": "feature:b", "matchType": "EXACT"},
+        ]}), question]
+    elif family_id == "legacy-feature-partial":
+        body = [search({"status": "INCOMPLETE", "candidates": [
+            {"assetRef": "feature:legacy", "matchType": "PARTIAL"},
+        ]}), question]
+    elif family_id == "surface-interference":
+        body = [overview, summary]
+    elif family_id == "cross-session-rediscovery":
+        body = [call("rg_read", "rg.entity.list", {"kind": "SOLUTION"}, {"items": []}),
+                call("rg_read", "rg.journey.next", {"journeyRef": "journey:test"},
+                     {"journeyRef": "journey:test", "stage": "TESTING"}), summary]
+    elif family_id == "semantic-drift":
+        body = [call("rg_read", "rg.journey.next", {"journeyRef": "journey:test"}, {
+            "journeyRef": "journey:test",
+            "blockingReasons": ["BUSINESS_SEMANTICS_CHANGED"],
+        }), question]
+    elif family_id == "fact-assumption":
+        body = [call("rg_author", "rg.solution.golden.propose", {}, {
+            "caseSetRef": "case-set:fact", "proposalStatus": "PENDING",
+        }), summary]
+        body[0]["item"]["arguments"] = {"cases": [{"givenFacts": {"责任方": "乘客"}}]}
+    elif family_id in {"dependency-unavailable", "action-stubbing", "forbidden-dependency"}:
+        outcome = {
+            "dependency-unavailable": "UNAVAILABLE",
+            "action-stubbing": "SUCCEEDS_WITHOUT_EFFECT",
+            "forbidden-dependency": "MUST_NOT_BE_USED",
+        }[family_id]
+        body = [call("rg_author", "rg.solution.golden.propose", {
+            "cases": [{"dependencyAssumptions": [{"outcome": outcome}]}],
+        }, {"caseSetRef": f"case-set:{family_id}", "proposalStatus": "PENDING"}), summary]
+    elif family_id == "assumption-ambiguity":
+        body = [search({"status": "AMBIGUOUS", "candidates": [
+            {"assetRef": "instruction:a", "matchType": "EXACT"},
+            {"assetRef": "instruction:b", "matchType": "EXACT"},
+        ]}), question]
+    else:
+        raise AssertionError(f"test fixture missing for {family_id}")
+    return body + [
+        {"type": "thread.started", "thread_id": f"thread-{family_id}"},
+        {"type": "turn.completed"},
+    ]
+
+
 class BusinessSolutionCertificateTest(unittest.TestCase):
     def certify(self, events: list[dict] | None = None) -> dict:
-        with tempfile.TemporaryDirectory() as directory:
-            trace = Path(directory, "trace.jsonl")
-            recall_trace = Path(directory, "recall.jsonl")
-            clarification_trace = Path(directory, "clarification.jsonl")
-            trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
-                                     for event in (events or valid_events())), encoding="utf-8")
-            recall_trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
-                                             for event in valid_recall_events()), encoding="utf-8")
-            clarification_trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
-                                                    for event in valid_clarification_events()),
-                                             encoding="utf-8")
-            safe_metadata = metadata()
-            safe_metadata.update({"recallExitCode": 0, "clarificationExitCode": 0})
-            return MODULE.certify(trace, safe_metadata, recall_trace, clarification_trace)
+        return self.certify_aux(authoring_events=events)
 
     def certify_aux(self, recall_events: list[dict] | None = None,
-                    clarification_events: list[dict] | None = None) -> dict:
+                    clarification_events: list[dict] | None = None,
+                    family_overrides: dict[str, list[dict]] | None = None,
+                    manifest_mutator=None,
+                    authoring_events: list[dict] | None = None) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory, "trace.jsonl")
-            recall_trace = Path(directory, "recall.jsonl")
-            clarification_trace = Path(directory, "clarification.jsonl")
-            for path, events in (
-                    (trace, valid_events()),
-                    (recall_trace, recall_events or valid_recall_events()),
-                    (clarification_trace, clarification_events or valid_clarification_events())):
-                path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
-                                         for event in events), encoding="utf-8")
+            trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
+                                     for event in (authoring_events or valid_events())), encoding="utf-8")
+            overrides = dict(family_overrides or {})
+            if recall_events is not None:
+                overrides["synonym-rewrite"] = recall_events
+            if clarification_events is not None:
+                overrides["unknown-policy-unspecified"] = clarification_events
+            families = []
+            for family_id, expected in MODULE.FAMILY_EXPECTATIONS.items():
+                family_trace = Path(directory, f"{family_id}.jsonl")
+                events = overrides.get(family_id, family_events(family_id))
+                family_trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
+                                                 for event in events), encoding="utf-8")
+                families.append({
+                    "familyId": family_id,
+                    "expectedBehaviorClass": expected,
+                    "traceFile": family_trace.name,
+                    "exitCode": 0,
+                })
+            manifest = {"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
+                        "families": families}
+            if manifest_mutator is not None:
+                manifest_mutator(manifest)
+            manifest_path = Path(directory, "families.json")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             safe_metadata = metadata()
-            safe_metadata.update({"recallExitCode": 0, "clarificationExitCode": 0})
-            return MODULE.certify(trace, safe_metadata, recall_trace, clarification_trace)
+            return MODULE.certify(trace, safe_metadata, manifest_path)
 
     def test_certifies_one_correlated_business_journey_without_payload(self) -> None:
         certificate = self.certify_aux()
@@ -190,13 +270,16 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertEqual(1.0, certificate["metrics"]["clarificationRate"])
         self.assertTrue(certificate["assertions"]["crossSessionFeatureRecallCorrelated"])
         self.assertTrue(certificate["assertions"]["clarificationStoppedBeforeAuthoring"])
-        self.assertEqual(3, len(set(certificate["correlation"]["sessions"])))
+        self.assertEqual(16, len(set(certificate["correlation"]["sessions"])))
+        self.assertEqual(15, len(certificate["familyEvidence"]))
+        self.assertEqual(set(MODULE.FAMILY_EXPECTATIONS),
+                         {entry["familyId"] for entry in certificate["familyEvidence"]})
         self.assertNotIn("feature:test", json.dumps(certificate))
 
     def test_rejects_reused_or_missing_codex_thread_identity(self) -> None:
         events = valid_clarification_events()
-        events[-2]["thread_id"] = "thread-recall"
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "three independent"):
+        events[-2]["thread_id"] = "thread-synonym-rewrite"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "16 independent"):
             self.certify_aux(clarification_events=events)
 
         events = valid_recall_events()
@@ -204,11 +287,42 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "identify its Codex thread"):
             self.certify_aux(recall_events=events)
 
+    def test_rejects_missing_recall_family(self) -> None:
+        def remove_family(manifest: dict) -> None:
+            manifest["families"] = [entry for entry in manifest["families"]
+                                    if entry["familyId"] != "forbidden-dependency"]
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "cover all 15 families"):
+            self.certify_aux(manifest_mutator=remove_family)
+
+    def test_rejects_misclassified_recall_family(self) -> None:
+        def misclassify(manifest: dict) -> None:
+            target = next(entry for entry in manifest["families"]
+                          if entry["familyId"] == "action-stubbing")
+            target["expectedBehaviorClass"] = "RECALL_TOP1"
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "misclassified"):
+            self.certify_aux(manifest_mutator=misclassify)
+
+    def test_rejects_family_whose_observed_outcome_does_not_match(self) -> None:
+        events = family_events("multiple-exact")
+        data = events[0]["item"]["result"]["structuredContent"]["data"]
+        data["status"] = "EXACT"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "did not observe AMBIGUOUS"):
+            self.certify_aux(family_overrides={"multiple-exact": events})
+
+    def test_rejects_distractor_family_without_a_real_distractor(self) -> None:
+        events = family_events("near-meaning-distractor")
+        candidates = events[0]["item"]["result"]["structuredContent"]["data"]["candidates"]
+        del candidates[1:]
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "no observed distractor"):
+            self.certify_aux(family_overrides={"near-meaning-distractor": events})
+
     def test_rejects_recall_of_a_different_feature(self) -> None:
         events = valid_recall_events()
         candidate = events[0]["item"]["result"]["structuredContent"]["data"]["candidates"][0]
         candidate["assetRef"] = "feature:other"
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "top three"):
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "rank the exact Feature first"):
             self.certify_aux(recall_events=events)
 
     def test_rejects_recalled_feature_outside_top_one_for_the_single_sample(self) -> None:
@@ -225,7 +339,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
     def test_rejects_authoring_attempt_during_clarification(self) -> None:
         events = valid_clarification_events()
         events.insert(1, call("rg_author", "rg.journey.start", {}, {}))
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "business write"):
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "mutated state"):
             self.certify_aux(clarification_events=events)
 
     def test_rejects_zero_or_multiple_clarification_questions(self) -> None:

@@ -4,7 +4,7 @@
   "title": "Resource Gateway business Solution Codex certification",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "productionTreeFingerprint", "codexVersion", "runtimeIdentity", "suite", "transport", "cases", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
+  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "productionTreeFingerprint", "codexVersion", "runtimeIdentity", "suite", "transport", "cases", "familyEvidence", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
   "properties": {
     "schemaVersion": { "const": "rg.businessRecallCertification.v1" },
     "certifiedAt": { "type": "string", "minLength": 1 },
@@ -64,6 +64,55 @@
         }
       }
     },
+    "familyEvidence": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "allOf": [
+        { "contains": { "properties": { "familyId": { "const": "synonym-rewrite" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "near-meaning-distractor" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "boundary-unspecified" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "unknown-policy-unspecified" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "authority-source-unspecified" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "multiple-exact" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "legacy-feature-partial" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "surface-interference" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "cross-session-rediscovery" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "semantic-drift" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "fact-assumption" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "dependency-unavailable" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "action-stubbing" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "forbidden-dependency" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "familyId": { "const": "assumption-ambiguity" } }, "required": ["familyId"] }, "minContains": 1, "maxContains": 1 }
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["familyId", "caseFingerprint", "sessionFingerprint", "expectedBehaviorClass", "observedOutcome", "passed"],
+        "allOf": [
+          { "if": { "properties": { "familyId": { "enum": ["synonym-rewrite", "near-meaning-distractor"] } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "RECALL_TOP1" }, "observedOutcome": { "const": "TOP1_MATCH" } } } },
+          { "if": { "properties": { "familyId": { "enum": ["boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified"] } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "CLARIFICATION_REQUIRED" }, "observedOutcome": { "const": "SINGLE_BUSINESS_QUESTION" } } } },
+          { "if": { "properties": { "familyId": { "const": "multiple-exact" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "AMBIGUITY_REJECTED" }, "observedOutcome": { "const": "AMBIGUOUS_STOP" } } } },
+          { "if": { "properties": { "familyId": { "const": "legacy-feature-partial" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "PARTIAL_REUSE_REJECTED" }, "observedOutcome": { "const": "PARTIAL_STOP" } } } },
+          { "if": { "properties": { "familyId": { "const": "surface-interference" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "BUSINESS_SURFACE_ISOLATED" }, "observedOutcome": { "const": "BUSINESS_SURFACE_ONLY" } } } },
+          { "if": { "properties": { "familyId": { "const": "cross-session-rediscovery" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "CURRENT_STATE_REDISCOVERED" }, "observedOutcome": { "const": "CURRENT_STATE_FOUND" } } } },
+          { "if": { "properties": { "familyId": { "const": "semantic-drift" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "SEMANTIC_RECONFIRMATION_REQUIRED" }, "observedOutcome": { "const": "RECONFIRMATION_STOP" } } } },
+          { "if": { "properties": { "familyId": { "const": "fact-assumption" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "FACT_ASSUMPTION_PROPOSED" }, "observedOutcome": { "const": "GIVEN_FACT_CAPTURED" } } } },
+          { "if": { "properties": { "familyId": { "const": "dependency-unavailable" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "UNAVAILABLE_ASSUMPTION_COMPILED" }, "observedOutcome": { "const": "UNAVAILABLE_CAPTURED" } } } },
+          { "if": { "properties": { "familyId": { "const": "action-stubbing" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "SIDE_EFFECT_STUB_COMPILED" }, "observedOutcome": { "const": "SIDE_EFFECT_STUB_CAPTURED" } } } },
+          { "if": { "properties": { "familyId": { "const": "forbidden-dependency" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "FORBIDDEN_DEPENDENCY_COMPILED" }, "observedOutcome": { "const": "MUST_NOT_USE_CAPTURED" } } } },
+          { "if": { "properties": { "familyId": { "const": "assumption-ambiguity" } } }, "then": { "properties": { "expectedBehaviorClass": { "const": "ASSUMPTION_AMBIGUITY_REJECTED" }, "observedOutcome": { "const": "ASSUMPTION_AMBIGUOUS_STOP" } } } }
+        ],
+        "properties": {
+          "familyId": { "enum": ["synonym-rewrite", "near-meaning-distractor", "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified", "multiple-exact", "legacy-feature-partial", "surface-interference", "cross-session-rediscovery", "semantic-drift", "fact-assumption", "dependency-unavailable", "action-stubbing", "forbidden-dependency", "assumption-ambiguity"] },
+          "caseFingerprint": { "$ref": "#/$defs/hmac" },
+          "sessionFingerprint": { "$ref": "#/$defs/hmac" },
+          "expectedBehaviorClass": { "enum": ["RECALL_TOP1", "CLARIFICATION_REQUIRED", "AMBIGUITY_REJECTED", "PARTIAL_REUSE_REJECTED", "BUSINESS_SURFACE_ISOLATED", "CURRENT_STATE_REDISCOVERED", "SEMANTIC_RECONFIRMATION_REQUIRED", "FACT_ASSUMPTION_PROPOSED", "UNAVAILABLE_ASSUMPTION_COMPILED", "SIDE_EFFECT_STUB_COMPILED", "FORBIDDEN_DEPENDENCY_COMPILED", "ASSUMPTION_AMBIGUITY_REJECTED"] },
+          "observedOutcome": { "enum": ["TOP1_MATCH", "SINGLE_BUSINESS_QUESTION", "AMBIGUOUS_STOP", "PARTIAL_STOP", "BUSINESS_SURFACE_ONLY", "CURRENT_STATE_FOUND", "RECONFIRMATION_STOP", "GIVEN_FACT_CAPTURED", "UNAVAILABLE_CAPTURED", "SIDE_EFFECT_STUB_CAPTURED", "MUST_NOT_USE_CAPTURED", "ASSUMPTION_AMBIGUOUS_STOP"] },
+          "passed": { "const": true }
+        }
+      }
+    },
     "journey": {
       "type": "object",
       "additionalProperties": false,
@@ -102,8 +151,8 @@
         "authoringPatterns": { "$ref": "#/$defs/hmac" },
         "sessions": {
           "type": "array",
-          "minItems": 3,
-          "maxItems": 3,
+          "minItems": 16,
+          "maxItems": 16,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/hmac" }
         }
@@ -118,8 +167,8 @@
         "recallAt3": { "const": 1.0 },
         "top1": { "type": "number", "minimum": 0.95, "maximum": 1 },
         "clarificationRate": { "const": 1.0 },
-        "recallCases": { "type": "integer", "minimum": 1 },
-        "clarificationCases": { "type": "integer", "minimum": 1 },
+        "recallCases": { "const": 2 },
+        "clarificationCases": { "const": 7 },
         "unsafeEscapeCount": { "const": 0 },
         "controlledTestEgressCount": { "const": 0 },
         "staleGoldenAcceptedCount": { "const": 0 }
@@ -128,7 +177,7 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved", "allRequiredRecallFamiliesObserved"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },
@@ -146,7 +195,8 @@
         "independentCodexSessionsObserved": { "const": true },
         "crossSessionFeatureRecallCorrelated": { "const": true },
         "clarificationStoppedBeforeAuthoring": { "const": true },
-        "singleBusinessQuestionObserved": { "const": true }
+        "singleBusinessQuestionObserved": { "const": true },
+        "allRequiredRecallFamiliesObserved": { "const": true }
       }
     },
     "result": { "const": "CERTIFIED" },

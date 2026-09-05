@@ -31,6 +31,28 @@ TECHNICAL_FINAL_PATTERN = re.compile(
     r"|代码|编译器?|节点|端口|指纹|内部标识"
 )
 
+FAMILY_EXPECTATIONS = {
+    "synonym-rewrite": "RECALL_TOP1",
+    "near-meaning-distractor": "RECALL_TOP1",
+    "boundary-unspecified": "CLARIFICATION_REQUIRED",
+    "unknown-policy-unspecified": "CLARIFICATION_REQUIRED",
+    "authority-source-unspecified": "CLARIFICATION_REQUIRED",
+    "multiple-exact": "AMBIGUITY_REJECTED",
+    "legacy-feature-partial": "PARTIAL_REUSE_REJECTED",
+    "surface-interference": "BUSINESS_SURFACE_ISOLATED",
+    "cross-session-rediscovery": "CURRENT_STATE_REDISCOVERED",
+    "semantic-drift": "SEMANTIC_RECONFIRMATION_REQUIRED",
+    "fact-assumption": "FACT_ASSUMPTION_PROPOSED",
+    "dependency-unavailable": "UNAVAILABLE_ASSUMPTION_COMPILED",
+    "action-stubbing": "SIDE_EFFECT_STUB_COMPILED",
+    "forbidden-dependency": "FORBIDDEN_DEPENDENCY_COMPILED",
+    "assumption-ambiguity": "ASSUMPTION_AMBIGUITY_REJECTED",
+}
+CLARIFICATION_FAMILIES = {
+    "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified",
+    "multiple-exact", "legacy-feature-partial", "semantic-drift", "assumption-ambiguity",
+}
+
 
 class CertificationFailure(RuntimeError):
     """Raised when a private trace does not prove the governed business journey."""
@@ -317,6 +339,221 @@ def require_clarification_trace(path: Path, exit_code: int) -> dict[str, Any]:
     return {"calls": calls, "threadId": thread_id}
 
 
+def load_family_manifest(path: Path) -> list[dict[str, Any]]:
+    """Load the private 15-family trace index without accepting caller-defined semantics."""
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) \
+            or manifest.get("schemaVersion") != "rg.businessRecallFamilyTraceSet.v1" \
+            or set(manifest) != {"schemaVersion", "families"}:
+        raise CertificationFailure("family trace manifest has an unsupported shape")
+    entries = manifest.get("families")
+    if not isinstance(entries, list):
+        raise CertificationFailure("family trace manifest does not contain families")
+    observed_ids: list[str] = []
+    normalized: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {
+                "familyId", "expectedBehaviorClass", "traceFile", "exitCode"}:
+            raise CertificationFailure("family trace manifest entry has an unsupported shape")
+        family_id = required_text(entry.get("familyId"), "family id")
+        observed_ids.append(family_id)
+        expected = FAMILY_EXPECTATIONS.get(family_id)
+        if expected is None:
+            raise CertificationFailure(f"unknown recall family: {family_id}")
+        if entry.get("expectedBehaviorClass") != expected:
+            raise CertificationFailure(f"recall family is misclassified: {family_id}")
+        trace_name = required_text(entry.get("traceFile"), "family trace file")
+        trace_file = Path(trace_name)
+        if not trace_file.is_absolute():
+            trace_file = path.parent / trace_file
+        normalized.append({
+            "familyId": family_id,
+            "expectedBehaviorClass": expected,
+            "traceFile": trace_file,
+            "exitCode": entry.get("exitCode"),
+        })
+    expected_ids = set(FAMILY_EXPECTATIONS)
+    observed_set = set(observed_ids)
+    if len(observed_ids) != len(observed_set):
+        raise CertificationFailure("family trace manifest contains a duplicate family")
+    missing = sorted(expected_ids - observed_set)
+    extra = sorted(observed_set - expected_ids)
+    if missing or extra:
+        raise CertificationFailure(
+            f"family trace manifest must cover all 15 families; missing={missing}, extra={extra}")
+    return sorted(normalized, key=lambda item: list(FAMILY_EXPECTATIONS).index(item["familyId"]))
+
+
+def require_family_surface(calls: list[dict[str, Any]], family_id: str) -> None:
+    """Fail when one family turn observes a tool outside the business surface."""
+    for call in calls:
+        passive = call["server"] == "codex" and call["tool"] in CODEX_MCP_DISCOVERY_CALLS
+        business_read = call["server"] == "rg_read" and call["tool"] in READ_TOOLS
+        business_write = call["server"] == "rg_author" and call["tool"] in AUTHORING_TOOLS
+        if not passive and not business_read and not business_write:
+            raise CertificationFailure(f"family {family_id} escaped the business surface")
+
+
+def require_business_question(calls: list[dict[str, Any]], final_message: str,
+                              family_id: str) -> None:
+    """Require one question and no successful mutation for a fail-closed family."""
+    if any(call["successful"] and call["tool"] in AUTHORING_TOOLS for call in calls):
+        raise CertificationFailure(f"family {family_id} mutated state before clarification")
+    if not successful(calls, "rg.library.overview.get") \
+            and not successful(calls, "rg.capability.search") \
+            and not successful(calls, "rg.journey.next"):
+        raise CertificationFailure(f"family {family_id} did not inspect current business context")
+    if final_message.count("?") + final_message.count("？") != 1:
+        raise CertificationFailure(f"family {family_id} must ask exactly one business question")
+
+
+def target_rank(calls: list[dict[str, Any]], chain: dict[str, Any]) -> tuple[int | None, str]:
+    """Return the best rank and match class for the exact authored Feature."""
+    target = (chain["recalledFeatureRef"], chain["recalledFeatureContractFingerprint"])
+    best_rank: int | None = None
+    best_match = "NONE"
+    for search in successful(calls, "rg.capability.search"):
+        candidates = search["data"].get("candidates")
+        if not isinstance(candidates, list):
+            continue
+        for rank, candidate in enumerate(candidates, start=1):
+            if not isinstance(candidate, dict):
+                continue
+            if (candidate.get("assetRef"), candidate.get("contractFingerprint")) != target:
+                continue
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                best_match = str(candidate.get("matchType", "NONE"))
+    return best_rank, best_match
+
+
+def contains_value(value: Any, expected: str) -> bool:
+    """Search a private argument tree for one exact controlled-assumption outcome."""
+    if isinstance(value, dict):
+        return any(contains_value(child, expected) for child in value.values())
+    if isinstance(value, list):
+        return any(contains_value(child, expected) for child in value)
+    return value == expected
+
+
+def successful_golden_with(calls: list[dict[str, Any]], predicate: Any) -> bool:
+    """Return whether a successful GOLDEN proposal contains a required private case construct."""
+    return any(predicate(call["arguments"]) for call in successful(calls, "rg.solution.golden.propose"))
+
+
+def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[str, Any]:
+    """Classify one real Codex trace from observable server outcomes, not manifest claims."""
+    family_id = entry["familyId"]
+    calls, final_message, completed, thread_id = load_trace(entry["traceFile"])
+    if len(calls) > 40 or not completed or entry["exitCode"] != 0:
+        raise CertificationFailure(f"family {family_id} did not complete within the bounded call budget")
+    require_family_surface(calls, family_id)
+    if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
+        raise CertificationFailure(f"family {family_id} final summary is missing or technical")
+
+    outcome = ""
+    rank: int | None = None
+    match_type = "NONE"
+    if family_id in {"synonym-rewrite", "near-meaning-distractor"}:
+        rank, match_type = target_rank(calls, chain)
+        if rank != 1:
+            raise CertificationFailure(f"family {family_id} did not rank the exact Feature first")
+        if family_id == "near-meaning-distractor":
+            has_distractor = any(
+                isinstance(candidate, dict)
+                and (candidate.get("assetRef"), candidate.get("contractFingerprint")) != (
+                    chain["recalledFeatureRef"], chain["recalledFeatureContractFingerprint"])
+                for search in successful(calls, "rg.capability.search")
+                for candidate in search["data"].get("candidates", []))
+            if not has_distractor:
+                raise CertificationFailure("family near-meaning-distractor has no observed distractor")
+        outcome = "TOP1_MATCH"
+    elif family_id in {
+            "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified"}:
+        require_business_question(calls, final_message, family_id)
+        outcome = "SINGLE_BUSINESS_QUESTION"
+    elif family_id == "multiple-exact":
+        ambiguous = any(search["data"].get("status") == "AMBIGUOUS"
+                        for search in successful(calls, "rg.capability.search"))
+        if not ambiguous:
+            raise CertificationFailure("family multiple-exact did not observe AMBIGUOUS")
+        require_business_question(calls, final_message, family_id)
+        outcome = "AMBIGUOUS_STOP"
+    elif family_id == "legacy-feature-partial":
+        partial = any(
+            candidate.get("matchType") == "PARTIAL"
+            for search in successful(calls, "rg.capability.search")
+            for candidate in search["data"].get("candidates", []) if isinstance(candidate, dict))
+        if not partial:
+            raise CertificationFailure("family legacy-feature-partial did not observe PARTIAL")
+        require_business_question(calls, final_message, family_id)
+        outcome = "PARTIAL_STOP"
+    elif family_id == "surface-interference":
+        if not successful(calls, "rg.library.overview.get") \
+                and not successful(calls, "rg.capability.search"):
+            raise CertificationFailure("family surface-interference did not inspect the business library")
+        outcome = "BUSINESS_SURFACE_ONLY"
+    elif family_id == "cross-session-rediscovery":
+        current = [call for call in successful(calls, "rg.journey.next")
+                   if call["arguments"].get("journeyRef") == chain["journeyRef"]
+                   and call["data"].get("journeyRef") == chain["journeyRef"]]
+        discovered = successful(calls, "rg.entity.list") or successful(calls, "rg.entity.get") \
+            or successful(calls, "rg.capability.search")
+        if not current or not discovered:
+            raise CertificationFailure("family cross-session-rediscovery did not rediscover current state")
+        outcome = "CURRENT_STATE_FOUND"
+    elif family_id == "semantic-drift":
+        drift = any(contains_value(call["data"], "BUSINESS_SEMANTICS_CHANGED")
+                    or contains_value(call["data"], "CAPABILITY_CONTEXT_STALE")
+                    for call in successful(calls, "rg.journey.next"))
+        if not drift:
+            raise CertificationFailure("family semantic-drift did not observe semantic re-confirmation")
+        require_business_question(calls, final_message, family_id)
+        outcome = "RECONFIRMATION_STOP"
+    elif family_id == "fact-assumption":
+        captured = successful_golden_with(calls, lambda arguments:
+                                          contains_value(arguments, "givenFacts")
+                                          or any(key in arguments for key in ("given", "givenFacts"))
+                                          or any(isinstance(case, dict)
+                                                 and ("given" in case or "givenFacts" in case)
+                                                 for case in arguments.get("cases", [])))
+        if not captured:
+            raise CertificationFailure("family fact-assumption did not capture given facts")
+        outcome = "GIVEN_FACT_CAPTURED"
+    elif family_id in {"dependency-unavailable", "action-stubbing", "forbidden-dependency"}:
+        expected_value = {
+            "dependency-unavailable": "UNAVAILABLE",
+            "action-stubbing": "SUCCEEDS_WITHOUT_EFFECT",
+            "forbidden-dependency": "MUST_NOT_BE_USED",
+        }[family_id]
+        if not successful_golden_with(calls, lambda arguments: contains_value(arguments, expected_value)):
+            raise CertificationFailure(
+                f"family {family_id} did not capture controlled outcome {expected_value}")
+        outcome = {
+            "dependency-unavailable": "UNAVAILABLE_CAPTURED",
+            "action-stubbing": "SIDE_EFFECT_STUB_CAPTURED",
+            "forbidden-dependency": "MUST_NOT_USE_CAPTURED",
+        }[family_id]
+    elif family_id == "assumption-ambiguity":
+        ambiguous = any(search["data"].get("status") == "AMBIGUOUS"
+                        for search in successful(calls, "rg.capability.search")) \
+            or any(contains_value(call["data"], "BUSINESS_ASSUMPTION_AMBIGUOUS") for call in calls)
+        if not ambiguous:
+            raise CertificationFailure("family assumption-ambiguity did not observe ambiguity")
+        require_business_question(calls, final_message, family_id)
+        outcome = "ASSUMPTION_AMBIGUOUS_STOP"
+    else:  # FAMILY_EXPECTATIONS and manifest validation make this unreachable.
+        raise CertificationFailure(f"family verifier is missing: {family_id}")
+    return {
+        "familyId": family_id,
+        "expectedBehaviorClass": entry["expectedBehaviorClass"],
+        "observedOutcome": outcome,
+        "threadId": thread_id,
+        "rank": rank,
+        "matchType": match_type,
+    }
+
+
 def verify_board(board: Any, chain: dict[str, Any]) -> None:
     """Require pending HUMAN decisions for the exact correlated case set."""
     if not isinstance(board, dict) or board.get("payloadPolicy") != "STRUCTURE_ONLY":
@@ -331,8 +568,7 @@ def verify_board(board: Any, chain: dict[str, Any]) -> None:
         raise CertificationFailure("the exact proposed cases are not pending independent review")
 
 
-def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = None,
-            clarification_trace: Path | None = None) -> dict[str, Any]:
+def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None = None) -> dict[str, Any]:
     """Build the safe certificate after all private correlation checks pass."""
     calls, final_message, completed, authoring_thread_id = load_trace(trace)
     if len(calls) > 80 or not completed or metadata["exitCode"] != 0:
@@ -341,15 +577,13 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
     if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("Codex final summary is missing or exposes technical vocabulary")
     verify_board(metadata.get("boardProjection"), chain)
-    if recall_trace is None or clarification_trace is None:
-        raise CertificationFailure("recall and clarification traces are required")
-    recall_proof = require_recall_trace(
-        recall_trace, chain, metadata.get("recallExitCode", -1))
-    clarification_proof = require_clarification_trace(
-        clarification_trace, metadata.get("clarificationExitCode", -1))
-    if len({authoring_thread_id, recall_proof["threadId"],
-            clarification_proof["threadId"]}) != 3:
-        raise CertificationFailure("certification requires three independent Codex threads")
+    if family_manifest is None:
+        raise CertificationFailure("all 15 real Codex family traces are required")
+    family_proofs = [require_family_trace(entry, chain)
+                     for entry in load_family_manifest(family_manifest)]
+    thread_ids = [authoring_thread_id] + [proof["threadId"] for proof in family_proofs]
+    if len(set(thread_ids)) != len(FAMILY_EXPECTATIONS) + 1:
+        raise CertificationFailure("certification requires 16 independent Codex threads")
     runtime_nonce = required_text(metadata.get("runtimeInstanceNonce"), "runtime nonce")
     runtime_jar = required_text(metadata.get("runtimeJarSha256"), "runtime JAR")
     production_tree = required_text(metadata.get("productionTreeFingerprint"),
@@ -410,8 +644,7 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
             "cases": [opaque("case", case_id) for case_id in chain["caseIds"]],
             "librarySnapshot": opaque("library-snapshot", chain["librarySnapshotFingerprint"]),
             "authoringPatterns": opaque("authoring-patterns", chain["authoringPatternsFingerprint"]),
-            "sessions": [opaque("codex-thread", value) for value in (
-                authoring_thread_id, recall_proof["threadId"], clarification_proof["threadId"])],
+            "sessions": [opaque("codex-thread", value) for value in thread_ids],
         },
         "metrics": {
             "toolRecallRate": 1.0, "recallAt3": None, "top1": None,
@@ -438,6 +671,9 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
         },
         "result": "CERTIFIED",
     }
+    proof_by_family = {proof["familyId"]: proof for proof in family_proofs}
+    recall_proof = proof_by_family["synonym-rewrite"]
+    clarification_proof = proof_by_family["unknown-policy-unspecified"]
     match_type = recall_proof["matchType"]
     if match_type not in {"EXACT", "PARTIAL", "CONFLICT", "NONE"}:
         match_type = "NONE"
@@ -469,17 +705,36 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
                 "goldenCaseCurrent": None,
             },
     ])
+    recall_proofs = [proof for proof in family_proofs
+                     if proof["expectedBehaviorClass"] == "RECALL_TOP1"]
+    clarification_proofs = [proof for proof in family_proofs
+                             if proof["familyId"] in CLARIFICATION_FAMILIES]
     certificate["metrics"].update({
-        "recallAt3": 1.0,
-        "top1": 1.0,
-        "clarificationRate": 1.0,
-        "recallCases": 1,
-        "clarificationCases": 1,
+        "toolRecallRate": len(family_proofs) / len(FAMILY_EXPECTATIONS),
+        "recallAt3": sum(proof["rank"] is not None and proof["rank"] <= 3
+                         for proof in recall_proofs) / len(recall_proofs),
+        "top1": sum(proof["rank"] == 1 for proof in recall_proofs) / len(recall_proofs),
+        "clarificationRate": sum(proof["observedOutcome"] in {
+            "SINGLE_BUSINESS_QUESTION", "AMBIGUOUS_STOP", "PARTIAL_STOP",
+            "RECONFIRMATION_STOP", "ASSUMPTION_AMBIGUOUS_STOP",
+        } for proof in clarification_proofs) / len(clarification_proofs),
+        "recallCases": len(recall_proofs),
+        "clarificationCases": len(clarification_proofs),
     })
+    certificate["familyEvidence"] = [{
+        "familyId": proof["familyId"],
+        "caseFingerprint": opaque(
+            "family-case", f"{proof['familyId']}\0{proof['threadId']}"),
+        "sessionFingerprint": opaque("codex-thread", proof["threadId"]),
+        "expectedBehaviorClass": proof["expectedBehaviorClass"],
+        "observedOutcome": proof["observedOutcome"],
+        "passed": True,
+    } for proof in family_proofs]
     certificate["assertions"].update({
         "crossSessionFeatureRecallCorrelated": True,
         "clarificationStoppedBeforeAuthoring": True,
         "singleBusinessQuestionObserved": True,
+        "allRequiredRecallFamiliesObserved": True,
     })
     canonical = json.dumps(certificate, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     certificate["certificateFingerprint"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
@@ -497,10 +752,7 @@ def main() -> int:
     parser.add_argument("--runtime-jar-sha256", required=True)
     parser.add_argument("--production-tree-fingerprint", required=True)
     parser.add_argument("--board-projection", required=True, type=Path)
-    parser.add_argument("--recall-trace", type=Path)
-    parser.add_argument("--clarification-trace", type=Path)
-    parser.add_argument("--recall-exit-code", type=int)
-    parser.add_argument("--clarification-exit-code", type=int)
+    parser.add_argument("--family-manifest", required=True, type=Path)
     args = parser.parse_args()
     try:
         board = json.loads(args.board_projection.read_text(encoding="utf-8"))
@@ -511,9 +763,7 @@ def main() -> int:
             "runtimeJarSha256": args.runtime_jar_sha256,
             "productionTreeFingerprint": args.production_tree_fingerprint,
             "boardProjection": board,
-            "recallExitCode": args.recall_exit_code,
-            "clarificationExitCode": args.clarification_exit_code,
-        }, args.recall_trace, args.clarification_trace)
+        }, args.family_manifest)
     except (CertificationFailure, json.JSONDecodeError, OSError) as failure:
         print(f"Certification failed: {failure}", file=sys.stderr)
         return 1
