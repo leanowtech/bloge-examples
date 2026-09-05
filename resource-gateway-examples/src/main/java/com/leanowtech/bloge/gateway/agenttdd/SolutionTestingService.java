@@ -164,9 +164,12 @@ public final class SolutionTestingService {
         for (JsonNode metadata : golden) {
             JsonNode row = approvedMaterial(metadata, identity);
             String caseId = requiredText(row, "caseId");
-            controlledPlans.add(Map.entry(caseId, VisualBundleFingerprint.fromCanonicalValue(mapper,
+            String compiledPlan = row.path("controlledAssumptionPlanFingerprint").asText();
+            controlledPlans.add(Map.entry(caseId, compiledPlan.isBlank()
+                    ? VisualBundleFingerprint.fromCanonicalValue(mapper,
                     Map.of("caseId", caseId, "controlledAssumptions",
-                            row.path("controlledAssumptions")), MAX_BYTES)));
+                            row.path("controlledAssumptions")), MAX_BYTES)
+                    : compiledPlan));
             SolutionExecutionService.ExecutionResult result;
             try {
                 SolutionExecutionService execution = controlledExecution(row);

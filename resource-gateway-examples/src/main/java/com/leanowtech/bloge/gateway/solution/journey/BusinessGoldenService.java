@@ -9,11 +9,8 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
-import com.leanowtech.bloge.gateway.solution.FeatureContract;
-import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
-import com.leanowtech.bloge.gateway.solution.SolutionValueSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +33,7 @@ public final class BusinessGoldenService {
     private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
     private final BusinessGoldenMaterialStore materials;
+    private final BusinessFixtureCompiler fixtureCompiler;
 
     /** Creates a focused boundary whose material vault remains fail-closed until supplied. */
     public BusinessGoldenService(AgentTddStateRepository states, ObjectMapper mapper) {
@@ -50,6 +48,7 @@ public final class BusinessGoldenService {
         this.registry = new SolutionEntityRegistry(states, mapper);
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.materials = Objects.requireNonNull(materials, "materials");
+        this.fixtureCompiler = new BusinessFixtureCompiler(registry, mapper);
     }
 
     /** Proposes complete cases atomically without executing them or making their Oracle effective. */
@@ -100,6 +99,10 @@ public final class BusinessGoldenService {
         metadata.put("factCount", compiled.path("given").size());
         metadata.put("assumptionCount", compiled.path("controlledAssumptions").size());
         metadata.put("expectedShapeFingerprint", fingerprint(compiled.at("/proposedOracle/expect")));
+        metadata.put("controlledAssumptionPlanFingerprint",
+                compiled.path("controlledAssumptionPlanFingerprint").asText());
+        metadata.put("featureValuesFingerprint", compiled.path("featureValuesFingerprint").asText());
+        metadata.put("dependencyPlanFingerprint", compiled.path("dependencyPlanFingerprint").asText());
         metadata.set("businessContractVector", compiled.path("businessContractVector").deepCopy());
         metadata.set("materialReceipt", receipt);
         ObjectNode proposal = metadata.putObject("proposedOracle");
@@ -136,47 +139,7 @@ public final class BusinessGoldenService {
         String owner = requiredText(raw, "oracleOwner");
         if (!raw.path("givenFacts").isArray() || !raw.path("expectedOutcome").isObject()
                 || !raw.path("dependencyAssumptions").isArray()) throw schema();
-        ObjectNode given = mapper.createObjectNode();
-        ArrayNode contractVector = mapper.createArrayNode();
-        raw.path("givenFacts").forEach(fact -> {
-            String name = requiredText(fact, "factName");
-            List<Map.Entry<String, String>> matches = solution.inputs().entrySet().stream()
-                    .filter(entry -> featureMatches(registry.requireFeature(scope, entry.getValue()), name, entry))
-                    .toList();
-            if (matches.size() != 1 || !fact.has("value")) throw ambiguous("fact");
-            var match = matches.getFirst();
-            FeatureContract feature = registry.requireFeature(scope, match.getValue());
-            if (!SolutionValueSchemaValidator.featureValueMatches(feature.output(), fact.path("value"))) {
-                throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
-                        "A supplied business fact value does not match its current contract.");
-            }
-            given.set(match.getKey(), fact.path("value").deepCopy());
-            ObjectNode coordinate = contractVector.addObject();
-            coordinate.put("assetKind", "FEATURE");
-            coordinate.put("assetRef", match.getValue());
-            coordinate.put("semanticKey", feature.businessDefinition().semanticKey());
-            coordinate.put("contractFingerprint", fingerprint(feature.contractIdentity()));
-        });
-        ObjectNode assumptions = mapper.createObjectNode();
-        raw.path("dependencyAssumptions").forEach(assumption -> {
-            String name = requiredText(assumption, "capabilityName");
-            List<InstructionContract> matches = solution.instructions().stream()
-                    .map(ref -> registry.requireInstruction(scope, ref))
-                    .filter(instruction -> instruction.instructionRef().equals(name)
-                            || instruction.businessSemantics().equalsIgnoreCase(name)).toList();
-            if (matches.size() != 1) throw ambiguous("dependency");
-            String outcome = requiredText(assumption, "outcome").toUpperCase(java.util.Locale.ROOT);
-            if (!List.of("RETURNS", "UNAVAILABLE", "SUCCEEDS_WITHOUT_EFFECT",
-                    "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED").contains(outcome)) throw schema();
-            ObjectNode compiled = assumptions.putObject(matches.getFirst().instructionRef());
-            compiled.put("outcome", outcome);
-            if (assumption.has("value")) compiled.set("value", assumption.path("value").deepCopy());
-            ObjectNode coordinate = contractVector.addObject();
-            coordinate.put("assetKind", "INSTRUCTION");
-            coordinate.put("assetRef", matches.getFirst().instructionRef());
-            coordinate.put("semanticKey", matches.getFirst().instructionRef());
-            coordinate.put("contractFingerprint", fingerprint(matches.getFirst().contractIdentity()));
-        });
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = fixtureCompiler.compile(scope, solution, raw);
         ObjectNode expected = (ObjectNode) raw.path("expectedOutcome").deepCopy();
         if (!expected.has("result") || !expected.has("reasoningClass")) throw schema();
         ObjectNode expect = mapper.createObjectNode();
@@ -184,34 +147,30 @@ public final class BusinessGoldenService {
         expect.set("reasoning", expected.path("reasoningClass").deepCopy());
         ObjectNode fingerprintMaterial = mapper.createObjectNode();
         fingerprintMaterial.put("businessIntent", intent);
-        fingerprintMaterial.set("canonicalGivenFacts", given);
-        fingerprintMaterial.set("canonicalDependencyAssumptions", assumptions);
+        fingerprintMaterial.set("canonicalGivenFacts", plan.given());
+        fingerprintMaterial.set("canonicalDependencyAssumptions", plan.dependencyAssumptions());
         fingerprintMaterial.set("expectedOutcome", expected);
         fingerprintMaterial.put("oracleOwner", owner);
-        List<JsonNode> sortedVector = new ArrayList<>();
-        contractVector.forEach(item -> sortedVector.add(item.deepCopy()));
-        sortedVector.sort(java.util.Comparator.comparing(item -> item.path("semanticKey").asText()));
-        fingerprintMaterial.set("referencedBusinessContractVector", mapper.valueToTree(sortedVector));
+        fingerprintMaterial.set("referencedBusinessContractVector",
+                mapper.valueToTree(plan.businessContractVector()));
+        fingerprintMaterial.put("controlledAssumptionPlanFingerprint", plan.planFingerprint());
         fingerprintMaterial.put("caseId", caseId);
         String goldenFingerprint = fingerprint(fingerprintMaterial);
 
         ObjectNode row = mapper.createObjectNode();
         row.put("caseId", caseId); row.put("category", "GOLDEN"); row.put("layer", "integration");
-        row.put("intent", intent); row.set("given", given); row.set("stubs", mapper.createObjectNode());
-        row.set("controlledAssumptions", assumptions); row.put("oracleOwner", owner);
+        row.put("intent", intent); row.set("given", plan.given()); row.set("stubs", mapper.createObjectNode());
+        row.set("controlledAssumptions", plan.dependencyAssumptions()); row.put("oracleOwner", owner);
         row.put("lifecycle", "DRAFT"); row.put("qualityState", "DESIGNED_NOT_RUN");
         row.put("goldenCaseFingerprint", goldenFingerprint);
-        row.set("businessContractVector", mapper.valueToTree(sortedVector));
+        row.set("businessContractVector", mapper.valueToTree(plan.businessContractVector()));
+        row.put("featureValuesFingerprint", plan.featureValuesFingerprint());
+        row.put("dependencyPlanFingerprint", plan.dependencyPlanFingerprint());
+        row.put("controlledAssumptionPlanFingerprint", plan.planFingerprint());
         ObjectNode proposal = row.putObject("proposedOracle");
         proposal.set("expect", expect); proposal.put("oracleOwner", owner); proposal.put("status", "PENDING");
         proposal.put("proposedBy", identity.actorId()); proposal.put("proposalFingerprint", goldenFingerprint);
         return row;
-    }
-
-    private boolean featureMatches(FeatureContract feature, String name, Map.Entry<String, String> input) {
-        return input.getKey().equalsIgnoreCase(name) || input.getValue().equalsIgnoreCase(name)
-                || feature.businessSemantics().equalsIgnoreCase(name)
-                || feature.businessDefinition().semanticKey().equalsIgnoreCase(name);
     }
 
     private List<Map<String, Object>> summaries(JsonNode rows) {
@@ -236,10 +195,6 @@ public final class BusinessGoldenService {
     }
     private String fingerprint(Object value) {
         return VisualBundleFingerprint.fromCanonicalValue(mapper, value, MAX_BYTES);
-    }
-    private static AgentTddToolException ambiguous(String kind) {
-        return new AgentTddToolException("BUSINESS_ASSUMPTION_AMBIGUOUS",
-                "A business " + kind + " did not resolve to exactly one current capability.");
     }
     private static AgentTddToolException schema() {
         return new AgentTddToolException("SCHEMA_NONCONFORMANT", "Business GOLDEN cases are incomplete.");
