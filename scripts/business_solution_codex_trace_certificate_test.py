@@ -45,7 +45,7 @@ def valid_events() -> list[dict]:
              {"journeyRef": journey, "expectedJourneyRevision": 1,
               "authoringPatternsFingerprint": patterns,
               "featureYaml": "private", "idempotencyKey": "feature"},
-             {"featureId": "feature:test"}),
+             {"featureId": "feature:test", "contractFingerprint": "sha256:" + "e" * 64}),
         call("rg_read", "rg.journey.next", {"journeyRef": journey, "expectedRevision": 2},
              {"journeyRef": journey, "revision": 2, "stage": "DEFINING_RULES",
               "surface": "BUSINESS_SOLUTION", "solutionContextFingerprint": ""}),
@@ -104,6 +104,35 @@ def metadata() -> dict:
     }
 
 
+def valid_recall_events() -> list[dict]:
+    return [
+        call("rg_read", "rg.capability.search", {"query": {"intent": "private"}}, {
+            "status": "INCOMPLETE",
+            "candidates": [{
+                "assetRef": "feature:test",
+                "contractFingerprint": "sha256:" + "e" * 64,
+                "matchType": "PARTIAL",
+            }],
+        }),
+        {"type": "item.completed", "item": {
+            "type": "agent_message", "text": "已经找到现有的取消归责事实，可以继续核对业务含义。"}},
+        {"type": "turn.completed"},
+    ]
+
+
+def valid_clarification_events() -> list[dict]:
+    return [
+        call("rg_read", "rg.library.overview.get", {"includeSamples": False}, {
+            "buildingBlocks": [], "worldModel": {}, "authoringPatterns": {}, "samples": [],
+            "snapshotFingerprint": "sha256:" + "a" * 64,
+            "authoringPatternsFingerprint": "sha256:" + "b" * 64,
+        }),
+        {"type": "item.completed", "item": {
+            "type": "agent_message", "text": "无法判断取消责任时，应当转人工复核还是采用其他处理方式？"}},
+        {"type": "turn.completed"},
+    ]
+
+
 class BusinessSolutionCertificateTest(unittest.TestCase):
     def certify(self, events: list[dict] | None = None) -> dict:
         with tempfile.TemporaryDirectory() as directory:
@@ -111,6 +140,22 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
             trace.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
                                      for event in (events or valid_events())), encoding="utf-8")
             return MODULE.certify(trace, metadata())
+
+    def certify_aux(self, recall_events: list[dict] | None = None,
+                    clarification_events: list[dict] | None = None) -> dict:
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory, "trace.jsonl")
+            recall_trace = Path(directory, "recall.jsonl")
+            clarification_trace = Path(directory, "clarification.jsonl")
+            for path, events in (
+                    (trace, valid_events()),
+                    (recall_trace, recall_events or valid_recall_events()),
+                    (clarification_trace, clarification_events or valid_clarification_events())):
+                path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n"
+                                         for event in events), encoding="utf-8")
+            safe_metadata = metadata()
+            safe_metadata.update({"recallExitCode": 0, "clarificationExitCode": 0})
+            return MODULE.certify(trace, safe_metadata, recall_trace, clarification_trace)
 
     def test_certifies_one_correlated_business_journey_without_payload(self) -> None:
         certificate = self.certify()
@@ -123,6 +168,54 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertTrue(certificate["assertions"]["fourEntityWritesBoundToAuthoringPatterns"])
         self.assertNotIn("private", json.dumps(certificate))
         self.assertIsNone(certificate["metrics"]["recallAt3"])
+
+    def test_certifies_correlated_recall_and_single_business_clarification(self) -> None:
+        certificate = self.certify_aux()
+        self.assertEqual(3, len(certificate["cases"]))
+        self.assertEqual(1.0, certificate["metrics"]["recallAt3"])
+        self.assertEqual(1.0, certificate["metrics"]["top1"])
+        self.assertEqual(1.0, certificate["metrics"]["clarificationRate"])
+        self.assertTrue(certificate["assertions"]["crossSessionFeatureRecallCorrelated"])
+        self.assertTrue(certificate["assertions"]["clarificationStoppedBeforeAuthoring"])
+        self.assertNotIn("feature:test", json.dumps(certificate))
+
+    def test_rejects_recall_of_a_different_feature(self) -> None:
+        events = valid_recall_events()
+        candidate = events[0]["item"]["result"]["structuredContent"]["data"]["candidates"][0]
+        candidate["assetRef"] = "feature:other"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "top three"):
+            self.certify_aux(recall_events=events)
+
+    def test_rejects_recalled_feature_outside_top_one_for_the_single_sample(self) -> None:
+        events = valid_recall_events()
+        candidates = events[0]["item"]["result"]["structuredContent"]["data"]["candidates"]
+        candidates.insert(0, {
+            "assetRef": "feature:other",
+            "contractFingerprint": "sha256:" + "f" * 64,
+            "matchType": "PARTIAL",
+        })
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "rank.*first"):
+            self.certify_aux(recall_events=events)
+
+    def test_rejects_authoring_attempt_during_clarification(self) -> None:
+        events = valid_clarification_events()
+        events.insert(1, call("rg_author", "rg.journey.start", {}, {}))
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "business write"):
+            self.certify_aux(clarification_events=events)
+
+    def test_rejects_zero_or_multiple_clarification_questions(self) -> None:
+        for text in ("请补充无法判断时的处理方式。", "无法判断时怎么办？由谁提供这个事实？"):
+            with self.subTest(text=text):
+                events = valid_clarification_events()
+                events[-2]["item"]["text"] = text
+                with self.assertRaisesRegex(MODULE.CertificationFailure, "exactly one"):
+                    self.certify_aux(clarification_events=events)
+
+    def test_rejects_technical_clarification_question(self) -> None:
+        events = valid_clarification_events()
+        events[-2]["item"]["text"] = "请提供 schema 字段？"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "technical"):
+            self.certify_aux(clarification_events=events)
 
     def test_rejects_stale_journey_revision(self) -> None:
         events = valid_events()

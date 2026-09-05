@@ -190,6 +190,8 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
+                "--recall-trace", "--clarification-trace", "--recall-exit-code",
+                "--clarification-exit-code", "RECALL_PROMPT_FILE", "CLARIFICATION_PROMPT_FILE",
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
                 "X-RG-Surface\"=\"BUSINESS_SOLUTION",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
@@ -221,7 +223,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 30 tests", "OK");
+        assertThat(output).contains("Ran 36 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

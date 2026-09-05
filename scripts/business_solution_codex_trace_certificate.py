@@ -192,6 +192,12 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
 
     compose = calls[positions[-2]]
     proposal = calls[positions[-1]]
+    features = successful(calls, "rg.feature.define")
+    recalled_feature_ref = required_text(features[0]["data"].get("featureId"), "recalled feature")
+    recalled_feature_fingerprint = required_text(
+        features[0]["data"].get("contractFingerprint"), "recalled feature contract fingerprint")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", recalled_feature_fingerprint):
+        raise CertificationFailure("recalled feature contract fingerprint is malformed")
     solution_ref = required_text(compose["data"].get("solutionRef"), "solution")
     solution_fingerprint = required_text(
         compose["data"].get("contractFingerprint"), "solution contract fingerprint")
@@ -235,7 +241,69 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
         "requiredPositions": [position + 1 for position in positions],
         "librarySnapshotFingerprint": library_snapshot,
         "authoringPatternsFingerprint": authoring_patterns,
+        "recalledFeatureRef": recalled_feature_ref,
+        "recalledFeatureContractFingerprint": recalled_feature_fingerprint,
     }, proposal
+
+
+def require_recall_trace(path: Path, chain: dict[str, Any], exit_code: int) -> dict[str, Any]:
+    """Prove that a new read-only Codex turn recalled the exact authored Feature."""
+    calls, final_message, completed = load_trace(path)
+    if len(calls) > 40 or not completed or exit_code != 0:
+        raise CertificationFailure("recall turn did not complete within the bounded call budget")
+    for call in calls:
+        passive = call["server"] == "codex" and call["tool"] in CODEX_MCP_DISCOVERY_CALLS
+        business_read = call["server"] == "rg_read" and call["tool"] in READ_TOOLS
+        if not passive and not business_read:
+            raise CertificationFailure("recall turn escaped the read-only business surface")
+    if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
+        raise CertificationFailure("recall final summary is missing or exposes technical vocabulary")
+
+    target = (chain["recalledFeatureRef"], chain["recalledFeatureContractFingerprint"])
+    best_rank: int | None = None
+    best_match_type = "NONE"
+    for search in successful(calls, "rg.capability.search"):
+        candidates = search["data"].get("candidates")
+        if not isinstance(candidates, list):
+            continue
+        for rank, candidate in enumerate(candidates, start=1):
+            if not isinstance(candidate, dict):
+                continue
+            coordinate = (candidate.get("assetRef"), candidate.get("contractFingerprint"))
+            if coordinate != target:
+                continue
+            if best_rank is None or rank < best_rank:
+                best_rank = rank
+                best_match_type = str(candidate.get("matchType", "NONE"))
+    if best_rank is None or best_rank > 3:
+        raise CertificationFailure("recall candidates do not contain the authored Feature in the top three")
+    if best_rank != 1:
+        raise CertificationFailure("the unique recall sample did not rank the authored Feature first")
+    return {"rank": best_rank, "matchType": best_match_type, "calls": calls}
+
+
+def require_clarification_trace(path: Path, exit_code: int) -> dict[str, Any]:
+    """Prove that Codex asked one business question before any authoring mutation."""
+    calls, final_message, completed = load_trace(path)
+    if len(calls) > 40 or not completed or exit_code != 0:
+        raise CertificationFailure("clarification turn did not complete within the bounded call budget")
+    for call in calls:
+        passive = call["server"] == "codex" and call["tool"] in CODEX_MCP_DISCOVERY_CALLS
+        business = call["server"] in {"rg_read", "rg_author"} \
+            and call["tool"] in READ_TOOLS | AUTHORING_TOOLS
+        if not passive and not business:
+            raise CertificationFailure("clarification turn escaped the business surface")
+        if call["tool"] in AUTHORING_TOOLS:
+            raise CertificationFailure("clarification turn attempted a business write")
+    if not successful(calls, "rg.library.overview.get") \
+            and not successful(calls, "rg.capability.search"):
+        raise CertificationFailure("clarification turn did not consult the business library")
+    question_count = final_message.count("?") + final_message.count("？")
+    if question_count != 1:
+        raise CertificationFailure("clarification turn must ask exactly one business question")
+    if TECHNICAL_FINAL_PATTERN.search(final_message):
+        raise CertificationFailure("clarification final summary exposes technical vocabulary")
+    return {"calls": calls}
 
 
 def verify_board(board: Any, chain: dict[str, Any]) -> None:
@@ -252,7 +320,8 @@ def verify_board(board: Any, chain: dict[str, Any]) -> None:
         raise CertificationFailure("the exact proposed cases are not pending independent review")
 
 
-def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
+def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = None,
+            clarification_trace: Path | None = None) -> dict[str, Any]:
     """Build the safe certificate after all private correlation checks pass."""
     calls, final_message, completed = load_trace(trace)
     if len(calls) > 80 or not completed or metadata["exitCode"] != 0:
@@ -261,6 +330,15 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
     if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("Codex final summary is missing or exposes technical vocabulary")
     verify_board(metadata.get("boardProjection"), chain)
+    if (recall_trace is None) != (clarification_trace is None):
+        raise CertificationFailure("recall and clarification traces must be supplied together")
+    recall_proof = None
+    clarification_proof = None
+    if recall_trace is not None and clarification_trace is not None:
+        recall_proof = require_recall_trace(
+            recall_trace, chain, metadata.get("recallExitCode", -1))
+        clarification_proof = require_clarification_trace(
+            clarification_trace, metadata.get("clarificationExitCode", -1))
     runtime_nonce = required_text(metadata.get("runtimeInstanceNonce"), "runtime nonce")
     runtime_jar = required_text(metadata.get("runtimeJarSha256"), "runtime JAR")
     if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce) \
@@ -319,7 +397,8 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "authoringPatterns": opaque("authoring-patterns", chain["authoringPatternsFingerprint"]),
         },
         "metrics": {
-            "toolRecallRate": 1.0, "recallAt3": None, "clarificationRate": None,
+            "toolRecallRate": 1.0, "recallAt3": None, "top1": None,
+            "clarificationRate": None,
             "recallCases": 0, "clarificationCases": 0,
             "unsafeEscapeCount": 0, "controlledTestEgressCount": 0,
             "staleGoldenAcceptedCount": 0,
@@ -341,6 +420,50 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
         },
         "result": "CERTIFIED",
     }
+    if recall_proof is not None and clarification_proof is not None:
+        match_type = recall_proof["matchType"]
+        if match_type not in {"EXACT", "PARTIAL", "CONFLICT", "NONE"}:
+            match_type = "NONE"
+        certificate["cases"].extend([
+            {
+                "caseFingerprint": opaque("recall-case", chain["recalledFeatureRef"]),
+                "expectedIntentKind": "RECALL_CAPABILITY",
+                "observedSurface": "BUSINESS_SOLUTION",
+                "capabilityOutcome": match_type,
+                "selectedContractFingerprint": opaque(
+                    "feature-contract", chain["recalledFeatureContractFingerprint"]),
+                "toolSequenceClass": "VALID",
+                "humanBoundaryRespected": True,
+                "controlledAssumptionClass": "NOT_APPLICABLE",
+                "egressDeniedCount": 0,
+                "goldenCaseCurrent": None,
+            },
+            {
+                "caseFingerprint": opaque(
+                    "clarification-case", chain["authoringPatternsFingerprint"]),
+                "expectedIntentKind": "DEFINE_FEATURE",
+                "observedSurface": "BUSINESS_SOLUTION",
+                "capabilityOutcome": "CLARIFIED",
+                "selectedContractFingerprint": None,
+                "toolSequenceClass": "VALID",
+                "humanBoundaryRespected": True,
+                "controlledAssumptionClass": "NOT_APPLICABLE",
+                "egressDeniedCount": 0,
+                "goldenCaseCurrent": None,
+            },
+        ])
+        certificate["metrics"].update({
+            "recallAt3": 1.0,
+            "top1": 1.0,
+            "clarificationRate": 1.0,
+            "recallCases": 1,
+            "clarificationCases": 1,
+        })
+        certificate["assertions"].update({
+            "crossSessionFeatureRecallCorrelated": True,
+            "clarificationStoppedBeforeAuthoring": True,
+            "singleBusinessQuestionObserved": True,
+        })
     canonical = json.dumps(certificate, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     certificate["certificateFingerprint"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
     return certificate
@@ -356,6 +479,10 @@ def main() -> int:
     parser.add_argument("--runtime-instance-nonce", required=True)
     parser.add_argument("--runtime-jar-sha256", required=True)
     parser.add_argument("--board-projection", required=True, type=Path)
+    parser.add_argument("--recall-trace", type=Path)
+    parser.add_argument("--clarification-trace", type=Path)
+    parser.add_argument("--recall-exit-code", type=int)
+    parser.add_argument("--clarification-exit-code", type=int)
     args = parser.parse_args()
     try:
         board = json.loads(args.board_projection.read_text(encoding="utf-8"))
@@ -364,7 +491,9 @@ def main() -> int:
             "certifiedAt": args.certified_at, "exitCode": args.exit_code,
             "runtimeInstanceNonce": args.runtime_instance_nonce,
             "runtimeJarSha256": args.runtime_jar_sha256, "boardProjection": board,
-        })
+            "recallExitCode": args.recall_exit_code,
+            "clarificationExitCode": args.clarification_exit_code,
+        }, args.recall_trace, args.clarification_trace)
     except (CertificationFailure, json.JSONDecodeError, OSError) as failure:
         print(f"Certification failed: {failure}", file=sys.stderr)
         return 1

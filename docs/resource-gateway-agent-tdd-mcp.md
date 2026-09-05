@@ -534,7 +534,7 @@ nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。�
 或业务值。证书不保留参数、结果、消息和业务载荷。已审核样例见
 [`docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json`](acceptance/agent-tdd/business-solution-codex-certification-v1.json)，
 严格 Schema 见
-[`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。证书中的 `recallAt3` 和 `clarificationRate` 只有在真实话语集中出现对应样本时才写数值；当前单旅程证据没有覆盖这两类样本，因此写 `null`，不伪造满分。
+[`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。认证脚本在主创作之后继续启动两个独立 Codex 会话：同义业务话语只使用 READ 面召回刚创建的 Feature；业务定义缺字段的话语同时可见 READ 和业务创作面，但必须只问一个业务问题且不发起写调用。Reducer 用同一一次性 HMAC 关联主创作和召回候选，只有目标 Feature 位于 Top-1/Top-3 且澄清会话满足停点时，才写入 `recallAt3`、`top1` 和 `clarificationRate`。仓库当前样例将在该脚本从最终干净提交重新运行后更新；刷新前保留 `null`，不伪造满分。
 
 仓库留存当前通过证据：[机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)、[可视化过程报告](acceptance/agent-tdd/business-solution-codex-certification-v1.html) 和 [过程截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png)。截图从同一 payload-free 证书渲染，展示服务端模板先读、四实体写入绑定同一模板、能力发现、两项事实、一个规则场景、三项处置、Solution、两条待确认案例和一次 revision 自修复。截图是可追溯的认证过程投影，不冒充 Codex 界面截图；它便于人工审阅，不替代 JSON Schema、模板指纹、JAR 指纹、进程所有权和前后运行身份校验。
 

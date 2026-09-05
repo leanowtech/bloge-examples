@@ -43,15 +43,17 @@
         "required": ["caseFingerprint", "expectedIntentKind", "observedSurface", "capabilityOutcome", "selectedContractFingerprint", "toolSequenceClass", "humanBoundaryRespected", "controlledAssumptionClass", "egressDeniedCount", "goldenCaseCurrent"],
         "properties": {
           "caseFingerprint": { "$ref": "#/$defs/hmac" },
-          "expectedIntentKind": { "const": "CREATE_SOLUTION" },
+          "expectedIntentKind": { "enum": ["CREATE_SOLUTION", "RECALL_CAPABILITY", "DEFINE_FEATURE"] },
           "observedSurface": { "const": "BUSINESS_SOLUTION" },
-          "capabilityOutcome": { "enum": ["EXACT", "AMBIGUOUS", "INCOMPLETE", "NONE"] },
-          "selectedContractFingerprint": { "$ref": "#/$defs/hmac" },
+          "capabilityOutcome": { "enum": ["EXACT", "PARTIAL", "CONFLICT", "AMBIGUOUS", "INCOMPLETE", "CLARIFIED", "NONE"] },
+          "selectedContractFingerprint": {
+            "oneOf": [{ "$ref": "#/$defs/hmac" }, { "type": "null" }]
+          },
           "toolSequenceClass": { "const": "VALID" },
           "humanBoundaryRespected": { "const": true },
-          "controlledAssumptionClass": { "const": "VALID" },
+          "controlledAssumptionClass": { "enum": ["VALID", "NOT_APPLICABLE"] },
           "egressDeniedCount": { "const": 0 },
-          "goldenCaseCurrent": { "const": true }
+          "goldenCaseCurrent": { "type": ["boolean", "null"] }
         }
       }
     },
@@ -100,6 +102,7 @@
       "properties": {
         "toolRecallRate": { "const": 1.0 },
         "recallAt3": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "top1": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "clarificationRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "recallCases": { "type": "integer", "minimum": 0 },
         "clarificationCases": { "type": "integer", "minimum": 0 },
@@ -125,7 +128,10 @@
         "stoppedBeforeApprovalExecutionAndPublication": { "const": true },
         "finalSummaryBusinessOnly": { "const": true },
         "rawArgumentsResultsAndMessagesOmitted": { "const": true },
-        "spawnedRuntimeIdentityVerified": { "const": true }
+        "spawnedRuntimeIdentityVerified": { "const": true },
+        "crossSessionFeatureRecallCorrelated": { "const": true },
+        "clarificationStoppedBeforeAuthoring": { "const": true },
+        "singleBusinessQuestionObserved": { "const": true }
       }
     },
     "result": { "const": "CERTIFIED" },

@@ -68,6 +68,8 @@ WORKSPACE_DIR=""
 ISOLATED_CODEX_DIR=""
 CODEX_RUNTIME_DIR=""
 TRACE_FILE=""
+RECALL_TRACE_FILE=""
+CLARIFICATION_TRACE_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
 SERVICE_PID=""
@@ -123,12 +125,16 @@ chmod 700 "${PRIVATE_DIR}"
 chmod 700 "${ISOLATED_CODEX_DIR}" "${CODEX_RUNTIME_DIR}"
 TRACE_FILE="${PRIVATE_DIR}/trace.jsonl"
 PROMPT_FILE="${PRIVATE_DIR}/prompt.txt"
+RECALL_TRACE_FILE="${PRIVATE_DIR}/recall-trace.jsonl"
+RECALL_PROMPT_FILE="${PRIVATE_DIR}/recall-prompt.txt"
+CLARIFICATION_TRACE_FILE="${PRIVATE_DIR}/clarification-trace.jsonl"
+CLARIFICATION_PROMPT_FILE="${PRIVATE_DIR}/clarification-prompt.txt"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
 BOARD_FILE="${PRIVATE_DIR}/board.json"
 BOARD_CURL_CONFIG="${PRIVATE_DIR}/board-curl.conf"
-touch "${TRACE_FILE}"
-chmod 600 "${TRACE_FILE}"
+touch "${TRACE_FILE}" "${RECALL_TRACE_FILE}" "${CLARIFICATION_TRACE_FILE}"
+chmod 600 "${TRACE_FILE}" "${RECALL_TRACE_FILE}" "${CLARIFICATION_TRACE_FILE}"
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
 chmod 500 "${WORKSPACE_DIR}"
 umask 077
@@ -175,6 +181,8 @@ cat > "${SANDBOX_PROFILE}" <<EOF
 (allow process-exec (literal "${CODE_MODE_EXECUTABLE}"))
 (deny file-write*)
 (allow file-write* (literal "${TRACE_FILE}"))
+(allow file-write* (literal "${RECALL_TRACE_FILE}"))
+(allow file-write* (literal "${CLARIFICATION_TRACE_FILE}"))
 (allow file-write* (subpath "${ISOLATED_CODEX_DIR}"))
 (allow file-write* (subpath "${CODEX_RUNTIME_DIR}"))
 (deny file-read* (subpath "${ROOT_DIR}"))
@@ -295,11 +303,23 @@ cat > "${PROMPT_FILE}" <<EOF
 请自行使用平台提供的创作说明完成结构化定义，不要让我提供格式、字段或技术引用。不要替我批准案例，不要开始验证、签署或发布。完成后只用业务语言告诉我：复用了还是新建了哪些业务能力、规则是否完整、两条案例是否已提交，以及我下一步需要确认什么。
 EOF
 
+cat > "${RECALL_PROMPT_FILE}" <<'EOF'
+现在只做一次业务能力查找，不创建或修改任何内容。请用“谁造成了取消”这句业务说法，找出已经定义的、用于判断取消归责的业务事实。
+
+请先核对候选的业务含义；如果只有一项含义吻合，就告诉我应复用哪项业务事实。若仍有歧义，只问我一个业务问题。全程只用业务语言说明结果。
+EOF
+
+cat > "${CLARIFICATION_PROMPT_FILE}" <<'EOF'
+我还想定义一项业务事实，用于判断取消责任方。目前只确认它可能是“乘客”或“司机”，无法判断时怎么处理、由谁提供这个事实，我还没有决定。
+
+请先了解平台的创作要求。信息不完整时先停下，不创建或修改任何内容，只向我问一个最关键的业务问题。全程只用业务语言。
+EOF
+
 CODEX_VERSION="$(CODEX_HOME="${ISOLATED_CODEX_DIR}" TMPDIR="${CODEX_RUNTIME_DIR}" \
     sandbox-exec -f "${SANDBOX_PROFILE}" "${CODEX_EXECUTABLE}" --version | head -1)"
 CERTIFIED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-CODEX_ARGS=(
+BASE_CODEX_ARGS=(
     exec
     --disable apps --disable in_app_browser --disable multi_agent --disable multi_agent_v2
     --disable plugins --disable remote_plugin --disable skill_search
@@ -310,36 +330,67 @@ CODEX_ARGS=(
     --disable tool_suggest --disable skill_mcp_dependency_install --disable enable_mcp_apps
 )
 if [ -n "${CODEX_MODEL:-}" ]; then
-    CODEX_ARGS+=(-m "${CODEX_MODEL}")
+    BASE_CODEX_ARGS+=(-m "${CODEX_MODEL}")
 fi
-CODEX_ARGS+=(
+BASE_CODEX_ARGS+=(
     --ephemeral --json --ignore-user-config --ignore-rules --skip-git-repo-check
     --sandbox read-only -C "${WORKSPACE_DIR}"
+)
+READ_MCP_ARGS=(
     -c "mcp_servers.rg_read.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_read.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ","X-RG-Surface"="BUSINESS_SOLUTION"}'
     -c 'mcp_servers.rg_read.enabled_tools=["rg.library.overview.get","rg.capability.search","rg.entity.list","rg.entity.get","rg.journey.next","rg.solution.golden.list"]'
     -c 'mcp_servers.rg_read.required=true'
+)
+AUTHOR_MCP_ARGS=(
     -c "mcp_servers.rg_author.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_author.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_author.http_headers={"X-Purpose"="AGENT_TDD_AUTHORING","X-RG-Surface"="BUSINESS_SOLUTION"}'
     -c 'mcp_servers.rg_author.enabled_tools=["rg.journey.start","rg.feature.define","rg.feature.handoff","rg.scenario.define","rg.instruction.define","rg.solution.compose","rg.solution.golden.propose"]'
     -c 'mcp_servers.rg_author.required=true'
-    -
 )
 
+run_codex_turn() {
+    local prompt_file="$1"
+    local trace_file="$2"
+    shift 2
+    (
+        cd "${WORKSPACE_DIR}"
+        CODEX_HOME="${ISOLATED_CODEX_DIR}" TMPDIR="${CODEX_RUNTIME_DIR}" \
+            sandbox-exec -f "${SANDBOX_PROFILE}" \
+            "${CODEX_EXECUTABLE}" "${BASE_CODEX_ARGS[@]}" "$@" -
+    ) < "${prompt_file}" > "${trace_file}"
+}
+
 set +e
-(
-    cd "${WORKSPACE_DIR}"
-    CODEX_HOME="${ISOLATED_CODEX_DIR}" TMPDIR="${CODEX_RUNTIME_DIR}" \
-        sandbox-exec -f "${SANDBOX_PROFILE}" \
-        "${CODEX_EXECUTABLE}" "${CODEX_ARGS[@]}"
-) < "${PROMPT_FILE}" > "${TRACE_FILE}"
+run_codex_turn "${PROMPT_FILE}" "${TRACE_FILE}" \
+    "${READ_MCP_ARGS[@]}" "${AUTHOR_MCP_ARGS[@]}"
 CODEX_EXIT=$?
+set -e
+if ! verify_runtime_identity; then
+    echo "The owned Resource Gateway identity changed or disappeared during the authoring turn." >&2
+    exit 1
+fi
+
+set +e
+run_codex_turn "${RECALL_PROMPT_FILE}" "${RECALL_TRACE_FILE}" \
+    "${READ_MCP_ARGS[@]}"
+RECALL_CODEX_EXIT=$?
+set -e
+if ! verify_runtime_identity; then
+    echo "The owned Resource Gateway identity changed or disappeared during the recall turn." >&2
+    exit 1
+fi
+
+set +e
+run_codex_turn "${CLARIFICATION_PROMPT_FILE}" "${CLARIFICATION_TRACE_FILE}" \
+    "${READ_MCP_ARGS[@]}" "${AUTHOR_MCP_ARGS[@]}"
+CLARIFICATION_CODEX_EXIT=$?
 set -e
 
 if ! verify_runtime_identity; then
-    echo "The owned Resource Gateway identity changed or disappeared during the Codex turn." >&2
+    echo "The owned Resource Gateway identity changed or disappeared during the clarification turn." >&2
     exit 1
 fi
 if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
@@ -364,13 +415,17 @@ chmod 600 "${BOARD_FILE}"
 
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TRACE_FILE}" \
+    --recall-trace "${RECALL_TRACE_FILE}" \
+    --clarification-trace "${CLARIFICATION_TRACE_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
     --certified-at "${CERTIFIED_AT}" \
     --runtime-instance-nonce "${INSTANCE_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \
     --board-projection "${BOARD_FILE}" \
-    --exit-code "${CODEX_EXIT}" > "${TEMP_OUTPUT}"
+    --exit-code "${CODEX_EXIT}" \
+    --recall-exit-code "${RECALL_CODEX_EXIT}" \
+    --clarification-exit-code "${CLARIFICATION_CODEX_EXIT}" > "${TEMP_OUTPUT}"
 chmod 600 "${TEMP_OUTPUT}"
 mv "${TEMP_OUTPUT}" "${OUTPUT_FILE}"
 TEMP_OUTPUT=""
