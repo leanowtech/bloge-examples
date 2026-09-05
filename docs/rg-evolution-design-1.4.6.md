@@ -1346,7 +1346,7 @@ resource-gateway:
 
 | 阶段 | 当前状态 | 完成证据 |
 |---|---|---|
-| P0 目录真相统一 | 待实施 | catalog/invoker/config/instructions 一致性测试；真实 overview MCP 调用 |
+| P0 目录真相统一 | 已完成 | 43 项 catalog 与 invoker 对齐；`rg.library.overview.get` 严格输入/输出 Schema；目录生成初始化说明；config、分发器、脚本和手册一致性测试；真实 MCP 边界调用测试 |
 | P1 surface 隔离 | 待实施 | list/call 双重过滤；业务会话近义工具不可见 |
 | P2 统一能力索引 | 待实施 | 五类资产统一发现；scope、snapshot、cursor 测试 |
 | P3 Feature 语义契约 v2 | 待实施 | 字段级 matcher；旧版 PARTIAL；工程履约不改业务定义 |

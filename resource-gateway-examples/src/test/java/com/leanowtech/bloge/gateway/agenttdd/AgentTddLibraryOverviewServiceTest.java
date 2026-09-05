@@ -48,6 +48,7 @@ class AgentTddLibraryOverviewServiceTest {
                 .contains("bound=false", "bound=true");
         assertThat(worldModel.get("types").toString())
                 .contains("ride:order-lookup.order", "orderId", "feeCharged");
+        assertThat(overview.get("snapshotFingerprint").toString()).startsWith("sha256:");
     }
 
     @Test
@@ -63,12 +64,28 @@ class AgentTddLibraryOverviewServiceTest {
         when(descriptor.variantKey()).thenReturn("order");
         when(fixtures.listHeads(any(), eq(false), eq(100), eq(0))).thenReturn(List.of(stored));
 
-        Map<String, Object> overview = new AgentTddLibraryOverviewService(
-                new FixedCatalog(List.of()), fixtures).overview(identity());
+        AgentTddLibraryOverviewService service = new AgentTddLibraryOverviewService(
+                new FixedCatalog(List.of()), fixtures);
+        Map<String, Object> overview = service.overview(identity(), true);
 
         assertThat(overview.get("samples")).asList().singleElement().asString()
                 .contains("provided-ride-order", "DRAFT", "SAMPLE", "order")
                 .doesNotContain("payload", "sampleValue");
+        assertThat(service.overview(identity(), false).get("samples")).asList().isEmpty();
+    }
+
+    @Test
+    void producesTheSameSnapshotFingerprintForTheSameSortedProjection() {
+        VisualOperatorCatalog catalog = new FixedCatalog(List.of(
+                libraryOperator("ride:policy-lookup", "政策查询", true),
+                libraryOperator("ride:order-lookup", "订单查询", false)));
+        AgentTddLibraryOverviewService service = new AgentTddLibraryOverviewService(catalog);
+
+        Map<String, Object> first = service.overview(identity(), false);
+        Map<String, Object> second = service.overview(identity(), false);
+
+        assertThat(first.get("snapshotFingerprint"))
+                .isEqualTo(second.get("snapshotFingerprint"));
     }
 
     private static OperatorDefinition base(String ref, String effect) {

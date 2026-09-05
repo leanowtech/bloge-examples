@@ -48,7 +48,8 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(42);
+        assertThat(response.path("result").path("tools")).hasSize(43);
+        assertThat(response.path("result").path("tools").toString()).contains("rg.library.overview.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
@@ -73,7 +74,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(42);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(43);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -229,6 +230,34 @@ class McpProtocolControllerTest {
         assertThat(reference.path("supportedRootKinds").get(0).asText()).isEqualTo("graph");
         assertThat(reference.path("authoringContextFingerprint").asText()).startsWith("sha256:");
         assertThat(reference.toString()).doesNotContain("urlTemplate", "diagnostics", "lowering");
+    }
+
+    @Test
+    void servesTheBusinessLibraryOverviewThroughTheRealStrictMcpBoundary() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity());
+        OperatorLibraryRegistry libraries = mock(OperatorLibraryRegistry.class);
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                libraries, drafts, mapper, null, null, null, null, null, operators);
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, tools);
+
+        JsonNode response = controller.exchange(request(97, "tools/call", Map.of(
+                        "name", "rg.library.overview.get",
+                        "arguments", Map.of("includeSamples", false))),
+                modernHeaders("tools/call", "rg.library.overview.get")).getBody();
+
+        assertThat(response.path("error").isMissingNode()).isTrue();
+        JsonNode overview = response.at("/result/structuredContent/data");
+        assertThat(overview.path("buildingBlocks").isArray()).isTrue();
+        assertThat(overview.path("worldModel").isObject()).isTrue();
+        assertThat(overview.path("samples")).isEmpty();
+        assertThat(overview.path("snapshotFingerprint").asText()).startsWith("sha256:");
+        verify(authenticator).authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ));
     }
 
     @Test
@@ -492,7 +521,7 @@ class McpProtocolControllerTest {
         assertThat(modern.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
         assertThat(modern.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.5");
+                .isEqualTo("1.4.6");
         assertThat(modern.path("result").path("instructions").asText())
                 .startsWith("For a business Solution request");
         assertThat(modern.path("result").path("instructions").asText())
@@ -507,7 +536,7 @@ class McpProtocolControllerTest {
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(codex.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.5");
+                .isEqualTo("1.4.6");
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }

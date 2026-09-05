@@ -89,6 +89,34 @@ class ResourceGatewayAgentTddToolsTest {
         assertThat(contract.path("data").path("outputs").get(0).path("name").asText()).isEqualTo("payload");
     }
 
+    @Test
+    void returnsTheBusinessLibraryOverviewThroughTheMcpFacade() {
+        OperatorDefinition resource = runtimeResource("resource:wallet-service.getBalance");
+        VisualOperatorCatalog catalog = new VisualOperatorCatalog() {
+            @Override
+            public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+                return List.of(resource);
+            }
+
+            @Override
+            public Optional<OperatorDefinition> find(String operatorRef) {
+                return Optional.of(resource).filter(value -> value.operatorRef().equals(operatorRef));
+            }
+        };
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                new InMemoryOperatorLibraryRegistry(), new InMemoryGraphDraftRepository(), mapper,
+                null, null, null, null, null, catalog);
+
+        JsonNode response = mapper.valueToTree(tools.invoke(
+                "rg.library.overview.get", mapper.valueToTree(Map.of("includeSamples", false)), identity()));
+
+        assertThat(response.path("ok").asBoolean()).isTrue();
+        assertThat(response.path("data").path("buildingBlocks").isArray()).isTrue();
+        assertThat(response.path("data").path("worldModel").isObject()).isTrue();
+        assertThat(response.path("data").path("samples")).isEmpty();
+        assertThat(response.path("data").path("snapshotFingerprint").asText()).startsWith("sha256:");
+    }
+
     private static OperatorDefinition designOperator(String ref) {
         return new OperatorDefinition(
                 "bloge.visualOperator.v1", ref, "1.0.0",

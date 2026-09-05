@@ -2,7 +2,7 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成世界观与积木发现、资源登记、样例提供、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、平台实景验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.5 会在 MCP 初始化说明中要求 Codex 先按业务语言补齐目标、判断依据、规则、兜底处置与代表案例，再自行建立 Feature（事实契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合）。只有处理底层 Tool DSL 时才读取当前 DSL 参考、预览并按服务端安全诊断修正；业务人员不承担这些技术步骤。
+业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.6 会在 MCP 初始化说明中要求 Codex 先按业务语言补齐目标、判断依据、规则、兜底处置与代表案例，再自行建立 Feature（事实契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合）。只有处理底层 Tool DSL 时才读取当前 DSL 参考、预览并按服务端安全诊断修正；业务人员不承担这些技术步骤。
 
 需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。第 1 幕先盘点业务能力库，再用多轮业务对话逐项确认事实含义、所需上下文、结果范围、不可判断处理和取值责任。只有这些维度完全一致的库内能力才可复用；缺失事实先建立业务契约与工程交接。工程履约后，Codex 必须重新读取能力库和当前契约，并确认业务定义没有漂移；所有必需能力就绪后，才能继续规则、案例、验证和发布。业务画面只显示事实定义、能力状态与下一责任方，算子契约和绑定只出现在技术幕后。前一幕的交接门未通过时不得继续。
 
@@ -149,6 +149,8 @@ required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 120
 ```
+
+`rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
 
 不要把 Bearer token 直接写进 TOML。在独立的 **终端 B** 中只注入 Agent token，再从这里启动 Codex CLI：
 

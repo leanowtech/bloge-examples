@@ -2,8 +2,15 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
@@ -12,13 +19,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** Verifies the public MCP tool catalog promised by the RG 1.4 design. */
 class McpToolCatalogTest {
+    private static final Pattern QUOTED_TOOL = Pattern.compile("[\\\"`]((?:rg\\.)[a-zA-Z0-9_.]+)[\\\"`]");
 
     @Test
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(42);
+        assertThat(catalog.all()).hasSize(43);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.library.overview.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.oracle.propose").impact()).isEqualTo(McpToolImpact.PROPOSE);
@@ -82,6 +91,12 @@ class McpToolCatalogTest {
         assertThat(stringKeys(properties(invoke.outputSchema(), "data")))
                 .contains("result", "reasoning", "publicationId",
                         "implementationFingerprint", "executionStatus");
+        McpToolDefinition overview = catalog.require("rg.library.overview.get");
+        assertThat(stringKeys((Map<?, ?>) overview.inputSchema().get("properties")))
+                .containsExactly("includeSamples");
+        assertThat(stringKeys(dataProperties(overview)))
+                .containsExactlyInAnyOrder(
+                        "buildingBlocks", "worldModel", "samples", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.feature.handoff"))))
                 .containsExactlyInAnyOrder("ticketId", "featureName", "requiredOutput",
                         "requiredInputs", "evaluationKind", "businessSemantics", "status",
@@ -153,6 +168,45 @@ class McpToolCatalogTest {
         assertThat(cases.keySet().stream().map(Object::toString).toList())
                 .contains("oneOf").doesNotContain("properties", "required");
         assertThat((List<?>) cases.get("oneOf")).hasSize(2);
+    }
+
+    @Test
+    void catalogCoversDispatcherCodexConfigurationRunbookAndCertificationScript() throws IOException {
+        McpToolCatalog catalog = new McpToolCatalog();
+        Set<String> names = catalog.all().stream()
+                .map(McpToolDefinition::name)
+                .collect(Collectors.toUnmodifiableSet());
+        Path root = repositoryRoot();
+
+        Set<String> configured = quotedToolNames(Files.readString(root.resolve(".codex/config.toml")));
+        Set<String> dispatched = quotedToolNames(Files.readString(root.resolve(
+                "resource-gateway-examples/src/main/java/com/leanowtech/bloge/gateway/agenttdd/"
+                        + "ResourceGatewayAgentTddTools.java")));
+        Set<String> scripted = quotedToolNames(Files.readString(root.resolve(
+                "scripts/certify-agent-tdd-codex.sh")));
+
+        assertThat(names).containsAll(configured);
+        assertThat(dispatched).containsAll(names);
+        assertThat(scripted).allSatisfy(value -> assertThat(value)
+                .matches("rg\\.agentTddCertificationInstance\\.v1|" +
+                        names.stream().map(Pattern::quote).collect(Collectors.joining("|"))));
+        assertThat(Files.readString(root.resolve("docs/resource-gateway-agent-tdd-mcp.md")))
+                .contains("\"rg.library.overview.get\"");
+    }
+
+    private static Set<String> quotedToolNames(String source) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        Matcher matcher = QUOTED_TOOL.matcher(source);
+        while (matcher.find()) names.add(matcher.group(1));
+        return Set.copyOf(names);
+    }
+
+    private static Path repositoryRoot() {
+        Path current = Path.of("").toAbsolutePath().normalize();
+        if (Files.isRegularFile(current.resolve(".codex/config.toml"))) return current;
+        Path parent = current.getParent();
+        if (parent != null && Files.isRegularFile(parent.resolve(".codex/config.toml"))) return parent;
+        throw new IllegalStateException("Repository root with .codex/config.toml was not found");
     }
 
     @Test

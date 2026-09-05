@@ -15,6 +15,11 @@ import java.util.Map;
  */
 @Component
 public final class McpToolCatalog {
+    public static final String LIBRARY_OVERVIEW = "rg.library.overview.get";
+    public static final String FEATURE_HANDOFF = "rg.feature.handoff";
+    public static final String ENGINEERING_HANDOFF = "rg.engineering.handoff";
+    public static final String DSL_REFERENCE = "rg.dsl.reference.get";
+    public static final String READINESS = "rg.readiness.get";
     private final Map<String, McpToolDefinition> definitions;
 
     /** Builds the frozen 1.4 catalog in workflow order. */
@@ -26,6 +31,9 @@ public final class McpToolCatalog {
                 McpToolImpact.READ, props("libraryId", string()), List.of("libraryId")));
         values.add(tool("rg.library.list", "List libraries", "List visible library contracts and speccing state.",
                 McpToolImpact.READ, props("includeDeprecated", bool()), List.of()));
+        values.add(tool(LIBRARY_OVERVIEW, "Get business library overview",
+                "Read payload-free business building blocks, world types, operations and sample descriptors.",
+                McpToolImpact.READ, props("includeSamples", bool()), List.of()));
         values.add(tool("rg.contract.get", "Get business contract", "Read the business contract for an asset.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool("rg.tool.getInstruction", "Get tool instruction", "Read the Agent-facing tool contract.",
@@ -36,7 +44,7 @@ public final class McpToolCatalog {
                 McpToolImpact.READ, props("toolRef", string(), "goldenSetId", string()), List.of("toolRef")));
         values.add(tool("rg.evidence.get", "Get evidence", "Read a classification-filtered execution evidence lens.",
                 McpToolImpact.READ, props("evidenceRef", string(), "view", string()), List.of("evidenceRef")));
-        values.add(tool("rg.dsl.reference.get", "Get DSL reference",
+        values.add(tool(DSL_REFERENCE, "Get DSL reference",
                 "Read the scoped BLOGE graph grammar, contracts and certified examples.",
                 McpToolImpact.READ,
                 props("libraryRefs", stringArray(), "topics", stringArray(),
@@ -48,7 +56,7 @@ public final class McpToolCatalog {
                 McpToolImpact.DRAFT_WRITE,
                 props("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));
-        values.add(tool("rg.feature.handoff", "Handoff feature design",
+        values.add(tool(FEATURE_HANDOFF, "Handoff feature design",
                 "Create an engineering ticket for one unbound platform Feature contract.",
                 McpToolImpact.PROPOSE,
                 props("featureRef", string(), "idempotencyKey", string()),
@@ -101,7 +109,7 @@ public final class McpToolCatalog {
                 props("solutionRef", string(), "authoringReceiptFingerprint", string(),
                         "idempotencyKey", string()),
                 List.of("solutionRef", "authoringReceiptFingerprint", "idempotencyKey")));
-        values.add(tool("rg.engineering.handoff", "Handoff write design",
+        values.add(tool(ENGINEERING_HANDOFF, "Handoff write design",
                 "Create an engineering handoff for unbound WRITE Instruction contracts.",
                 McpToolImpact.PROPOSE,
                 props("solutionRef", string(), "idempotencyKey", string()),
@@ -199,7 +207,7 @@ public final class McpToolCatalog {
                 McpToolImpact.GOVERNED_WRITE,
                 props("toolRef", string(), "signoffRef", string(), "idempotencyKey", string()),
                 List.of("toolRef", "signoffRef", "idempotencyKey")));
-        values.add(tool("rg.readiness.get", "Get readiness", "Read publish gates and remaining limitations.",
+        values.add(tool(READINESS, "Get readiness", "Read publish gates and remaining limitations.",
                 McpToolImpact.READ, props("toolRef", string()), List.of("toolRef")));
 
         LinkedHashMap<String, McpToolDefinition> indexed = new LinkedHashMap<>();
@@ -550,6 +558,7 @@ public final class McpToolCatalog {
             case "rg.library.get" -> structuredObject(props("library", businessObject(),
                     "operators", arrayOf(businessObject()), "speccing", bool()), List.of("library", "operators"));
             case "rg.library.list" -> structuredObject(props("libraries", arrayOf(businessObject())), List.of("libraries"));
+            case LIBRARY_OVERVIEW -> libraryOverview();
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
                     "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
@@ -680,6 +689,30 @@ public final class McpToolCatalog {
                     List.of("toolRef", "state", "publishable", "attestation"));
             default -> businessObject();
         };
+    }
+
+    /** Strict payload-free schema for the business library overview. */
+    private static Map<String, Object> libraryOverview() {
+        Map<String, Object> block = structuredObject(props(
+                "ref", string(), "kind", enumString("BASE", "LIBRARY"), "title", string(),
+                "effect", string(), "bound", bool()), List.of("ref", "kind", "title", "effect"));
+        Map<String, Object> type = structuredObject(props(
+                "name", string(), "fields", stringArray()), List.of("name", "fields"));
+        Map<String, Object> operation = structuredObject(props(
+                "ref", string(), "title", string(), "inputs", stringArray(),
+                "outputs", stringArray(), "bound", bool()),
+                List.of("ref", "title", "inputs", "outputs", "bound"));
+        Map<String, Object> worldModel = structuredObject(props(
+                "types", arrayOf(type), "operations", arrayOf(operation)),
+                List.of("types", "operations"));
+        Map<String, Object> sample = structuredObject(props(
+                "fixtureId", string(), "lifecycle", string(), "sourceKind", string(),
+                "outputPort", string()),
+                List.of("fixtureId", "lifecycle", "sourceKind", "outputPort"));
+        return structuredObject(props(
+                "buildingBlocks", arrayOf(block), "worldModel", worldModel,
+                "samples", arrayOf(sample), "snapshotFingerprint", string()),
+                List.of("buildingBlocks", "worldModel", "samples", "snapshotFingerprint"));
     }
 
     private static Map<String, Object> scenarioDefinitionOutput() {

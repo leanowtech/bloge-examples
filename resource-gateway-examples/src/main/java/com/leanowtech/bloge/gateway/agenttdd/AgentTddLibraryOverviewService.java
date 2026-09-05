@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,18 @@ public final class AgentTddLibraryOverviewService {
      * provider responses, or draft execution output, so the read remains safe for the board.</p>
      */
     public Map<String, Object> overview(IntegrationRequestContext identity) {
+        return overview(identity, true);
+    }
+
+    /**
+     * Returns a scoped, payload-free business library snapshot for an MCP caller.
+     *
+     * @param identity authenticated tenant, project and environment scope
+     * @param includeSamples whether governed sample descriptors should be included
+     * @return sorted business building blocks, world model, optional sample descriptors and a
+     *         fingerprint bound to the exact scope and catalog projection
+     */
+    public Map<String, Object> overview(IntegrationRequestContext identity, boolean includeSamples) {
         Objects.requireNonNull(identity, "identity");
         List<OperatorDefinition> operators = catalog.list(new OperatorCatalogQuery(
                 "", List.of(), false, false,
@@ -82,12 +95,19 @@ public final class AgentTddLibraryOverviewService {
                                         "fields", port.schema().properties().keySet().stream().sorted().toList()));
                             });
                 });
+        List<Map<String, Object>> frozenBlocks = List.copyOf(buildingBlocks);
+        Map<String, Object> worldModel = Map.of(
+                "types", List.copyOf(types.values()),
+                "operations", List.copyOf(operations));
+        Map<String, Object> fingerprintMaterial = Map.of(
+                "scope", List.of(identity.tenantId(), identity.projectId(), identity.environmentId()),
+                "buildingBlocks", frozenBlocks,
+                "worldModel", worldModel);
         return Map.of(
-                "buildingBlocks", List.copyOf(buildingBlocks),
-                "samples", samples(identity),
-                "worldModel", Map.of(
-                        "types", List.copyOf(types.values()),
-                        "operations", List.copyOf(operations)));
+                "buildingBlocks", frozenBlocks,
+                "samples", includeSamples ? samples(identity) : List.of(),
+                "worldModel", worldModel,
+                "snapshotFingerprint", VisualBundleFingerprint.fromMaterial(fingerprintMaterial));
     }
 
     private List<Map<String, Object>> samples(IntegrationRequestContext identity) {

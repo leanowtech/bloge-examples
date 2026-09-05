@@ -46,6 +46,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final AgentTddAttestationService attestations;
     private final AgentDslAuthoringSupport dslAuthoring;
     private final SolutionAgentTools solutionTools;
+    private final AgentTddLibraryOverviewService libraryOverview;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -178,11 +179,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectProvider<FeatureEvaluationBackend> featureBackends,
                                         ObjectProvider<InstructionDispatchChannel> instructionChannels,
                                         ObjectProvider<FeatureTokenKeyProvider> tokenKeys,
-                                        ObjectProvider<SolutionWriteExecutionRunner> writeRunners) {
+                                        ObjectProvider<SolutionWriteExecutionRunner> writeRunners,
+                                        AgentTddLibraryOverviewService libraryOverview) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
-                writeRunners.getIfUnique());
+                writeRunners.getIfUnique(), libraryOverview);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -201,6 +203,28 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          InstructionDispatchChannel instructionChannel,
                                          FeatureTokenKeyProvider tokenKeys,
                                          SolutionWriteExecutionRunner writeRunner) {
+        this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
+                catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
+                tokenKeys, writeRunner, null);
+    }
+
+    private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                         GraphDraftRepository drafts,
+                                         ObjectMapper mapper,
+                                         DslImportService projection,
+                                         VisualGraphSimulationService simulation,
+                                         AgentTddStateRepository states,
+                                         AuthoringPreviewService authoring,
+                                         AgentTddWorkflowService workflow,
+                                         VisualOperatorCatalog catalog,
+                                         AgentTddResourceDeclarationService declarations,
+                                         AgentTddAttestationService attestations,
+                                         AgentTddAuthoringTelemetry telemetry,
+                                         FeatureEvaluationBackend featureBackend,
+                                         InstructionDispatchChannel instructionChannel,
+                                         FeatureTokenKeyProvider tokenKeys,
+                                         SolutionWriteExecutionRunner writeRunner,
+                                         AgentTddLibraryOverviewService libraryOverview) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -218,6 +242,9 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.workflow = workflow;
         this.declarations = declarations;
         this.attestations = attestations;
+        this.libraryOverview = libraryOverview != null
+                ? libraryOverview
+                : catalog == null ? null : new AgentTddLibraryOverviewService(catalog);
         this.solutionTools = states == null ? null : new SolutionAgentTools(
                 states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner);
     }
@@ -239,6 +266,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.capability.list" -> success(capabilities(safeArguments, identity));
             case "rg.library.get" -> library(safeArguments);
             case "rg.library.list" -> success(Map.of("libraries", librarySummaries()));
+            case "rg.library.overview.get" -> success(libraryOverview().overview(
+                    identity, safeArguments.path("includeSamples").asBoolean(false)));
             case "rg.contract.get" -> contract(safeArguments, identity);
             case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
             case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
@@ -322,6 +351,14 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     "GATE_REJECTED", "The solution authoring service is unavailable.");
         }
         return solutionTools;
+    }
+
+    private AgentTddLibraryOverviewService libraryOverview() {
+        if (libraryOverview == null) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "The business library overview is unavailable.");
+        }
+        return libraryOverview;
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {
