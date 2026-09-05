@@ -94,6 +94,8 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.assertLess(preflight, families)
         self.assertLess(families, setup)
         self.assertIn('if [ "${FAMILY_ID}" = "near-meaning-distractor" ]', script)
+        self.assertIn('"familyId": "synonym-rewrite"', script)
+
     def setUp(self) -> None:
         self.fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
 

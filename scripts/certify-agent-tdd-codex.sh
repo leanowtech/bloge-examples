@@ -437,6 +437,26 @@ while IFS=$'\t' read -r FAMILY_ID FAMILY_EXPECTED; do
     if [ "${FAMILY_ID}" = "near-meaning-distractor" ]; then
         # The first synonym turn must recall the primary Feature without certification-only
         # distractors. Seed the remaining adversarial families only after that proof exists.
+        SYNONYM_TRACE="${FAMILY_TRACE_DIR}/synonym-rewrite.trace.jsonl"
+        SYNONYM_EXIT="$(awk -F '\t' '$1 == "synonym-rewrite" { print $4 }' "${FAMILY_RUN_INDEX}")"
+        python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${SYNONYM_TRACE}" "${SYNONYM_EXIT}" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1]) / "scripts/business_solution_codex_trace_certificate.py"
+spec = importlib.util.spec_from_file_location("business_solution_certificate", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+calls, _message, _completed, _thread_id = module.load_trace(pathlib.Path(sys.argv[2]))
+chain, _proposal = module.require_business_sequence(calls)
+module.require_family_trace({
+    "familyId": "synonym-rewrite",
+    "expectedBehaviorClass": "RECALL_TOP1",
+    "traceFile": pathlib.Path(sys.argv[3]),
+    "exitCode": int(sys.argv[4]),
+}, chain, {"byRole": {}})
+PY
         stop_owned_service
         start_owned_service "${SETUP_TOKEN}"
         wait_owned_service
