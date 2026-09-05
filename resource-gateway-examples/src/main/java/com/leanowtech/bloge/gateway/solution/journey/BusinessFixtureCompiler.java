@@ -1,9 +1,11 @@
 package com.leanowtech.bloge.gateway.solution.journey;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
@@ -13,18 +15,27 @@ import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionValueSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 /**
- * Compiles business-language facts and dependency outcomes into a case-scoped controlled test
- * plan. The compiler resolves only capabilities reachable from the selected Solution and uses
- * structured semantic keys as authority; runtime node ids, bindings and graph shapes never enter
- * the business input or response.
+ * Compiles business-language facts and dependency outcomes against one revision-locked Solution
+ * closure. Every Feature, Scenario, Instruction and Solution is decoded exactly once from its
+ * locked persisted revision. The compiler never performs a second mutable-registry lookup after
+ * name resolution, so one proposal cannot combine contracts from different revisions.
+ *
+ * <p>The compiler opens an atomic read boundary. {@link BusinessGoldenService} invokes it inside
+ * the wider idempotent proposal transaction, so the locks remain held through protected-material
+ * and case-set persistence. Runtime node ids, bindings and graph shapes never enter the business
+ * input or response.</p>
  */
 public final class BusinessFixtureCompiler {
     private static final int MAX_BYTES = 16 * 1024 * 1024;
@@ -32,68 +43,151 @@ public final class BusinessFixtureCompiler {
             "RETURNS", "UNAVAILABLE", "SUCCEEDS_WITHOUT_EFFECT",
             "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED");
 
-    private final SolutionEntityRegistry registry;
+    private final AgentTddStateRepository states;
     private final ObjectMapper mapper;
 
-    /** Creates a deterministic compiler over the canonical four-entity registry. */
-    public BusinessFixtureCompiler(SolutionEntityRegistry registry, ObjectMapper mapper) {
-        this.registry = Objects.requireNonNull(registry, "registry");
+    /** Creates a compiler over the authoritative revision-locking state repository. */
+    public BusinessFixtureCompiler(AgentTddStateRepository states, ObjectMapper mapper) {
+        this.states = Objects.requireNonNull(states, "states");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
     /**
-     * Resolves one complete FixtureCase and returns its immutable controlled-assumption plan.
-     * Ambiguous business names fail the whole case before any protected material is written.
+     * Resolves one complete fixture case against a single frozen Solution closure.
+     *
+     * @param scope server-derived integration scope
+     * @param solutionRef current Solution selected by the journey
+     * @param fixtureCase complete business-language fixture case
+     * @return immutable controlled-assumption plan bound to the locked closure
      */
-    public ControlledAssumptionPlan compile(String scope, SolutionContract solution, JsonNode fixtureCase) {
+    public ControlledAssumptionPlan compile(String scope, String solutionRef, JsonNode fixtureCase) {
         if (!fixtureCase.path("givenFacts").isArray()
                 || !fixtureCase.path("dependencyAssumptions").isArray()) throw schema();
+        return states.executeAtomically(() -> compileLocked(scope, solutionRef, fixtureCase));
+    }
+
+    private ControlledAssumptionPlan compileLocked(
+            String scope, String solutionRef, JsonNode fixtureCase) {
+        FrozenClosure closure = freeze(scope, solutionRef);
         ObjectNode given = mapper.createObjectNode();
-        ArrayNode vector = mapper.createArrayNode();
-        fixtureCase.path("givenFacts").forEach(fact -> compileFact(scope, solution, fact, given, vector));
+        List<JsonNode> businessVector = new ArrayList<>();
+        fixtureCase.path("givenFacts")
+                .forEach(fact -> compileFact(closure, fact, given, businessVector));
         ObjectNode dependencies = mapper.createObjectNode();
-        List<InstructionContract> reachable = reachableInstructions(scope, solution);
         fixtureCase.path("dependencyAssumptions")
-                .forEach(assumption -> compileDependency(assumption, reachable, dependencies, vector));
-        List<JsonNode> sortedVector = new ArrayList<>();
-        vector.forEach(value -> sortedVector.add(value.deepCopy()));
-        sortedVector.sort(java.util.Comparator.comparing(value -> value.path("semanticKey").asText()));
+                .forEach(assumption -> compileDependency(
+                        assumption, closure.instructions(), dependencies, businessVector));
+        List<JsonNode> sortedBusinessVector = businessVector.stream()
+                .map(value -> (JsonNode) value.deepCopy())
+                .sorted(Comparator.comparing(BusinessFixtureCompiler::coordinateOrder))
+                .toList();
         String featureValuesFingerprint = fingerprint(given);
         String dependencyPlanFingerprint = fingerprint(dependencies);
+        String frozenContextFingerprint = fingerprint(closure.coordinates());
         String planFingerprint = fingerprint(Map.of(
                 "featureValuesFingerprint", featureValuesFingerprint,
                 "dependencyPlanFingerprint", dependencyPlanFingerprint,
-                "referencedBusinessContractVector", sortedVector));
-        return new ControlledAssumptionPlan(given, dependencies, sortedVector,
-                featureValuesFingerprint, dependencyPlanFingerprint, planFingerprint);
+                "frozenContextFingerprint", frozenContextFingerprint,
+                "referencedBusinessContractVector", sortedBusinessVector));
+        return new ControlledAssumptionPlan(given, dependencies, sortedBusinessVector,
+                closure.solution().contract().solutionRef(), closure.solution().revision(),
+                closure.solution().contractFingerprint(), featureValuesFingerprint,
+                dependencyPlanFingerprint, frozenContextFingerprint, planFingerprint);
     }
 
-    private void compileFact(String scope, SolutionContract solution, JsonNode fact,
-                             ObjectNode given, ArrayNode vector) {
+    private FrozenClosure freeze(String scope, String solutionRef) {
+        FrozenEntity<SolutionContract> solution = lockAndDecode(
+                scope, SolutionEntityRegistry.SOLUTION, solutionRef, SolutionContract.class);
+        Map<String, FrozenEntity<ScenarioContract>> scenarios = new LinkedHashMap<>();
+        Set<String> instructionRefs = new LinkedHashSet<>(solution.contract().instructions());
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        pending.add(solution.contract().rootScenarioRef());
+        while (!pending.isEmpty()) {
+            String scenarioRef = pending.removeFirst();
+            if (scenarios.containsKey(scenarioRef)) continue;
+            FrozenEntity<ScenarioContract> scenario = lockAndDecode(
+                    scope, SolutionEntityRegistry.SCENARIO, scenarioRef, ScenarioContract.class);
+            scenarios.put(scenarioRef, scenario);
+            instructionRefs.addAll(scenario.contract().referencedInstructions());
+            scenario.contract().referencedScenarios().stream().sorted().forEach(pending::addLast);
+        }
+        Map<String, FrozenEntity<FeatureContract>> features = new LinkedHashMap<>();
+        solution.contract().inputs().values().stream().distinct().sorted().forEach(ref ->
+                features.put(ref, lockAndDecode(
+                        scope, SolutionEntityRegistry.FEATURE, ref, FeatureContract.class)));
+        List<FrozenEntity<InstructionContract>> instructions = instructionRefs.stream().sorted()
+                .map(ref -> lockAndDecode(
+                        scope, SolutionEntityRegistry.INSTRUCTION, ref, InstructionContract.class))
+                .toList();
+        List<JsonNode> coordinates = new ArrayList<>();
+        coordinates.add(closureCoordinate("SOLUTION", solution));
+        scenarios.values().stream().sorted(Comparator.comparing(FrozenEntity::ref))
+                .map(value -> closureCoordinate("SCENARIO", value)).forEach(coordinates::add);
+        features.values().stream().sorted(Comparator.comparing(FrozenEntity::ref))
+                .map(value -> closureCoordinate("FEATURE", value)).forEach(coordinates::add);
+        instructions.stream().map(value -> closureCoordinate("INSTRUCTION", value))
+                .forEach(coordinates::add);
+        return new FrozenClosure(solution, Map.copyOf(features), List.copyOf(instructions),
+                List.copyOf(coordinates));
+    }
+
+    private <T> FrozenEntity<T> lockAndDecode(
+            String scope, String kind, String ref, Class<T> contractType) {
+        AgentTddStoredAsset observed = states.find(scope, kind, ref)
+                .orElseThrow(BusinessFixtureCompiler::unresolved);
+        AgentTddStoredAsset locked;
+        try {
+            locked = states.lockRevision(scope, kind, ref, observed.revision());
+        } catch (AgentTddToolException failure) {
+            if (!"GATE_REJECTED".equals(failure.code())) throw failure;
+            throw new AgentTddToolException("CAPABILITY_CONTEXT_STALE",
+                    "A business capability changed while the fixture context was being frozen.");
+        }
+        JsonNode data = locked.data();
+        if (!data.path("contract").isObject()
+                || data.path("contractFingerprint").asText().isBlank()) throw unresolved();
+        try {
+            T contract = mapper.treeToValue(data.path("contract"), contractType);
+            return new FrozenEntity<>(ref, locked.revision(),
+                    data.path("contractFingerprint").asText(), contract);
+        } catch (JsonProcessingException | IllegalArgumentException failure) {
+            throw unresolved();
+        }
+    }
+
+    private void compileFact(FrozenClosure closure, JsonNode fact,
+                             ObjectNode given, List<JsonNode> vector) {
         String name = requiredText(fact, "factName");
-        List<Map.Entry<String, String>> matches = solution.inputs().entrySet().stream()
-                .filter(entry -> featureMatches(registry.requireFeature(scope, entry.getValue()), name, entry))
+        List<InputFeature> matches = closure.solution().contract().inputs().entrySet().stream()
+                .map(entry -> new InputFeature(
+                        entry.getKey(), closure.features().get(entry.getValue())))
+                .filter(input -> input.feature() != null
+                        && featureMatches(input.feature().contract(), name,
+                        input.alias(), input.feature().ref()))
                 .toList();
         if (matches.size() != 1 || !fact.has("value")) throw ambiguous("fact");
-        Map.Entry<String, String> match = matches.getFirst();
-        FeatureContract feature = registry.requireFeature(scope, match.getValue());
-        if (!SolutionValueSchemaValidator.featureValueMatches(feature.output(), fact.path("value"))) {
+        InputFeature match = matches.getFirst();
+        if (!SolutionValueSchemaValidator.featureValueMatches(
+                match.feature().contract().output(), fact.path("value"))) {
             throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
                     "A supplied business fact value does not match its current contract.");
         }
-        given.set(match.getKey(), fact.path("value").deepCopy());
-        addCoordinate(vector, "FEATURE", match.getValue(),
-                feature.businessDefinition().semanticKey(), feature.contractIdentity());
+        given.set(match.alias(), fact.path("value").deepCopy());
+        vector.add(businessCoordinate("FEATURE", match.feature(),
+                match.feature().contract().businessDefinition().semanticKey()));
     }
 
-    private void compileDependency(JsonNode assumption, List<InstructionContract> reachable,
-                                   ObjectNode dependencies, ArrayNode vector) {
+    private void compileDependency(JsonNode assumption,
+                                   List<FrozenEntity<InstructionContract>> reachable,
+                                   ObjectNode dependencies,
+                                   List<JsonNode> vector) {
         String name = requiredText(assumption, "capabilityName");
-        List<InstructionContract> matches = reachable.stream()
-                .filter(instruction -> instructionMatches(instruction, name)).toList();
+        List<FrozenEntity<InstructionContract>> matches = reachable.stream()
+                .filter(instruction -> instructionMatches(instruction.contract(), name)).toList();
         if (matches.size() != 1) throw ambiguous("dependency");
-        InstructionContract instruction = matches.getFirst();
-        String outcome = requiredText(assumption, "outcome").toUpperCase(java.util.Locale.ROOT);
+        FrozenEntity<InstructionContract> frozen = matches.getFirst();
+        InstructionContract instruction = frozen.contract();
+        String outcome = requiredText(assumption, "outcome").toUpperCase(Locale.ROOT);
         if (!OUTCOMES.contains(outcome)) throw schema();
         if ("RETURNS".equals(outcome) && instruction.effect() == InstructionContract.Effect.WRITE) {
             throw new AgentTddToolException("BUSINESS_ASSUMPTION_EFFECT_INVALID",
@@ -108,26 +202,13 @@ public final class BusinessFixtureCompiler {
         ObjectNode compiled = dependencies.putObject(instruction.instructionRef());
         compiled.put("outcome", outcome);
         if (assumption.has("value")) compiled.set("value", assumption.path("value").deepCopy());
-        addCoordinate(vector, "INSTRUCTION", instruction.instructionRef(),
-                instruction.businessDefinition().semanticKey(), instruction.contractIdentity());
+        vector.add(businessCoordinate("INSTRUCTION", frozen,
+                instruction.businessDefinition().semanticKey()));
     }
 
-    private List<InstructionContract> reachableInstructions(String scope, SolutionContract solution) {
-        Set<String> instructionRefs = new LinkedHashSet<>(solution.instructions());
-        Set<String> scenarios = new LinkedHashSet<>();
-        collectScenario(scope, solution.rootScenarioRef(), scenarios, instructionRefs);
-        return instructionRefs.stream().sorted().map(ref -> registry.requireInstruction(scope, ref)).toList();
-    }
-
-    private void collectScenario(String scope, String ref, Set<String> visited, Set<String> instructions) {
-        if (!visited.add(ref)) return;
-        ScenarioContract scenario = registry.requireScenario(scope, ref);
-        instructions.addAll(scenario.referencedInstructions());
-        scenario.referencedScenarios().forEach(child -> collectScenario(scope, child, visited, instructions));
-    }
-
-    private boolean featureMatches(FeatureContract feature, String name, Map.Entry<String, String> input) {
-        return input.getKey().equalsIgnoreCase(name) || input.getValue().equalsIgnoreCase(name)
+    private boolean featureMatches(FeatureContract feature, String name,
+                                   String inputAlias, String featureRef) {
+        return inputAlias.equalsIgnoreCase(name) || featureRef.equalsIgnoreCase(name)
                 || feature.businessSemantics().equalsIgnoreCase(name)
                 || feature.businessDefinition().semanticKey().equalsIgnoreCase(name);
     }
@@ -139,22 +220,44 @@ public final class BusinessFixtureCompiler {
                 && instruction.instructionRef().equalsIgnoreCase(name);
     }
 
-    private void addCoordinate(ArrayNode vector, String kind, String ref,
-                               String semanticKey, Object contractIdentity) {
-        ObjectNode coordinate = vector.addObject();
+    private JsonNode businessCoordinate(
+            String kind, FrozenEntity<?> entity, String semanticKey) {
+        ObjectNode coordinate = mapper.createObjectNode();
         coordinate.put("assetKind", kind);
-        coordinate.put("assetRef", ref);
+        coordinate.put("assetRef", entity.ref());
+        coordinate.put("revision", entity.revision());
         coordinate.put("semanticKey", semanticKey);
-        coordinate.put("contractFingerprint", fingerprint(contractIdentity));
+        coordinate.put("contractFingerprint", entity.contractFingerprint());
+        return coordinate;
+    }
+
+    private JsonNode closureCoordinate(String kind, FrozenEntity<?> entity) {
+        ObjectNode coordinate = mapper.createObjectNode();
+        coordinate.put("assetKind", kind);
+        coordinate.put("assetRef", entity.ref());
+        coordinate.put("revision", entity.revision());
+        coordinate.put("contractFingerprint", entity.contractFingerprint());
+        return coordinate;
     }
 
     private String fingerprint(Object value) {
         return VisualBundleFingerprint.fromCanonicalValue(mapper, value, MAX_BYTES);
     }
 
+    private static String coordinateOrder(JsonNode coordinate) {
+        return coordinate.path("semanticKey").asText() + '\u001f'
+                + coordinate.path("assetKind").asText() + '\u001f'
+                + coordinate.path("assetRef").asText();
+    }
+
     private static AgentTddToolException ambiguous(String kind) {
         return new AgentTddToolException("BUSINESS_ASSUMPTION_AMBIGUOUS",
                 "A business " + kind + " did not resolve to exactly one current capability.");
+    }
+
+    private static AgentTddToolException unresolved() {
+        return new AgentTddToolException("REFERENCE_UNRESOLVED",
+                "A referenced Solution capability is unavailable.");
     }
 
     private static AgentTddToolException schema() {
@@ -167,22 +270,40 @@ public final class BusinessFixtureCompiler {
         return value;
     }
 
+    private record FrozenEntity<T>(String ref, long revision,
+                                   String contractFingerprint, T contract) { }
+
+    private record FrozenClosure(FrozenEntity<SolutionContract> solution,
+                                 Map<String, FrozenEntity<FeatureContract>> features,
+                                 List<FrozenEntity<InstructionContract>> instructions,
+                                 List<JsonNode> coordinates) { }
+
+    private record InputFeature(String alias, FrozenEntity<FeatureContract> feature) { }
+
     /**
-     * Immutable, payload-bearing plan kept inside the protected material boundary.
+     * Immutable payload-bearing plan kept inside the protected material boundary.
      *
      * @param given canonical Feature values keyed by Solution input aliases
      * @param dependencyAssumptions case-scoped Instruction outcomes keyed by internal reference
-     * @param businessContractVector frozen semantic contract coordinates
+     * @param businessContractVector frozen semantic contract coordinates and locked revisions
+     * @param solutionRef Solution whose locked closure was compiled
+     * @param solutionRevision locked Solution revision
+     * @param solutionContractFingerprint locked Solution contract fingerprint
      * @param featureValuesFingerprint fingerprint of canonical Feature values
      * @param dependencyPlanFingerprint fingerprint of controlled Instruction outcomes
-     * @param planFingerprint combined plan and contract-vector fingerprint
+     * @param frozenContextFingerprint fingerprint of all locked entity revisions
+     * @param planFingerprint combined plan and frozen-context fingerprint
      */
     public record ControlledAssumptionPlan(
             JsonNode given,
             JsonNode dependencyAssumptions,
             List<JsonNode> businessContractVector,
+            String solutionRef,
+            long solutionRevision,
+            String solutionContractFingerprint,
             String featureValuesFingerprint,
             String dependencyPlanFingerprint,
+            String frozenContextFingerprint,
             String planFingerprint
     ) {
         /** Freezes payloads and coordinates so later caller mutation cannot change the plan. */
@@ -191,10 +312,40 @@ public final class BusinessFixtureCompiler {
             dependencyAssumptions = Objects.requireNonNull(
                     dependencyAssumptions, "dependencyAssumptions").deepCopy();
             businessContractVector = businessContractVector == null ? List.of()
-                    : businessContractVector.stream().map(value -> (JsonNode) value.deepCopy()).toList();
+                    : businessContractVector.stream()
+                    .map(value -> (JsonNode) value.deepCopy()).toList();
+            solutionRef = requiredText(solutionRef, "solutionRef");
+            if (solutionRevision < 1) throw new IllegalArgumentException("Solution revision is invalid");
+            solutionContractFingerprint = requiredFingerprint(solutionContractFingerprint);
             featureValuesFingerprint = requiredFingerprint(featureValuesFingerprint);
             dependencyPlanFingerprint = requiredFingerprint(dependencyPlanFingerprint);
+            frozenContextFingerprint = requiredFingerprint(frozenContextFingerprint);
             planFingerprint = requiredFingerprint(planFingerprint);
+        }
+
+        /** Returns a copy so callers cannot mutate the plan's canonical Feature values. */
+        @Override
+        public JsonNode given() {
+            return given.deepCopy();
+        }
+
+        /** Returns a copy so callers cannot mutate controlled Instruction outcomes. */
+        @Override
+        public JsonNode dependencyAssumptions() {
+            return dependencyAssumptions.deepCopy();
+        }
+
+        /** Returns copies so callers cannot mutate frozen business contract coordinates. */
+        @Override
+        public List<JsonNode> businessContractVector() {
+            return businessContractVector.stream()
+                    .map(value -> (JsonNode) value.deepCopy()).toList();
+        }
+
+        private static String requiredText(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isBlank()) throw new IllegalArgumentException(field + " is required");
+            return normalized;
         }
 
         private static String requiredFingerprint(String value) {

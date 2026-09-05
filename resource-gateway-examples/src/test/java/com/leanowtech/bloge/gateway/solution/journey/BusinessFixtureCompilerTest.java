@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.solution.journey;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class BusinessFixtureCompilerTest {
     private static final String SCOPE = "tenant-a|org-a|project-a|test|sg";
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    private final SolutionEntityRegistry registry = new SolutionEntityRegistry(
-            new InMemoryAgentTddStateRepository(), mapper);
-    private final BusinessFixtureCompiler compiler = new BusinessFixtureCompiler(registry, mapper);
+    private final InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+    private final SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
+    private final BusinessFixtureCompiler compiler = new BusinessFixtureCompiler(states, mapper);
 
     @BeforeEach
     void defineReachableCapabilities() {
@@ -47,7 +51,7 @@ class BusinessFixtureCompilerTest {
         for (String outcome : List.of("RETURNS", "UNAVAILABLE", "SUCCEEDS_WITHOUT_EFFECT",
                 "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED")) {
             BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
-                    SCOPE, registry.requireSolution(SCOPE, "sol:cancel"),
+                    SCOPE, "sol:cancel",
                     fixture(outcome, "RETURNS".equals(outcome) ? "余额查询" : "退款执行"));
 
             assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
@@ -55,12 +59,73 @@ class BusinessFixtureCompilerTest {
             assertThat(plan.dependencyAssumptions().path(expectedRef).path("outcome").asText())
                     .isEqualTo(outcome);
             assertThat(plan.businessContractVector()).hasSize(2);
+            assertThat(plan.businessContractVector())
+                    .allSatisfy(coordinate -> assertThat(coordinate.path("revision").asLong())
+                            .isPositive());
             assertThat(plan.businessContractVector().getLast().path("semanticKey").asText())
                     .startsWith("legacy:");
+            assertThat(plan.solutionRevision()).isPositive();
+            assertThat(plan.solutionContractFingerprint()).startsWith("sha256:");
             assertThat(plan.featureValuesFingerprint()).startsWith("sha256:");
             assertThat(plan.dependencyPlanFingerprint()).startsWith("sha256:");
+            assertThat(plan.frozenContextFingerprint()).startsWith("sha256:");
             assertThat(plan.planFingerprint()).startsWith("sha256:");
         }
+    }
+
+    @Test
+    void bindsThePlanToImplementationRevisionWithoutChangingBusinessIdentity() {
+        BusinessFixtureCompiler.ControlledAssumptionPlan first = compiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE"));
+        String firstFeatureContract = first.businessContractVector().stream()
+                .filter(value -> "FEATURE".equals(value.path("assetKind").asText()))
+                .findFirst().orElseThrow().path("contractFingerprint").asText();
+
+        registry.upsertFeature(SCOPE, new FeatureContract(
+                "feature:party", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "resource:party:v2", "", "",
+                "取消责任方"));
+        BusinessFixtureCompiler.ControlledAssumptionPlan second = compiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE"));
+        JsonNode secondFeature = second.businessContractVector().stream()
+                .filter(value -> "FEATURE".equals(value.path("assetKind").asText()))
+                .findFirst().orElseThrow();
+
+        assertThat(secondFeature.path("revision").asLong()).isEqualTo(2);
+        assertThat(secondFeature.path("contractFingerprint").asText())
+                .isEqualTo(firstFeatureContract);
+        assertThat(second.frozenContextFingerprint()).isNotEqualTo(first.frozenContextFingerprint());
+        assertThat(second.planFingerprint()).isNotEqualTo(first.planFingerprint());
+    }
+
+    @Test
+    void returnsDefensiveCopiesOfAllMutablePlanMaterial() {
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE"));
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) plan.given()).put("party", "mutated");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) plan.dependencyAssumptions())
+                .remove("ins:refund");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) plan.businessContractVector().getFirst())
+                .put("revision", 999);
+
+        assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
+        assertThat(plan.dependencyAssumptions().has("ins:refund")).isTrue();
+        assertThat(plan.businessContractVector().getFirst().path("revision").asLong())
+                .isNotEqualTo(999);
+    }
+
+    @Test
+    void rejectsARevisionThatDriftsBetweenObservationAndLock() {
+        AgentTddStateRepository drifting = new DriftOnFeatureLockRepository(states);
+        BusinessFixtureCompiler driftingCompiler = new BusinessFixtureCompiler(drifting, mapper);
+
+        assertThatThrownBy(() -> driftingCompiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("CAPABILITY_CONTEXT_STALE");
     }
 
     @Test
@@ -73,7 +138,7 @@ class BusinessFixtureCompilerTest {
                 .put("capabilityName", "转人工复核");
 
         BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
-                SCOPE, registry.requireSolution(SCOPE, "sol:cancel"), fixture);
+                SCOPE, "sol:cancel", fixture);
 
         assertThat(plan.dependencyAssumptions().has("ins:scenario-only")).isTrue();
     }
@@ -85,7 +150,7 @@ class BusinessFixtureCompilerTest {
         registry.upsertSolution(SCOPE, solution(List.of("ins:refund", "ins:refund-duplicate")), false);
 
         assertThatThrownBy(() -> compiler.compile(
-                SCOPE, registry.requireSolution(SCOPE, "sol:cancel"),
+                SCOPE, "sol:cancel",
                 fixture("SUCCEEDS_WITHOUT_EFFECT")))
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(failure -> ((AgentTddToolException) failure).code())
@@ -95,7 +160,7 @@ class BusinessFixtureCompilerTest {
     @Test
     void rejectsReturnedFactSemanticsForAWriteCapability() {
         assertThatThrownBy(() -> compiler.compile(
-                SCOPE, registry.requireSolution(SCOPE, "sol:cancel"), fixture("RETURNS")))
+                SCOPE, "sol:cancel", fixture("RETURNS")))
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(failure -> ((AgentTddToolException) failure).code())
                 .isEqualTo("BUSINESS_ASSUMPTION_EFFECT_INVALID");
@@ -146,5 +211,88 @@ class BusinessFixtureCompilerTest {
         return mapper.valueToTree(Map.of(
                 "givenFacts", List.of(Map.of("factName", "取消责任方", "value", "passenger")),
                 "dependencyAssumptions", List.of(dependency)));
+    }
+
+    /** Test repository that simulates a committed Feature edit immediately before row locking. */
+    private static final class DriftOnFeatureLockRepository implements AgentTddStateRepository {
+        private final AgentTddStateRepository delegate;
+        private boolean drifted;
+
+        private DriftOnFeatureLockRepository(AgentTddStateRepository delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef) {
+            return delegate.find(scopeKey, kind, assetRef);
+        }
+
+        @Override
+        public List<AgentTddStoredAsset> list(String scopeKey, String kind) {
+            return delegate.list(scopeKey, kind);
+        }
+
+        @Override
+        public AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
+            return delegate.save(scopeKey, kind, assetRef, data);
+        }
+
+        @Override
+        public AgentTddStoredAsset saveIfRevision(String scopeKey, String kind, String assetRef,
+                                                  long expectedRevision, JsonNode data) {
+            return delegate.saveIfRevision(scopeKey, kind, assetRef, expectedRevision, data);
+        }
+
+        @Override
+        public <T> T executeAtomically(Supplier<T> action) {
+            return delegate.executeAtomically(action);
+        }
+
+        @Override
+        public AgentTddStoredAsset lockRevision(String scopeKey, String kind, String assetRef,
+                                                long expectedRevision) {
+            if (!drifted && SolutionEntityRegistry.FEATURE.equals(kind)) {
+                drifted = true;
+                JsonNode current = delegate.find(scopeKey, kind, assetRef).orElseThrow().data();
+                delegate.save(scopeKey, kind, assetRef, current);
+            }
+            return delegate.lockRevision(scopeKey, kind, assetRef, expectedRevision);
+        }
+
+        @Override
+        public Optional<JsonNode> replay(String scopeKey, String operation,
+                                         String idempotencyKey, String requestFingerprint) {
+            return delegate.replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+        }
+
+        @Override
+        public void record(String scopeKey, String operation, String idempotencyKey,
+                           String requestFingerprint, JsonNode response) {
+            delegate.record(scopeKey, operation, idempotencyKey, requestFingerprint, response);
+        }
+
+        @Override
+        public JsonNode executeOnce(String scopeKey, String operation, String idempotencyKey,
+                                    String requestFingerprint, Supplier<JsonNode> action) {
+            return delegate.executeOnce(scopeKey, operation, idempotencyKey,
+                    requestFingerprint, action);
+        }
+
+        @Override
+        public ExternalExecutionReservation reserveExternalExecution(
+                String scopeKey, String operation, String idempotencyKey,
+                String requestFingerprint) {
+            return delegate.reserveExternalExecution(
+                    scopeKey, operation, idempotencyKey, requestFingerprint);
+        }
+
+        @Override
+        public JsonNode completeExternalExecution(String scopeKey, String operation,
+                                                  String idempotencyKey,
+                                                  String requestFingerprint,
+                                                  JsonNode response) {
+            return delegate.completeExternalExecution(
+                    scopeKey, operation, idempotencyKey, requestFingerprint, response);
+        }
     }
 }
