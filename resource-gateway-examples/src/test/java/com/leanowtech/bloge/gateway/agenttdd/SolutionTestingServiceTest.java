@@ -119,12 +119,13 @@ class SolutionTestingServiceTest {
                 .containsEntry("solutionContextFingerprint", "sha256:solution-context")
                 .containsEntry("compilerVersion", "rg.solution-controlled-test.v1")
                 .containsEntry("egressPolicy", "DENY_ALL")
-                .containsKeys("scopeFingerprint", "planFingerprint");
+                .containsKeys("scopeFingerprint", "planFingerprint", "implementationFingerprint");
         JsonNode evidence = states.find(
                 SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel").orElseThrow().data();
         assertThat(evidence.path("controlledAssumptionPlanFingerprints")).hasSize(1);
         assertThat(evidence.path("frozenFeatureContracts")).hasSize(2);
         assertThat(evidence.path("frozenInstructionContracts")).hasSize(1);
+        assertThat(evidence.path("implementationFingerprint").asText()).startsWith("sha256:");
         assertThat(evidence.toString()).doesNotContain("SUCCEEDS_WITHOUT_EFFECT", "O-1");
     }
 

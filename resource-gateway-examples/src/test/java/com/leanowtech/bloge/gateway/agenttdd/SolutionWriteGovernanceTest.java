@@ -227,6 +227,7 @@ class SolutionWriteGovernanceTest {
         assertThat(afterDrift.get("implementationFingerprint"))
                 .isNotEqualTo(readyToReview.get("implementationFingerprint"));
         Map<?, ?> gates = (Map<?, ?>) afterDrift.get("gates");
+        assertThat(gates.get("logicGreen")).isEqualTo(false);
         assertThat(gates.get("writeReconciled")).isEqualTo(false);
         assertThat(gates.get("ownerSignoff")).isEqualTo(false);
         assertThatThrownBy(() -> governance.publish(
@@ -234,6 +235,31 @@ class SolutionWriteGovernanceTest {
                 .isInstanceOf(AgentTddToolException.class)
                 .extracting(failure -> ((AgentTddToolException) failure).code())
                 .isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
+    void nestedScenarioDriftInvalidatesGreenBeforeAnyGovernedWrite() {
+        SolutionWriteExecutionRunner runner = runner(adapter(Map.of("decision", "WAIVED")));
+        SolutionGovernanceService governance = new SolutionGovernanceService(states, registry, mapper);
+        Map<String, Object> before = governance.readiness("sol:cancel", readIdentity());
+        assertThat(((Map<?, ?>) before.get("gates")).get("logicGreen")).isEqualTo(true);
+
+        registry.upsertScenario(SCOPE, new ScenarioContract(
+                "scn:root", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
+                List.of(new ScenarioContract.Rule("R1-amended",
+                        mapper.valueToTree(Map.of("party", Map.of("eq", "none"))),
+                        new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                                "ins:refund", Map.of("orderId", "orderId"), ""))),
+                new ScenarioContract.Outlet(
+                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+
+        Map<String, Object> after = governance.readiness("sol:cancel", readIdentity());
+        assertThat(((Map<?, ?>) after.get("gates")).get("logicGreen")).isEqualTo(false);
+        assertThatThrownBy(() -> runner.execute("sol:cancel", writeIdentity("test")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("GATE_REJECTED");
+        assertThat(writes).hasValue(0);
     }
 
     @Test

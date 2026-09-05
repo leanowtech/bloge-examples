@@ -121,14 +121,8 @@ public final class SolutionWriteExecutionRunner {
                 .orElseThrow(() -> new AgentTddToolException(
                         "GREEN_BASELINE_ABSENT", "A current GREEN Solution baseline is required."));
         SolutionEntityRegistry.RegisteredEntity solution = registered(scope, solutionRef);
-        if (solution.revision() != evidence.data().path("solutionRevision").asLong(-1)
-                || !solution.contractFingerprint().equals(
-                        evidence.data().path("solutionContractFingerprint").asText())) {
-            throw new AgentTddToolException("GATE_REJECTED", "The GREEN Solution line is stale.");
-        }
         AgentTddStoredAsset caseSet = states.find(scope, AgentTddMutationService.CASE_SET,
                         evidence.data().path("caseSetRef").asText())
-                .filter(asset -> asset.revision() == evidence.data().path("caseSetRevision").asLong(-1))
                 .orElseThrow(() -> new AgentTddToolException(
                         "GATE_REJECTED", "The GREEN case set is stale."));
         SolutionContract contract;
@@ -139,6 +133,10 @@ public final class SolutionWriteExecutionRunner {
         }
         String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
                 registry, mapper, scope, contract);
+        if (!SolutionEvidenceCurrentness.isCurrent(
+                states, registry, mapper, scope, solutionRef, evidence)) {
+            throw new AgentTddToolException("GATE_REJECTED", "The GREEN Solution line is stale.");
+        }
         String requestFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "solutionRevision", solution.revision(),
                 "solutionContractFingerprint", solution.contractFingerprint(),

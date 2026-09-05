@@ -330,13 +330,8 @@ public final class SolutionGovernanceService {
         String implementationFingerprint = implementationFingerprint(scope, solution);
         AgentTddStoredAsset evidence = states.find(scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
                 .orElse(null);
-        boolean logicGreen = evidence != null
-                && "GREEN".equals(evidence.data().path("side").asText())
-                && evidence.data().path("businessBacklog").isArray()
-                && evidence.data().path("businessBacklog").isEmpty()
-                && evidence.data().path("solutionRevision").asLong(-1) == registered.revision()
-                && registered.contractFingerprint().equals(
-                        evidence.data().path("solutionContractFingerprint").asText());
+        boolean logicGreen = SolutionEvidenceCurrentness.isCurrent(
+                states, registry, mapper, scope, solutionRef, evidence);
         String goldenSetId = logicGreen ? evidence.data().path("goldenSetId").asText() : "";
         String evidenceFingerprint = logicGreen ? evidence.fingerprint() : "";
         boolean writeReconciled = !hasWrite;

@@ -151,6 +151,8 @@ public final class SolutionTestingService {
         if (golden.isEmpty()) throw new AgentTddToolException(
                 "GOLDEN_REQUIRES_APPROVAL", "Approved Solution GOLDEN cases are required.");
         SolutionContract solutionContract = registry.requireSolution(scopeKey, solutionRef);
+        String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
+                registry, mapper, scopeKey, solutionContract);
         List<Map<String, Object>> frozenFeatures = freezeContracts(scopeKey,
                 SolutionEntityRegistry.FEATURE, solutionContract.inputs().values(), baselineContext != null);
         List<Map<String, Object>> frozenInstructions = freezeContracts(scopeKey,
@@ -226,6 +228,7 @@ public final class SolutionTestingService {
         evidence.put("caseSetRevision", persistedCaseRevision);
         evidence.put("solutionRevision", expectedSolution.revision());
         evidence.put("solutionContractFingerprint", expectedSolution.contractFingerprint());
+        evidence.put("implementationFingerprint", implementationFingerprint);
         evidence.put("goldenSetId", goldenSetId);
         evidence.set("orderedGoldenCaseFingerprints", mapper.valueToTree(orderedGoldenFingerprints));
         evidence.set("controlledAssumptionPlanFingerprints",
@@ -247,6 +250,7 @@ public final class SolutionTestingService {
         response.put("caseSetRevision", persistedCaseRevision);
         response.put("solutionRevision", expectedSolution.revision());
         response.put("solutionContractFingerprint", expectedSolution.contractFingerprint());
+        response.put("implementationFingerprint", implementationFingerprint);
         response.put("scopeFingerprint", scopeFingerprint);
         if (baselineContext != null) {
             response.put("journeyRef", baselineContext.journeyRef());

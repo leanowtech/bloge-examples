@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.SolutionTestingService;
+import com.leanowtech.bloge.gateway.agenttdd.SolutionEvidenceCurrentness;
 import com.leanowtech.bloge.gateway.agenttdd.SolutionGovernanceService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
@@ -276,7 +277,9 @@ public final class BusinessJourneyService {
         return refs.getOrDefault("CASE_SET", List.of()).contains(caseSetRef)
                 && states.find(scope, AgentTddMutationService.CASE_SET, caseSetRef)
                 .map(current -> current.revision() == evidence.data().path("caseSetRevision").asLong(-1))
-                .orElse(false);
+                .orElse(false)
+                && SolutionEvidenceCurrentness.currentJourneyContext(
+                        states, mapper, scope, evidence.data());
     }
 
     private boolean hasCurrentSignoff(String scope, String solutionRef) {
@@ -314,27 +317,7 @@ public final class BusinessJourneyService {
 
     /** Fingerprints the current associated contracts, not the revisions observed when associated. */
     private String currentContext(AgentTddStoredAsset journey) {
-        List<Map<String, Object>> vector = new ArrayList<>();
-        for (JsonNode association : journey.data().path("associations")) {
-            String kind = association.path("assetKind").asText();
-            if (!List.of("FEATURE", "SCENARIO", "INSTRUCTION", "SOLUTION").contains(kind)) continue;
-            String ref = association.path("assetRef").asText();
-            states.find(journey.scopeKey(), storageKind(kind), ref).ifPresent(asset -> vector.add(Map.of(
-                    "kind", kind, "ref", ref, "revision", asset.revision(),
-                    "contractFingerprint", asset.data().path("contractFingerprint").asText(""))));
-        }
-        return fingerprint(vector);
-    }
-
-    private static String storageKind(String associationKind) {
-        return switch (associationKind) {
-            case "FEATURE" -> SolutionEntityRegistry.FEATURE;
-            case "SCENARIO" -> SolutionEntityRegistry.SCENARIO;
-            case "INSTRUCTION" -> SolutionEntityRegistry.INSTRUCTION;
-            case "SOLUTION" -> SolutionEntityRegistry.SOLUTION;
-            case "CASE_SET" -> AgentTddMutationService.CASE_SET;
-            default -> associationKind;
-        };
+        return SolutionEvidenceCurrentness.journeyContextFingerprint(states, mapper, journey);
     }
 
     private void associate(ObjectNode journey, Map<String, Object> result) {
