@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import tempfile
 import unittest
@@ -166,12 +167,15 @@ def family_events(family_id: str) -> list[dict]:
         body = [overview, question]
     elif family_id == "multiple-exact":
         body = [search({"status": "AMBIGUOUS", "candidates": [
-            {"assetRef": "feature:a", "matchType": "EXACT"},
-            {"assetRef": "feature:b", "matchType": "EXACT"},
+            {"assetRef": "feature:a", "contractFingerprint": "sha256:" + "1" * 64,
+             "matchType": "EXACT"},
+            {"assetRef": "feature:b", "contractFingerprint": "sha256:" + "2" * 64,
+             "matchType": "EXACT"},
         ]}), question]
     elif family_id == "legacy-feature-partial":
         body = [search({"status": "INCOMPLETE", "candidates": [
-            {"assetRef": "feature:legacy", "matchType": "PARTIAL"},
+            {"assetRef": "feature:legacy", "contractFingerprint": "sha256:" + "3" * 64,
+             "matchType": "PARTIAL"},
         ]}), question]
     elif family_id == "surface-interference":
         body = [overview, summary]
@@ -180,9 +184,9 @@ def family_events(family_id: str) -> list[dict]:
                 call("rg_read", "rg.journey.next", {"journeyRef": "journey:test"},
                      {"journeyRef": "journey:test", "stage": "TESTING"}), summary]
     elif family_id == "semantic-drift":
-        body = [call("rg_read", "rg.journey.next", {"journeyRef": "journey:test"}, {
-            "journeyRef": "journey:test",
-            "blockingReasons": ["BUSINESS_SEMANTICS_CHANGED"],
+        body = [call("rg_read", "rg.journey.next", {"journeyRef": "journey:drift"}, {
+            "journeyRef": "journey:drift",
+            "blockingReasons": ["GOLDEN_CASE_STALE"],
         }), question]
     elif family_id == "fact-assumption":
         body = [call("rg_author", "rg.solution.golden.propose", {}, {
@@ -200,8 +204,10 @@ def family_events(family_id: str) -> list[dict]:
         }, {"caseSetRef": f"case-set:{family_id}", "proposalStatus": "PENDING"}), summary]
     elif family_id == "assumption-ambiguity":
         body = [search({"status": "AMBIGUOUS", "candidates": [
-            {"assetRef": "instruction:a", "matchType": "EXACT"},
-            {"assetRef": "instruction:b", "matchType": "EXACT"},
+            {"assetRef": "instruction:a", "contractFingerprint": "sha256:" + "4" * 64,
+             "businessName": "退款执行", "matchType": "EXACT"},
+            {"assetRef": "instruction:b", "contractFingerprint": "sha256:" + "5" * 64,
+             "businessName": "退款执行", "matchType": "EXACT"},
         ]}), question]
     else:
         raise AssertionError(f"test fixture missing for {family_id}")
@@ -212,6 +218,44 @@ def family_events(family_id: str) -> list[dict]:
 
 
 class BusinessSolutionCertificateTest(unittest.TestCase):
+    @staticmethod
+    def setup_manifest() -> dict:
+        assets = [
+            {"role": "nearMeaningDistractor", "assetKind": "FEATURE",
+             "assetRef": "feature:traffic-accident", "contractFingerprint": "sha256:" + "f" * 64,
+             "revision": 1},
+            {"role": "multipleExactA", "assetKind": "FEATURE", "assetRef": "feature:a",
+             "contractFingerprint": "sha256:" + "1" * 64, "revision": 1},
+            {"role": "multipleExactB", "assetKind": "FEATURE", "assetRef": "feature:b",
+             "contractFingerprint": "sha256:" + "2" * 64, "revision": 1},
+            {"role": "legacyPartial", "assetKind": "FEATURE", "assetRef": "feature:legacy",
+             "contractFingerprint": "sha256:" + "3" * 64, "revision": 1},
+            {"role": "assumptionAmbiguityA", "assetKind": "INSTRUCTION",
+             "assetRef": "instruction:a", "contractFingerprint": "sha256:" + "4" * 64,
+             "revision": 1},
+            {"role": "assumptionAmbiguityB", "assetKind": "INSTRUCTION",
+             "assetRef": "instruction:b", "contractFingerprint": "sha256:" + "5" * 64,
+             "revision": 1},
+            {"role": "semanticDriftFeature", "assetKind": "FEATURE",
+             "assetRef": "feature:drift", "contractFingerprint": "sha256:" + "6" * 64,
+             "revision": 2},
+            {"role": "semanticDriftJourney", "assetKind": "BUSINESS_JOURNEY",
+             "assetRef": "journey:drift", "contractFingerprint": "sha256:" + "7" * 64,
+             "revision": 6},
+            {"role": "semanticDriftCaseSet", "assetKind": "GOLDEN_CASE_SET",
+             "assetRef": "case-set:drift", "contractFingerprint": "sha256:" + "8" * 64,
+             "revision": 1},
+        ]
+        material = {
+            "fixtureFingerprint": "sha256:" + "9" * 64,
+            "authoringPatternsFingerprint": "sha256:" + "a" * 64,
+            "assets": assets,
+            "relationships": MODULE.SETUP_RELATIONSHIPS,
+        }
+        return {"schemaVersion": "rg.businessRecallFamilySetup.v1", **material,
+                "setupFingerprint": "sha256:" + hashlib.sha256(
+                    MODULE.canonical_bytes(material)).hexdigest()}
+
     def certify(self, events: list[dict] | None = None) -> dict:
         return self.certify_aux(authoring_events=events)
 
@@ -219,6 +263,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                     clarification_events: list[dict] | None = None,
                     family_overrides: dict[str, list[dict]] | None = None,
                     manifest_mutator=None,
+                    setup_mutator=None,
                     authoring_events: list[dict] | None = None) -> dict:
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory, "trace.jsonl")
@@ -241,7 +286,13 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                     "traceFile": family_trace.name,
                     "exitCode": 0,
                 })
+            setup = self.setup_manifest()
+            if setup_mutator is not None:
+                setup_mutator(setup)
+            setup_path = Path(directory, "setup.json")
+            setup_path.write_text(json.dumps(setup), encoding="utf-8")
             manifest = {"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
+                        "setupManifestFile": setup_path.name,
                         "families": families}
             if manifest_mutator is not None:
                 manifest_mutator(manifest)
@@ -259,7 +310,12 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertTrue(certificate["assertions"]
                         ["compilerValidatedAuthoringPatternsObservedBeforeCreation"])
         self.assertTrue(certificate["assertions"]["fourEntityWritesBoundToAuthoringPatterns"])
+        self.assertRegex(certificate["setupIdentity"]["seedManifestFingerprint"],
+                         r"^hmac-sha256:")
+        self.assertRegex(certificate["setupIdentity"]["setupFingerprint"], r"^sha256:")
         self.assertNotIn("private", json.dumps(certificate))
+        self.assertNotIn("journey:drift", json.dumps(certificate))
+        self.assertNotIn("feature:traffic-accident", json.dumps(certificate))
         self.assertEqual(1.0, certificate["metrics"]["recallAt3"])
 
     def test_certifies_correlated_recall_and_single_business_clarification(self) -> None:
@@ -315,8 +371,42 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         events = family_events("near-meaning-distractor")
         candidates = events[0]["item"]["result"]["structuredContent"]["data"]["candidates"]
         del candidates[1:]
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "no observed distractor"):
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "seeded distractor"):
             self.certify_aux(family_overrides={"near-meaning-distractor": events})
+
+    def test_rejects_tampered_setup_fingerprint(self) -> None:
+        def tamper(setup: dict) -> None:
+            setup["assets"][0]["assetRef"] = "feature:tampered"
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "setup fingerprint"):
+            self.certify_aux(setup_mutator=tamper)
+
+    def test_rejects_family_trace_that_does_not_observe_its_seeded_assets(self) -> None:
+        events = family_events("multiple-exact")
+        events[0]["item"]["result"]["structuredContent"]["data"]["candidates"].pop()
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "both seeded candidates"):
+            self.certify_aux(family_overrides={"multiple-exact": events})
+
+    def test_accepts_golden_case_stale_as_semantic_drift_evidence(self) -> None:
+        certificate = self.certify_aux()
+        evidence = next(item for item in certificate["familyEvidence"]
+                        if item["familyId"] == "semantic-drift")
+        self.assertEqual("RECONFIRMATION_STOP", evidence["observedOutcome"])
+
+    def test_rejects_semantic_drift_from_an_unseeded_journey(self) -> None:
+        events = family_events("semantic-drift")
+        events[0]["item"]["arguments"]["journeyRef"] = "journey:other"
+        events[0]["item"]["result"]["structuredContent"]["data"]["journeyRef"] = "journey:other"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "re-confirmation"):
+            self.certify_aux(family_overrides={"semantic-drift": events})
+
+    def test_accepts_same_name_seeded_actions_as_business_assumption_ambiguity(self) -> None:
+        events = family_events("assumption-ambiguity")
+        events[0]["item"]["result"]["structuredContent"]["data"]["status"] = "INCOMPLETE"
+        certificate = self.certify_aux(family_overrides={"assumption-ambiguity": events})
+        evidence = next(item for item in certificate["familyEvidence"]
+                        if item["familyId"] == "assumption-ambiguity")
+        self.assertEqual("ASSUMPTION_AMBIGUOUS_STOP", evidence["observedOutcome"])
 
     def test_rejects_recall_of_a_different_feature(self) -> None:
         events = valid_recall_events()

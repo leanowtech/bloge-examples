@@ -4,7 +4,7 @@
   "title": "Resource Gateway business Solution Codex certification",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "productionTreeFingerprint", "codexVersion", "runtimeIdentity", "suite", "transport", "cases", "familyEvidence", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
+  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "productionTreeFingerprint", "codexVersion", "runtimeIdentity", "setupIdentity", "suite", "transport", "cases", "familyEvidence", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
   "properties": {
     "schemaVersion": { "const": "rg.businessRecallCertification.v1" },
     "certifiedAt": { "type": "string", "minLength": 1 },
@@ -22,6 +22,16 @@
         "jarSha256": { "$ref": "#/$defs/sha256" },
         "processOwnershipVerified": { "const": true },
         "verifiedBeforeAndAfterTurn": { "const": true }
+      }
+    },
+    "setupIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setupFingerprint", "seedManifestFingerprint", "relationshipCount"],
+      "properties": {
+        "setupFingerprint": { "$ref": "#/$defs/sha256" },
+        "seedManifestFingerprint": { "$ref": "#/$defs/hmac" },
+        "relationshipCount": { "const": 5 }
       }
     },
     "suite": { "const": "business-solution-recall-v1" },

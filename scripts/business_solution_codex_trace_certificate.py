@@ -52,6 +52,13 @@ CLARIFICATION_FAMILIES = {
     "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified",
     "multiple-exact", "legacy-feature-partial", "semantic-drift", "assumption-ambiguity",
 }
+SETUP_RELATIONSHIPS = {
+    "near-meaning-distractor": ["nearMeaningDistractor"],
+    "multiple-exact": ["multipleExactA", "multipleExactB"],
+    "legacy-feature-partial": ["legacyPartial"],
+    "semantic-drift": ["semanticDriftFeature", "semanticDriftJourney", "semanticDriftCaseSet"],
+    "assumption-ambiguity": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
+}
 
 
 class CertificationFailure(RuntimeError):
@@ -339,13 +346,66 @@ def require_clarification_trace(path: Path, exit_code: int) -> dict[str, Any]:
     return {"calls": calls, "threadId": thread_id}
 
 
-def load_family_manifest(path: Path) -> list[dict[str, Any]]:
+def canonical_bytes(value: Any) -> bytes:
+    """Encode one private manifest deterministically for its integrity binding."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")).encode("utf-8")
+
+
+def load_setup_manifest(path: Path) -> dict[str, Any]:
+    """Validate the private seed result and recompute its actual asset relationship fingerprint."""
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    required = {"schemaVersion", "fixtureFingerprint", "authoringPatternsFingerprint",
+                "assets", "relationships", "setupFingerprint"}
+    if not isinstance(manifest, dict) or set(manifest) != required \
+            or manifest.get("schemaVersion") != "rg.businessRecallFamilySetup.v1":
+        raise CertificationFailure("setup manifest has an unsupported shape")
+    for field in ("fixtureFingerprint", "authoringPatternsFingerprint", "setupFingerprint"):
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(manifest.get(field, ""))):
+            raise CertificationFailure(f"setup manifest has a malformed {field}")
+    relationships = manifest.get("relationships")
+    if relationships != SETUP_RELATIONSHIPS:
+        raise CertificationFailure("setup manifest does not bind the required family relationships")
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        raise CertificationFailure("setup manifest has no assets")
+    by_role: dict[str, dict[str, Any]] = {}
+    for item in assets:
+        if not isinstance(item, dict) or set(item) != {
+                "role", "assetKind", "assetRef", "contractFingerprint", "revision"}:
+            raise CertificationFailure("setup asset has an unsupported shape")
+        role = required_text(item.get("role"), "setup role")
+        if role in by_role:
+            raise CertificationFailure("setup manifest contains a duplicate role")
+        required_text(item.get("assetKind"), f"setup kind for {role}")
+        required_text(item.get("assetRef"), f"setup ref for {role}")
+        required_text(item.get("contractFingerprint"), f"setup fingerprint for {role}")
+        if not isinstance(item.get("revision"), int) or item["revision"] < 0:
+            raise CertificationFailure("setup asset revision is malformed")
+        by_role[role] = item
+    required_roles = {role for roles in SETUP_RELATIONSHIPS.values() for role in roles}
+    if set(by_role) != required_roles:
+        raise CertificationFailure("setup manifest does not contain the exact required asset roles")
+    material = {key: manifest[key] for key in (
+        "fixtureFingerprint", "authoringPatternsFingerprint", "assets", "relationships")}
+    actual = "sha256:" + hashlib.sha256(canonical_bytes(material)).hexdigest()
+    if not hmac.compare_digest(actual, manifest["setupFingerprint"]):
+        raise CertificationFailure("setup fingerprint does not match the seeded asset relationships")
+    return {**manifest, "path": path, "byRole": by_role}
+
+
+def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Load the private 15-family trace index without accepting caller-defined semantics."""
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict) \
             or manifest.get("schemaVersion") != "rg.businessRecallFamilyTraceSet.v1" \
-            or set(manifest) != {"schemaVersion", "families"}:
+            or set(manifest) != {"schemaVersion", "setupManifestFile", "families"}:
         raise CertificationFailure("family trace manifest has an unsupported shape")
+    setup_name = required_text(manifest.get("setupManifestFile"), "setup manifest file")
+    setup_path = Path(setup_name)
+    if not setup_path.is_absolute():
+        setup_path = path.parent / setup_path
+    setup = load_setup_manifest(setup_path)
     entries = manifest.get("families")
     if not isinstance(entries, list):
         raise CertificationFailure("family trace manifest does not contain families")
@@ -381,7 +441,8 @@ def load_family_manifest(path: Path) -> list[dict[str, Any]]:
     if missing or extra:
         raise CertificationFailure(
             f"family trace manifest must cover all 15 families; missing={missing}, extra={extra}")
-    return sorted(normalized, key=lambda item: list(FAMILY_EXPECTATIONS).index(item["familyId"]))
+    ordered = sorted(normalized, key=lambda item: list(FAMILY_EXPECTATIONS).index(item["familyId"]))
+    return ordered, setup
 
 
 def require_family_surface(calls: list[dict[str, Any]], family_id: str) -> None:
@@ -441,7 +502,28 @@ def successful_golden_with(calls: list[dict[str, Any]], predicate: Any) -> bool:
     return any(predicate(call["arguments"]) for call in successful(calls, "rg.solution.golden.propose"))
 
 
-def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[str, Any]:
+def setup_assets(setup: dict[str, Any], family_id: str) -> list[dict[str, Any]]:
+    """Return the exact private seed coordinates declared for one family."""
+    return [setup["byRole"][role] for role in SETUP_RELATIONSHIPS.get(family_id, [])]
+
+
+def observed_candidates(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collect candidates from this thread only."""
+    return [candidate for search in successful(calls, "rg.capability.search")
+            for candidate in search["data"].get("candidates", [])
+            if isinstance(candidate, dict)]
+
+
+def contains_seeded_candidates(calls: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> bool:
+    """Require this thread to observe every setup asset by ref and fingerprint."""
+    observed = {(item.get("assetRef"), item.get("contractFingerprint"))
+                for item in observed_candidates(calls)}
+    expected = {(item["assetRef"], item["contractFingerprint"]) for item in seeds}
+    return expected.issubset(observed)
+
+
+def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
+                         setup: dict[str, Any]) -> dict[str, Any]:
     """Classify one real Codex trace from observable server outcomes, not manifest claims."""
     family_id = entry["familyId"]
     calls, final_message, completed, thread_id = load_trace(entry["traceFile"])
@@ -459,14 +541,9 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[s
         if rank != 1:
             raise CertificationFailure(f"family {family_id} did not rank the exact Feature first")
         if family_id == "near-meaning-distractor":
-            has_distractor = any(
-                isinstance(candidate, dict)
-                and (candidate.get("assetRef"), candidate.get("contractFingerprint")) != (
-                    chain["recalledFeatureRef"], chain["recalledFeatureContractFingerprint"])
-                for search in successful(calls, "rg.capability.search")
-                for candidate in search["data"].get("candidates", []))
-            if not has_distractor:
-                raise CertificationFailure("family near-meaning-distractor has no observed distractor")
+            if not contains_seeded_candidates(calls, setup_assets(setup, family_id)):
+                raise CertificationFailure(
+                    "family near-meaning-distractor did not observe its seeded distractor")
         outcome = "TOP1_MATCH"
     elif family_id in {
             "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified"}:
@@ -477,6 +554,8 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[s
                         for search in successful(calls, "rg.capability.search"))
         if not ambiguous:
             raise CertificationFailure("family multiple-exact did not observe AMBIGUOUS")
+        if not contains_seeded_candidates(calls, setup_assets(setup, family_id)):
+            raise CertificationFailure("family multiple-exact did not observe both seeded candidates")
         require_business_question(calls, final_message, family_id)
         outcome = "AMBIGUOUS_STOP"
     elif family_id == "legacy-feature-partial":
@@ -486,6 +565,8 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[s
             for candidate in search["data"].get("candidates", []) if isinstance(candidate, dict))
         if not partial:
             raise CertificationFailure("family legacy-feature-partial did not observe PARTIAL")
+        if not contains_seeded_candidates(calls, setup_assets(setup, family_id)):
+            raise CertificationFailure("family legacy-feature-partial did not observe the seeded legacy Feature")
         require_business_question(calls, final_message, family_id)
         outcome = "PARTIAL_STOP"
     elif family_id == "surface-interference":
@@ -503,8 +584,11 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[s
             raise CertificationFailure("family cross-session-rediscovery did not rediscover current state")
         outcome = "CURRENT_STATE_FOUND"
     elif family_id == "semantic-drift":
-        drift = any(contains_value(call["data"], "BUSINESS_SEMANTICS_CHANGED")
-                    or contains_value(call["data"], "CAPABILITY_CONTEXT_STALE")
+        drift_journey = setup["byRole"]["semanticDriftJourney"]["assetRef"]
+        drift = any(call["arguments"].get("journeyRef") == drift_journey
+                    and call["data"].get("journeyRef") == drift_journey
+                    and any(contains_value(call["data"], code) for code in (
+                        "BUSINESS_SEMANTICS_CHANGED", "CAPABILITY_CONTEXT_STALE", "GOLDEN_CASE_STALE"))
                     for call in successful(calls, "rg.journey.next"))
         if not drift:
             raise CertificationFailure("family semantic-drift did not observe semantic re-confirmation")
@@ -538,8 +622,14 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any]) -> dict[s
         ambiguous = any(search["data"].get("status") == "AMBIGUOUS"
                         for search in successful(calls, "rg.capability.search")) \
             or any(contains_value(call["data"], "BUSINESS_ASSUMPTION_AMBIGUOUS") for call in calls)
-        if not ambiguous:
+        seeds = setup_assets(setup, family_id)
+        seeded_candidates = contains_seeded_candidates(calls, seeds)
+        same_name = len({item.get("businessName") for item in observed_candidates(calls)
+                         if any(item.get("assetRef") == seed["assetRef"] for seed in seeds)}) == 1
+        if not ambiguous and not (seeded_candidates and same_name):
             raise CertificationFailure("family assumption-ambiguity did not observe ambiguity")
+        if not seeded_candidates:
+            raise CertificationFailure("family assumption-ambiguity did not observe both seeded actions")
         require_business_question(calls, final_message, family_id)
         outcome = "ASSUMPTION_AMBIGUOUS_STOP"
     else:  # FAMILY_EXPECTATIONS and manifest validation make this unreachable.
@@ -579,8 +669,8 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
     verify_board(metadata.get("boardProjection"), chain)
     if family_manifest is None:
         raise CertificationFailure("all 15 real Codex family traces are required")
-    family_proofs = [require_family_trace(entry, chain)
-                     for entry in load_family_manifest(family_manifest)]
+    family_entries, setup = load_family_manifest(family_manifest)
+    family_proofs = [require_family_trace(entry, chain, setup) for entry in family_entries]
     thread_ids = [authoring_thread_id] + [proof["threadId"] for proof in family_proofs]
     if len(set(thread_ids)) != len(FAMILY_EXPECTATIONS) + 1:
         raise CertificationFailure("certification requires 16 independent Codex threads")
@@ -613,6 +703,13 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             "jarSha256": runtime_jar,
             "processOwnershipVerified": True,
             "verifiedBeforeAndAfterTurn": True,
+        },
+        "setupIdentity": {
+            "setupFingerprint": setup["setupFingerprint"],
+            "seedManifestFingerprint": opaque(
+                "seed-manifest", canonical_bytes({key: value for key, value in setup.items()
+                                                  if key not in {"path", "byRole"}}).decode("utf-8")),
+            "relationshipCount": len(SETUP_RELATIONSHIPS),
         },
         "suite": "business-solution-recall-v1",
         "transport": {"kind": "HTTP_MCP", "endpointClass": "LOOPBACK", "serverCount": 2},

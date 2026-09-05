@@ -70,6 +70,7 @@ CODEX_RUNTIME_DIR=""
 TRACE_FILE=""
 FAMILY_TRACE_DIR=""
 FAMILY_MANIFEST_FILE=""
+SETUP_MANIFEST_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
 SERVICE_PID=""
@@ -91,7 +92,7 @@ cleanup() {
         kill "${SERVICE_PID}" 2>/dev/null || true
         wait "${SERVICE_PID}" 2>/dev/null || true
     fi
-    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN FIXTURE_KEY
+    unset RG_MCP_TOKEN AGENT_TOKEN SETUP_TOKEN REVIEW_TOKEN FIXTURE_KEY
     if [ -n "${TEMP_OUTPUT:-}" ]; then
         rm -f "${TEMP_OUTPUT}"
     fi
@@ -129,6 +130,8 @@ FAMILY_TRACE_DIR="${PRIVATE_DIR}/families"
 FAMILY_MANIFEST_FILE="${PRIVATE_DIR}/family-manifest.json"
 FAMILY_RUN_INDEX="${PRIVATE_DIR}/family-run-index.tsv"
 FAMILY_SUITE_FILE="${ROOT_DIR}/scripts/business-solution-recall-family-suite-v1.json"
+SETUP_FIXTURE_FILE="${ROOT_DIR}/scripts/business-recall-platform-fixture-v1.json"
+SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-manifest.json"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
 BOARD_FILE="${PRIVATE_DIR}/board.json"
@@ -151,9 +154,11 @@ cp "${SOURCE_AUTH_FILE}" "${ISOLATED_CODEX_DIR}/auth.json"
 chmod 600 "${ISOLATED_CODEX_DIR}/auth.json"
 
 AGENT_TOKEN="$(openssl rand -hex 32)"
+SETUP_TOKEN="$(openssl rand -hex 32)"
 REVIEW_TOKEN="$(openssl rand -hex 32)"
 FIXTURE_KEY="$(openssl rand -base64 32 | tr -d '\n')"
-if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ]; then
+if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ] || [ "${SETUP_TOKEN}" = "${REVIEW_TOKEN}" ] \
+        || [ "${SETUP_TOKEN}" = "${AGENT_TOKEN}" ]; then
     echo "Generated demo identities unexpectedly collided." >&2
     exit 1
 fi
@@ -224,37 +229,52 @@ chmod 400 "${PRIVATE_JAR}.copying"
 mv "${PRIVATE_JAR}.copying" "${PRIVATE_JAR}"
 chflags uchg "${PRIVATE_JAR}"
 JAR_SHA256="sha256:$(openssl dgst -sha256 "${PRIVATE_JAR}" | awk '{print $2}')"
-INSTANCE_NONCE="$(openssl rand -hex 32)"
+INSTANCE_NONCE=""
 if lsof -nP -iTCP:"${RG_CERT_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "Certification port became occupied while packaging; refusing to reuse its listener." >&2
     exit 1
 fi
 
-(
-    cd "${ROOT_DIR}/resource-gateway-examples"
-    if [ "sha256:$(openssl dgst -sha256 "${PRIVATE_JAR}" | awk '{print $2}')" != "${JAR_SHA256}" ]; then
-        echo "Private certification JAR changed before process launch." >&2
-        exit 1
+start_owned_service() {
+    local workload_token="$1"
+    INSTANCE_NONCE="$(openssl rand -hex 32)"
+    (
+        cd "${ROOT_DIR}/resource-gateway-examples"
+        if [ "sha256:$(openssl dgst -sha256 "${PRIVATE_JAR}" | awk '{print $2}')" != "${JAR_SHA256}" ]; then
+            echo "Private certification JAR changed before process launch." >&2
+            exit 1
+        fi
+        exec env \
+            RG_API_RESOURCE_AUTHORING_ENABLED=true \
+            RG_REUSABLE_FLOW_AUTHORING_ENABLED=true \
+            RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=true \
+            RG_CORRECTNESS_AUTHORING_ENABLED=true \
+            RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
+            RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID=business-cert-v1 \
+            RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="business-cert-v1=${FIXTURE_KEY}" \
+            RG_INTEGRATION_DEMO_TOKEN="${workload_token}" \
+            RG_INTEGRATION_DEMO_REVIEW_TOKEN="${REVIEW_TOKEN}" \
+            RG_INTEGRATION_ENVIRONMENT_ID=local \
+            "${JAVA_BIN}" --enable-preview -jar "${PRIVATE_JAR}" \
+            "--server.address=127.0.0.1" "--server.port=${RG_CERT_PORT}" \
+            "--spring.datasource.url=jdbc:h2:file:${PRIVATE_DIR}/recall-certification;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false" \
+            "--gateway.agent-tdd.certification-instance.enabled=true" \
+            "--gateway.agent-tdd.certification-instance.instance-nonce=${INSTANCE_NONCE}" \
+            "--gateway.agent-tdd.certification-instance.repository-commit=${REPOSITORY_COMMIT}" \
+            "--gateway.agent-tdd.certification-instance.expected-jar-sha256=${JAR_SHA256}"
+    ) >> "${SERVICE_LOG}" 2>&1 &
+    SERVICE_PID=$!
+}
+
+stop_owned_service() {
+    if [ -n "${SERVICE_PID:-}" ] && kill -0 "${SERVICE_PID}" 2>/dev/null; then
+        kill "${SERVICE_PID}"
+        wait "${SERVICE_PID}" 2>/dev/null || true
     fi
-    exec env \
-        RG_API_RESOURCE_AUTHORING_ENABLED=true \
-        RG_REUSABLE_FLOW_AUTHORING_ENABLED=true \
-        RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=true \
-        RG_CORRECTNESS_AUTHORING_ENABLED=true \
-        RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
-        RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID=business-cert-v1 \
-        RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="business-cert-v1=${FIXTURE_KEY}" \
-        RG_INTEGRATION_DEMO_TOKEN="${AGENT_TOKEN}" \
-        RG_INTEGRATION_DEMO_REVIEW_TOKEN="${REVIEW_TOKEN}" \
-        RG_INTEGRATION_ENVIRONMENT_ID=local \
-        "${JAVA_BIN}" --enable-preview -jar "${PRIVATE_JAR}" \
-        "--server.address=127.0.0.1" "--server.port=${RG_CERT_PORT}" \
-        "--gateway.agent-tdd.certification-instance.enabled=true" \
-        "--gateway.agent-tdd.certification-instance.instance-nonce=${INSTANCE_NONCE}" \
-        "--gateway.agent-tdd.certification-instance.repository-commit=${REPOSITORY_COMMIT}" \
-        "--gateway.agent-tdd.certification-instance.expected-jar-sha256=${JAR_SHA256}"
-) > "${SERVICE_LOG}" 2>&1 &
-SERVICE_PID=$!
+    SERVICE_PID=""
+}
+
+start_owned_service "${SETUP_TOKEN}"
 
 verify_runtime_identity() {
     local actual_identity
@@ -274,24 +294,38 @@ raise SystemExit(0 if actual == expected else 1)
 ' "${INSTANCE_NONCE}" "${REPOSITORY_COMMIT}" "${JAR_SHA256}" <<< "${actual_identity}"
 }
 
-SERVICE_READY=false
-for ((attempt = 0; attempt < 120; attempt++)); do
-    if verify_runtime_identity; then
-        SERVICE_READY=true
-        break
-    fi
-    if ! kill -0 "${SERVICE_PID}" 2>/dev/null; then
-        echo "Owned Resource Gateway exited before exposing its certification identity." >&2
+wait_owned_service() {
+    local service_ready=false
+    for ((attempt = 0; attempt < 120; attempt++)); do
+        if verify_runtime_identity; then
+            service_ready=true
+            break
+        fi
+        if ! kill -0 "${SERVICE_PID}" 2>/dev/null; then
+            echo "Owned Resource Gateway exited before exposing its certification identity." >&2
+            tail -40 "${SERVICE_LOG}" >&2 || true
+            exit 1
+        fi
+        sleep 1
+    done
+    if [ "${service_ready}" != "true" ]; then
+        echo "Owned Resource Gateway did not expose the exact certification identity in time." >&2
         tail -40 "${SERVICE_LOG}" >&2 || true
         exit 1
     fi
-    sleep 1
-done
-if [ "${SERVICE_READY}" != "true" ]; then
-    echo "Owned Resource Gateway did not expose the exact certification identity in time." >&2
-    tail -40 "${SERVICE_LOG}" >&2 || true
-    exit 1
-fi
+}
+
+wait_owned_service
+python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
+    --endpoint "${RG_MCP_ENDPOINT}" \
+    --author-token "${SETUP_TOKEN}" \
+    --review-token "${REVIEW_TOKEN}" \
+    --fixture "${SETUP_FIXTURE_FILE}" \
+    --output "${SETUP_MANIFEST_FILE}"
+chmod 600 "${SETUP_MANIFEST_FILE}"
+stop_owned_service
+start_owned_service "${AGENT_TOKEN}"
+wait_owned_service
 export RG_MCP_TOKEN="${AGENT_TOKEN}"
 curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
 
@@ -412,7 +446,7 @@ for entry in json.load(open(sys.argv[1], encoding="utf-8"))["families"]:
 PY
 )
 
-python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" <<'PY'
+python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" "${SETUP_MANIFEST_FILE}" <<'PY'
 import json
 import sys
 
@@ -427,7 +461,8 @@ with open(sys.argv[1], encoding="utf-8") as source:
             "exitCode": int(exit_code),
         })
 with open(sys.argv[2], "w", encoding="utf-8") as target:
-    json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1", "families": families},
+    json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
+               "setupManifestFile": sys.argv[3], "families": families},
               target, ensure_ascii=False, indent=2)
     target.write("\n")
 PY

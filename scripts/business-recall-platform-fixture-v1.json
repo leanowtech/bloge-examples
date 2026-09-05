@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "rg.businessRecallPlatformFixture.v1",
+  "features": [
+    {
+      "role": "nearMeaningDistractor",
+      "businessGoal": "建立仅用于召回认证的交通事故责任事实",
+      "idempotencyKey": "recall-seed-traffic-liability-v1",
+      "featureYaml": "feature:traffic-accident-liability-test:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-test-input-v1\n  businessSemantics: 交通事故中的乘客或司机责任方\n  businessDefinition: { semanticKey: test.traffic.accident.liability.party, intent: 判断交通事故责任方, domain: recall-certification-test, businessObject: traffic-accident-test-case, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: ACCIDENT_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n"
+    },
+    {
+      "role": "multipleExactA",
+      "businessGoal": "建立仅用于歧义认证的取消责任事实候选甲",
+      "idempotencyKey": "recall-seed-exact-a-v1",
+      "featureYaml": "feature:cancel-party-exact-test-a:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-test-input-a-v1\n  businessSemantics: 取消责任方测试候选甲\n  businessDefinition: { semanticKey: test.cancel.party.duplicate, intent: 判断取消责任方, domain: recall-certification-test, businessObject: ride-order-test, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n"
+    },
+    {
+      "role": "multipleExactB",
+      "businessGoal": "建立仅用于歧义认证的取消责任事实候选乙",
+      "idempotencyKey": "recall-seed-exact-b-v1",
+      "featureYaml": "feature:cancel-party-exact-test-b:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-test-input-b-v1\n  businessSemantics: 取消责任方测试候选乙\n  businessDefinition: { semanticKey: test.cancel.party.duplicate, intent: 判断取消责任方, domain: recall-certification-test, businessObject: ride-order-test, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n"
+    }
+  ],
+  "instructions": [
+    {
+      "role": "assumptionAmbiguityA",
+      "businessGoal": "建立仅用于受控假设歧义认证的出行退款动作",
+      "idempotencyKey": "recall-seed-refund-ride-v1",
+      "prerequisiteFeatureYaml": "feature:refund-ride-prerequisite-test:\n  output: { type: boolean }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-refund-ride-input-v1\n  businessSemantics: 出行订单退款条件测试事实\n  businessDefinition: { semanticKey: test.refund.ride.condition, intent: 判断出行订单退款条件, domain: recall-certification-test, businessObject: ride-order-test, requiredContext: [], resultDomain: { type: boolean }, asOf: REFUND_REQUESTED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n",
+      "prerequisiteScenarioYaml": "scn:refund-ride-prerequisite-test:\n  inputs: [eligible]\n  hitPolicy: unique\n  rules:\n    - ruleId: ELIGIBLE\n      when: { eligible: { eq: true } }\n      outlet: { kind: INSTRUCTION, ref: 'ins:refund-execution-ride-test', bind: { orderId: orderId } }\n  otherwise: { kind: TERMINAL, terminalKind: ESCALATE }\n  businessDefinition: { semanticKey: test.refund.ride.decision, intent: 判定出行退款, domain: recall-certification-test, businessObject: ride-order-test, inputFactKeys: [test.refund.ride.condition], decisionPolicy: UNIQUE, outletSemanticKeys: [test.refund.execution.ride, test.refund.ride.manual], otherwisePolicy: ESCALATE, lifecycle: ACTIVE }\n",
+      "instructionYaml": "ins:refund-execution-ride-test:\n  inputs: { orderId: string }\n  output:\n    result: { type: { fields: { decision: { enum: [REFUNDED] } } } }\n    reasoning: required\n  effect: READ\n  businessSemantics: 退款执行\n  businessDefinition: { semanticKey: test.refund.execution.ride, intent: 执行退款, domain: recall-certification-test, businessObject: ride-order-test, requiredFactKeys: [test.cancel.party.duplicate], resultDomain: { type: object, decision: { enum: [REFUNDED] } }, reasoningPolicy: REQUIRED, effect: READ, failurePolicy: ESCALATE, writeGovernanceClass: NONE, lifecycle: ACTIVE }\n"
+    },
+    {
+      "role": "assumptionAmbiguityB",
+      "businessGoal": "建立仅用于受控假设歧义认证的餐饮退款动作",
+      "idempotencyKey": "recall-seed-refund-food-v1",
+      "prerequisiteFeatureYaml": "feature:refund-food-prerequisite-test:\n  output: { type: boolean }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-refund-food-input-v1\n  businessSemantics: 餐饮订单退款条件测试事实\n  businessDefinition: { semanticKey: test.refund.food.condition, intent: 判断餐饮订单退款条件, domain: recall-certification-test, businessObject: food-order-test, requiredContext: [], resultDomain: { type: boolean }, asOf: REFUND_REQUESTED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n",
+      "prerequisiteScenarioYaml": "scn:refund-food-prerequisite-test:\n  inputs: [eligible]\n  hitPolicy: unique\n  rules:\n    - ruleId: ELIGIBLE\n      when: { eligible: { eq: true } }\n      outlet: { kind: INSTRUCTION, ref: 'ins:refund-execution-food-test', bind: { orderId: orderId } }\n  otherwise: { kind: TERMINAL, terminalKind: ESCALATE }\n  businessDefinition: { semanticKey: test.refund.food.decision, intent: 判定餐饮退款, domain: recall-certification-test, businessObject: food-order-test, inputFactKeys: [test.refund.food.condition], decisionPolicy: UNIQUE, outletSemanticKeys: [test.refund.execution.food, test.refund.food.manual], otherwisePolicy: ESCALATE, lifecycle: ACTIVE }\n",
+      "instructionYaml": "ins:refund-execution-food-test:\n  inputs: { orderId: string }\n  output:\n    result: { type: { fields: { decision: { enum: [REFUNDED] } } } }\n    reasoning: required\n  effect: READ\n  businessSemantics: 退款执行\n  businessDefinition: { semanticKey: test.refund.execution.food, intent: 执行退款, domain: recall-certification-test, businessObject: food-order-test, requiredFactKeys: [test.cancel.party.duplicate], resultDomain: { type: object, decision: { enum: [REFUNDED] } }, reasoningPolicy: REQUIRED, effect: READ, failurePolicy: ESCALATE, writeGovernanceClass: NONE, lifecycle: ACTIVE }\n"
+    }
+  ],
+  "legacyFeature": {
+    "role": "legacyPartial",
+    "featureRef": "feature:旧版取消归责事实测试",
+    "sourceId": "legacy-cancel-responsibility-test.bloge",
+    "searchIntent": "取消归责",
+    "idempotencyKey": "recall-seed-legacy-v1",
+    "dsl": "graph legacyCancelResponsibilityTest {\n  input { orderId: String }\n  output { party: String }\n  transform response { party = ctx.orderId }\n}\n"
+  },
+  "semanticDrift": {
+    "featureRole": "semanticDriftFeature",
+    "journeyRole": "semanticDriftJourney",
+    "caseSetRole": "semanticDriftCaseSet",
+    "idempotencyKey": "recall-seed-drift-v1",
+    "businessGoal": "验证取消责任方业务结果范围变化后旧确认失效",
+    "revisionBusinessGoal": "更新测试域取消责任方的业务结果范围",
+    "featureBeforeYaml": "feature:cancel-party-drift-test:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-drift-input-v1\n  businessSemantics: 漂移验证用取消责任方\n  businessDefinition: { semanticKey: test.cancel.party.drift, intent: 判断取消责任方, domain: recall-certification-test, businessObject: ride-order-drift-test, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n",
+    "featureAfterYaml": "feature:cancel-party-drift-test:\n  output: { type: { enum: [PASSENGER, DRIVER, PLATFORM] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-drift-input-v2\n  businessSemantics: 漂移验证用取消责任方\n  businessDefinition: { semanticKey: test.cancel.party.drift, intent: 判断取消责任方, domain: recall-certification-test, businessObject: ride-order-drift-test, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER, PLATFORM] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n",
+    "scenarioYaml": "scn:cancel-drift-decision-test:\n  inputs: [party]\n  hitPolicy: unique\n  rules:\n    - ruleId: PASSENGER\n      when: { party: { eq: PASSENGER } }\n      outlet: { kind: INSTRUCTION, ref: 'ins:cancel-drift-uphold-test', bind: { party: party } }\n  otherwise: { kind: TERMINAL, terminalKind: ESCALATE }\n  businessDefinition: { semanticKey: test.cancel.drift.decision, intent: 判定取消费处置, domain: recall-certification-test, businessObject: ride-order-drift-test, inputFactKeys: [test.cancel.party.drift], decisionPolicy: UNIQUE, outletSemanticKeys: [test.cancel.drift.uphold, test.cancel.drift.manual], otherwisePolicy: ESCALATE, lifecycle: ACTIVE }\n",
+    "instructionYaml": "ins:cancel-drift-uphold-test:\n  inputs: { party: string }\n  output:\n    result: { type: { fields: { decision: { enum: [UPHELD] } } } }\n    reasoning: required\n  effect: READ\n  businessSemantics: 漂移验证用维持取消费\n  businessDefinition: { semanticKey: test.cancel.drift.uphold, intent: 维持取消费并解释原因, domain: recall-certification-test, businessObject: ride-order-drift-test, requiredFactKeys: [test.cancel.party.drift], resultDomain: { type: object, decision: { enum: [UPHELD] } }, reasoningPolicy: REQUIRED, effect: READ, failurePolicy: ESCALATE, writeGovernanceClass: NONE, lifecycle: ACTIVE }\n",
+    "solutionYaml": "sol:cancel-drift-test:\n  problem: 处理测试域取消费争议。\n  inputs: { party: feature:cancel-party-drift-test }\n  scenarioTree: { root: 'scn:cancel-drift-decision-test' }\n  instructions: ['ins:cancel-drift-uphold-test']\n  golden: 'caseSet:cancel-drift-test'\n  businessDefinition: { semanticKey: test.cancel.drift.solution, intent: 处理取消费争议, domain: recall-certification-test, businessObject: ride-order-drift-test, problemClass: CANCELLATION_FEE_DISPUTE, requiredFactKeys: [test.cancel.party.drift], scenarioSemanticKey: test.cancel.drift.decision, dispositionSemanticKeys: [test.cancel.drift.uphold, test.cancel.drift.manual], runtimeUse: GOVERNED_DECISION, lifecycle: ACTIVE }\n",
+    "cases": [
+      {
+        "caseId": "drift-passenger-test",
+        "businessIntent": "测试域乘客责任维持取消费",
+        "givenFacts": [{ "factName": "漂移验证用取消责任方", "value": "PASSENGER" }],
+        "dependencyAssumptions": [{ "capabilityName": "漂移验证用维持取消费", "outcome": "RETURNS", "value": { "result": { "decision": "UPHELD" }, "reasoning": "测试域乘客责任" } }],
+        "expectedOutcome": { "result": { "decision": "UPHELD" }, "reasoningClass": "测试域乘客责任" },
+        "oracleOwner": "recall-certification-test-owner"
+      }
+    ]
+  },
+  "relationships": {
+    "near-meaning-distractor": ["nearMeaningDistractor"],
+    "multiple-exact": ["multipleExactA", "multipleExactB"],
+    "legacy-feature-partial": ["legacyPartial"],
+    "semantic-drift": ["semanticDriftFeature", "semanticDriftJourney", "semanticDriftCaseSet"],
+    "assumption-ambiguity": ["assumptionAmbiguityA", "assumptionAmbiguityB"]
+  }
+}

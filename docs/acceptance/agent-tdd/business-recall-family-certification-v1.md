@@ -4,7 +4,9 @@
 
 ## 认证范围
 
-认证先运行一条四实体创作主线，再启动 15 个独立、仓库不可见的 Codex 会话。每个会话只接收业务语言提示。提示中不包含工具名、资产引用、DSL、字段结构或实现步骤。
+认证先用独立 setup 身份通过正常 HTTP MCP 与人工审核入口预置测试域能力，再重启同一份 JAR 并切换为 Codex 身份。预置过程不进入 Codex trace。随后运行一条四实体创作主线，再启动 15 个独立、仓库不可见的 Codex 会话。每个会话只接收业务语言提示。提示中不包含工具名、资产引用、DSL、字段结构或实现步骤。
+
+预置数据只使用 `recall-certification-test` 测试域。干扰 Feature、重复精确 Feature 和同名 Instruction 都在服务器导航的正常 journey 中创建。旧 Feature 经过服务端 DSL reference、编译门和 `feature.compose` 创建。语义漂移先建立独立解法并批准 GOLDEN，再通过独立修订 journey 改变 Feature 业务结果范围。原 journey 必须返回 `GOLDEN_CASE_STALE`，否则预置失败。认证没有专用写入后门。
 
 | familyId | 业务问题 | 通过行为 |
 |---|---|---|
@@ -31,9 +33,11 @@
 - 固定 `familyId`；
 - 期望行为分类和服务端结果推导出的观察结果；
 - 一次性 HMAC 生成的案例与会话指纹；
+- 实际 seed 资产关系生成的 `setupFingerprint`；
+- 私有 seed manifest 生成的一次性 HMAC；
 - 15 类全部通过的断言和聚合指标。
 
-Reducer 不接受调用方自报的观察结果。它从真实 trace 中检查候选排序、匹配类型、阻塞原因、标准案例参数、业务操作面边界和 Codex 结束消息。任一测试族缺失、重复、分类错误、会话复用或观察结果不符时，不生成证书。
+Reducer 不接受调用方自报的观察结果。它从真实 trace 中检查候选排序、匹配类型、阻塞原因、标准案例参数、业务操作面边界和 Codex 结束消息。近义干扰、多精确项、旧 Feature、语义漂移和同名动作还必须在各自独立 trace 中观察到本轮 setup manifest 记录的实际资产。任一测试族缺失、重复、分类错误、会话复用、setup 关系被篡改或观察结果不符时，不生成证书。
 
 ## 运行
 
@@ -44,9 +48,9 @@ scripts/certify-agent-tdd-codex.sh \
   docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json
 ```
 
-该命令会构建当前干净提交、启动独占 Resource Gateway、执行 1 个创作会话和 15 个测试族会话，并调用 reducer 生成安全证书。`KEEP_RAW_CODEX_TRACE=true` 只用于批准的本机排障，不能作为正式留存方式。
+该命令会构建当前干净提交，使用独立随机 setup token 启动独占 Resource Gateway 完成预置，然后停止服务并使用独立随机 Codex token 在同一私有数据库上重新启动。第二次启动后执行 1 个创作会话和 15 个测试族会话，并调用 reducer 生成安全证书。`KEEP_RAW_CODEX_TRACE=true` 只用于批准的本机排障，不能作为正式留存方式。
 
-公开提示集位于 `scripts/business-solution-recall-family-suite-v1.json`。私有运行清单使用 `rg.businessRecallFamilyTraceSet.v1`，只记录测试族、期望分类、临时 trace 路径和退出码，不记录业务话语内容。
+公开提示集位于 `scripts/business-solution-recall-family-suite-v1.json`，固定测试域预置位于 `scripts/business-recall-platform-fixture-v1.json`。私有运行清单使用 `rg.businessRecallFamilyTraceSet.v1`，只记录测试族、期望分类、临时 trace 路径、退出码和私有 setup manifest 路径，不记录业务话语内容。
 
 ## 验收门
 
@@ -55,5 +59,6 @@ scripts/certify-agent-tdd-codex.sh \
 - 同义召回和近义干扰的正确能力均为 Top-1；
 - 7 个澄清类测试全部只问一个业务问题，且没有成功写入；
 - 所有 trace 只使用业务操作面；
+- setup 使用独立身份和既有受治理入口，证书绑定实际 seed 资产关系；
 - 证书不包含原始提示、业务参数、资产引用或模型消息；
 - 证书绑定当前提交、生产源码树、运行 JAR 和独占进程身份。
