@@ -139,17 +139,17 @@ public final class BusinessCapabilityIndex {
         String intent = text(query, "intent").toLowerCase(Locale.ROOT);
         Set<String> kinds = upperSet(arguments.path("assetKinds"));
         int limit = boundedLimit(arguments.path("limit").asInt(10));
-        List<Map<String, Object>> candidates = snapshot.capabilities().stream()
+        List<Map<String, Object>> ranked = snapshot.capabilities().stream()
                 .filter(card -> kinds.isEmpty() || kinds.contains(card.assetKind()))
                 .filter(card -> intent.isBlank() || searchableText(card).contains(intent)
                         || tokens(intent).stream().anyMatch(searchableText(card)::contains))
-                .limit(limit)
                 .map(card -> candidate(card, matcher.match(query, card.business())))
                 .sorted(Comparator.<Map<String, Object>>comparingInt(
                                 value -> matchRank(value.get("matchType").toString()))
                         .thenComparing(value -> value.get("assetRef").toString()))
                 .toList();
-        long exact = candidates.stream().filter(value -> "EXACT".equals(value.get("matchType"))).count();
+        long exact = ranked.stream().filter(value -> "EXACT".equals(value.get("matchType"))).count();
+        List<Map<String, Object>> candidates = ranked.stream().limit(limit).toList();
         String status = candidates.isEmpty() ? "NONE" : exact > 1 ? "AMBIGUOUS" : exact == 1 ? "EXACT" : "INCOMPLETE";
         boolean clarificationRequired = !candidates.isEmpty() && exact != 1;
         return Map.of("status", status,

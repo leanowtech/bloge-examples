@@ -33,7 +33,7 @@ business flow plus a decision table with at least two reviewable branches before
 certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
-The 43-tool catalog includes the business-first `rg.library.overview.get`, `rg.dsl.reference.get`,
+The 50-tool catalog includes the business-first `rg.library.overview.get`, `rg.dsl.reference.get`,
 and the four-entity solution authoring
 operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
 `rg.solution.compose`. Each mutation uses the existing exact-response idempotency authority and

@@ -32,7 +32,7 @@ public final class BusinessContractMatcher {
         List<String> matched = new ArrayList<>();
         for (String field : REQUIRED) {
             JsonNode queryValue = queryValue(query, field);
-            if (empty(queryValue)) missing.add(field);
+            if (missingRequiredFacet(field, queryValue)) missing.add(field);
         }
         for (String field : CLOSED) {
             JsonNode queryValue = queryValue(query, field);
@@ -62,6 +62,8 @@ public final class BusinessContractMatcher {
             conflicts.add("requiredContext");
             return;
         }
+        Set<String> queryKeys = new LinkedHashSet<>();
+        query.forEach(value -> queryKeys.add(contextIdentity(value)));
         Set<String> candidateKeys = new LinkedHashSet<>();
         candidate.forEach(value -> candidateKeys.add(contextIdentity(value)));
         boolean typeConflict = false;
@@ -69,16 +71,34 @@ public final class BusinessContractMatcher {
             String identity = contextIdentity(value);
             if (!candidateKeys.contains(identity)) {
                 String key = value.path("semanticKey").asText(value.path("name").asText());
-                boolean sameKey = false;
-                for (JsonNode item : candidate) {
-                    sameKey |= item.path("semanticKey").asText(item.path("name").asText()).equals(key);
-                }
+                boolean sameKey = hasContextKey(candidate, key);
                 typeConflict |= sameKey;
-                if (!typeConflict) missing.add("requiredContext");
+                if (!sameKey) missing.add("requiredContext");
+            }
+        }
+        for (JsonNode value : candidate) {
+            if (value.path("required").asBoolean(true) && !queryKeys.contains(contextIdentity(value))) {
+                String key = value.path("semanticKey").asText(value.path("name").asText());
+                if (hasContextKey(query, key)) typeConflict = true;
+                else missing.add("requiredContext");
             }
         }
         if (typeConflict) conflicts.add("requiredContext");
         else if (!missing.contains("requiredContext")) matched.add("requiredContext");
+    }
+
+    /** Returns whether one context vector contains the same business key, regardless of type. */
+    private static boolean hasContextKey(JsonNode contexts, String key) {
+        for (JsonNode item : contexts) {
+            if (item.path("semanticKey").asText(item.path("name").asText()).equals(key)) return true;
+        }
+        return false;
+    }
+
+    /** Treats an explicit empty context vector as a complete statement that no context is needed. */
+    private static boolean missingRequiredFacet(String field, JsonNode value) {
+        return !"requiredContext".equals(field) ? empty(value)
+                : value == null || value.isMissingNode() || value.isNull() || !value.isArray();
     }
 
     private static String contextIdentity(JsonNode value) {

@@ -86,6 +86,36 @@ class BusinessCapabilityIndexTest {
     }
 
     @Test
+    void ranksAllMatchesBeforeApplyingTheResponseLimit() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveFeature(states, scope(identity("project-a")), "feature:a-partial", 0);
+        saveSemanticFeature(states, "feature:z-exact", contract());
+
+        JsonNode result = mapper.valueToTree(index(states).search(mapper.valueToTree(Map.of(
+                "query", contract(), "assetKinds", List.of("FEATURE"), "limit", 1)),
+                identity("project-a")));
+
+        assertThat(result.path("status").asText()).isEqualTo("EXACT");
+        assertThat(result.at("/candidates/0/assetRef").asText()).isEqualTo("feature:z-exact");
+        assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("EXACT");
+    }
+
+    @Test
+    void reportsAmbiguityEvenWhenTheResponseLimitReturnsOneExactCandidate() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveSemanticFeature(states, "feature:a-exact", contract());
+        saveSemanticFeature(states, "feature:b-exact", contract());
+
+        JsonNode result = mapper.valueToTree(index(states).search(mapper.valueToTree(Map.of(
+                "query", contract(), "assetKinds", List.of("FEATURE"), "limit", 1)),
+                identity("project-a")));
+
+        assertThat(result.path("status").asText()).isEqualTo("AMBIGUOUS");
+        assertThat(result.path("candidates")).hasSize(1);
+        assertThat(result.at("/clarification/required").asBoolean()).isTrue();
+    }
+
+    @Test
     void failsClosedWhenTheSourceWindowNeverStabilizes() {
         AgentTddStateRepository changing = mock(AgentTddStateRepository.class);
         AtomicLong revision = new AtomicLong();
@@ -119,6 +149,45 @@ class BusinessCapabilityIndexTest {
     private void saveFeature(InMemoryAgentTddStateRepository states, String scope, String ref, long ignored) {
         AgentTddStoredAsset value = asset(scope, ref, 1);
         states.save(scope, SolutionEntityRegistry.FEATURE, ref, value.data());
+    }
+
+    private void saveSemanticFeature(InMemoryAgentTddStateRepository states, String ref,
+                                     JsonNode businessDefinition) {
+        ObjectNode semantics = mapper.createObjectNode();
+        semantics.put("businessName", "取消责任方");
+        semantics.put("description", "判断订单取消责任");
+        ObjectNode contract = mapper.createObjectNode();
+        contract.set("businessSemantics", semantics);
+        ObjectNode current = businessDefinition.deepCopy();
+        current.put("lifecycle", "ACTIVE");
+        contract.set("businessDefinition", current);
+        contract.put("evaluationKind", "API");
+        contract.putObject("output").put("type", "string");
+        ObjectNode data = mapper.createObjectNode();
+        data.put("entityKind", "FEATURE");
+        data.set("contract", contract);
+        data.put("contractFingerprint", "sha256:" + "a".repeat(64));
+        data.put("speccing", false);
+        states.save(scope(identity("project-a")), SolutionEntityRegistry.FEATURE, ref, data);
+    }
+
+    private JsonNode contract() throws Exception {
+        return mapper.readTree("""
+                {
+                  "semanticKey":"ride.cancel.party",
+                  "intent":"判断取消责任",
+                  "domain":"ride-cancellation",
+                  "businessObject":"ride-order",
+                  "requiredContext":[],
+                  "resultDomain":{"type":"enum","values":["PASSENGER","DRIVER","UNKNOWN"]},
+                  "asOf":"CANCELLATION_OCCURRED_AT",
+                  "unknownPolicy":"REQUIRE_HUMAN_REVIEW",
+                  "acquisitionOwner":"PLATFORM",
+                  "authoritySource":"responsibility-center",
+                  "freshness":{"mode":"AS_OF_EVENT"},
+                  "effect":"READ"
+                }
+                """);
     }
 
     private AgentTddStoredAsset asset(String scope, String ref, long revision) {

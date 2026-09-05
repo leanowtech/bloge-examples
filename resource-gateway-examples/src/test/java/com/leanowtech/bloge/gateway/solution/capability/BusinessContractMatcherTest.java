@@ -49,6 +49,31 @@ class BusinessContractMatcherTest {
         assertThat(matcher.match(query, contract).conflicts()).contains("requiredContext");
     }
 
+    @Test
+    void explicitEmptyContextCanMatchExactly() throws Exception {
+        JsonNode query = contract().deepCopy();
+        JsonNode candidate = contract().deepCopy();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) query).putArray("requiredContext");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) candidate).putArray("requiredContext");
+
+        assertThat(matcher.match(query, candidate).type())
+                .isEqualTo(BusinessContractMatcher.MatchType.EXACT);
+    }
+
+    @Test
+    void candidateExtraRequiredContextPreventsExactReuse() throws Exception {
+        JsonNode query = contract();
+        JsonNode candidate = contract().deepCopy();
+        ((com.fasterxml.jackson.databind.node.ArrayNode) candidate.path("requiredContext"))
+                .addObject().put("semanticKey", "ride-order.region")
+                .put("name", "region").put("type", "string").put("required", true);
+
+        BusinessContractMatcher.Match result = matcher.match(query, candidate);
+
+        assertThat(result.type()).isEqualTo(BusinessContractMatcher.MatchType.PARTIAL);
+        assertThat(result.missingFacets()).contains("requiredContext");
+    }
+
     private JsonNode contract() throws Exception {
         return mapper.readTree("""
                 {
