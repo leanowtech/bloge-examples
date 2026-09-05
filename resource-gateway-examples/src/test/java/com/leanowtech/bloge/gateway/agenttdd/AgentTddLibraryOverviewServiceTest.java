@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.SolutionAuthoringDecoder;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
@@ -10,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +54,12 @@ class AgentTddLibraryOverviewServiceTest {
         assertThat(overview.get("authoringPatterns").toString())
                 .contains("featureYaml", "scenarioYaml", "instructionYaml", "solutionYaml")
                 .doesNotContain("http://", "bindingRef");
+        Map<?, ?> patterns = (Map<?, ?>) overview.get("authoringPatterns");
+        SolutionAuthoringDecoder decoder = new SolutionAuthoringDecoder();
+        assertThat(decoder.decodeFeature(bytes(patterns, "featureYaml")).successful()).isTrue();
+        assertThat(decoder.decodeScenario(bytes(patterns, "scenarioYaml")).successful()).isTrue();
+        assertThat(decoder.decodeInstruction(bytes(patterns, "instructionYaml")).successful()).isTrue();
+        assertThat(decoder.decodeSolution(bytes(patterns, "solutionYaml")).successful()).isTrue();
     }
 
     @Test
@@ -100,6 +108,10 @@ class AgentTddLibraryOverviewServiceTest {
                 SchemaEnvelope.opaque(),
                 new OperatorDefinition.Capabilities(effect, "NONE", false, false, false),
                 new OperatorDefinition.Lowering("native", ref, Map.of()), List.of());
+    }
+
+    private static byte[] bytes(Map<?, ?> patterns, String field) {
+        return patterns.get(field).toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static OperatorDefinition libraryOperator(String ref, String title, boolean bound) {

@@ -132,6 +132,20 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "escaped"):
             self.certify(events)
 
+    def test_allows_codex_resource_discovery_as_passive_protocol_work(self) -> None:
+        events = valid_events()
+        events.insert(-2, call("codex", "list_mcp_resources", {}, {}, status="completed"))
+        certificate = self.certify(events)
+        self.assertEqual(0, certificate["metrics"]["unsafeEscapeCount"])
+
+    def test_rejects_business_tool_on_the_wrong_server(self) -> None:
+        events = valid_events()
+        feature = next(event for event in events
+                       if event.get("item", {}).get("tool") == "rg.feature.define")
+        feature["item"]["server"] = "rg_read"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "escaped"):
+            self.certify(events)
+
     def test_rejects_solution_case_set_mismatch(self) -> None:
         events = valid_events()
         events[9]["item"]["arguments"]["solutionRef"] = "solution:other"

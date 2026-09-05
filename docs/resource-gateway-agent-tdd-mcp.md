@@ -515,7 +515,7 @@ HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证
   未识别的 action item 时，认证失败关闭；
 - 最终回复只使用业务语言，不出现 YAML、Schema、MCP、内部引用或指纹等实现词汇。
 
-认证提示词以“取消费争议”为业务任务，要求先盘点业务积木并精确查找“取消责任方”，再表达乘客与司机两条规则、两种处置及两条完整标准案例。提示词不提供 YAML、DSL、MCP 参数、内部引用或技术字段；Coding Agent 只能从服务端库概览中的 `authoringPatterns` 自行获得四实体创作约束。
+认证提示词以“取消费争议”为业务任务，要求先盘点业务积木并精确查找“取消责任方”，再表达乘客与司机两条规则、两种处置及两条完整标准案例。提示词不提供 YAML、DSL、MCP 参数、内部引用或技术字段；Coding Agent 只能从服务端库概览中的 `authoringPatterns` 自行获得四实体创作约束。四份模板本身必须通过生产 `SolutionAuthoringDecoder`，避免 Agent 根据自然语言字段清单猜测根节点、枚举值或对象形状。Codex 的标准 `resources/list` 与 `resources/templates/list` 探测可被记录为被动协议动作，但不能计入业务工具召回，也不能放宽业务 surface。
 
 默认输出为 `resource-gateway-examples/target/business-solution-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理；外层 sandbox

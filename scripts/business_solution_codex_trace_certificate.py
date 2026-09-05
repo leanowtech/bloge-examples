@@ -25,6 +25,7 @@ READ_TOOLS = {
 }
 FORBIDDEN_PREFIXES = ("rg.dsl.", "rg.tool.", "rg.simulate", "rg.fixture.")
 PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list", "error"}
+CODEX_MCP_DISCOVERY_CALLS = {"list_mcp_resources", "list_mcp_resource_templates"}
 TECHNICAL_FINAL_PATTERN = re.compile(
     r"(?i)\b(?:yaml|dsl|schema|binding|operator|toolref|casesetref|fingerprint|mcp|json)\b"
     r"|代码|编译器?|节点|端口|指纹|内部标识"
@@ -119,10 +120,17 @@ def successful(calls: list[dict[str, Any]], tool: str) -> list[dict[str, Any]]:
 
 def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Correlate one server-governed journey from discovery through pending GOLDEN review."""
-    disallowed = [call["tool"] for call in calls
+    business_calls = [call for call in calls if call["server"] in {"rg_read", "rg_author"}]
+    passive_discovery = [call for call in calls if call["server"] == "codex"
+                         and call["tool"] in CODEX_MCP_DISCOVERY_CALLS]
+    if len(business_calls) + len(passive_discovery) != len(calls):
+        raise CertificationFailure("Codex escaped the BUSINESS_SOLUTION authoring surface")
+    disallowed = [call["tool"] for call in business_calls
                   if call["tool"] not in AUTHORING_TOOLS | READ_TOOLS
-                  or call["tool"].startswith(FORBIDDEN_PREFIXES)]
-    if disallowed or any(call["server"] not in {"rg_read", "rg_author"} for call in calls):
+                  or call["tool"].startswith(FORBIDDEN_PREFIXES)
+                  or (call["tool"] in AUTHORING_TOOLS and call["server"] != "rg_author")
+                  or (call["tool"] in READ_TOOLS and call["server"] != "rg_read")]
+    if disallowed:
         raise CertificationFailure("Codex escaped the BUSINESS_SOLUTION authoring surface")
     starts = successful(calls, "rg.journey.start")
     if len(starts) != 1:

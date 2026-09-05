@@ -117,16 +117,54 @@ public final class AgentTddLibraryOverviewService {
      */
     private static Map<String, String> authoringPatterns() {
         return Map.of(
-                "featureYaml", "One top-level feature ref with output.type, evaluationKind, determinism, "
-                        + "one evaluation/component/prompt ref, businessSemantics, and complete businessDefinition "
-                        + "{semanticKey,intent,domain,businessObject,requiredContext,resultDomain,asOf,"
-                        + "unknownPolicy,acquisitionOwner,freshness,effect}.",
-                "scenarioYaml", "One top-level scenario ref with inputs, hitPolicy: unique, ordered rules "
-                        + "{ruleId,when,outlet}, and otherwise. Each outlet is TERMINAL, INSTRUCTION, or SCENARIO.",
-                "instructionYaml", "One top-level instruction ref with inputs, output {result,reasoning}, "
-                        + "effect READ or WRITE, and businessSemantics. WRITE also requires writeGovernance.",
-                "solutionYaml", "One top-level solution ref with problem, inputs mapping local fact names to "
-                        + "Feature refs, scenarioTree.root, instructions, and golden.");
+                "featureYaml", """
+                        fact.example:
+                          output: { type: { enum: [VALUE_A, VALUE_B] } }
+                          evaluationKind: USER_CONVERSATION
+                          determinism: INTERACTIVE
+                          inputs: {}
+                          promptRef: prompt:fact-example
+                          businessSemantics: Ask the responsible business person for this fact.
+                          businessDefinition:
+                            semanticKey: example.fact
+                            intent: State the business question answered by this fact.
+                            domain: example-domain
+                            businessObject: example-object
+                            requiredContext: []
+                            resultDomain: { type: enum, values: [VALUE_A, VALUE_B] }
+                            asOf: CURRENT
+                            unknownPolicy: REQUIRE_HUMAN_REVIEW
+                            acquisitionOwner: USER
+                            freshness: { mode: CURRENT }
+                            effect: PURE
+                        """,
+                "scenarioYaml", """
+                        scn:example:
+                          inputs: [fact]
+                          hitPolicy: unique
+                          rules:
+                            - ruleId: R1
+                              when: { fact: { eq: VALUE_A } }
+                              outlet: { kind: INSTRUCTION, ref: 'ins:action-a', bind: { fact: fact } }
+                          otherwise: { kind: INSTRUCTION, ref: 'ins:manual-review', bind: { fact: fact } }
+                        """,
+                "instructionYaml", """
+                        ins:action-a:
+                          inputs: { fact: string }
+                          output:
+                            result: { type: { fields: { disposition: string } } }
+                            reasoning: required
+                          effect: READ
+                          businessSemantics: State the business disposition performed by this action.
+                        """,
+                "solutionYaml", """
+                        sol:example:
+                          problem: State the business problem this solution resolves.
+                          inputs: { fact: fact.example }
+                          scenarioTree: { root: 'scn:example' }
+                          instructions: ['ins:action-a', 'ins:manual-review']
+                          golden: 'caseSet:example'
+                        """);
     }
 
     private List<Map<String, Object>> samples(IntegrationRequestContext identity) {
