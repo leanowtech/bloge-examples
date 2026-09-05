@@ -423,6 +423,10 @@ class AgentTddBoardTest {
                             "展开查看技术结构", "场景表", "PUBLISH_SIGNOFF",
                             "/reviews/tools/", "signoffRef", "实景验证",
                             "data-attestation-rerun", "/attestations/", "RECOVERY_REQUIRED")
+                    .contains("打开五面板业务审阅", "renderBusinessBoard",
+                            "/api/agent-tdd/solutions/", "业务解法审阅",
+                            "规则矩阵", "处置清单", "红绿验证板", "发布卡",
+                            "policyGaps", "resultKind")
                     .doesNotContain("contenteditable", "libraryYaml", "tool.compose");
         }
     }

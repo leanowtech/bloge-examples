@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddBoardController;
+import com.leanowtech.bloge.gateway.agenttdd.EngineeringHandoffController;
 import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffController;
 import com.leanowtech.bloge.gateway.solution.board.BoardProjectionController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
@@ -83,6 +84,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         AuthoringLinkResolverController.class,
         CapabilityStudioDemoController.class,
         AgentTddBoardController.class,
+        EngineeringHandoffController.class,
         FeatureHandoffController.class,
         BoardProjectionController.class
 })

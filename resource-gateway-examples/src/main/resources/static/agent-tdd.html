@@ -17,7 +17,7 @@
     .gates{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.gate{font-size:12px;padding:3px 7px;border-radius:999px;background:#eef2f5}.gate.ok{color:var(--green);background:#e8f5ef}.review{padding:12px 0;border-top:1px solid var(--line)}.review:first-child{border-top:0}.empty{color:var(--muted);padding:20px 0}
     .projection{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.projection section{background:#f8fafb;border:1px solid #e8edf0;border-radius:7px;padding:9px}.projection h3{font-size:12px;margin:0 0 5px;color:var(--muted)}.projection ul{list-style:none;margin:0;padding:0}.projection li{overflow-wrap:anywhere}.projection code{font-size:11px;color:#334155}
     .business-flow{margin-top:12px;font-weight:650}.rule-matrix{margin-top:10px;overflow-x:auto}.rule-matrix h3{margin:0 0 6px;font-size:13px}.rule-matrix table{width:100%;border-collapse:collapse;font-size:12px}.rule-matrix th,.rule-matrix td{border:1px solid var(--line);padding:6px 7px;text-align:left;vertical-align:top}.rule-matrix th{background:#f3f6f8}.rule-matrix tr.otherwise td{background:#fff8e8}.technical,.coverage-detail{margin-top:9px}.technical summary,.coverage-detail summary{cursor:pointer;color:var(--muted)}
-    .error{color:var(--red);white-space:pre-wrap}.review-detail{white-space:pre-wrap;max-height:280px;overflow:auto;background:#101820;color:#edf2f7;border-radius:7px;padding:10px;font:12px/1.45 ui-monospace,monospace}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid,.world-columns{grid-template-columns:1fr}.journey-legend,.journey-progress{grid-template-columns:1fr}}
+    .error{color:var(--red);white-space:pre-wrap}.review-detail{white-space:pre-wrap;max-height:280px;overflow:auto;background:#101820;color:#edf2f7;border-radius:7px;padding:10px;font:12px/1.45 ui-monospace,monospace}.business-review{width:min(1040px,calc(100vw - 32px));max-height:88vh;border:0;border-radius:12px;padding:0;box-shadow:0 24px 80px #17212b38}.business-review::backdrop{background:#17212b80}.business-review header{padding:18px 22px;align-items:center}.business-review header button{background:#fff;color:var(--ink);border-color:var(--line)}.business-review-body{padding:20px 22px;display:grid;gap:14px}.business-review-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.business-review-grid section{border:1px solid var(--line);border-radius:9px;padding:13px}.business-review-grid section.wide{grid-column:1/-1}.business-review table{width:100%;border-collapse:collapse}.business-review th,.business-review td{border:1px solid var(--line);padding:6px;text-align:left}.business-review .verdict-green{color:var(--green);font-weight:700}.business-review .verdict-red{color:var(--red);font-weight:700}.note{margin-top:18px;color:var(--muted);font-size:12px}@media(max-width:800px){header{align-items:start;flex-direction:column}.auth{justify-content:start}.summary,.grid,.world-columns,.business-review-grid{grid-template-columns:1fr}.journey-legend,.journey-progress{grid-template-columns:1fr}}
     @media(max-width:600px){.projection{grid-template-columns:1fr}}
   </style>
 </head>
@@ -55,6 +55,10 @@
   </section>
   <div class="note">看板只请求 STRUCTURE_ONLY 视图，不展示 fixture 或业务响应载荷。请先在授权的业务来源核对完整内容，再记录批准；操作要求 AGENT_TDD_GOVERNANCE purpose，并携带人实际查看的精确 revision 或 GREEN 基线指纹。</div>
 </main>
+<dialog id="businessReview" class="business-review" aria-labelledby="businessReviewTitle">
+  <header><div><h2 id="businessReviewTitle">业务解法审阅</h2><div class="meta">规则、处置、验证、特征和发布条件</div></div><button id="closeBusinessReview" type="button">关闭</button></header>
+  <div id="businessReviewBody" class="business-review-body"></div>
+</dialog>
 <script>
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -85,12 +89,29 @@
   function renderSolution(solution) {
     const gates=Object.entries(solution.gates||{}).map(([name,ok])=>`<span class="gate ${ok?'ok':''}">${esc(name)} ${ok?'✓':'·'}</span>`).join('');
     const perf=solution.performance||{}; const hits=(perf.hitDistribution||[]).map(v=>`${esc(v.ruleId)} ${esc(v.count)} (${Math.round(Number(v.share||0)*100)}%)`).join('、')||'尚无';
-    const dispositions=(perf.dispositionDistribution||[]).map(v=>`${esc(v.instructionRef)} ${esc(v.count)}`).join('、')||'尚无';
+    const dispositions=(perf.dispositionDistribution||[]).map(v=>`${esc(v.resultKind)} ${esc(v.count)} (${Math.round(Number(v.share||0)*100)}%)`).join('、')||'尚无';
+    const policyGaps=(perf.policyGaps||[]).map(v=>`${esc(v.ruleId)} · ${esc(v.symptom)} · ${esc(v.suggestedRevision)}`).join('；')||'无';
     const features=Object.entries(solution.inputFeatures||{}).map(([name,ref])=>`<li>${esc(name)} ← ${esc(ref)}</li>`).join('')||'<li class="meta">未声明</li>';
     const instructions=(solution.instructions||[]).map(item=>`<li>${esc(item.instructionRef)} · ${esc(item.effect)} · ${esc(item.state)}${item.downstreamSystem?' · 下游 '+esc(item.downstreamSystem):''}</li>`).join('')||'<li class="meta">未声明</li>';
     const scenario=solution.scenario||{}; const rules=(scenario.rules||[]).map(rule=>`<li><strong>${esc(rule.ruleId)}</strong> · ${esc(JSON.stringify(rule.when))} → ${esc(rule.outletRef||rule.outletKind)}</li>`).join('')||'<li class="meta">未声明</li>';
     const handoff=solution.engineeringHandoff||{}; const recon=solution.writeReconciliation||{};
-    return `<article class="tool"><div class="tool-head"><strong>${esc(solution.solutionRef)}</strong><span class="state ${esc(solution.state)}">${esc(solution.state)}</span></div><div>${esc(solution.problem)}</div><div class="gates">${gates}</div><div class="meta">规则命中 · ${hits}</div><div class="meta">处置分布 · ${dispositions}　升级率 · ${Math.round(Number(perf.escalationRate||0)*100)}%　红色 GOLDEN · ${(perf.redGolden||[]).map(esc).join('、')||'无'}</div><div class="meta">工程交接 · ${esc(handoff.status||'无')} ${handoff.itemCount===undefined?'':`(${esc(handoff.itemCount)} 项)`}　写对账 · ${esc(recon.status||'不适用')}</div><div class="projection"><section><h3>输入特征</h3><ul>${features}</ul></section><section><h3>业务规则 · ${esc(scenario.hitPolicy||'')}</h3><ul>${rules}</ul></section><section><h3>处置指令</h3><ul>${instructions}</ul></section></div><div class="meta">剩余 · ${(solution.remainingLimitations||[]).map(esc).join('、')||'无'}</div></article>`;
+    return `<article class="tool"><div class="tool-head"><strong>${esc(solution.solutionRef)}</strong><span class="state ${esc(solution.state)}">${esc(solution.state)}</span></div><div>${esc(solution.problem)}</div><div class="gates">${gates}</div><div class="meta">规则命中 · ${hits}</div><div class="meta">处置分布 · ${dispositions}　升级率 · ${Math.round(Number(perf.escalationRate||0)*100)}%　红色 GOLDEN · ${(perf.redGolden||[]).map(esc).join('、')||'无'}</div><div class="meta">政策改进建议 · ${policyGaps}</div><div class="meta">工程交接 · ${esc(handoff.status||'无')} ${handoff.itemCount===undefined?'':`(${esc(handoff.itemCount)} 项)`}　写对账 · ${esc(recon.status||'不适用')}</div><div class="projection"><section><h3>输入特征</h3><ul>${features}</ul></section><section><h3>业务规则 · ${esc(scenario.hitPolicy||'')}</h3><ul>${rules}</ul></section><section><h3>处置指令</h3><ul>${instructions}</ul></section></div><button type="button" data-solution-board="${esc(solution.solutionRef)}">打开五面板业务审阅</button><div class="meta">剩余 · ${(solution.remainingLimitations||[]).map(esc).join('、')||'无'}</div></article>`;
+  }
+  function renderBusinessBoard(board) {
+    const matrix=board.ruleMatrix||{};
+    const conditions=matrix.conditions||[];
+    const ruleRows=(matrix.rules||[]).map(rule=>`<tr><td>${esc(rule.ruleId)}</td>${conditions.map(name=>`<td>${esc(rule.cells?.[name]||'—')}</td>`).join('')}<td>${esc(rule.disposition)}</td></tr>`).join('');
+    const matrixHead=conditions.map(name=>`<th>${esc(name)}</th>`).join('');
+    const dispositions=(board.dispositions||[]).map(item=>`<li><strong>${esc(item.instructionName)}</strong> · ${esc(item.effectText)} · ${esc(item.state)}${item.reconciliation?` · 对账 ${esc(item.reconciliation.downstream)}`:''}</li>`).join('')||'<li>无</li>';
+    const cases=(board.redGreen?.cases||[]).map(item=>`<tr><td>${esc(item.caseId)}</td><td>${esc(JSON.stringify(item.givenFacts))}</td><td>${esc(JSON.stringify(item.expected))}</td><td class="${item.verdict==='绿'?'verdict-green':'verdict-red'}">${esc(item.verdict)}</td></tr>`).join('')||'<tr><td colspan="4">尚无已执行应然</td></tr>';
+    const features=(board.featureCards||[]).map(item=>`<li><strong>${esc(item.fact)}</strong> · ${esc(item.type)} · ${esc(item.sourceText)} · ${esc(item.state)}${item.handoffStatus?` · 交接 ${esc(item.handoffStatus)}`:''}</li>`).join('')||'<li>无</li>';
+    const gates=Object.entries(board.publishCard?.gates||{}).map(([name,ok])=>`<span class="gate ${ok?'ok':''}">${esc(name)} ${ok?'✓':'·'}</span>`).join('');
+    $('businessReviewTitle').textContent=board.problem||board.solutionName||'业务解法审阅';
+    $('businessReviewBody').innerHTML=`<div class="business-review-grid"><section class="wide"><h3>规则矩阵</h3><table><thead><tr><th>规则</th>${matrixHead}<th>处置</th></tr></thead><tbody>${ruleRows}<tr><td>其余情况</td><td colspan="${Math.max(1,conditions.length)}">—</td><td>${esc(matrix.otherwise||'—')}</td></tr></tbody></table></section><section><h3>处置清单</h3><ul>${dispositions}</ul></section><section><h3>判断依据</h3><ul>${features}</ul></section><section class="wide"><h3>红绿验证板 · ${esc(board.redGreen?.side||'未测试')}</h3><table><thead><tr><th>应然</th><th>已知事实</th><th>期望处置</th><th>结果</th></tr></thead><tbody>${cases}</tbody></table></section><section class="wide"><h3>发布卡</h3><div class="gates">${gates}</div><p>${board.publishCard?.publishable?'所有发布条件已满足。':'仍有发布条件未满足，请在待业务决策区完成相应人工门。'}</p></section></div>`;
+  }
+  async function openBusinessBoard(solutionRef) {
+    const board=await request(`/api/agent-tdd/solutions/${encodeURIComponent(solutionRef)}/board`,{headers:headers('AGENT_TDD_GOVERNANCE')});
+    renderBusinessBoard(board); $('businessReview').showModal();
   }
   function renderRuleMatrix(matrix) {
     const conditions=matrix.conditionColumns||[]; const outputs=matrix.outputColumns||[];
@@ -164,9 +185,11 @@
       $('reviews').innerHTML=data.pendingReviews.length?data.pendingReviews.map(renderReview).join(''):'<div class="empty">没有待处理评审。</div>';
       document.querySelectorAll('[data-review]').forEach(button=>button.onclick=()=>approve(data.pendingReviews[Number(button.dataset.review)]).catch(e=>$('error').textContent=e.message));
       document.querySelectorAll('[data-attestation-rerun]').forEach(button=>button.onclick=()=>rerunAttestation(button.dataset.attestationRerun).catch(e=>$('error').textContent=e.message));
+      document.querySelectorAll('[data-solution-board]').forEach(button=>button.onclick=()=>openBusinessBoard(button.dataset.solutionBoard).catch(e=>$('error').textContent=e.message));
     } catch(error) {$('error').textContent=error.message;}
   }
   $('load').onclick=load;
+  $('closeBusinessReview').onclick=()=>$('businessReview').close();
 </script>
 </body>
 </html>

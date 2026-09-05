@@ -362,6 +362,7 @@ public final class SolutionAgentTools {
                 AgentTddMutationService.scopeKey(identity), contract);
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("instructionId", stored.ref());
+        result.put("businessSemantics", contract.businessSemantics());
         result.put("effect", contract.effect().name());
         result.put("reasoningRequired", contract.reasoningRequired());
         if (contract.writeGovernance() != null) {

@@ -43,7 +43,8 @@ class BoardProjectionServiceTest {
                 mapper.valueToTree(Map.of("result", Map.of("type", Map.of("fields", Map.of(
                         "decision", Map.of("enum", List.of("WAIVED"))))), "reasoning", "required")),
                 InstructionContract.Effect.WRITE, "",
-                new InstructionContract.WriteGovernance("refund-service", "orderId", "recon:refund")));
+                new InstructionContract.WriteGovernance("refund-service", "orderId", "recon:refund"),
+                "全额免除取消费"));
         registry.upsertScenario(SCOPE, new ScenarioContract(
                 "scn:cancel", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
                 List.of(new ScenarioContract.Rule("R1",
@@ -87,9 +88,10 @@ class BoardProjectionServiceTest {
         assertThat(view.ruleMatrix().rules()).singleElement().satisfies(rule -> {
             assertThat(rule.ruleId()).isEqualTo("R1");
             assertThat(rule.cells()).containsEntry("取消费责任方", "等于 none");
-            assertThat(rule.disposition()).isEqualTo("refund waive full");
+            assertThat(rule.disposition()).isEqualTo("全额免除取消费");
         });
         assertThat(view.dispositions()).singleElement().satisfies(card -> {
+            assertThat(card.instructionName()).isEqualTo("全额免除取消费");
             assertThat(card.effectText()).isEqualTo("写入业务系统");
             assertThat(card.resultFields()).extracting(BoardProjectionService.ResultField::name)
                     .containsExactly("decision");

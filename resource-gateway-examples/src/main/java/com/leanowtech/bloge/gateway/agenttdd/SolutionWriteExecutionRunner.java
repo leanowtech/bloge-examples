@@ -42,6 +42,7 @@ public final class SolutionWriteExecutionRunner {
     private final ReconciliationAdapterRegistry adapters;
     private final ObjectMapper mapper;
     private final SolutionExecutionService execution;
+    private final EngineeringHandoffService handoffs;
 
     /** Creates the non-MCP execution boundary; a missing Instruction channel fails closed. */
     @Autowired
@@ -50,12 +51,13 @@ public final class SolutionWriteExecutionRunner {
             SolutionEntityRegistry registry,
             ReconciliationAdapterRegistry adapters,
             ObjectMapper mapper,
-            ObjectProvider<InstructionDispatchChannel> channels) {
+            ObjectProvider<InstructionDispatchChannel> channels,
+            EngineeringHandoffService handoffs) {
         this(states, registry, adapters, mapper, channels.getIfUnique(() ->
                 (instruction, values, context) -> {
                     throw new SolutionContractException(
                             "INSTRUCTION_BINDING_UNAVAILABLE", "Instruction execution is unavailable.");
-                }));
+                }), handoffs);
     }
 
     /** Focused constructor used by certification tests with explicit controlled adapters. */
@@ -65,11 +67,24 @@ public final class SolutionWriteExecutionRunner {
             ReconciliationAdapterRegistry adapters,
             ObjectMapper mapper,
             InstructionDispatchChannel channel) {
+        this(states, registry, adapters, mapper, channel,
+                new EngineeringHandoffService(states, registry, mapper));
+    }
+
+    /** Focused constructor with an explicit handoff lifecycle collaborator. */
+    SolutionWriteExecutionRunner(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ReconciliationAdapterRegistry adapters,
+            ObjectMapper mapper,
+            InstructionDispatchChannel channel,
+            EngineeringHandoffService handoffs) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.adapters = Objects.requireNonNull(adapters, "adapters");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.execution = new SolutionExecutionService(registry, mapper, channel);
+        this.handoffs = Objects.requireNonNull(handoffs, "handoffs");
     }
 
     /**
@@ -198,8 +213,11 @@ public final class SolutionWriteExecutionRunner {
     }
 
     private Map<String, Object> persistAndConvert(String scope, String solutionRef, JsonNode response) {
-        states.save(scope, RECONCILIATION, solutionRef, response);
-        return mapper.convertValue(response, OBJECT_MAP);
+        return states.executeAtomically(() -> {
+            states.save(scope, RECONCILIATION, solutionRef, response);
+            handoffs.closeAfterReconciliation(scope, solutionRef, response);
+            return mapper.convertValue(response, OBJECT_MAP);
+        });
     }
 
     private Map<String, Object> recovery(

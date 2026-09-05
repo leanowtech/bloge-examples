@@ -216,6 +216,55 @@ class SolutionWriteGovernanceTest {
     }
 
     @Test
+    void accountableEngineerFulfilsExactHandoffWithoutChangingBusinessContract() {
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of("result", Map.of("type", "object"),
+                        "reasoning", "required")),
+                InstructionContract.Effect.WRITE, "",
+                new InstructionContract.WriteGovernance(
+                        "refund-service", "orderId", "recon:refund-v1"),
+                "全额免除取消费"));
+        EngineeringHandoffService handoffs = new EngineeringHandoffService(states, registry, mapper);
+        handoffs.submit("sol:cancel", authorIdentity());
+
+        Map<String, Object> fulfilled = handoffs.fulfil(
+                "sol:cancel", "ins:refund", "operator:refund-v2", engineerIdentity());
+
+        assertThat(fulfilled).containsEntry("status", "IMPLEMENTED");
+        InstructionContract bound = registry.requireInstruction(SCOPE, "ins:refund");
+        assertThat(bound.bindingRef()).isEqualTo("operator:refund-v2");
+        assertThat(bound.businessSemantics()).isEqualTo("全额免除取消费");
+        assertThat(bound.contractIdentity()).doesNotContainKey("bindingRef");
+        assertThatThrownBy(() -> handoffs.fulfil(
+                "sol:cancel", "ins:refund", "operator:agent-bypass", authorIdentity()))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("FORBIDDEN_PURPOSE");
+    }
+
+    @Test
+    void engineeringFulfilmentRejectsContractDriftAfterHandoffSubmission() {
+        InstructionContract design = new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of("result", Map.of("type", "object"),
+                        "reasoning", "required")),
+                InstructionContract.Effect.WRITE, "",
+                new InstructionContract.WriteGovernance(
+                        "refund-service", "orderId", "recon:refund-v1"));
+        registry.upsertInstruction(SCOPE, design);
+        EngineeringHandoffService handoffs = new EngineeringHandoffService(states, registry, mapper);
+        handoffs.submit("sol:cancel", authorIdentity());
+        registry.upsertInstruction(SCOPE, design);
+
+        assertThatThrownBy(() -> handoffs.fulfil(
+                "sol:cancel", "ins:refund", "operator:refund-v2", engineerIdentity()))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
     void boardProjectsSolutionPerformanceAndAnExactPendingOwnerDecision() {
         runner(adapter(Map.of("decision", "WAIVED")))
                 .execute("sol:cancel", writeIdentity("test"));
@@ -273,6 +322,10 @@ class SolutionWriteGovernanceTest {
 
     private static IntegrationRequestContext humanIdentity() {
         return identity("HUMAN", "owner-1", "test", "AGENT_TDD_GOVERNANCE");
+    }
+
+    private static IntegrationRequestContext engineerIdentity() {
+        return identity("USER", "engineer-1", "test", "AGENT_TDD_INSTRUCTION_ENG");
     }
 
     private static IntegrationRequestContext readIdentity() {

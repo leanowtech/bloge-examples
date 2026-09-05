@@ -34,6 +34,7 @@ class SolutionAuthoringDecoderTest {
                   ins:uphold:
                     inputs: { orderId: string }
                     output: { result: { type: string }, reasoning: required }
+                    businessSemantics: Keep the original fee.
                     effect: READ
                     bindingRef: tool:uphold-v1
                 solutions:
@@ -52,6 +53,8 @@ class SolutionAuthoringDecoderTest {
         assertThat(result.value().features()).containsOnlyKeys("responsibility.party");
         assertThat(result.value().scenarios()).containsOnlyKeys("scn:root");
         assertThat(result.value().instructions()).containsOnlyKeys("ins:uphold");
+        assertThat(result.value().instructions().get("ins:uphold").businessSemantics())
+                .isEqualTo("Keep the original fee.");
         assertThat(result.value().solutions()).containsOnlyKeys("sol:dispute");
     }
 

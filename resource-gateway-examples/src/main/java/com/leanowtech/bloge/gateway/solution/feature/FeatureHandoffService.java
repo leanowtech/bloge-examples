@@ -90,6 +90,10 @@ public final class FeatureHandoffService {
                                      IntegrationRequestContext identity) {
         requirePurpose(identity, IntegrationOperation.AGENT_TDD_FEATURE_ENG,
                 "Feature engineering purpose is required.");
+        if (!"USER".equals(identity.actorType()) && !"HUMAN".equals(identity.actorType())) {
+            throw new AgentTddToolException(
+                    "GATE_REJECTED", "Feature fulfillment requires an accountable engineer.");
+        }
         if (evaluationRef == null || evaluationRef.isBlank() || fixtureInputs == null
                 || !fixtureInputs.isObject()) {
             throw new AgentTddToolException("SCHEMA_NONCONFORMANT",

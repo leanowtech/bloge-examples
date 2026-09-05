@@ -52,17 +52,23 @@ public final class OperationsInsightService {
                        String solutionRef,
                        String eventRef,
                        Map<String, Object> runtimeResponse) {
-        String assetRef = "ops:" + shortHash(VisualBundleFingerprint.fromCanonicalValue(mapper,
-                Map.of("solutionRef", required(solutionRef), "eventRef", required(eventRef)), MAX_BYTES));
-        ObjectNode signal = mapper.createObjectNode();
-        signal.put("solutionRef", solutionRef);
-        signal.set("rulePath", safeRulePath(runtimeResponse.get("rulePath")));
-        signal.put("instructionRef", Objects.toString(runtimeResponse.get("instructionRef"), "TERMINAL"));
-        signal.put("resultKind", resultKind(runtimeResponse.get("result")));
-        signal.put("recordedAt", Instant.now().toString());
-        var existing = states.find(scopeKey, OPERATIONS_SIGNAL, assetRef);
-        if (existing.isPresent()) return;
-        states.saveIfRevision(scopeKey, OPERATIONS_SIGNAL, assetRef, 0, signal);
+        String coordinateFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper,
+                Map.of("solutionRef", required(solutionRef), "eventRef", required(eventRef)), MAX_BYTES);
+        String assetRef = "ops:" + shortHash(coordinateFingerprint);
+        if (states.find(scopeKey, OPERATIONS_SIGNAL, assetRef).isPresent()) return;
+        ObjectNode structuralSignal = mapper.createObjectNode();
+        structuralSignal.put("solutionRef", solutionRef);
+        structuralSignal.set("rulePath", safeRulePath(runtimeResponse.get("rulePath")));
+        structuralSignal.put("instructionRef",
+                Objects.toString(runtimeResponse.get("instructionRef"), "TERMINAL"));
+        structuralSignal.put("resultKind", resultKind(runtimeResponse.get("result")));
+        String requestFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, structuralSignal, MAX_BYTES);
+        states.executeOnce(scopeKey, "SOLUTION_OPERATIONS_SIGNAL", assetRef, requestFingerprint, () -> {
+            ObjectNode signal = structuralSignal.deepCopy();
+            signal.put("recordedAt", Instant.now().toString());
+            return states.saveIfRevision(scopeKey, OPERATIONS_SIGNAL, assetRef, 0, signal).data();
+        });
     }
 
     /** Returns live distributions plus current red-GOLDEN and policy-revision hints. */

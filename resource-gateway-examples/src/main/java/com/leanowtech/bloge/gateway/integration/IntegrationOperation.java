@@ -295,6 +295,8 @@ public enum IntegrationOperation {
     AGENT_TDD_EXECUTE(Set.of("AGENT_TDD_EXECUTION")),
     AGENT_TDD_ATTEST(Set.of("AGENT_TDD_ATTEST")),
     AGENT_TDD_WRITE_EXEC(Set.of("AGENT_TDD_WRITE_EXEC")),
+    /** Binds design-only WRITE Instructions outside the Agent MCP catalog. */
+    AGENT_TDD_INSTRUCTION_ENG(Set.of("AGENT_TDD_INSTRUCTION_ENG")),
     /** Binds and verifies design-only Feature evaluators outside the Agent MCP catalog. */
     AGENT_TDD_FEATURE_ENG(Set.of("AGENT_TDD_FEATURE_ENG")),
     AGENT_TDD_GOVERNED_WRITE(Set.of("AGENT_TDD_GOVERNANCE"));

@@ -60,7 +60,7 @@ public final class BoardProjectionService {
         }
         Map<String, String> factLabels = featureLabels(scope, solution);
         return new BoardView(solution.solutionRef(), solution.problem(),
-                ruleMatrix(scenario, factLabels), dispositions(scope, solution),
+                ruleMatrix(scope, scenario, factLabels), dispositions(scope, solution),
                 redGreen(scope, solution), featureCards(scope, solution),
                 publishCard(governance.readiness(solutionRef, identity)));
     }
@@ -77,16 +77,18 @@ public final class BoardProjectionService {
         return Map.copyOf(labels);
     }
 
-    private RuleMatrixView ruleMatrix(ScenarioContract scenario, Map<String, String> labels) {
+    private RuleMatrixView ruleMatrix(
+            String scope, ScenarioContract scenario, Map<String, String> labels) {
         List<String> conditions = scenario.inputs().stream()
                 .map(input -> labels.getOrDefault(input, input)).toList();
         List<RuleRow> rules = scenario.rules().stream().map(rule -> {
             LinkedHashMap<String, String> cells = new LinkedHashMap<>();
             rule.when().fields().forEachRemaining(entry -> cells.put(
                     labels.getOrDefault(entry.getKey(), entry.getKey()), predicate(entry.getValue())));
-            return new RuleRow(rule.ruleId(), Map.copyOf(cells), disposition(rule.outlet()));
+            return new RuleRow(rule.ruleId(), Map.copyOf(cells),
+                    disposition(scope, rule.outlet()));
         }).toList();
-        return new RuleMatrixView(conditions, rules, disposition(scenario.otherwise()));
+        return new RuleMatrixView(conditions, rules, disposition(scope, scenario.otherwise()));
     }
 
     private List<DispositionCard> dispositions(String scope, SolutionContract solution) {
@@ -102,7 +104,7 @@ public final class BoardProjectionService {
                 ReconciliationCard reconciliation = instruction.writeGovernance() == null ? null
                         : new ReconciliationCard(instruction.writeGovernance().downstreamSystem(),
                         instruction.writeGovernance().reconciliationKey());
-                cards.add(new DispositionCard(displayName(ref),
+                cards.add(new DispositionCard(businessLabel(instruction),
                         instruction.effect() == InstructionContract.Effect.WRITE
                                 ? "写入业务系统" : "只读处置",
                         List.copyOf(resultFields), reconciliation,
@@ -190,9 +192,13 @@ public final class BoardProjectionService {
         return "按已声明条件判断";
     }
 
-    private static String disposition(ScenarioContract.Outlet outlet) {
-        return outlet.kind() == ScenarioContract.OutletKind.TERMINAL
-                ? outlet.terminalKind() : displayName(outlet.ref());
+    private String disposition(String scope, ScenarioContract.Outlet outlet) {
+        if (outlet.kind() == ScenarioContract.OutletKind.TERMINAL) return outlet.terminalKind();
+        try {
+            return businessLabel(registry.requireInstruction(scope, outlet.ref()));
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            return displayName(outlet.ref());
+        }
     }
 
     private static String displayName(String ref) {
@@ -200,6 +206,11 @@ public final class BoardProjectionService {
         int separator = value.indexOf(':');
         if (separator >= 0) value = value.substring(separator + 1);
         return value.replace('-', ' ').trim();
+    }
+
+    private static String businessLabel(InstructionContract instruction) {
+        return instruction.businessSemantics().equals(instruction.instructionRef())
+                ? displayName(instruction.instructionRef()) : instruction.businessSemantics();
     }
 
     private static String sourceText(FeatureContract.EvaluationKind kind) {

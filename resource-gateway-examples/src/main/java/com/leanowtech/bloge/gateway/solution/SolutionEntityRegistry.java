@@ -155,6 +155,11 @@ public final class SolutionEntityRegistry {
         return requireRegistered(scopeKey, SOLUTION, "SOLUTION", solutionRef);
     }
 
+    /** Resolves the current Instruction revision and contract fingerprint for handoff fencing. */
+    public RegisteredEntity requireRegisteredInstruction(String scopeKey, String instructionRef) {
+        return requireRegistered(scopeKey, INSTRUCTION, "INSTRUCTION", instructionRef);
+    }
+
     private RegisteredEntity requireRegistered(
             String scopeKey, String kind, String entityKind, String ref) {
         AgentTddStoredAsset asset = states.find(scopeKey, kind, ref)

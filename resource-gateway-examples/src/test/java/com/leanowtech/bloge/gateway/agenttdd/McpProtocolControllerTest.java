@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(41);
+        assertThat(response.path("result").path("tools")).hasSize(42);
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
         assertThat(response.path("result").path("tools").toString()).contains("rg.resource.declare");
@@ -73,7 +73,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(41);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(42);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -492,11 +492,14 @@ class McpProtocolControllerTest {
         assertThat(modern.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
         assertThat(modern.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.3");
+                .isEqualTo("1.4.5");
         assertThat(modern.path("result").path("instructions").asText())
-                .startsWith("Use the Agent TDD tools in order");
+                .startsWith("For a business Solution request");
         assertThat(modern.path("result").path("instructions").asText())
-                .contains("rg.dsl.reference.get", "never ask the user to write DSL",
+                .contains("rg.library.overview.get", "rg.feature.handoff", "rg.engineering.handoff",
+                        "Never ask the business user for YAML", "businessSemantics",
+                        "never invent a bindingRef", "five-panel business review",
+                        "rg.dsl.reference.get", "never ask the user to write DSL",
                         "blocking=true as authoritative", "three repair rounds",
                         "same blocking set appears twice", "never refetch and resubmit unchanged source",
                         "BUSINESS_CLARIFICATION_REQUIRED", "business-language clarification",
@@ -504,7 +507,7 @@ class McpProtocolControllerTest {
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(codex.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.3");
+                .isEqualTo("1.4.5");
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }

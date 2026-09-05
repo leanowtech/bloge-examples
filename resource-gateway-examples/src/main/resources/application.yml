@@ -59,6 +59,9 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   agent-tdd:
+    cancel-dispute-demo:
+      # Local-only adapters and ledger for the documented cancellation-dispute journey.
+      enabled: ${RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED:false}
     feature-token:
       # Empty values create an ephemeral single-process demo key. Replicas and stable environments
       # must inject the same rotation-aware key ring from a secret manager.
@@ -225,6 +228,10 @@ gateway:
       demo-token: ${RG_INTEGRATION_DEMO_TOKEN:bloge-aneke-demo-token}
       # Kept out of Codex; used only by the human review board in the local demo.
       demo-review-token: ${RG_INTEGRATION_DEMO_REVIEW_TOKEN:bloge-reviewer-demo-token}
+      # Kept out of Codex; used only by the feature-engineering fulfillment endpoint.
+      demo-feature-engineer-token: ${RG_INTEGRATION_DEMO_FEATURE_ENGINEER_TOKEN:bloge-feature-engineer-demo-token}
+      # Kept out of Codex; used only by the Instruction-engineering fulfillment endpoint.
+      demo-instruction-engineer-token: ${RG_INTEGRATION_DEMO_INSTRUCTION_ENGINEER_TOKEN:bloge-instruction-engineer-demo-token}
       identity-id: ${RG_INTEGRATION_IDENTITY_ID:demo-aneke-workload}
       tenant-id: ${RG_INTEGRATION_TENANT_ID:tenant-a}
       organization-id: ${RG_INTEGRATION_ORGANIZATION_ID:knowledge-governance}
@@ -233,9 +240,11 @@ gateway:
       region: ${RG_INTEGRATION_REGION:local}
       actor-id: ${RG_INTEGRATION_ACTOR_ID:aneke-sync}
       reviewer-actor-id: ${RG_INTEGRATION_REVIEWER_ACTOR_ID:business-reviewer}
+      feature-engineer-actor-id: ${RG_INTEGRATION_FEATURE_ENGINEER_ACTOR_ID:feature-engineer}
+      instruction-engineer-actor-id: ${RG_INTEGRATION_INSTRUCTION_ENGINEER_ACTOR_ID:instruction-engineer}
       groups: ${RG_INTEGRATION_GROUPS:payload-governance}
       clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}
-      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,CAPABILITY_STUDIO_REHEARSAL,MIRROR_REHEARSAL,MIRROR_REHEARSAL_FINALIZATION_ADMIN,MIRROR_SHADOW,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_WRITE,CORRECTNESS_REVIEW,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE,AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE,AGENT_TDD_FEATURE_ENG}
+      allowed-purposes: ${RG_INTEGRATION_ALLOWED_PURPOSES:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,CAPABILITY_STUDIO_REHEARSAL,MIRROR_REHEARSAL,MIRROR_REHEARSAL_FINALIZATION_ADMIN,MIRROR_SHADOW,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_WRITE,CORRECTNESS_REVIEW,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE,AGENT_TDD_READ,AGENT_TDD_AUTHORING,AGENT_TDD_EXECUTION,AGENT_TDD_GOVERNANCE}
 
 # ── Logging ───────────────────────────────────────────────────────────────
 logging:

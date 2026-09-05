@@ -507,6 +507,10 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.demo-enabled:true}") boolean demoEnabled,
             @Value("${gateway.integration.identity.demo-token:bloge-aneke-demo-token}") String token,
             @Value("${gateway.integration.identity.demo-review-token:bloge-reviewer-demo-token}") String reviewToken,
+            @Value("${gateway.integration.identity.demo-feature-engineer-token:bloge-feature-engineer-demo-token}")
+            String featureEngineerToken,
+            @Value("${gateway.integration.identity.demo-instruction-engineer-token:bloge-instruction-engineer-demo-token}")
+            String instructionEngineerToken,
             @Value("${gateway.integration.identity.identity-id:demo-aneke-workload}") String identityId,
             @Value("${gateway.integration.identity.tenant-id:tenant-a}") String tenantId,
             @Value("${gateway.integration.identity.organization-id:knowledge-governance}") String organizationId,
@@ -515,6 +519,10 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.region:local}") String region,
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.reviewer-actor-id:business-reviewer}") String reviewerActorId,
+            @Value("${gateway.integration.identity.feature-engineer-actor-id:feature-engineer}")
+            String featureEngineerActorId,
+            @Value("${gateway.integration.identity.instruction-engineer-actor-id:instruction-engineer}")
+            String instructionEngineerActorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
             @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_WRITE,CORRECTNESS_REVIEW,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE}") String allowedPurposes) {
@@ -552,10 +560,25 @@ public class GatewayConfiguration {
                 organizationId, projectId, environmentId, region, "HUMAN", reviewerActorId, "",
                 Set.of("AGENT_TDD_READ", "AGENT_TDD_GOVERNANCE"), Instant.MAX, true,
                 commaSeparated(groups), clearance, "", Instant.MAX);
+        IntegrationWorkloadIdentity featureEngineer = new IntegrationWorkloadIdentity(
+                "demo-feature-engineer", tenantId, organizationId, projectId, environmentId, region,
+                "USER", featureEngineerActorId, "", Set.of("AGENT_TDD_READ", "AGENT_TDD_FEATURE_ENG"),
+                Instant.MAX, true, commaSeparated(groups), clearance, "", Instant.MAX);
+        IntegrationWorkloadIdentity instructionEngineer = new IntegrationWorkloadIdentity(
+                "demo-instruction-engineer", tenantId, organizationId, projectId, environmentId, region,
+                "USER", instructionEngineerActorId, "",
+                Set.of("AGENT_TDD_READ", "AGENT_TDD_INSTRUCTION_ENG"),
+                Instant.MAX, true, commaSeparated(groups), clearance, "", Instant.MAX);
         Map<String, IntegrationWorkloadIdentity> demoIdentities = new LinkedHashMap<>();
         demoIdentities.put(token, identity);
         if (demoIdentities.put(reviewToken, reviewer) != null) {
             throw new IllegalArgumentException("Agent and human demo credentials must be different");
+        }
+        if (demoIdentities.put(featureEngineerToken, featureEngineer) != null) {
+            throw new IllegalArgumentException("Agent, reviewer, and feature-engineer credentials must differ");
+        }
+        if (demoIdentities.put(instructionEngineerToken, instructionEngineer) != null) {
+            throw new IllegalArgumentException("All Agent TDD demo credentials must differ");
         }
         return new StaticBearerIntegrationIdentityResolver(demoIdentities, true);
     }

@@ -32,7 +32,7 @@ public final class SolutionAuthoringDecoder {
     private static final Set<String> RULE_FIELDS = Set.of("ruleId", "when", "outlet");
     private static final Set<String> OUTLET_FIELDS = Set.of("kind", "ref", "bind", "terminalKind");
     private static final Set<String> INSTRUCTION_FIELDS = Set.of(
-            "inputs", "output", "effect", "bindingRef", "writeGovernance");
+            "inputs", "output", "effect", "bindingRef", "writeGovernance", "businessSemantics");
     private static final Set<String> WRITE_GOVERNANCE_FIELDS = Set.of(
             "downstreamSystem", "reconciliationKey", "reconciliationAdapterRef");
     private static final Set<String> SOLUTION_FIELDS = Set.of(
@@ -227,7 +227,9 @@ public final class SolutionAuthoringDecoder {
                     entry.getKey(), required(body, "inputs"), required(body, "output"),
                     InstructionContract.enumValue(InstructionContract.Effect.class,
                             requiredText(body, "effect")),
-                    text(body, "bindingRef"), governance);
+                    text(body, "bindingRef"), governance,
+                    body.has("businessSemantics")
+                            ? requiredText(body, "businessSemantics") : entry.getKey());
             return DecodeResult.decoded(contract);
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("INSTRUCTION_CONTRACT_INVALID");

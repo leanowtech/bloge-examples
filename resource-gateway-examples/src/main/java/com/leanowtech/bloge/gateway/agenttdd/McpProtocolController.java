@@ -38,9 +38,22 @@ public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
     public static final String CODEX_PROTOCOL_VERSION = "2025-06-18";
-    static final String SERVER_VERSION = "1.4.3";
-    private static final String AGENT_INSTRUCTIONS = "Use the Agent TDD tools in order. Start DSL work with "
-            + "rg.dsl.reference.get and treat its "
+    static final String SERVER_VERSION = "1.4.5";
+    private static final String AGENT_INSTRUCTIONS = "For a business Solution request, converse only in "
+            + "business language: elicit the goal, decision facts, rules including the otherwise outcome, "
+            + "possible dispositions, and representative expected examples. Never ask the business user for "
+            + "YAML, DSL, schemas, bindings, operator references, or implementation details. Translate the "
+            + "agreed intent yourself into Feature, Scenario, Instruction, Solution, and GOLDEN proposals. "
+            + "Use rg.library.overview.get to reuse governed business building blocks. Define a missing Feature "
+            + "as design-only, then call rg.feature.handoff; never fulfil that handoff or invent an evaluator. "
+            + "Every Instruction must include plain businessSemantics. A WRITE Instruction without an approved "
+            + "implementation remains design-only: compose the Solution, call rg.engineering.handoff, and tell "
+            + "the user which business capability awaits engineering; never invent a bindingRef or alter one "
+            + "unless it is the exact governed binding returned by the platform. "
+            + "Propose GOLDEN examples but never approve them. Present the five-panel business review before "
+            + "asking the human owner to approve or sign off. Run the RED/GREEN, commit, readiness, and publish "
+            + "sequence only through the declared governance boundaries, and publish only when publishable=true. "
+            + "For lower-level Tool DSL work, start with rg.dsl.reference.get and treat its "
             + "languageVersion, contracts, examples, and authoringContextFingerprint as authoritative. "
             + "Generate DSL from the user's business intent; never ask the user to write DSL. Preview, revise "
             + "from authoringDiagnostics, and gate the exact source. Treat blocking=true as authoritative even "

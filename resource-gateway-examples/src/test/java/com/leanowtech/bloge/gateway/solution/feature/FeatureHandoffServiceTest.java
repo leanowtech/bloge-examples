@@ -77,6 +77,21 @@ class FeatureHandoffServiceTest {
     }
 
     @Test
+    void rejectsWorkloadFulfillmentEvenWhenItClaimsTheEngineeringPurpose() {
+        register("project-a", "", "Responsibility party");
+        FeatureHandoffService service = service(
+                (feature, inputs, identity) -> mapper.valueToTree("driver"));
+        service.submit("responsibility.party", author("project-a"));
+
+        assertThatThrownBy(() -> service.fulfil("responsibility.party", "resource:party-v2",
+                mapper.valueToTree(Map.of("orderId", "O-1")),
+                identity("project-a", "WORKLOAD", "AGENT_TDD_FEATURE_ENG")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("GATE_REJECTED");
+    }
+
+    @Test
     void failedOutputVerificationKeepsImplementedTicketForRepair() {
         register("project-a", "", "Responsibility party");
         FeatureHandoffService service = service((feature, inputs, identity) -> mapper.valueToTree(42));

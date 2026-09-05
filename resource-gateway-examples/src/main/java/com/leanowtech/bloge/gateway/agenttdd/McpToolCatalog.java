@@ -715,10 +715,11 @@ public final class McpToolCatalog {
                 List.of("downstreamSystem", "reconciliationKey", "reconciliationAdapterRef"));
         return structuredObject(props(
                 "instructionId", string(), "effect", enumString("READ", "WRITE"),
+                "businessSemantics", string(),
                 "reasoningRequired", bool(), "writeGovernance", governance,
                 "speccing", bool(), "revision", integer(), "contractFingerprint", string(),
                 "honestVerdict", honestVerdict()),
-                List.of("instructionId", "effect", "reasoningRequired", "speccing",
+                List.of("instructionId", "businessSemantics", "effect", "reasoningRequired", "speccing",
                         "revision", "contractFingerprint", "honestVerdict"));
     }
 
@@ -762,12 +763,14 @@ public final class McpToolCatalog {
 
     private static Map<String, Object> engineeringHandoffOutput() {
         Map<String, Object> item = structuredObject(props(
-                "instructionId", string(), "inputs", businessObject(), "output", businessObject(),
+                "instructionId", string(), "instructionRevision", integer(),
+                "contractFingerprint", string(), "inputs", businessObject(), "output", businessObject(),
                 "effect", enumString("WRITE"), "downstreamSystem", string(),
                 "reconciliationKey", string(), "reconciliationAdapterRef", string(),
                 "businessIntent", string(), "acceptanceGolden", string(),
                 "state", enumString("DESIGN_ONLY")),
-                List.of("instructionId", "inputs", "output", "effect", "downstreamSystem",
+                List.of("instructionId", "instructionRevision", "contractFingerprint",
+                        "inputs", "output", "effect", "downstreamSystem",
                         "reconciliationKey", "reconciliationAdapterRef", "businessIntent",
                         "acceptanceGolden", "state"));
         return structuredObject(props(
