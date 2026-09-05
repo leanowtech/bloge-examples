@@ -411,13 +411,13 @@ stateDiagram-v2
 | 零外呼 | 分层测试真实外呼计数 = 0 |
 | 事实可信 | 令牌篡改 → 调用拒绝 |
 | 写对账 | 受控写执行对账状态 = 已对账 |
-| 构建 | `mvn -f `pom.xml` clean verify` 通过 |
+| 构建 | `mvn -f resource-gateway-examples/pom.xml clean verify` 通过 |
 
 ## 14 依赖与风险
 | 类别 | 项 | 应对 |
 |---|---|---|
-| 依赖 | party/withinFree 求值后端、选单组件、退款/工单对账适配器 | 特征工程与通用工程按交接单履行 |
-| 依赖 | 特征交接工具、表意工作台双模、审阅看板 | 首发建设 |
+| 部署依赖 | 生产 party/withinFree 求值后端、选单组件、退款/工单对账适配器 | 仓内已提供 opt-in 本地演示适配器；生产由特征工程与通用工程按交接单履行 |
+| 部署依赖 | Codex Agent-host 的表意编译桥 | 项目配置已提供完整 MCP 工具面；现场认证要求当前 Codex 用自然语言完成同一旅程 |
 | 风险 | AI 草案准确度 | 分层测试 + 应然用例逐条拦截(P4) |
 | 风险 | 业务对 AI 草案信任建立 | 逐条应然验证 + 业务语言呈现(P4、P1) |
 | 风险 | 双模交互复杂度 | 首发引导模式优先,专家模式次之 |
@@ -434,9 +434,9 @@ stateDiagram-v2
 
 **写工程边界已补齐**:Agent 只能提交 `rg.engineering.handoff`;通用工程持独立 `AGENT_TDD_INSTRUCTION_ENG` 凭据,经非 MCP 端点为 handoff 中的精确 Instruction 绑定实现。服务端以交接单 revision、Instruction revision 与 contract fingerprint 防漂移,保留全部业务语义与治理字段,只改变 `bindingRef`。GREEN=GO 后平台才以内部 `AGENT_TDD_WRITE_EXEC` 在 sandbox 消费 ACTIVE GOLDEN,完成真实写回读后把交接单从 IMPLEMENTED 关为 CLOSED。Agent、业务负责人和工程师都拿不到平台写执行权。
 
-**仓内验收证据**:`CancelDisputeSolutionOperationalJourneyTest` 通过真实 HTTP 完成 initialize/initialized/tools-list/tools-call,并使用彼此隔离的 Agent、特征工程、通用工程和 HUMAN reviewer 身份;四条 GOLDEN 逐条人工批准;GREEN 外部调用为 0;平台自动受控写对账;真实 Chrome 打开五面板后签署;最终发布并验证运行信号幂等及特征 token 篡改拒绝。该测试要求 ChromeDriver,不允许 assumption skip。
+**仓内验收证据**:`CancelDisputeSolutionOperationalJourneyTest` 通过真实 HTTP 完成 initialize/initialized/tools-list/tools-call,并使用彼此隔离的 Agent、特征工程、通用工程和 HUMAN reviewer 身份;四条 GOLDEN 逐条人工批准;GREEN 外部调用为 0;平台自动受控写对账;真实 Chrome 打开五面板后签署;最终发布并验证运行信号幂等及特征 token 篡改拒绝。该测试要求 ChromeDriver,不允许 assumption skip。最终 `clean verify` 结果为 8610 测试、0 失败、0 错误、39 跳过；该旅程自身为 `1/0/0/0`。
 
-**待建(增量)**:表意工作台 Agent-host 真实编排验收 · 审阅看板五面板交互(FE)· 交互特征标准化(选单组件契约+对话协议)· 运营看板(FE) · 场景求值后端(party/withinFree)+ 对账适配器(refund/ticket)。
+**剩余增量**:当前 Codex Agent-host 自然语言现场认证 · 交互特征标准化(选单组件契约+对话协议) · 生产求值与下游对账适配器 · 运营信号长期留存与专表容量治理。五面板、运营看板、本地场景后端和对账适配器已实现，不再列为待建。
 
 ## 附录 A 技术契约(字段级)
 
@@ -478,8 +478,7 @@ stateDiagram-v2
 | AGENT_TDD_GOVERNANCE | publish |
 | AGENT_TDD_FEATURE_ENG | 特征求值后端绑定 |
 | AGENT_TDD_INSTRUCTION_ENG | 写指令实现绑定;非 MCP;USER/HUMAN 工程身份 |
-| AGENT_TDD_WRITE_EXEC | 平台内部 sandbox 受控写与对账;不发给 Agent/工程师 |
-| AGENT_TDD_WRITE_EXEC | 受控写执行(非 Agent) |
+| AGENT_TDD_WRITE_EXEC | 平台内部 sandbox 受控写与对账；不发给 Agent/工程师 |
 
 令牌 Bearer → 身份;digest 常量时间比较。隔离:按 scopeKey;跨 scope → REFERENCE_UNRESOLVED(不泄名)。双人:门①/门② actorId 相异。
 

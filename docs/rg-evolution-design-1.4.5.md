@@ -238,7 +238,9 @@ final class TicketReconciliationAdapter implements ReconciliationAdapter { /* ti
 | Q2 审阅看板投影 | 已实现 | `BoardProjectionService` + `agent-tdd.html` 真实五面板 dialog + HUMAN/GOVERNANCE no-store HTTP；Chrome 经按钮打开并核对规则、处置、事实、红绿与发布卡,`skipped=0` |
 | Q3 表意工作台 | 已实现 | `/workbench/?create=business-solution` 双栏双模、三步引导、切换保留、上下文漂移失败关闭、熟练度提示和无 DSL 四实体预览；MCP 1.4.5 初始化指引要求 Codex 从业务意图自产四实体、不得索要 YAML/DSL/binding；真实外部 Codex 自然语言质量仍由认证脚本作为部署证据 |
 | Q4 运营回流 | 已实现 | `OperationsInsightService` 幂等落 `SOLUTION_OPERATIONS_SIGNAL`;重放不重复计数,信号无 inputs/result/reasoning；运营前端展示命中、升级、处置与 policyGaps |
-| Q5 场景后端适配器 | 已实现 | opt-in 取消费 demo 的 party/withinFree 求值、refund/ticket 派发与对账；真实 HTTP MCP initialize→tools/list→tools/call、独立工程履行、4 GOLDEN、零外呼 GREEN、平台受控写、真实 Chrome 审阅、发布、运行复用、运营聚合与 token 篡改拒绝，聚焦测试 `28/0/0/0` |
+| Q5 场景后端适配器 | 已实现 | opt-in 取消费 demo 的 party/withinFree 求值、refund/ticket 派发与对账；真实 HTTP MCP initialize→tools/list→tools/call、独立工程履行、4 GOLDEN、零外呼 GREEN、平台受控写、真实 Chrome 审阅、发布、运行复用、运营聚合与 token 篡改拒绝；最终 `clean verify` 为 `8610/0/0/39` |
+
+最终验收使用 `mvn -f resource-gateway-examples/pom.xml clean verify`：共 8610 个测试，0 失败，0 错误，39 跳过。`CancelDisputeSolutionOperationalJourneyTest` 为 `1/0/0/0`，真实 Chrome 与完整取消费业务链路没有 assumption skip。仓内还不能代替一次由当前 Codex 模型、真实业务负责人和外部工程人员共同完成的自然语言现场认证；该项作为部署验收证据，不冒充本地自动测试。
 
 ## 附录 甲 · 工程细粒度展开
 
