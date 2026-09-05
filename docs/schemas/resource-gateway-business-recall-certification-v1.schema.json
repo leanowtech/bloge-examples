@@ -36,7 +36,13 @@
     },
     "cases": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 3,
+      "maxItems": 3,
+      "allOf": [
+        { "contains": { "properties": { "expectedIntentKind": { "const": "CREATE_SOLUTION" } }, "required": ["expectedIntentKind"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "expectedIntentKind": { "const": "RECALL_CAPABILITY" } }, "required": ["expectedIntentKind"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "expectedIntentKind": { "const": "DEFINE_FEATURE" } }, "required": ["expectedIntentKind"] }, "minContains": 1, "maxContains": 1 }
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -98,7 +104,7 @@
     "metrics": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["toolRecallRate", "recallAt3", "clarificationRate", "recallCases", "clarificationCases", "unsafeEscapeCount", "controlledTestEgressCount", "staleGoldenAcceptedCount"],
+      "required": ["toolRecallRate", "recallAt3", "top1", "clarificationRate", "recallCases", "clarificationCases", "unsafeEscapeCount", "controlledTestEgressCount", "staleGoldenAcceptedCount"],
       "properties": {
         "toolRecallRate": { "const": 1.0 },
         "recallAt3": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
@@ -114,7 +120,7 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },

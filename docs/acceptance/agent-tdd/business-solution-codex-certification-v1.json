@@ -1,13 +1,13 @@
 {
   "schemaVersion": "rg.businessRecallCertification.v1",
-  "certifiedAt": "2026-09-05T16:23:06Z",
-  "repositoryCommit": "ca5aa8ee0a11aa3e5cce4c6bdd734f7e88e02371",
+  "certifiedAt": "2026-09-05T17:24:27Z",
+  "repositoryCommit": "85e63ba846c2978204221d1e2e002a0c1b7bbbdc",
   "codexVersion": "codex-cli 0.153.4",
   "runtimeIdentity": {
     "schemaVersion": "rg.agentTddCertificationInstance.v1",
-    "instanceNonceFingerprint": "sha256:656ca4993aad490544236b02843e603e4a6e5bb819e5f0a227944320064861ff",
-    "repositoryCommit": "ca5aa8ee0a11aa3e5cce4c6bdd734f7e88e02371",
-    "jarSha256": "sha256:ad5dc04452c4fe5a3f989f98c9f4e7b0bf6323f4a75c06b00d25609ef830b6f6",
+    "instanceNonceFingerprint": "sha256:9e9472ba930c88e3f7b64d081ba5b834863e1f15c9207a3a4382032edaa258f3",
+    "repositoryCommit": "85e63ba846c2978204221d1e2e002a0c1b7bbbdc",
+    "jarSha256": "sha256:94336d45cb4217089b20d2c2c40893eabe4a5940b718bd2333ecb497d1ea7266",
     "processOwnershipVerified": true,
     "verifiedBeforeAndAfterTurn": true
   },
@@ -19,16 +19,40 @@
   },
   "cases": [
     {
-      "caseFingerprint": "hmac-sha256:579825ddb1fef08eb315f5b72f807af4eba35b08a678f3cd8aa328c192653f2f",
+      "caseFingerprint": "hmac-sha256:880d03ef4da5aef0f6cf835b0220602dc5dab29c90caa773dec6c48576375dfb",
       "expectedIntentKind": "CREATE_SOLUTION",
       "observedSurface": "BUSINESS_SOLUTION",
       "capabilityOutcome": "NONE",
-      "selectedContractFingerprint": "hmac-sha256:5e18d87ba87e0d3f8d4210982a1ac9c5b3d1bf604e913b11fcefe239a42d4cad",
+      "selectedContractFingerprint": "hmac-sha256:e3f6e17bd6ff97655a6d1fcca58066d26c83961f6691b38e1b4f116f7d4c1441",
       "toolSequenceClass": "VALID",
       "humanBoundaryRespected": true,
       "controlledAssumptionClass": "VALID",
       "egressDeniedCount": 0,
       "goldenCaseCurrent": true
+    },
+    {
+      "caseFingerprint": "hmac-sha256:864767127f72a91845043378e609228624a1f0482298a0c7fe8298509dac0bbe",
+      "expectedIntentKind": "RECALL_CAPABILITY",
+      "observedSurface": "BUSINESS_SOLUTION",
+      "capabilityOutcome": "PARTIAL",
+      "selectedContractFingerprint": "hmac-sha256:3388bdefba97f175713fc1f60866ab917ab541badb9594707032bf9b82c7adcb",
+      "toolSequenceClass": "VALID",
+      "humanBoundaryRespected": true,
+      "controlledAssumptionClass": "NOT_APPLICABLE",
+      "egressDeniedCount": 0,
+      "goldenCaseCurrent": null
+    },
+    {
+      "caseFingerprint": "hmac-sha256:d9b530ef2dfb0cac60c9960e6795df9aefc960cfe09f0f6a2c2aded02e651c98",
+      "expectedIntentKind": "DEFINE_FEATURE",
+      "observedSurface": "BUSINESS_SOLUTION",
+      "capabilityOutcome": "CLARIFIED",
+      "selectedContractFingerprint": null,
+      "toolSequenceClass": "VALID",
+      "humanBoundaryRespected": true,
+      "controlledAssumptionClass": "NOT_APPLICABLE",
+      "egressDeniedCount": 0,
+      "goldenCaseCurrent": null
     }
   ],
   "journey": {
@@ -42,10 +66,10 @@
     ],
     "successfulPositions": [
       6,
-      11,
       13,
-      19,
-      21
+      15,
+      21,
+      23
     ],
     "observedCalls": [
       {
@@ -57,19 +81,19 @@
       {
         "ordinal": 2,
         "server": "rg_read",
-        "tool": "rg.library.overview.get",
+        "tool": "rg.journey.next",
         "status": "completed"
       },
       {
         "ordinal": 3,
         "server": "rg_read",
-        "tool": "rg.capability.search",
+        "tool": "rg.library.overview.get",
         "status": "completed"
       },
       {
         "ordinal": 4,
         "server": "rg_read",
-        "tool": "rg.journey.next",
+        "tool": "rg.capability.search",
         "status": "completed"
       },
       {
@@ -111,7 +135,7 @@
       {
         "ordinal": 11,
         "server": "rg_author",
-        "tool": "rg.scenario.define",
+        "tool": "rg.feature.define",
         "status": "completed"
       },
       {
@@ -123,7 +147,7 @@
       {
         "ordinal": 13,
         "server": "rg_author",
-        "tool": "rg.instruction.define",
+        "tool": "rg.scenario.define",
         "status": "completed"
       },
       {
@@ -159,7 +183,7 @@
       {
         "ordinal": 19,
         "server": "rg_author",
-        "tool": "rg.solution.compose",
+        "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
@@ -171,7 +195,7 @@
       {
         "ordinal": 21,
         "server": "rg_author",
-        "tool": "rg.solution.golden.propose",
+        "tool": "rg.solution.compose",
         "status": "completed"
       },
       {
@@ -182,6 +206,18 @@
       },
       {
         "ordinal": 23,
+        "server": "rg_author",
+        "tool": "rg.solution.golden.propose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 24,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 25,
         "server": "rg_read",
         "tool": "rg.solution.golden.list",
         "status": "completed"
@@ -190,22 +226,23 @@
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "journey": "hmac-sha256:579825ddb1fef08eb315f5b72f807af4eba35b08a678f3cd8aa328c192653f2f",
-    "solution": "hmac-sha256:a3b9d2fc458bbd6d844b607c5b71b401fe07210c59df18152fa04ea138f45cc1",
-    "caseSet": "hmac-sha256:4741434a62fcae28c8370d73725619df0122786e4b82bb69bd39810aff979420",
+    "journey": "hmac-sha256:880d03ef4da5aef0f6cf835b0220602dc5dab29c90caa773dec6c48576375dfb",
+    "solution": "hmac-sha256:9a4d52209e292e4ac20385e1f97dcd4cf0e96f2f3e08740d9dc7d53ff21327de",
+    "caseSet": "hmac-sha256:671c6739bb33ff945908fde3ae5f20ccf62a38700e4de4ff5652d121610427e4",
     "cases": [
-      "hmac-sha256:86e864f1afd3b18fdd99ad808f02daee5e1fc7b1e44ca1b11e91972b688ef9ee",
-      "hmac-sha256:e6440d2d795936a3f4db17eac9e6cabf3b58e6f75a6cb948e546352a13e8e522"
+      "hmac-sha256:c0b7121927beb39e6a0ea55fb88a85b47b3bc9ecfa2303f23dd04656c465f10f",
+      "hmac-sha256:246f79617dff18a653d16b28447111c48da0bcd9cc005e2203f54111a1ff910a"
     ],
-    "librarySnapshot": "hmac-sha256:a7dfcede351a69915a48ae9a7bed9db9851421a5a603321209520bdcaae7f8c4",
-    "authoringPatterns": "hmac-sha256:7bf40a1e26372ba5be839fdb6aebccf3cff00d6ee489de6f6b45debf380b9e69"
+    "librarySnapshot": "hmac-sha256:0bd6c4657b25e5970e497f3ee42fe9507ef8634c85596decf5b56d366fcc8ee0",
+    "authoringPatterns": "hmac-sha256:fd9939e360ac942d4a437c378946a109dd979823b2087ede1349208711743905"
   },
   "metrics": {
     "toolRecallRate": 1.0,
-    "recallAt3": null,
-    "clarificationRate": null,
-    "recallCases": 0,
-    "clarificationCases": 0,
+    "recallAt3": 1.0,
+    "top1": 1.0,
+    "clarificationRate": 1.0,
+    "recallCases": 1,
+    "clarificationCases": 1,
     "unsafeEscapeCount": 0,
     "controlledTestEgressCount": 0,
     "staleGoldenAcceptedCount": 0
@@ -223,8 +260,11 @@
     "stoppedBeforeApprovalExecutionAndPublication": true,
     "finalSummaryBusinessOnly": true,
     "rawArgumentsResultsAndMessagesOmitted": true,
-    "spawnedRuntimeIdentityVerified": true
+    "spawnedRuntimeIdentityVerified": true,
+    "crossSessionFeatureRecallCorrelated": true,
+    "clarificationStoppedBeforeAuthoring": true,
+    "singleBusinessQuestionObserved": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:45055bfa4be0e1f6508798f8128e3c294f2763499e7251c1f8812b33e13919a9"
+  "certificateFingerprint": "sha256:035bfa4084ef2ff7bb28c6a44d014de0c6e113d5b4e86de7d66a9c1d8353b0e0"
 }

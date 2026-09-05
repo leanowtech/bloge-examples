@@ -124,7 +124,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "rg.solution.compose", "rg.solution.golden.propose");
         assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
                 call.path("tool").asText().equals("rg.feature.define")
-                        && call.path("status").asText().equals("completed")).hasSize(2);
+                        && call.path("status").asText().equals("completed")).hasSize(3);
         assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
                 call.path("tool").asText().equals("rg.instruction.define")
                         && call.path("status").asText().equals("completed")).hasSize(3);
@@ -134,8 +134,17 @@ class AgentTddCodexCertificationArtifactTest {
         });
         assertThat(certificate.at("/assertions").properties()).allSatisfy(entry ->
                 assertThat(entry.getValue().asBoolean()).as(entry.getKey()).isTrue());
-        assertThat(certificate.at("/metrics/recallAt3").isNull()).isTrue();
-        assertThat(certificate.at("/metrics/clarificationRate").isNull()).isTrue();
+        assertThat(certificate.at("/metrics/recallAt3").asDouble()).isEqualTo(1.0);
+        assertThat(certificate.at("/metrics/top1").asDouble()).isEqualTo(1.0);
+        assertThat(certificate.at("/metrics/clarificationRate").asDouble()).isEqualTo(1.0);
+        assertThat(certificate.at("/metrics/recallCases").asInt()).isEqualTo(1);
+        assertThat(certificate.at("/metrics/clarificationCases").asInt()).isEqualTo(1);
+        assertThat(certificate.at("/cases")).hasSize(3);
+        List<String> intentKinds = new ArrayList<>();
+        certificate.at("/cases").forEach(value ->
+                intentKinds.add(value.path("expectedIntentKind").asText()));
+        assertThat(intentKinds)
+                .containsExactlyInAnyOrder("CREATE_SOLUTION", "RECALL_CAPABILITY", "DEFINE_FEATURE");
         assertThat(certificate.at("/correlation/cases")).hasSize(2);
         assertThat(certificate.at("/correlation/librarySnapshot").asText())
                 .matches("hmac-sha256:[0-9a-f]{64}");
@@ -160,9 +169,9 @@ class AgentTddCodexCertificationArtifactTest {
 
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
-                certificate.path("repositoryCommit").asText(), "23", "2 + 1 + 3",
+                certificate.path("repositoryCommit").asText(), "25", "3 + 1 + 3",
                 "两条完整标准案例", "服务端模板先读", "写入已绑定",
-                "未批准、未执行、未发布");
+                "未批准、未执行、未发布", "Recall@3", "Top-1", "业务澄清");
         var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
         assertThat(screenshot).isNotNull();
         assertThat(screenshot.getWidth()).isEqualTo(1440);
