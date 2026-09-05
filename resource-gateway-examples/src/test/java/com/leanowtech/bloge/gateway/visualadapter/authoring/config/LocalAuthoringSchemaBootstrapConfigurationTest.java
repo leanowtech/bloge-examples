@@ -12,6 +12,10 @@ import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessAuthor
 import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessFixtureMaterialSchemaReadiness;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +23,28 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LocalAuthoringSchemaBootstrapConfigurationTest {
+
+    @Test
+    void preservesTheBoundDatasourceUrlWhileBootstrapping() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        DataSourceAutoConfiguration.class,
+                        JdbcTemplateAutoConfiguration.class))
+                .withUserConfiguration(LocalAuthoringSchemaBootstrapConfiguration.class)
+                .withPropertyValues(
+                        "gateway.authoring.local-schema-bootstrap.enabled=true",
+                        "spring.datasource.url=jdbc:h2:mem:bound-authoring-bootstrap;DB_CLOSE_DELAY=-1")
+                .run(context -> {
+                    JdbcTemplate jdbc = context.getBean(JdbcTemplate.class);
+                    try (var connection = jdbc.getDataSource().getConnection()) {
+                        assertThat(connection.getMetaData().getURL())
+                                .isEqualTo("jdbc:h2:mem:bound-authoring-bootstrap");
+                    }
+                    assertThat(jdbc.queryForObject(
+                            "SELECT COUNT(*) FROM rg_local_authoring_schema_migrations",
+                            Integer.class)).isEqualTo(25);
+                });
+    }
 
     @Test
     void installsEveryAuthoringMigrationOnceForTheLocalH2Launcher() {

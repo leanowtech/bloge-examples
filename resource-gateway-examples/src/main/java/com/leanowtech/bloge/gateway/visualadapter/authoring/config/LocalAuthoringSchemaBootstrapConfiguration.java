@@ -17,6 +17,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -61,11 +62,57 @@ public class LocalAuthoringSchemaBootstrapConfiguration {
             "V20260902_019__standalone_component_fixture_subjects.sql");
 
     private static final String MIGRATION_ROOT = "db/postgresql/";
+    private static final String MIGRATION_BEAN = "localAuthoringSchemaMigration";
+    private static final List<String> READINESS_BEANS = List.of(
+            "correctnessAuthoringSchemaReadiness",
+            "correctnessFixtureMaterialSchemaReadiness",
+            "apiResourceAuthoringSchemaReadiness",
+            "apiConnectionAuthoringSchemaReadiness",
+            "apiResourceConnectionSnapshotSchemaReadiness",
+            "apiFixtureSetSchemaReadiness",
+            "simulationRunSchemaReadiness",
+            "reusableFlowDraftSchemaReadiness",
+            "reusableFlowPublicationSchemaReadiness",
+            "standaloneFixtureSetSchemaReadiness");
 
-    /** Runs before the authoring readiness beans are instantiated. */
+    /**
+     * Orders authoring readiness checks after the local migration without instantiating the
+     * data source during bean-factory post processing.
+     *
+     * <p>Calling {@code getBean} from this phase creates the data source before
+     * configuration-properties binding and can silently replace an explicitly configured
+     * file database with Boot's random in-memory fallback. This processor changes dependency
+     * metadata only; normal singleton creation performs the migration.</p>
+     */
     @Bean
     static BeanFactoryPostProcessor localAuthoringSchemaBootstrap() {
-        return beanFactory -> migrate(beanFactory.getBean(JdbcTemplate.class));
+        return beanFactory -> {
+            for (String beanName : READINESS_BEANS) {
+                if (!beanFactory.containsBeanDefinition(beanName)) {
+                    continue;
+                }
+                var definition = beanFactory.getBeanDefinition(beanName);
+                var dependencies = new LinkedHashSet<String>();
+                if (definition.getDependsOn() != null) {
+                    dependencies.addAll(List.of(definition.getDependsOn()));
+                }
+                dependencies.add(MIGRATION_BEAN);
+                definition.setDependsOn(dependencies.toArray(String[]::new));
+            }
+        };
+    }
+
+    /** Migrates the fully bound local data source before authoring readiness checks run. */
+    @Bean
+    LocalAuthoringSchemaMigration localAuthoringSchemaMigration(JdbcTemplate jdbc) {
+        migrate(jdbc);
+        return new LocalAuthoringSchemaMigration();
+    }
+
+    /** Marker whose initialization represents a completed local authoring migration. */
+    static final class LocalAuthoringSchemaMigration {
+        private LocalAuthoringSchemaMigration() {
+        }
     }
 
     static void migrate(JdbcTemplate jdbc) {

@@ -317,6 +317,12 @@ wait_owned_service() {
         tail -40 "${SERVICE_LOG}" >&2 || true
         exit 1
     fi
+    if [ ! -f "${PRIVATE_DIR}/recall-certification.mv.db" ] \
+            || [ -L "${PRIVATE_DIR}/recall-certification.mv.db" ]; then
+        echo "Owned Resource Gateway did not open the required private persistent state store." >&2
+        tail -40 "${SERVICE_LOG}" >&2 || true
+        exit 1
+    fi
 }
 
 wait_owned_service
