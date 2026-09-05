@@ -71,6 +71,8 @@ TRACE_FILE=""
 FAMILY_TRACE_DIR=""
 FAMILY_MANIFEST_FILE=""
 SETUP_MANIFEST_FILE=""
+NEAR_SETUP_MANIFEST_FILE=""
+PRIMARY_CONTEXT_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
 SERVICE_PID=""
@@ -132,6 +134,8 @@ FAMILY_RUN_INDEX="${PRIVATE_DIR}/family-run-index.tsv"
 FAMILY_SUITE_FILE="${ROOT_DIR}/scripts/business-solution-recall-family-suite-v1.json"
 SETUP_FIXTURE_FILE="${ROOT_DIR}/scripts/business-recall-platform-fixture-v1.json"
 SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-manifest.json"
+NEAR_SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-near-manifest.json"
+PRIMARY_CONTEXT_FILE="${PRIVATE_DIR}/primary-feature-context.json"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
 BOARD_FILE="${PRIVATE_DIR}/board.json"
@@ -389,6 +393,7 @@ if ! verify_runtime_identity; then
     echo "The owned Resource Gateway identity changed or disappeared during the authoring turn." >&2
     exit 1
 fi
+AUTHORING_RUNTIME_NONCE="${INSTANCE_NONCE}"
 cat > "${BOARD_CURL_CONFIG}" <<EOF
 url = "${RG_MCP_ENDPOINT%/mcp}/api/agent-tdd/board"
 header = "Authorization: Bearer ${AGENT_TOKEN}"
@@ -402,7 +407,8 @@ chmod 600 "${BOARD_CURL_CONFIG}"
 curl --config "${BOARD_CURL_CONFIG}"
 rm -f "${BOARD_CURL_CONFIG}"
 chmod 600 "${BOARD_FILE}"
-python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${CODEX_EXIT}" "${BOARD_FILE}" <<'PY'
+python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${CODEX_EXIT}" "${BOARD_FILE}" \
+    "${PRIMARY_CONTEXT_FILE}" <<'PY'
 import importlib.util
 import json
 import pathlib
@@ -419,7 +425,12 @@ chain, _proposal = module.require_business_sequence(calls)
 if not final_message.strip() or module.TECHNICAL_FINAL_PATTERN.search(final_message):
     raise SystemExit("Primary Codex authoring summary is missing or exposes technical vocabulary.")
 module.verify_board(json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8")), chain)
+pathlib.Path(sys.argv[5]).write_text(json.dumps({
+    "assetRef": chain["recalledFeatureRef"],
+    "contractFingerprint": chain["recalledFeatureContractFingerprint"],
+}, ensure_ascii=False), encoding="utf-8")
 PY
+chmod 600 "${PRIMARY_CONTEXT_FILE}"
 
 python3 - "${FAMILY_SUITE_FILE}" <<'PY'
 import json
@@ -436,7 +447,7 @@ PY
 while IFS=$'\t' read -r FAMILY_ID FAMILY_EXPECTED; do
     if [ "${FAMILY_ID}" = "near-meaning-distractor" ]; then
         # The first synonym turn must recall the primary Feature without certification-only
-        # distractors. Seed the remaining adversarial families only after that proof exists.
+        # distractors. Seed only the near-meaning distractor after that proof exists.
         SYNONYM_TRACE="${FAMILY_TRACE_DIR}/synonym-rewrite.trace.jsonl"
         SYNONYM_EXIT="$(awk -F '\t' '$1 == "synonym-rewrite" { print $4 }' "${FAMILY_RUN_INDEX}")"
         python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${SYNONYM_TRACE}" "${SYNONYM_EXIT}" <<'PY'
@@ -455,6 +466,7 @@ module.require_family_trace({
     "expectedBehaviorClass": "RECALL_TOP1",
     "traceFile": pathlib.Path(sys.argv[3]),
     "exitCode": int(sys.argv[4]),
+    "runtimeInstanceNonce": "0" * 64,
 }, chain, {"byRole": {}})
 PY
         stop_owned_service
@@ -465,6 +477,52 @@ PY
             --author-token "${SETUP_TOKEN}" \
             --review-token "${REVIEW_TOKEN}" \
             --fixture "${SETUP_FIXTURE_FILE}" \
+            --phase near-meaning \
+            --primary-context "${PRIMARY_CONTEXT_FILE}" \
+            --output "${NEAR_SETUP_MANIFEST_FILE}"
+        chmod 600 "${NEAR_SETUP_MANIFEST_FILE}"
+        stop_owned_service
+        start_owned_service "${AGENT_TOKEN}"
+        wait_owned_service
+        export RG_MCP_TOKEN="${AGENT_TOKEN}"
+        curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
+    fi
+    if [ "${FAMILY_ID}" = "boundary-unspecified" ]; then
+        NEAR_TRACE="${FAMILY_TRACE_DIR}/near-meaning-distractor.trace.jsonl"
+        NEAR_EXIT="$(awk -F '\t' '$1 == "near-meaning-distractor" { print $4 }' "${FAMILY_RUN_INDEX}")"
+        python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${NEAR_TRACE}" "${NEAR_EXIT}" \
+            "${NEAR_SETUP_MANIFEST_FILE}" <<'PY'
+import importlib.util
+import json
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1]) / "scripts/business_solution_codex_trace_certificate.py"
+spec = importlib.util.spec_from_file_location("business_solution_certificate", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+calls, _message, _completed, _thread_id = module.load_trace(pathlib.Path(sys.argv[2]))
+chain, _proposal = module.require_business_sequence(calls)
+near = json.loads(pathlib.Path(sys.argv[5]).read_text(encoding="utf-8"))
+by_role = {item["role"]: item for item in near["assets"]}
+module.require_family_trace({
+    "familyId": "near-meaning-distractor",
+    "expectedBehaviorClass": "RECALL_TOP1",
+    "traceFile": pathlib.Path(sys.argv[3]),
+    "exitCode": int(sys.argv[4]),
+    "runtimeInstanceNonce": "0" * 64,
+}, chain, {"byRole": by_role})
+PY
+        stop_owned_service
+        start_owned_service "${SETUP_TOKEN}"
+        wait_owned_service
+        python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
+            --endpoint "${RG_MCP_ENDPOINT}" \
+            --author-token "${SETUP_TOKEN}" \
+            --review-token "${REVIEW_TOKEN}" \
+            --fixture "${SETUP_FIXTURE_FILE}" \
+            --phase remaining \
+            --existing-manifest "${NEAR_SETUP_MANIFEST_FILE}" \
             --output "${SETUP_MANIFEST_FILE}"
         chmod 600 "${SETUP_MANIFEST_FILE}"
         stop_owned_service
@@ -491,8 +549,8 @@ PY
         "${READ_MCP_ARGS[@]}" "${AUTHOR_MCP_ARGS[@]}"
     FAMILY_EXIT=$?
     set -e
-    printf '%s\t%s\t%s\t%s\n' "${FAMILY_ID}" "${FAMILY_EXPECTED}" \
-        "${FAMILY_TRACE_FILE}" "${FAMILY_EXIT}" >> "${FAMILY_RUN_INDEX}"
+    printf '%s\t%s\t%s\t%s\t%s\n' "${FAMILY_ID}" "${FAMILY_EXPECTED}" \
+        "${FAMILY_TRACE_FILE}" "${FAMILY_EXIT}" "${INSTANCE_NONCE}" >> "${FAMILY_RUN_INDEX}"
     if ! verify_runtime_identity; then
         echo "The owned Resource Gateway identity changed during family ${FAMILY_ID}." >&2
         exit 1
@@ -513,12 +571,13 @@ import sys
 families = []
 with open(sys.argv[1], encoding="utf-8") as source:
     for line in source:
-        family_id, expected, trace_file, exit_code = line.rstrip("\n").split("\t")
+        family_id, expected, trace_file, exit_code, runtime_nonce = line.rstrip("\n").split("\t")
         families.append({
             "familyId": family_id,
             "expectedBehaviorClass": expected,
             "traceFile": trace_file,
             "exitCode": int(exit_code),
+            "runtimeInstanceNonce": runtime_nonce,
         })
 with open(sys.argv[2], "w", encoding="utf-8") as target:
     json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
@@ -540,7 +599,7 @@ python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TR
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
     --certified-at "${CERTIFIED_AT}" \
-    --runtime-instance-nonce "${INSTANCE_NONCE}" \
+    --runtime-instance-nonce "${AUTHORING_RUNTIME_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \
     --production-tree-fingerprint "${PRODUCTION_TREE_FINGERPRINT}" \
     --board-projection "${BOARD_FILE}" \

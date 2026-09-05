@@ -16,6 +16,9 @@ SPEC = importlib.util.spec_from_file_location("business_certificate", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+MAIN_RUNTIME_NONCE = "1" * 64
+NEAR_RUNTIME_NONCE = "2" * 64
+REMAINING_RUNTIME_NONCE = "3" * 64
 
 
 def call(server: str, tool: str, arguments: dict, data: dict, status: str = "completed") -> dict:
@@ -97,7 +100,7 @@ def metadata() -> dict:
         "codexVersion": "codex 1.0",
         "certifiedAt": "2026-09-05T00:00:00Z",
         "exitCode": 0,
-        "runtimeInstanceNonce": "b" * 64,
+        "runtimeInstanceNonce": MAIN_RUNTIME_NONCE,
         "runtimeJarSha256": "sha256:" + "c" * 64,
         "productionTreeFingerprint": "sha256:" + "d" * 64,
         "boardProjection": {"payloadPolicy": "STRUCTURE_ONLY", "pendingReviews": [
@@ -249,8 +252,29 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         material = {
             "fixtureFingerprint": "sha256:" + "9" * 64,
             "authoringPatternsFingerprint": "sha256:" + "a" * 64,
+            "completedPhases": ["near-meaning", "remaining"],
             "assets": assets,
             "relationships": MODULE.SETUP_RELATIONSHIPS,
+            "preflights": [
+                {"familyId": "near-meaning-distractor", "status": "EXACT",
+                 "observedRoles": ["nearMeaningDistractor"], "outcome": "SEMANTIC_TOP1",
+                 "target": {"assetRef": "feature:test",
+                            "contractFingerprint": "sha256:" + "e" * 64,
+                            "matchType": "EXACT"}},
+                {"familyId": "multiple-exact", "status": "AMBIGUOUS",
+                 "observedRoles": ["multipleExactA", "multipleExactB"],
+                 "outcome": "AMBIGUOUS_EXACT", "target": None},
+                {"familyId": "legacy-feature-partial", "status": "INCOMPLETE",
+                 "observedRoles": ["legacyPartial"], "outcome": "PARTIAL_VISIBLE",
+                 "target": None},
+                {"familyId": "assumption-ambiguity", "status": "INCOMPLETE",
+                 "observedRoles": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
+                 "outcome": "SAME_NAME_VISIBLE", "target": None},
+                {"familyId": "semantic-drift", "status": "STALE",
+                 "observedRoles": ["semanticDriftFeature", "semanticDriftJourney",
+                                   "semanticDriftCaseSet"],
+                 "outcome": "GOLDEN_CASE_STALE", "target": None},
+            ],
         }
         return {"schemaVersion": "rg.businessRecallFamilySetup.v1", **material,
                 "setupFingerprint": "sha256:" + hashlib.sha256(
@@ -285,6 +309,10 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                     "expectedBehaviorClass": expected,
                     "traceFile": family_trace.name,
                     "exitCode": 0,
+                    "runtimeInstanceNonce": (MAIN_RUNTIME_NONCE if family_id == "synonym-rewrite"
+                                             else NEAR_RUNTIME_NONCE
+                                             if family_id == "near-meaning-distractor"
+                                             else REMAINING_RUNTIME_NONCE),
                 })
             setup = self.setup_manifest()
             if setup_mutator is not None:
@@ -313,6 +341,8 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertRegex(certificate["setupIdentity"]["seedManifestFingerprint"],
                          r"^hmac-sha256:")
         self.assertRegex(certificate["setupIdentity"]["setupFingerprint"], r"^sha256:")
+        self.assertEqual(3, certificate["runtimeIdentity"]["codexPhaseCount"])
+        self.assertEqual(3, len(certificate["runtimeIdentity"]["instanceNonceFingerprints"]))
         self.assertNotIn("private", json.dumps(certificate))
         self.assertNotIn("journey:drift", json.dumps(certificate))
         self.assertNotIn("feature:traffic-accident", json.dumps(certificate))
@@ -380,6 +410,48 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(MODULE.CertificationFailure, "setup fingerprint"):
             self.certify_aux(setup_mutator=tamper)
+
+    def test_rejects_setup_preflight_for_a_different_primary_feature(self) -> None:
+        def replace_target(setup: dict) -> None:
+            setup["preflights"][0]["target"]["assetRef"] = "feature:other"
+            material = {key: setup[key] for key in (
+                "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+                "relationships", "preflights")}
+            setup["setupFingerprint"] = "sha256:" + hashlib.sha256(
+                MODULE.canonical_bytes(material)).hexdigest()
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "primary authored Feature"):
+            self.certify_aux(setup_mutator=replace_target)
+
+    def test_rejects_a_misclassified_setup_preflight_status(self) -> None:
+        def replace_status(setup: dict) -> None:
+            setup["preflights"][0]["status"] = "INCOMPLETE"
+            material = {key: setup[key] for key in (
+                "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+                "relationships", "preflights")}
+            setup["setupFingerprint"] = "sha256:" + hashlib.sha256(
+                MODULE.canonical_bytes(material)).hexdigest()
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "family relationship"):
+            self.certify_aux(setup_mutator=replace_status)
+
+    def test_rejects_family_runtime_phase_reuse(self) -> None:
+        def reuse_runtime(manifest: dict) -> None:
+            target = next(item for item in manifest["families"]
+                          if item["familyId"] == "near-meaning-distractor")
+            target["runtimeInstanceNonce"] = MAIN_RUNTIME_NONCE
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "three isolated"):
+            self.certify_aux(manifest_mutator=reuse_runtime)
+
+    def test_rejects_remaining_families_split_across_runtime_phases(self) -> None:
+        def split_runtime(manifest: dict) -> None:
+            target = next(item for item in manifest["families"]
+                          if item["familyId"] == "semantic-drift")
+            target["runtimeInstanceNonce"] = "4" * 64
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "three isolated"):
+            self.certify_aux(manifest_mutator=split_runtime)
 
     def test_rejects_family_trace_that_does_not_observe_its_seeded_assets(self) -> None:
         events = family_events("multiple-exact")

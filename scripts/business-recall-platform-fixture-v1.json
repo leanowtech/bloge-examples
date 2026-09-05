@@ -5,7 +5,7 @@
       "role": "nearMeaningDistractor",
       "businessGoal": "建立仅用于召回认证的交通事故责任事实",
       "idempotencyKey": "recall-seed-traffic-liability-v1",
-      "featureYaml": "feature:traffic-accident-liability-test:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-test-input-v1\n  businessSemantics: 交通事故中的乘客或司机责任方\n  businessDefinition: { semanticKey: test.traffic.accident.liability.party, intent: 判断交通事故责任方, domain: recall-certification-test, businessObject: traffic-accident-test-case, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: ACCIDENT_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n"
+      "featureYaml": "feature:traffic-accident-liability-test:\n  output: { type: { enum: [PASSENGER, DRIVER] } }\n  evaluationKind: USER_COMPONENT\n  determinism: INTERACTIVE\n  componentRef: recall-certification-test-input-v1\n  businessSemantics: 交通事故场景中的取消责任方\n  businessDefinition: { semanticKey: test.traffic.accident.liability.party, intent: 判断取消责任方, domain: recall-certification-test, businessObject: traffic-accident-test-case, requiredContext: [], resultDomain: { type: enum, values: [PASSENGER, DRIVER] }, asOf: ACCIDENT_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE, lifecycle: ACTIVE }\n"
     },
     {
       "role": "multipleExactA",
@@ -75,5 +75,9 @@
     "legacy-feature-partial": ["legacyPartial"],
     "semantic-drift": ["semanticDriftFeature", "semanticDriftJourney", "semanticDriftCaseSet"],
     "assumption-ambiguity": ["assumptionAmbiguityA", "assumptionAmbiguityB"]
+  },
+  "preflightQueries": {
+    "legacy-feature-partial": { "intent": "取消归责" },
+    "assumption-ambiguity": { "intent": "执行退款" }
   }
 }

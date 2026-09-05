@@ -59,6 +59,20 @@ SETUP_RELATIONSHIPS = {
     "semantic-drift": ["semanticDriftFeature", "semanticDriftJourney", "semanticDriftCaseSet"],
     "assumption-ambiguity": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
 }
+SETUP_PREFLIGHT_OUTCOMES = {
+    "near-meaning-distractor": "SEMANTIC_TOP1",
+    "multiple-exact": "AMBIGUOUS_EXACT",
+    "legacy-feature-partial": "PARTIAL_VISIBLE",
+    "semantic-drift": "GOLDEN_CASE_STALE",
+    "assumption-ambiguity": "SAME_NAME_VISIBLE",
+}
+SETUP_PREFLIGHT_STATUSES = {
+    "near-meaning-distractor": "EXACT",
+    "multiple-exact": "AMBIGUOUS",
+    "legacy-feature-partial": "INCOMPLETE",
+    "semantic-drift": "STALE",
+    "assumption-ambiguity": "INCOMPLETE",
+}
 
 
 class CertificationFailure(RuntimeError):
@@ -357,7 +371,7 @@ def load_setup_manifest(path: Path) -> dict[str, Any]:
     """Validate the private seed result and recompute its actual asset relationship fingerprint."""
     manifest = json.loads(path.read_text(encoding="utf-8"))
     required = {"schemaVersion", "fixtureFingerprint", "authoringPatternsFingerprint",
-                "assets", "relationships", "setupFingerprint"}
+                "completedPhases", "assets", "relationships", "preflights", "setupFingerprint"}
     if not isinstance(manifest, dict) or set(manifest) != required \
             or manifest.get("schemaVersion") != "rg.businessRecallFamilySetup.v1":
         raise CertificationFailure("setup manifest has an unsupported shape")
@@ -387,12 +401,43 @@ def load_setup_manifest(path: Path) -> dict[str, Any]:
     required_roles = {role for roles in SETUP_RELATIONSHIPS.values() for role in roles}
     if set(by_role) != required_roles:
         raise CertificationFailure("setup manifest does not contain the exact required asset roles")
+    if manifest.get("completedPhases") != ["near-meaning", "remaining"]:
+        raise CertificationFailure("setup manifest does not prove both isolated seed phases")
+    preflights = manifest.get("preflights")
+    if not isinstance(preflights, list):
+        raise CertificationFailure("setup manifest has no preflight evidence")
+    by_preflight: dict[str, dict[str, Any]] = {}
+    for preflight in preflights:
+        if not isinstance(preflight, dict) or set(preflight) != {
+                "familyId", "status", "observedRoles", "outcome", "target"}:
+            raise CertificationFailure("setup preflight has an unsupported shape")
+        family_id = required_text(preflight.get("familyId"), "setup preflight family")
+        if family_id in by_preflight or family_id not in SETUP_PREFLIGHT_OUTCOMES:
+            raise CertificationFailure("setup manifest has a duplicate or unknown preflight")
+        if preflight.get("status") != SETUP_PREFLIGHT_STATUSES[family_id] \
+                or preflight.get("outcome") != SETUP_PREFLIGHT_OUTCOMES[family_id] \
+                or preflight.get("observedRoles") != SETUP_RELATIONSHIPS[family_id]:
+            raise CertificationFailure("setup preflight does not match its family relationship")
+        target = preflight.get("target")
+        if family_id == "near-meaning-distractor":
+            if not isinstance(target, dict) or set(target) != {
+                    "assetRef", "contractFingerprint", "matchType"} \
+                    or target.get("matchType") != "EXACT":
+                raise CertificationFailure("near preflight has no exact primary target")
+            required_text(target.get("assetRef"), "near preflight target")
+            required_text(target.get("contractFingerprint"), "near preflight target fingerprint")
+        elif target is not None:
+            raise CertificationFailure("non-ranking setup preflight must not select a target")
+        by_preflight[family_id] = preflight
+    if set(by_preflight) != set(SETUP_PREFLIGHT_OUTCOMES):
+        raise CertificationFailure("setup manifest does not contain every required preflight")
     material = {key: manifest[key] for key in (
-        "fixtureFingerprint", "authoringPatternsFingerprint", "assets", "relationships")}
+        "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+        "relationships", "preflights")}
     actual = "sha256:" + hashlib.sha256(canonical_bytes(material)).hexdigest()
     if not hmac.compare_digest(actual, manifest["setupFingerprint"]):
         raise CertificationFailure("setup fingerprint does not match the seeded asset relationships")
-    return {**manifest, "path": path, "byRole": by_role}
+    return {**manifest, "path": path, "byRole": by_role, "byPreflight": by_preflight}
 
 
 def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -414,7 +459,8 @@ def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, An
     normalized: list[dict[str, Any]] = []
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {
-                "familyId", "expectedBehaviorClass", "traceFile", "exitCode"}:
+                "familyId", "expectedBehaviorClass", "traceFile", "exitCode",
+                "runtimeInstanceNonce"}:
             raise CertificationFailure("family trace manifest entry has an unsupported shape")
         family_id = required_text(entry.get("familyId"), "family id")
         observed_ids.append(family_id)
@@ -427,11 +473,16 @@ def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, An
         trace_file = Path(trace_name)
         if not trace_file.is_absolute():
             trace_file = path.parent / trace_file
+        runtime_nonce = required_text(entry.get("runtimeInstanceNonce"),
+                                      f"runtime nonce for {family_id}")
+        if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce):
+            raise CertificationFailure(f"runtime nonce is malformed for {family_id}")
         normalized.append({
             "familyId": family_id,
             "expectedBehaviorClass": expected,
             "traceFile": trace_file,
             "exitCode": entry.get("exitCode"),
+            "runtimeInstanceNonce": runtime_nonce,
         })
     expected_ids = set(FAMILY_EXPECTATIONS)
     observed_set = set(observed_ids)
@@ -642,6 +693,7 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
         "threadId": thread_id,
         "rank": rank,
         "matchType": match_type,
+        "runtimeInstanceNonce": entry["runtimeInstanceNonce"],
     }
 
 
@@ -671,6 +723,10 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
     if family_manifest is None:
         raise CertificationFailure("all 15 real Codex family traces are required")
     family_entries, setup = load_family_manifest(family_manifest)
+    near_target = setup["byPreflight"]["near-meaning-distractor"]["target"]
+    if (near_target["assetRef"], near_target["contractFingerprint"]) != (
+            chain["recalledFeatureRef"], chain["recalledFeatureContractFingerprint"]):
+        raise CertificationFailure("near preflight target is not the primary authored Feature")
     family_proofs = [require_family_trace(entry, chain, setup) for entry in family_entries]
     thread_ids = [authoring_thread_id] + [proof["threadId"] for proof in family_proofs]
     if len(set(thread_ids)) != len(FAMILY_EXPECTATIONS) + 1:
@@ -683,6 +739,15 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_jar) \
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", production_tree):
         raise CertificationFailure("runtime identity is malformed")
+    family_nonces = {proof["familyId"]: proof["runtimeInstanceNonce"] for proof in family_proofs}
+    near_nonce = family_nonces["near-meaning-distractor"]
+    remaining_nonces = {nonce for family_id, nonce in family_nonces.items()
+                        if family_id not in {"synonym-rewrite", "near-meaning-distractor"}}
+    if family_nonces["synonym-rewrite"] != runtime_nonce or len(remaining_nonces) != 1 \
+            or runtime_nonce == near_nonce or runtime_nonce in remaining_nonces \
+            or near_nonce in remaining_nonces:
+        raise CertificationFailure("certification does not prove three isolated Codex runtime phases")
+    runtime_nonces = [runtime_nonce, near_nonce, next(iter(remaining_nonces))]
 
     key = secrets.token_bytes(32)
     opaque = lambda label, value: "hmac-sha256:" + hmac.new(  # noqa: E731
@@ -699,7 +764,9 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
         "codexVersion": metadata["codexVersion"],
         "runtimeIdentity": {
             "schemaVersion": "rg.agentTddCertificationInstance.v1",
-            "instanceNonceFingerprint": "sha256:" + hashlib.sha256(runtime_nonce.encode()).hexdigest(),
+            "instanceNonceFingerprints": [
+                "sha256:" + hashlib.sha256(value.encode()).hexdigest() for value in runtime_nonces],
+            "codexPhaseCount": 3,
             "repositoryCommit": metadata["repositoryCommit"],
             "jarSha256": runtime_jar,
             "processOwnershipVerified": True,
@@ -709,7 +776,7 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             "setupFingerprint": setup["setupFingerprint"],
             "seedManifestFingerprint": opaque(
                 "seed-manifest", canonical_bytes({key: value for key, value in setup.items()
-                                                  if key not in {"path", "byRole"}}).decode("utf-8")),
+                                                  if key not in {"path", "byRole", "byPreflight"}}).decode("utf-8")),
             "relationshipCount": len(SETUP_RELATIONSHIPS),
         },
         "suite": "business-solution-recall-v1",

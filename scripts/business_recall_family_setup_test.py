@@ -46,11 +46,46 @@ class FakeApi:
         if tool == "rg.feature.compose":
             return {"assetRef": arguments["featureRef"],
                     "authoringReceiptFingerprint": "sha256:" + "e" * 64, "revision": 1}
+        if tool == "rg.entity.get":
+            if arguments["assetRef"] == "feature:primary":
+                return {"contractFingerprint": "sha256:" + "0" * 64,
+                        "businessContract": {"businessDefinition": {
+                    "semanticKey": "primary.cancel.party", "intent": "判断取消责任方"}}}
+            return {"contractFingerprint": "sha256:" + "b" * 64,
+                    "businessContract": {"businessDefinition": {
+                "semanticKey": "test.cancel.party.duplicate", "intent": "判断取消责任方"}}}
         if tool == "rg.capability.search":
-            return {"candidates": [{"assetRef": "feature:旧版取消归责事实测试",
-                                     "assetKind": "FEATURE",
-                                     "contractFingerprint": "sha256:" + "f" * 64,
-                                     "revision": 1, "matchType": "PARTIAL"}]}
+            query = arguments["query"]
+            if query.get("semanticKey") == "primary.cancel.party":
+                return {"status": "EXACT", "candidates": [
+                    {"assetRef": "feature:primary", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "0" * 64, "matchType": "EXACT"},
+                    {"assetRef": "feature:traffic-accident-liability-test", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "b" * 64, "matchType": "CONFLICT"}]}
+            if query.get("semanticKey") == "test.cancel.party.duplicate":
+                return {"status": "AMBIGUOUS", "candidates": [
+                    {"assetRef": "feature:cancel-party-exact-test-a", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "b" * 64, "matchType": "EXACT"},
+                    {"assetRef": "feature:cancel-party-exact-test-b", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "b" * 64, "matchType": "EXACT"}]}
+            if query.get("intent") == "取消责任":
+                return {"status": "INCOMPLETE", "candidates": [
+                    {"assetRef": "feature:primary", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "0" * 64, "matchType": "PARTIAL"},
+                    {"assetRef": "feature:traffic-accident-liability-test", "assetKind": "FEATURE",
+                     "contractFingerprint": "sha256:" + "b" * 64, "matchType": "PARTIAL"}]}
+            if query.get("intent") == "执行退款":
+                return {"status": "INCOMPLETE", "candidates": [
+                    {"assetRef": "ins:refund-execution-ride-test", "assetKind": "INSTRUCTION",
+                     "businessName": "退款执行", "contractFingerprint": "sha256:" + "c" * 64,
+                     "matchType": "PARTIAL"},
+                    {"assetRef": "ins:refund-execution-food-test", "assetKind": "INSTRUCTION",
+                     "businessName": "退款执行", "contractFingerprint": "sha256:" + "c" * 64,
+                     "matchType": "PARTIAL"}]}
+            return {"status": "INCOMPLETE", "candidates": [
+                {"assetRef": "feature:旧版取消归责事实测试", "assetKind": "FEATURE",
+                 "contractFingerprint": "sha256:" + "f" * 64,
+                 "revision": 1, "matchType": "PARTIAL"}]}
         if tool == "rg.scenario.define":
             return {"scenarioId": "scenario:test", "contractFingerprint": "sha256:" + "1" * 64,
                     "revision": 1}
@@ -94,24 +129,49 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.assertLess(preflight, families)
         self.assertLess(families, setup)
         self.assertIn('if [ "${FAMILY_ID}" = "near-meaning-distractor" ]', script)
+        self.assertIn('if [ "${FAMILY_ID}" = "boundary-unspecified" ]', script)
+        self.assertIn('--phase near-meaning', script)
+        self.assertIn('--phase remaining', script)
+        self.assertIn('--primary-context "${PRIMARY_CONTEXT_FILE}"', script)
+        self.assertIn('"runtimeInstanceNonce": runtime_nonce', script)
+        self.assertIn('"${FAMILY_EXIT}" "${INSTANCE_NONCE}" >> "${FAMILY_RUN_INDEX}"', script)
         self.assertIn('"familyId": "synonym-rewrite"', script)
 
     def setUp(self) -> None:
         self.fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        self.primary = {"assetRef": "feature:primary",
+                        "contractFingerprint": "sha256:" + "0" * 64}
 
     def test_builds_fingerprint_from_actual_seed_relationships(self) -> None:
         api = FakeApi()
-        manifest = MODULE.build_manifest(api, self.fixture)
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
 
         self.assertEqual(MODULE.SCHEMA_VERSION, manifest["schemaVersion"])
         self.assertEqual(MODULE.REQUIRED_ROLES, {asset["role"] for asset in manifest["assets"]})
         material = {key: manifest[key] for key in (
-            "fixtureFingerprint", "authoringPatternsFingerprint", "assets", "relationships")}
+            "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+            "relationships", "preflights")}
         self.assertEqual(MODULE.sha256(material), manifest["setupFingerprint"])
+        self.assertEqual([MODULE.PHASE_NEAR, MODULE.PHASE_REMAINING],
+                         manifest["completedPhases"])
+        self.assertEqual(5, len(manifest["preflights"]))
+
+    def test_near_phase_seeds_only_its_distractor_and_runs_preflight(self) -> None:
+        api = FakeApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+
+        self.assertEqual({"nearMeaningDistractor"}, {item["role"] for item in near["assets"]})
+        self.assertEqual([MODULE.PHASE_NEAR], near["completedPhases"])
+        self.assertEqual("SEMANTIC_TOP1", near["preflights"][0]["outcome"])
+        seeded_feature_keys = [arguments["idempotencyKey"] for tool, arguments, _purpose, _surface
+                               in api.calls if tool == "rg.feature.define"]
+        self.assertEqual(["recall-seed-traffic-liability-v1"], seeded_feature_keys)
 
     def test_all_business_entity_writes_use_a_server_navigated_journey(self) -> None:
         api = FakeApi()
-        MODULE.build_manifest(api, self.fixture)
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
 
         for tool, arguments, _purpose, surface in api.calls:
             if tool not in {"rg.feature.define", "rg.scenario.define", "rg.instruction.define",
@@ -128,7 +188,8 @@ class BusinessRecallSetupTest(unittest.TestCase):
 
     def test_legacy_seed_uses_compiler_gate_and_platform_surface(self) -> None:
         api = FakeApi()
-        MODULE.build_manifest(api, self.fixture)
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
 
         relevant = [(tool, purpose, surface) for tool, _arguments, purpose, surface in api.calls
                     if tool in {"rg.dsl.reference.get", "rg.gate.check", "rg.feature.compose"}]
@@ -147,7 +208,31 @@ class BusinessRecallSetupTest(unittest.TestCase):
                 return result
 
         with self.assertRaisesRegex(MODULE.SetupFailure, "did not invalidate"):
-            MODULE.build_manifest(NotStale(), self.fixture)
+            api = NotStale()
+            near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+            MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
+    def test_remaining_phase_rejects_repeated_seed_roles(self) -> None:
+        api = FakeApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        near["assets"].append(dict(near["assets"][0]))
+
+        with self.assertRaisesRegex(MODULE.SetupFailure, "only the near seed"):
+            MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
+    def test_remaining_phase_rejects_a_tampered_near_manifest(self) -> None:
+        api = FakeApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        near["setupFingerprint"] = "sha256:" + "9" * 64
+
+        with self.assertRaisesRegex(MODULE.SetupFailure, "near setup fingerprint"):
+            MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
+    def test_near_phase_rejects_a_primary_coordinate_not_bound_to_main_trace(self) -> None:
+        with self.assertRaisesRegex(MODULE.SetupFailure, "changed after the primary"):
+            MODULE.manifest(FakeApi(), self.fixture, MODULE.PHASE_NEAR, primary={
+                "assetRef": "feature:primary", "contractFingerprint": "sha256:" + "9" * 64,
+            })
 
 
 if __name__ == "__main__":

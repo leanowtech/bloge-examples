@@ -14,10 +14,17 @@
     "runtimeIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "instanceNonceFingerprint", "repositoryCommit", "jarSha256", "processOwnershipVerified", "verifiedBeforeAndAfterTurn"],
+      "required": ["schemaVersion", "instanceNonceFingerprints", "codexPhaseCount", "repositoryCommit", "jarSha256", "processOwnershipVerified", "verifiedBeforeAndAfterTurn"],
       "properties": {
         "schemaVersion": { "const": "rg.agentTddCertificationInstance.v1" },
-        "instanceNonceFingerprint": { "$ref": "#/$defs/sha256" },
+        "instanceNonceFingerprints": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "codexPhaseCount": { "const": 3 },
         "repositoryCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
         "jarSha256": { "$ref": "#/$defs/sha256" },
         "processOwnershipVerified": { "const": true },

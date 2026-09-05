@@ -4,9 +4,9 @@
 
 ## 认证范围
 
-认证先用独立 setup 身份通过正常 HTTP MCP 与人工审核入口预置测试域能力，再重启同一份 JAR 并切换为 Codex 身份。预置过程不进入 Codex trace。随后运行一条四实体创作主线，再启动 15 个独立、仓库不可见的 Codex 会话。每个会话只接收业务语言提示。提示中不包含工具名、资产引用、DSL、字段结构或实现步骤。
+认证先在无认证 seed 的环境中运行四实体创作主线和同义召回会话。随后使用独立 setup 身份通过正常 HTTP MCP 只预置近义干扰项，完成服务端即时召回预检，再运行近义干扰会话。该会话通过后，setup 身份才预置多精确项、旧能力、同名动作和语义漂移资产。其余 13 个会话在第三个 Codex 运行实例中执行。每个会话只接收业务语言提示。提示中不包含工具名、资产引用、DSL、字段结构或实现步骤。
 
-预置数据只使用 `recall-certification-test` 测试域。干扰 Feature、重复精确 Feature 和同名 Instruction 都在服务器导航的正常 journey 中创建。旧 Feature 经过服务端 DSL reference、编译门和 `feature.compose` 创建。语义漂移先建立独立解法并批准 GOLDEN，再通过独立修订 journey 改变 Feature 业务结果范围。原 journey 必须返回 `GOLDEN_CASE_STALE`，否则预置失败。认证没有专用写入后门。
+预置数据只使用 `recall-certification-test` 测试域。干扰 Feature、重复精确 Feature 和同名 Instruction 都在服务器导航的正常 journey 中创建。旧 Feature 经过服务端 DSL reference、编译门和 `feature.compose` 创建。语义漂移先建立独立解法并批准 GOLDEN，再通过独立修订 journey 改变 Feature 业务结果范围。原 journey 必须返回 `GOLDEN_CASE_STALE`，否则预置失败。近义预检使用主线 trace 私下关联的 Feature 坐标读取当前完整业务契约，再检查主 Feature 为 `EXACT` Top-1 且干扰项不是 `EXACT`。预检不通过资产命名或列表顺序制造 Top-1，也不能替代近义会话自身的 Top-1 证据。认证没有专用写入后门。
 
 | familyId | 业务问题 | 通过行为 |
 |---|---|---|
@@ -48,17 +48,18 @@ scripts/certify-agent-tdd-codex.sh \
   docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json
 ```
 
-该命令会构建当前干净提交，使用独立随机 setup token 启动独占 Resource Gateway 完成预置，然后停止服务并使用独立随机 Codex token 在同一私有数据库上重新启动。第二次启动后执行 1 个创作会话和 15 个测试族会话，并调用 reducer 生成安全证书。`KEEP_RAW_CODEX_TRACE=true` 只用于批准的本机排障，不能作为正式留存方式。
+该命令会构建当前干净提交，并使用同一私有数据库依次运行三个 Codex 实例：主线加同义召回、近义干扰、其余 13 类。两个阶段之间分别切换到独立随机 setup token，只写入下一阶段所需的测试资产，再切回随机 Codex token。最终 setup manifest 合并两个阶段的全部角色、关系和预检结果。Reducer 要求三个 Codex 实例身份互不相同。`KEEP_RAW_CODEX_TRACE=true` 只用于批准的本机排障，不能作为正式留存方式。
 
-公开提示集位于 `scripts/business-solution-recall-family-suite-v1.json`，固定测试域预置位于 `scripts/business-recall-platform-fixture-v1.json`。私有运行清单使用 `rg.businessRecallFamilyTraceSet.v1`，只记录测试族、期望分类、临时 trace 路径、退出码和私有 setup manifest 路径，不记录业务话语内容。
+公开提示集位于 `scripts/business-solution-recall-family-suite-v1.json`，固定测试域预置位于 `scripts/business-recall-platform-fixture-v1.json`。私有运行清单使用 `rg.businessRecallFamilyTraceSet.v1`，只记录测试族、期望分类、临时 trace 路径、退出码、运行实例关联和私有 setup manifest 路径，不记录业务话语内容。
 
 ## 验收门
 
 - 15 个 `familyId` 各出现一次；
 - 创作会话与 15 个测试族会话共 16 个 thread identity，全部不同；
 - 同义召回和近义干扰的正确能力均为 Top-1；
+- 主线和同义召回无 seed，近义会话只观察到近义 seed，其余 seed 在近义会话通过后创建；
 - 7 个澄清类测试全部只问一个业务问题，且没有成功写入；
 - 所有 trace 只使用业务操作面；
 - setup 使用独立身份和既有受治理入口，证书绑定实际 seed 资产关系；
 - 证书不包含原始提示、业务参数、资产引用或模型消息；
-- 证书绑定当前提交、生产源码树、运行 JAR 和独占进程身份。
+- 证书绑定当前提交、生产源码树、运行 JAR 和三个隔离的 Codex 进程身份。
