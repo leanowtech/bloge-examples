@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import { Braces, Boxes, PlugZap, TestTube2 } from 'lucide-react';
+import { Braces, Boxes, PlugZap, Sparkles, TestTube2 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import FlowObjectPage from './FlowObjectPage';
@@ -35,6 +35,8 @@ import {
   type SimulationRun,
 } from './model';
 import './authoringWorkbench.css';
+import IntentWorkbench from '../workbench/IntentWorkbench';
+import type { FourEntityDraft, IntentExpressionInput } from '../workbench/intentModel';
 
 const EMPTY_DRAFT: ApiResourceFormDraft = {
   resourceId: '',
@@ -62,6 +64,7 @@ export default function AuthoringWorkbench() {
   const requestedFixtureSetId = params.get('fixtureSetId')?.trim() || '';
   const createApi = params.get('create') === 'api';
   const createFlow = params.get('create') === 'flow';
+  const createBusinessSolution = params.get('create') === 'business-solution';
   const legacyInventory = params.get('legacy') === 'inventory';
   const legacyResourceId = params.get('legacyResourceId')?.trim() || '';
   const legacyFlowKind = params.get('legacyFlowKind');
@@ -89,7 +92,7 @@ export default function AuthoringWorkbench() {
     return <AuthoringUnavailable objectName="API Resource"
       enableCommand="RG_API_RESOURCE_AUTHORING_ENABLED=true" />;
   }
-  if ((requestedFlowId || createFlow) && !availability.reusableFlow) {
+  if ((requestedFlowId || createFlow || createBusinessSolution) && !availability.reusableFlow) {
     return <AuthoringUnavailable objectName="Reusable Flow"
       enableCommand="RG_REUSABLE_FLOW_AUTHORING_ENABLED=true" />;
   }
@@ -99,6 +102,11 @@ export default function AuthoringWorkbench() {
   }
   if (legacyInventory) {
     return <LegacyAssetInventoryPage />;
+  }
+  if (createBusinessSolution) {
+    return <IntentWorkbench sessionId="browser-intent-session" authorId="business-owner"
+      contextFingerprint="context:provided-by-agent-host"
+      compile={compileWithConnectedAgent} />;
   }
   if (requestedFlowId || createFlow) {
     const normalizedLegacyKind: LegacyReusableFlowReauthorPreview['source']['kind'] | null
@@ -176,6 +184,11 @@ function AuthoringHome() {
           <strong>{t('Create a solution')}</strong>
           <span>{t('Build a reusable solution with the same Flow contract and runtime.')}</span>
         </a>
+        <a href="/workbench/?create=business-solution" data-testid="express-business-solution">
+          <Sparkles aria-hidden="true" />
+          <strong>Describe a business solution</strong>
+          <span>Answer business questions while the connected Codex Agent builds the verified draft.</span>
+        </a>
       </section>
       <section className="legacy-assets-summary" data-testid="legacy-assets-summary">
         <div>
@@ -190,6 +203,14 @@ function AuthoringHome() {
       </section>
     </main>
   );
+}
+
+async function compileWithConnectedAgent(input: IntentExpressionInput): Promise<FourEntityDraft> {
+  const host = globalThis as typeof globalThis & {
+    blogeIntentCompiler?: (request: IntentExpressionInput) => Promise<FourEntityDraft>;
+  };
+  if (!host.blogeIntentCompiler) throw new Error('Connected Agent compiler unavailable');
+  return host.blogeIntentCompiler(input);
 }
 
 function LegacyAssetInventoryPage() {

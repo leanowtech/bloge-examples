@@ -51,13 +51,15 @@ describe('simple authoring workbench', () => {
     vi.clearAllMocks();
   });
 
-  it('offers only the three approved creation intents', async () => {
+  it('offers the approved object and business-intent creation paths', async () => {
     await act(async () => root.render(<AuthoringWorkbench />));
 
-    expect(host.querySelectorAll('.simple-authoring-intents a')).toHaveLength(3);
+    expect(host.querySelectorAll('.simple-authoring-intents a')).toHaveLength(4);
     expect(link('create-api-resource').getAttribute('href')).toBe('/workbench/?create=api');
     expect(link('create-tool').getAttribute('href')).toBe('/workbench/?create=flow&kind=TOOL');
     expect(link('create-solution').getAttribute('href')).toBe('/workbench/?create=flow&kind=SOLUTION');
+    expect(link('express-business-solution').getAttribute('href'))
+      .toBe('/workbench/?create=business-solution');
     expect(link('open-legacy-inventory').getAttribute('href')).toBe('/workbench/?legacy=inventory');
   });
 

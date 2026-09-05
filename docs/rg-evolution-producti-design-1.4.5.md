@@ -430,9 +430,9 @@ stateDiagram-v2
 ## 16 实现映射(已建 vs 新建)
 工程无需从零;核心引擎约 70% 已实现。
 **已建(复用)**:四实体契约解码/注册(SolutionAuthoringDecoder/SolutionEntityRegistry)· 编译 lowering(SolutionLowering→2 算子图)+ 七阶段预检(DslImportService)· scenarioCall/instructionCall 算子 · 分层测试+golden(SolutionTestingService)· 信任令牌(FeatureValueTokenService)+ 验签接入(SolutionInvocationService)· 写治理(EngineeringHandoffService/SolutionWriteExecutionRunner/ReconciliationAdapter)· 发布治理(SolutionGovernanceService,快照+漂移失效)· 运行时(SolutionLiveInvocationService,published-only+内部派生写授权+崩溃安全)· MCP 工具面(ResourceGatewayAgentTddTools)。
-**已建(1.4.5 Q1/Q2 后端)**:特征交接工具 `rg.feature.handoff` · 独立 `AGENT_TDD_FEATURE_ENG` 履行端点 · OPEN→IMPLEMENTED→VERIFIED 状态机 · 受控样例输出类型校验 · 审阅看板五面板业务投影及 HUMAN no-store 接口。
+**已建(1.4.5 Q1/Q2 后端/Q3 前端)**:特征交接工具 `rg.feature.handoff` · 独立 `AGENT_TDD_FEATURE_ENG` 履行端点 · OPEN→IMPLEMENTED→VERIFIED 状态机 · 受控样例输出类型校验 · 审阅看板五面板业务投影及 HUMAN no-store 接口 · 表意工作台双模状态机、上下文漂移守卫与无 DSL 草案预览。
 
-**待建(增量)**:表意工作台(双模自适应+熟练度推断,FE)· 审阅看板五面板交互(FE)· 交互特征标准化(选单组件契约+对话协议)· 运营看板+数据回流 · 场景求值后端(party/withinFree)+ 对账适配器(refund/ticket)。
+**待建(增量)**:表意工作台 Agent-host 真实编排验收 · 审阅看板五面板交互(FE)· 交互特征标准化(选单组件契约+对话协议)· 运营看板+数据回流 · 场景求值后端(party/withinFree)+ 对账适配器(refund/ticket)。
 
 ## 附录 A 技术契约(字段级)
 

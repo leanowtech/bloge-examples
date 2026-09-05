@@ -65,6 +65,11 @@ governance credential. The no-store response joins the approved business cases w
 execution evidence and returns five business panels: rule matrix, dispositions, red/green cases,
 Feature cards, and publication gates. It never returns DSL, graph drafts, evaluator references, or
 Instruction bindings.
+The `/workbench/?create=business-solution` entry is the business-first Solution surface. It starts
+in guided mode, asks only for decision facts, rules, and dispositions, preserves answers when the
+owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is
+delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
+is rejected before a result can become `READY_FOR_TEST`.
 The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
 for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
 an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.
