@@ -48,6 +48,11 @@ public final class McpToolCatalog {
                 McpToolImpact.DRAFT_WRITE,
                 props("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));
+        values.add(tool("rg.feature.handoff", "Handoff feature design",
+                "Create an engineering ticket for one unbound platform Feature contract.",
+                McpToolImpact.PROPOSE,
+                props("featureRef", string(), "idempotencyKey", string()),
+                List.of("featureRef", "idempotencyKey")));
         values.add(tool("rg.feature.evaluate", "Evaluate feature",
                 "Evaluate one platform-owned Feature and issue a short-lived bound proof.",
                 McpToolImpact.EXECUTE,
@@ -574,6 +579,7 @@ public final class McpToolCatalog {
                     "honestVerdict", honestVerdict()),
                     List.of("featureId", "evaluationKind", "determinism", "speccing",
                             "revision", "contractFingerprint", "honestVerdict"));
+            case "rg.feature.handoff" -> featureHandoffOutput();
             case "rg.feature.evaluate" -> structuredObject(props(
                     "featureRef", string(), "value", anyJson(), "evaluationToken", string(),
                     "evaluationKind", enumString("API", "DAG", "MODEL", "INSTRUCTION_RESULT")),
@@ -689,6 +695,17 @@ public final class McpToolCatalog {
                 "honestVerdict", honestVerdict()),
                 List.of("scenarioId", "ruleMatrix", "tree", "speccing", "revision",
                         "contractFingerprint", "honestVerdict"));
+    }
+
+    private static Map<String, Object> featureHandoffOutput() {
+        return structuredObject(props(
+                "ticketId", string(), "featureName", string(),
+                "requiredOutput", businessObject(), "requiredInputs", businessObject(),
+                "evaluationKind", enumString("API", "DAG", "MODEL", "INSTRUCTION_RESULT"),
+                "businessSemantics", string(), "status", enumString("OPEN"),
+                "acceptanceRef", string(), "revision", integer()),
+                List.of("ticketId", "featureName", "requiredOutput", "requiredInputs",
+                        "evaluationKind", "businessSemantics", "status", "acceptanceRef", "revision"));
     }
 
     private static Map<String, Object> instructionDefinitionOutput() {

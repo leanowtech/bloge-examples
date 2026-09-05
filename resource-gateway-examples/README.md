@@ -53,6 +53,13 @@ and independent owner signoff to the current Solution revision, contract fingerp
 fingerprint, and current Instruction implementation fingerprint, so an old reconciliation or signoff cannot
 authorize a changed binding. Compose persists a server-issued authoring receipt, and commit rejects invented or
 stale receipt values.
+Design-only platform Features follow the same contract-first handoff. An authoring Agent can call
+`rg.feature.handoff` for an unbound Feature, but cannot bind its evaluator. A separately authenticated
+feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil` with purpose
+`AGENT_TDD_FEATURE_ENG`; Resource Gateway records `IMPLEMENTED`, validates the controlled fixture output
+against the declared Feature type, and promotes only a passing implementation to `VERIFIED` / `READY`.
+Interactive user Features remain ready through their native component or conversation contract and do not
+receive an evaluator binding.
 The compiler validates named ports, required bindings, output paths, and provable literal/type contradictions
 for all visible operators, including built-in `bloge:*` nodes. Known `session` and `state_machine` roots receive
 an explicit graph-profile diagnostic even though the pinned BLOGE 0.8.9 parser has no corresponding AST.

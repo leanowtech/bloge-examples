@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Bounded validator for the intentionally small scalar schema vocabulary of Solution entities. */
-final class SolutionValueSchemaValidator {
+public final class SolutionValueSchemaValidator {
     private SolutionValueSchemaValidator() { }
 
     /** Returns whether an object has exactly the declared required scalar fields and value types. */
@@ -30,7 +30,7 @@ final class SolutionValueSchemaValidator {
     }
 
     /** Returns whether one atomic Feature value satisfies its declared type or enum. */
-    static boolean featureValueMatches(JsonNode output, JsonNode value) {
+    public static boolean featureValueMatches(JsonNode output, JsonNode value) {
         return output != null && output.isObject() && matchesType(output.path("type"), value);
     }
 

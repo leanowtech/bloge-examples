@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddBoardController;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
@@ -80,7 +81,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CorrectnessDefinitionCandidateController.class,
         AuthoringLinkResolverController.class,
         CapabilityStudioDemoController.class,
-        AgentTddBoardController.class
+        AgentTddBoardController.class,
+        FeatureHandoffController.class
 })
 public class IntegrationProblemHandler {
 

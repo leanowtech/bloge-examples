@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionLowering;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
 import com.leanowtech.bloge.gateway.solution.SolutionInvocationService;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffService;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -52,6 +53,7 @@ public final class SolutionAgentTools {
     private final SolutionTestingService testing;
     private final SolutionPerformanceService performance;
     private final EngineeringHandoffService handoffs;
+    private final FeatureHandoffService featureHandoffs;
     private final SolutionGovernanceService governance;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
@@ -98,6 +100,7 @@ public final class SolutionAgentTools {
         this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
         this.performance = new SolutionPerformanceService(states);
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
+        this.featureHandoffs = new FeatureHandoffService(states, registry, safeBackend, mapper);
         this.governance = new SolutionGovernanceService(states, registry, mapper);
         this.liveInvocation = new SolutionLiveInvocationService(
                 states, invocation, governance, mapper);
@@ -114,6 +117,12 @@ public final class SolutionAgentTools {
     public Map<String, Object> handoffSolution(JsonNode arguments, IntegrationRequestContext identity) {
         return executeOnce("rg.engineering.handoff", arguments, identity,
                 () -> handoffs.submit(requiredText(arguments, "solutionRef"), identity));
+    }
+
+    /** Creates an idempotent engineering ticket for one design-only Feature contract. */
+    public Map<String, Object> handoffFeature(JsonNode arguments, IntegrationRequestContext identity) {
+        return executeOnce("rg.feature.handoff", arguments, identity,
+                () -> featureHandoffs.submit(requiredText(arguments, "featureRef"), identity));
     }
 
     /** Returns live Solution publication gates bound to the current evidence coordinates. */

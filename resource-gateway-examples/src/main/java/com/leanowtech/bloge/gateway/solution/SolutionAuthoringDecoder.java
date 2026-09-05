@@ -26,7 +26,7 @@ public final class SolutionAuthoringDecoder {
     private static final int MAX_BYTES = 1024 * 1024;
     private static final Set<String> FEATURE_FIELDS = Set.of(
             "output", "evaluationKind", "determinism", "inputs", "evaluationRef",
-            "componentRef", "promptRef");
+            "componentRef", "promptRef", "businessSemantics");
     private static final Set<String> SCENARIO_FIELDS = Set.of(
             "inputs", "hitPolicy", "rules", "otherwise");
     private static final Set<String> RULE_FIELDS = Set.of("ruleId", "when", "outlet");
@@ -97,7 +97,9 @@ public final class SolutionAuthoringDecoder {
                     FeatureContract.enumValue(FeatureContract.Determinism.class,
                             requiredText(body, "determinism")),
                     body.path("inputs"), text(body, "evaluationRef"),
-                    text(body, "componentRef"), text(body, "promptRef"));
+                    text(body, "componentRef"), text(body, "promptRef"),
+                    body.has("businessSemantics")
+                            ? requiredText(body, "businessSemantics") : entry.getKey());
             return DecodeResult.decoded(contract);
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("FEATURE_CONTRACT_INVALID");

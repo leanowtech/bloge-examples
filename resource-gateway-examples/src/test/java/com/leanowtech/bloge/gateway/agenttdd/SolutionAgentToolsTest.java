@@ -138,6 +138,34 @@ class SolutionAgentToolsTest {
     }
 
     @Test
+    void createsAnExactReplayFeatureHandoffFromTheAgentBoundary() {
+        IntegrationRequestContext identity = identity("project-a");
+        ObjectNode definition = mapper.createObjectNode()
+                .put("featureYaml", """
+                        responsibility.party:
+                          output: { type: string }
+                          evaluationKind: API
+                          determinism: DETERMINISTIC
+                          inputs: { orderId: string }
+                          businessSemantics: Determine who is responsible for the cancellation fee.
+                        """)
+                .put("idempotencyKey", "feature-party-design-v1");
+        tools.defineFeature(definition, identity);
+        ObjectNode request = mapper.createObjectNode()
+                .put("featureRef", "responsibility.party")
+                .put("idempotencyKey", "feature-party-handoff-v1");
+
+        Map<String, Object> first = tools.handoffFeature(request, identity);
+        Map<String, Object> replay = tools.handoffFeature(request, identity);
+
+        assertThat(first).containsEntry("featureName", "responsibility.party")
+                .containsEntry("status", "OPEN")
+                .containsEntry("businessSemantics",
+                        "Determine who is responsible for the cancellation fee.");
+        assertThat(replay).isEqualTo(first);
+    }
+
+    @Test
     void composesPureSolutionOnlyFromResolvableFourEntityContracts() {
         IntegrationRequestContext identity = identity("project-a");
         defineStringFeature("responsibility.party", "feature-party-compose", identity);

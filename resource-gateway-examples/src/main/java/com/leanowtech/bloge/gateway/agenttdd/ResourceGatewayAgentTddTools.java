@@ -252,6 +252,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                             optionalStringList(safeArguments, "operatorRefs"),
                             safeArguments.path("includeExamples").asBoolean(false)), identity));
             case "rg.feature.define" -> executionSuccess(solutionTools().defineFeature(safeArguments, identity));
+            case "rg.feature.handoff" -> executionSuccess(solutionTools().handoffFeature(safeArguments, identity));
             case "rg.feature.evaluate" -> executionSuccess(solutionTools().evaluateFeature(safeArguments, identity));
             case "rg.scenario.define" -> executionSuccess(solutionTools().defineScenario(safeArguments, identity));
             case "rg.instruction.define" -> executionSuccess(

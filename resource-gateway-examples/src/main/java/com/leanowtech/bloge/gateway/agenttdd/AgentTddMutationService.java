@@ -727,7 +727,8 @@ public final class AgentTddMutationService {
                 });
     }
 
-    static String scopeKey(IntegrationRequestContext identity) {
+    /** Returns the canonical tenant, organization, project, environment and region asset scope. */
+    public static String scopeKey(IntegrationRequestContext identity) {
         return String.join("|", identity.tenantId(), identity.organizationId(), identity.projectId(),
                 identity.environmentId(), identity.region());
     }

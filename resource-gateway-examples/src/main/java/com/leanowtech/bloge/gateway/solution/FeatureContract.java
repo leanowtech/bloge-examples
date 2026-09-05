@@ -23,6 +23,7 @@ import java.util.Map;
  * @param evaluationRef deterministic or model evaluation binding; blank means design-only
  * @param componentRef interactive component reference for {@link EvaluationKind#USER_COMPONENT}
  * @param promptRef interactive prompt reference for {@link EvaluationKind#USER_CONVERSATION}
+ * @param businessSemantics business-language meaning shown on engineering handoff tickets
  */
 public record FeatureContract(
         String featureRef,
@@ -32,8 +33,24 @@ public record FeatureContract(
         JsonNode inputs,
         String evaluationRef,
         String componentRef,
-        String promptRef
+        String promptRef,
+        String businessSemantics
 ) {
+    /**
+     * Preserves the v1.4.4 constructor for existing callers that do not yet supply business text.
+     */
+    public FeatureContract(String featureRef,
+                           JsonNode output,
+                           EvaluationKind evaluationKind,
+                           Determinism determinism,
+                           JsonNode inputs,
+                           String evaluationRef,
+                           String componentRef,
+                           String promptRef) {
+        this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
+                componentRef, promptRef, featureRef);
+    }
+
     /** Supported feature evaluation runtimes. */
     public enum EvaluationKind {
         API,
@@ -62,6 +79,7 @@ public record FeatureContract(
         evaluationRef = normalized(evaluationRef);
         componentRef = normalized(componentRef);
         promptRef = normalized(promptRef);
+        businessSemantics = normalized(businessSemantics);
         output = copy(output);
         inputs = inputs == null || inputs.isMissingNode()
                 ? JsonNodeFactory.instance.objectNode()
@@ -69,7 +87,7 @@ public record FeatureContract(
         if (featureRef.isBlank() || output == null || !output.isObject()
                 || output.path("type").isMissingNode() || output.path("type").isNull()
                 || evaluationKind == null || determinism == null
-                || !inputs.isObject()) {
+                || !inputs.isObject() || businessSemantics.isBlank()) {
             throw new IllegalArgumentException("Feature contract is incomplete");
         }
         if (evaluationKind.interactive() != (determinism == Determinism.INTERACTIVE)) {
@@ -117,7 +135,8 @@ public record FeatureContract(
                 "output", output,
                 "evaluationKind", evaluationKind.name(),
                 "determinism", determinism.name(),
-                "inputs", inputs
+                "inputs", inputs,
+                "businessSemantics", businessSemantics
         );
     }
 

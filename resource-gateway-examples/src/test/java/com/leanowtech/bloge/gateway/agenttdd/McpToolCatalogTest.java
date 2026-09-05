@@ -17,7 +17,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(41);
+        assertThat(catalog.all()).hasSize(42);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.dsl.reference.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.upsert").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -27,6 +27,7 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.fixture.provide").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.require("rg.resource.declare").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.feature.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require("rg.feature.handoff").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.feature.evaluate").impact()).isEqualTo(McpToolImpact.EXECUTE);
         assertThat(catalog.require("rg.scenario.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.instruction.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -48,7 +49,8 @@ class McpToolCatalogTest {
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
         assertThat(catalog.all()).extracting(definition -> definition.impact().operation())
                 .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST,
-                        IntegrationOperation.AGENT_TDD_WRITE_EXEC);
+                        IntegrationOperation.AGENT_TDD_WRITE_EXEC,
+                        IntegrationOperation.AGENT_TDD_FEATURE_ENG);
     }
 
     @Test
@@ -80,6 +82,10 @@ class McpToolCatalogTest {
         assertThat(stringKeys(properties(invoke.outputSchema(), "data")))
                 .contains("result", "reasoning", "publicationId",
                         "implementationFingerprint", "executionStatus");
+        assertThat(stringKeys(dataProperties(catalog.require("rg.feature.handoff"))))
+                .containsExactlyInAnyOrder("ticketId", "featureName", "requiredOutput",
+                        "requiredInputs", "evaluationKind", "businessSemantics", "status",
+                        "acceptanceRef", "revision");
     }
 
     @Test
