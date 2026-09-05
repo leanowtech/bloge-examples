@@ -130,7 +130,8 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(prompt).contains(
                 "取消费争议", "平台已经具备哪些业务积木", "取消责任方",
                 "不要复用名称相近但业务含义不同", "乘客超时取消", "司机导致取消",
-                "等待我确认的标准案例", "不要替我批准案例", "不要开始验证、签署或发布");
+                "等待我确认的标准案例", "重新查看待确认案例清单",
+                "不要替我批准案例", "不要开始验证、签署或发布");
         assertThat(prompt).doesNotContain(
                 "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
     }
