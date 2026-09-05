@@ -56,6 +56,7 @@ public final class SolutionAgentTools {
     private final EngineeringHandoffService handoffs;
     private final FeatureHandoffService featureHandoffs;
     private final SolutionGovernanceService governance;
+    private final SolutionWriteExecutionRunner writeRunner;
 
     /** Creates the four-entity authoring boundary over the durable Agent TDD store. */
     public SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper) {
@@ -76,6 +77,18 @@ public final class SolutionAgentTools {
             FeatureEvaluationBackend featureBackend,
             InstructionDispatchChannel instructionChannel,
             FeatureTokenKeyProvider tokenKeys) {
+        this(states, mapper, importer, featureBackend, instructionChannel, tokenKeys, null);
+    }
+
+    /** Creates the production boundary with optional platform-controlled WRITE reconciliation. */
+    SolutionAgentTools(
+            AgentTddStateRepository states,
+            ObjectMapper mapper,
+            DslImportService importer,
+            FeatureEvaluationBackend featureBackend,
+            InstructionDispatchChannel instructionChannel,
+            FeatureTokenKeyProvider tokenKeys,
+            SolutionWriteExecutionRunner writeRunner) {
         this.states = Objects.requireNonNull(states, "states");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decoder = new SolutionAuthoringDecoder();
@@ -103,6 +116,7 @@ public final class SolutionAgentTools {
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
         this.featureHandoffs = new FeatureHandoffService(states, registry, safeBackend, mapper);
         this.governance = new SolutionGovernanceService(states, registry, mapper);
+        this.writeRunner = writeRunner;
         this.liveInvocation = new SolutionLiveInvocationService(
                 states, invocation, governance, mapper, performance);
     }
@@ -195,9 +209,27 @@ public final class SolutionAgentTools {
     /** Runs the approved Solution GOLDEN line with WRITE effects stubbed and zero real calls. */
     public Map<String, Object> baselineSolution(JsonNode arguments, IntegrationRequestContext identity) {
         Objects.requireNonNull(identity, "identity").requireComplete();
-        return testing.baseline(AgentTddMutationService.scopeKey(identity),
+        String scope = AgentTddMutationService.scopeKey(identity);
+        Map<String, Object> baseline = testing.baseline(scope,
                 requiredText(arguments, "solutionRef"), requiredText(arguments, "caseSetRef"),
                 requiredText(arguments, "side"));
+        if (writeRunner == null || !"GREEN".equals(baseline.get("side"))
+                || !"GO".equals(baseline.get("status"))
+                || states.find(scope, EngineeringHandoffService.HANDOFF,
+                        requiredText(arguments, "solutionRef"))
+                .filter(asset -> "IMPLEMENTED".equals(asset.data().path("status").asText()))
+                .isEmpty()) {
+            return baseline;
+        }
+        IntegrationRequestContext platform = new IntegrationRequestContext(
+                identity.tenantId(), identity.organizationId(), identity.projectId(),
+                identity.environmentId(), identity.region(), "PLATFORM",
+                "system:solution-write-runner", "", "AGENT_TDD_WRITE_EXEC",
+                identity.correlationId());
+        LinkedHashMap<String, Object> completed = new LinkedHashMap<>(baseline);
+        completed.put("writeReconciliation",
+                writeRunner.execute(requiredText(arguments, "solutionRef"), platform));
+        return Map.copyOf(completed);
     }
 
     /**

@@ -608,6 +608,7 @@ public final class McpToolCatalog {
                     "goldenSetId", string(), "evidenceRef", string(), "side", enumString("RED", "GREEN"),
                     "byLayer", businessObject(), "cases", arrayOf(businessObject()),
                     "businessBacklog", arrayOf(businessObject()), "realExternalCalls", integer(),
+                    "writeReconciliation", businessObject(),
                     "status", enumString("GO", "NO_GO")),
                     List.of("solutionRef", "caseSetRef", "caseSetRevision", "solutionRevision",
                             "solutionContractFingerprint", "goldenSetId",

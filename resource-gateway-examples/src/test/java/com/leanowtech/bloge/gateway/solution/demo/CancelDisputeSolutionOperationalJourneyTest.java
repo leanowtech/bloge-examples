@@ -6,7 +6,6 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.agenttdd.McpProtocolController;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.EngineeringHandoffService;
-import com.leanowtech.bloge.gateway.agenttdd.SolutionWriteExecutionRunner;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -65,7 +64,6 @@ class CancelDisputeSolutionOperationalJourneyTest {
 
     @Autowired private ObjectMapper mapper;
     @Autowired private TestRestTemplate http;
-    @Autowired private SolutionWriteExecutionRunner writes;
     @Autowired private AgentTddStateRepository states;
     @Autowired private CancelDisputeDemoLedger ledger;
     @LocalServerPort private int port;
@@ -145,6 +143,8 @@ class CancelDisputeSolutionOperationalJourneyTest {
                 "AGENT_TDD_EXECUTION");
         assertThat(green.at("/data/status").asText()).isEqualTo("GO");
         assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
+        assertThat(green.at("/data/writeReconciliation/status").asText()).isEqualTo("RECONCILED");
+        assertThat(green.at("/data/writeReconciliation/writeCount").asInt()).isEqualTo(2);
         assertThat(green.at("/data/cases")).allSatisfy(row ->
                 assertThat(row.path("verdict").asText()).isEqualTo("GREEN_PASS"));
 
@@ -154,8 +154,6 @@ class CancelDisputeSolutionOperationalJourneyTest {
                 "idempotencyKey", "commit-cancel-v145"), "AGENT_TDD_AUTHORING");
         assertThat(proposal.at("/data/proposalStatus").asText()).isEqualTo("PENDING");
 
-        Map<String, Object> reconciled = writes.execute(SOLUTION, platformIdentity());
-        assertThat(reconciled).containsEntry("status", "RECONCILED").containsEntry("writeCount", 2);
         assertThat(ledger.refund("O-FREE-NONE")).containsEntry("decision", "WAIVED");
         assertThat(ledger.ticket("O-PLATFORM")).containsEntry("decision", "ESCALATED");
         assertThat(states.find("tenant-a|knowledge-governance|tool-studio|test|local",
@@ -463,12 +461,6 @@ class CancelDisputeSolutionOperationalJourneyTest {
         headers.set("X-Purpose", purpose);
         headers.setContentType(MediaType.APPLICATION_JSON);
         return headers;
-    }
-
-    private static IntegrationRequestContext platformIdentity() {
-        return new IntegrationRequestContext("tenant-a", "knowledge-governance", "tool-studio",
-                "test", "local", "PLATFORM", "solution-write-runner", "",
-                "AGENT_TDD_WRITE_EXEC", "corr-cancel-v145");
     }
 
     private static Path chromeDriver() throws Exception {

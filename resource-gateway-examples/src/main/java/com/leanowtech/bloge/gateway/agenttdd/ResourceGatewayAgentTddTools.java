@@ -158,7 +158,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 catalog, declarations, attestations, telemetry,
                 (FeatureEvaluationBackend) null,
                 (InstructionDispatchChannel) null,
-                (FeatureTokenKeyProvider) null);
+                (FeatureTokenKeyProvider) null, null);
     }
 
     /** Creates the Spring facade with optional Feature and Instruction runtime adapters. */
@@ -177,10 +177,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AgentTddAuthoringTelemetry telemetry,
                                         ObjectProvider<FeatureEvaluationBackend> featureBackends,
                                         ObjectProvider<InstructionDispatchChannel> instructionChannels,
-                                        ObjectProvider<FeatureTokenKeyProvider> tokenKeys) {
+                                        ObjectProvider<FeatureTokenKeyProvider> tokenKeys,
+                                        ObjectProvider<SolutionWriteExecutionRunner> writeRunners) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
-                featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique());
+                featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
+                writeRunners.getIfUnique());
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -197,7 +199,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          AgentTddAuthoringTelemetry telemetry,
                                          FeatureEvaluationBackend featureBackend,
                                          InstructionDispatchChannel instructionChannel,
-                                         FeatureTokenKeyProvider tokenKeys) {
+                                         FeatureTokenKeyProvider tokenKeys,
+                                         SolutionWriteExecutionRunner writeRunner) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -216,7 +219,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.declarations = declarations;
         this.attestations = attestations;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
-                states, mapper, projection, featureBackend, instructionChannel, tokenKeys);
+                states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner);
     }
 
     /**
