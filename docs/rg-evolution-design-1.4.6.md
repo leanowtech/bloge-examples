@@ -1,6 +1,6 @@
-# Resource Gateway 产品技术演进详细设计方案 v1.4.6：业务语义召回与工作流导航
+# Resource Gateway 产品技术演进详细设计方案 v1.4.6：业务语义召回、工作流导航与受控测试
 
-> 状态：待审阅。本文承接 v1.4.5 已实现的四实体运行时、业务工作台、工程交接、业务审阅、测试治理和运营回流，但不把本文方案写成已交付事实。v1.4.6 解决一个已经被真实使用暴露的问题：Codex 能看到严格的 MCP 工具契约，却缺少稳定的业务能力发现和工作流导航，仍可能在相似工具、分散资产和不完整语义之间猜测。
+> 状态：待审阅。本文承接 v1.4.5 已实现的四实体运行时、业务工作台、工程交接、业务审阅、测试治理和运营回流，但不把本文方案写成已交付事实。v1.4.6 解决两个已经被真实使用暴露的问题：Codex 能看到严格的 MCP 工具契约，却缺少稳定的业务能力发现和工作流导航；业务负责人能够给出标准答案，却缺少用业务语言表达测试假设和依赖结果的一等入口。
 
 ## 1. 结论与目标
 
@@ -17,6 +17,7 @@ v1.4.6 的目标是把“模型大概率选对”提升为“平台返回可复�
 - RG 在同一认证 scope 内统一发现 Feature、Scenario、Instruction、Solution、库算子、资源和已发布能力。
 - 业务能力必须携带可比较的业务语义，不再只靠技术引用或一段自由文本匹配。
 - 服务端根据持久化状态返回当前阶段、阻塞原因和允许的下一步工具。
+- 业务负责人用业务语言提出事实值、依赖结果和预期处置；平台将这些内容编译为零外呼的受控测试计划。
 - 明确区分业务 Solution 创作面和底层 Tool/Graph 开发面，避免近义工具竞争。
 - 通过真实 Codex 业务话语集验证工具召回、能力召回、澄清行为和操作顺序。
 - 保持 v1.4.5 的权限、零载荷、工程交接、GOLDEN、执行证据和发布治理边界不变。
@@ -38,8 +39,8 @@ v1.4.6 的目标是把“模型大概率选对”提升为“平台返回可复�
 | P1 Surface 隔离 | 业务和底层工具同屏竞争 | BUSINESS_SOLUTION、PLATFORM_AUTHORING、OPERATIONS | 业务会话不能列出或调用底层 Tool/Graph 工具 |
 | P2 统一能力索引 | 四实体和算子分散、跨会话不可发现 | capability search、entity list/get、冻结快照 | 所有资产可在同一 scope 搜索并抵抗上下文漂移 |
 | P3 结构化业务语义 | 名称和自由文本不能证明业务一致 | 语义契约族、semantic key、字段级 matcher | EXACT、PARTIAL、CONFLICT 可解释且可测试 |
-| P4 Journey 导航 | 顺序依赖提示词记忆 | start/next、状态派生、allowed tools、原子 association | 前置条件不满足时服务端拒绝推进 |
-| P5 真实召回认证 | 单一旧证书不能证明当前主线 | 业务话语集、干扰项、跨会话、当前 HEAD 证书 | §14.4 指标全部通过 |
+| P4 Journey 与受控测试 | 顺序依赖提示词记忆；业务假设依赖底层 stub | start/next、状态派生、业务 GOLDEN、受控假设编译、原子 association | 前置条件不满足时拒绝推进；测试执行无法外呼 |
+| P5 真实召回认证 | 单一旧证书不能证明当前主线 | 业务话语集、干扰项、跨会话、假设测试、当前 HEAD 证书 | §14.4 指标全部通过 |
 
 实施严格按 P0 → P5 推进。每阶段独立提交、独立验证；后阶段不得用提示词补丁掩盖前阶段尚未完成的服务端契约。
 
@@ -54,6 +55,7 @@ v1.4.6 的目标是把“模型大概率选对”提升为“平台返回可复�
 | 四实体 | Feature、Scenario、Instruction、Solution 已有持久化和运行时 | 纳入统一业务能力索引和读取面 |
 | DSL | 已有 scoped reference、preview、诊断修正、gate 和收据指纹 | 保持为底层创作机制，不作为业务能力发现入口 |
 | 治理 | GOLDEN、maker-checker、RED/GREEN、实景证明、签署和发布门已具备 | 工作流导航只读取这些事实，不绕开任何门 |
+| 测试缝 | Scenario/Solution 可消费预采集 Feature 值；WRITE Instruction 在 SIMULATE 下使用契约桩；GraphDraft 支持 node-level dependency behavior | 复用执行底座；新增业务假设解析、冻结绑定和全依赖零外呼边界 |
 | 真实 Codex | 有一条业务提示词到 Tool 草稿的真实认证 | 扩展为覆盖四实体、同义词、干扰项、歧义和跨会话的召回测试集 |
 
 ### 2.2 P0：目录事实必须唯一
@@ -110,7 +112,15 @@ v1.4.5 的初始化说明要求 Codex 补齐业务事实、生成四实体并遵
 
 修复原则：新增持久化 `BusinessJourney` 和只读 `rg.journey.next`，由服务端根据当前资产和门禁事实计算下一步。
 
-### 2.7 P2：真实认证不能证明普遍召回能力
+### 2.7 P1：业务测试假设没有业务入口
+
+现有底座提供三条独立测试路径：Scenario 和 Solution 测试直接消费调用方提供的 Feature 值；`InstructionCallOperator` 在 SIMULATE 模式下只为 WRITE Instruction 生成契约桩；Tool/Graph 测试通过 `nodeId` 设置 dependency behavior。这些路径没有统一的业务语义，也没有按 journey 冻结 Feature、Instruction 和实现绑定。
+
+影响：业务 surface 隐藏 node、stub、fixture 和 Graph 工具后，业务负责人只能给出 `givenFacts` 和预期结果，不能表达“某个事实返回什么”“某个依赖不可用”“某个业务动作成功但不产生真实效果”。Codex 可能退回底层工具，或把业务名称猜成 node。
+
+修复原则：新增 journey-scoped `BusinessGoldenCase` 和 `BusinessFixtureCompiler`。业务负责人只表达事实、依赖结果和预期处置；服务器在当前 Solution 冻结上下文中解析对应 Feature 或 Instruction，并生成不可外呼的 `ControlledAssumptionPlan`。
+
+### 2.8 P2：真实认证不能证明普遍召回能力
 
 现有证书证明一个固定业务提示曾驱动真实 Codex 依次调用 capability、contract、DSL、compose 和 case 工具，但证书对应的代码提交早于当前四实体主线，且没有覆盖：
 
@@ -182,6 +192,15 @@ surface 只能缩小当前 purpose 已允许的工具集合，不能授予新权
 
 Codex 可以说明候选的业务差异，但不得展示技术 binding、Schema、内部引用或相似度分数。技术候选选择由结构化契约和当前状态完成。
 
+### 3.7 D7：业务案例与执行替身分层
+
+业务负责人批准的是完整业务案例，不是 fixture、stub 或 node 配置。`BusinessGoldenCase` 保存业务意图、给定事实、依赖假设和预期结果。`ControlledAssumptionPlan` 是服务器根据当前 journey 和 Solution 上下文生成的执行期对象，不属于业务契约，也不能跨 journey 复用。
+
+该分层解决两个问题：
+
+- 业务语言不会泄漏底层 Graph 结构。
+- Feature 或 Instruction 的业务契约变化后，旧批准自动失效；实现或绑定变化只使旧执行计划和证据失效。
+
 ## 4. 目标架构
 
 ```mermaid
@@ -196,7 +215,11 @@ flowchart LR
     CI --> CM[Business Contract Matcher]
     JN -->|当前阶段、缺失维度、允许工具| CX
     CX -->|精确 MCP 调用| TS[Business or Platform Surface]
-    TS --> GV[既有权限、GOLDEN、执行证据与发布门]
+    TS --> BG[Business Golden Case]
+    BG --> BF[Business Fixture Compiler]
+    BF --> CA[Case-scoped Controlled Adapters]
+    CA -->|DENY_ALL| GV[既有权限、GOLDEN、执行证据与发布门]
+    TS --> GV
     GV -->|业务语言结果| CX
     CX --> BO
 ```
@@ -212,6 +235,9 @@ flowchart LR
 | `McpAgentInstructionRenderer` | 从目录和 journey policy 生成初始化说明 | 不包含业务实例数据 |
 | `SemanticCandidateRanker` | 可选排序适配器 | 不成为一致性或治理事实源 |
 | `SolutionAuthoringContextService` | 冻结 journey 内四实体 revision、业务契约指纹和 lowering/compiler 版本 | 不向业务 surface 暴露 DSL 参考 |
+| `BusinessFixtureCompiler` | 将已批准业务案例编译为冻结的 Feature 值、Instruction 替身和禁止调用断言 | 不读取真实业务依赖，不批准案例 |
+| `ControlledFeatureAdapter` | 按计划提供契约校验后的 Feature 值或稳定失败 | 不进入真实 `FeatureEvaluationBackend` |
+| `ControlledInstructionAdapter` | 按计划返回无副作用结果或拒绝计划外调用 | 不进入真实 `InstructionDispatchChannel` |
 
 ### 4.2 不变量
 
@@ -223,6 +249,10 @@ flowchart LR
 6. journey 不得把工程履约、Oracle 批准、签署或平台证明标记为 Agent 已完成。
 7. 索引、导航和遥测不得存储业务 payload、用户样本、DSL source、token 或异常原文。
 8. 目录说明、Codex 配置、分发器和文档中的工具名必须可由构建期检查证明一致。
+9. 业务案例只属于当前 journey，不进入跨 journey 能力索引。
+10. 人工批准必须绑定完整案例和所引用的业务契约，不能只绑定预期结果，也不能绑定会随修复变化的实现 revision。
+11. 受控测试必须在 `DENY_ALL` 外呼权限下运行，READ 和 WRITE 依赖都不能进入真实后端。
+12. 测试计划只能使用一次冻结的 Feature、Scenario、Instruction 和 Solution 契约，执行阶段不得二次解析可变 registry。
 
 ## 5. 业务语义模型
 
@@ -583,14 +613,97 @@ return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
 
 | 工具 | 影响级 | 输入 | 输出 |
 |---|---|---|---|
-| `rg.solution.golden.propose` | PROPOSE | `{ journeyRef, expectedJourneyRevision, solutionRef, cases[], idempotencyKey }` | `{ caseSetRef, revision, cases[], proposalStatus, awaiting }` |
-| `rg.solution.golden.list` | READ | `{ journeyRef, solutionRef, lifecycle? }` | `{ caseSetRef, revision, cases[], approvalState }` |
+| `rg.solution.golden.propose` | PROPOSE | `{ journeyRef, expectedJourneyRevision, solutionRef, cases[], idempotencyKey }` | `{ caseSetRef, revision, caseSummaries[], proposalStatus, awaiting }` |
+| `rg.solution.golden.list` | READ | `{ journeyRef, solutionRef, lifecycle? }` | `{ caseSetRef, revision, caseSummaries[], approvalState }` |
 
-`cases[]` 使用业务字段 `givenFacts`、`expectedResult`、`expectedReasoning` 和 `businessIntent`。服务端内部适配到现有 case-set 与 Oracle 提议写模型；响应不向业务 surface 暴露 `toolRef`、node、stub 或底层图信息。人工批准仍通过现有 HUMAN reviewer 边界完成。
+`cases[]` 使用 `BusinessGoldenCase`。业务负责人不提供资产引用、node、stub、binding 或行为枚举。
 
-### 7.8 Journey action envelope
+```jsonc
+{
+  "caseId": "g-passenger-late",
+  "businessIntent": "乘客超时取消由乘客承担",
+  "givenFacts": [
+    { "factName": "取消责任方", "value": "乘客" },
+    { "factName": "是否在免责时长内", "value": false }
+  ],
+  "dependencyAssumptions": [
+    { "capabilityName": "退款执行", "outcome": "SUCCEEDS_WITHOUT_EFFECT" }
+  ],
+  "expectedOutcome": {
+    "result": "维持",
+    "reasoningClass": "责任在乘客"
+  },
+  "oracleOwner": "取消争议业务负责人"
+}
+```
 
-`BUSINESS_SOLUTION` 下所有产生业务资产的工具必须接受并校验：
+字段约束：
+
+| 字段 | 业务含义 | 服务端约束 |
+|---|---|---|
+| `businessIntent` | 本案例要证明的业务判断 | 必填；纳入完整案例指纹 |
+| `givenFacts` | 案例中已经确定的业务事实 | 每项必须在当前 Solution 输入中唯一匹配一个 Feature；值必须符合 Feature 输出契约 |
+| `dependencyAssumptions` | 案例对外部事实或业务动作结果的假设 | 每项必须在当前 journey 关联能力中唯一匹配；不得直接指定 node 或 binding |
+| `expectedOutcome` | 业务负责人认可的处置和推理类别 | 必须符合当前 Solution 输出和 reasoning 契约 |
+| `oracleOwner` | 对标准答案负责的业务角色 | 必填；提议者不能代替该角色批准 |
+
+`caseSummaries[]` 只包含 `caseId`、`lifecycle`、`approvalState`、`goldenCaseFingerprint`、`factCount`、`assumptionCount` 和 `expectedShapeFingerprint`。MCP 不返回案例材料。授权的 HUMAN reviewer 通过现有 no-store 审阅边界读取解密后的完整案例，并同时核对事实、依赖假设和预期处置。
+
+案例 material 与 case-set 元数据必须使用同一数据库事务管理器提交。保存流程先写入受保护 material，再写入携带 material receipt 的 case-set，并在提交前校验 journey revision。任一步失败时回滚全部写入。部署无法提供同事务数据源时，业务 GOLDEN 入口 readiness 为不可用；不得采用两个独立提交后再异步补偿的弱一致方案。
+
+`dependencyAssumptions[].outcome` 使用业务结果枚举：
+
+- `RETURNS`：受控事实返回指定值。
+- `UNAVAILABLE`：受控依赖返回稳定的不可用结果。
+- `SUCCEEDS_WITHOUT_EFFECT`：业务动作返回契约形状的成功结果，不产生真实副作用。
+- `FAILS_WITHOUT_EFFECT`：业务动作返回稳定的失败结果，不产生真实副作用。
+- `MUST_NOT_BE_USED`：执行路径一旦使用该能力，本案例失败。
+
+上述枚举是业务测试语义，不等于底层 `NodeFixture.DependencyBehaviorKind`。服务器可以将其编译为 Feature 值、Instruction 测试替身或 Graph fixture，但 MCP 契约不暴露该映射。
+
+提议时，服务器根据同一冻结上下文解析全部业务名称。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
+
+人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 只包含案例引用的 semantic key 和业务契约指纹，不包含 evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。aliases 或显示名称变化但 semantic key 和业务契约不变时，批准保持有效。
+
+任何案例字段或所引用业务契约变化都使批准失效。Coding Agent 修正规则、组合逻辑或实现 binding 时，业务定义不变则保留批准，但旧 `ControlledAssumptionPlan`、RED/GREEN evidence 和 signoff 失效。现有只覆盖 `expect` 的 Oracle 指纹不能作为新业务入口的批准坐标。
+
+### 7.8 受控假设编译与执行
+
+新增 `BusinessFixtureCompiler`。输入为已批准的 `BusinessGoldenCase` 和当前 `SolutionAuthoringContextSnapshot`，输出为不可持久复用的 `ControlledAssumptionPlan`：
+
+```jsonc
+{
+  "journeyRef": "journey:cancel-dispute",
+  "journeyRevision": 9,
+  "solutionRef": "solution:cancel-dispute",
+  "solutionRevision": 4,
+  "solutionContextFingerprint": "sha256:...",
+  "goldenCaseFingerprint": "sha256:...",
+  "featureValuesFingerprint": "sha256:...",
+  "dependencyPlanFingerprint": "sha256:...",
+  "egressPolicy": "DENY_ALL",
+  "planFingerprint": "sha256:..."
+}
+```
+
+原始事实值、预期结果和依赖返回值只存在于受控案例存储和当前执行内存，不进入计划投影。编译流程如下：
+
+1. 锁定 journey revision、case-set revision 和 Solution revision。
+2. 从同一 `BusinessCapabilitySnapshot` 解析 `givenFacts` 和 `dependencyAssumptions`。
+3. 确认每个事实只映射到当前 Solution 声明的一个 Feature 输入。
+4. 确认每个动作只映射到当前 Scenario 可达的一个 Instruction。
+5. 校验事实值、依赖结果和预期结果符合当前业务契约。
+6. 生成预采集 Feature 值、Instruction 测试替身和禁止调用断言。
+7. 安装 `DENY_ALL` 外呼权限，执行 Scenario 和 Solution。
+8. 根据当前锁定 revision 保存证据；任一 revision 漂移时放弃整次结果。
+
+`FeatureEvaluationBackend`、`InstructionDispatchChannel` 和 Graph `NodeFixture` 是可复用执行缝，不是完整产品能力。实现必须新增 case-scoped adapter，不能替换 Spring 全局 backend，也不能把业务名称直接写入 `nodeId`。
+
+SIMULATE 模式当前只自动桩化 WRITE Instruction。P4 必须把所有可能离开进程的 READ/WRITE Instruction 和 Feature 后端放入受控适配器。缺少明确假设时返回 `CONTROLLED_ASSUMPTION_REQUIRED`；不得调用默认 channel 后再用 `realExternalCalls=0` 声称零外呼。
+
+### 7.9 Journey action envelope
+
+`BUSINESS_SOLUTION` 下所有产生业务资产或执行受控测试的工具必须接受并校验：
 
 ```jsonc
 {
@@ -608,6 +721,10 @@ return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
 4. 在同一 `AgentTddStateRepository.executeAtomically` 事务中保存四实体和 journey association。
 5. 增加 journey revision，但不直接写入 stage。
 
+`rg.solution.baseline` 不写四实体，但必须使用同一 envelope 锁定 journey revision，并从 journey association 解析当前 case-set。业务 surface 不要求 Codex 提供 `caseSetRef`。baseline 内部执行 Feature 输入校验、Scenario 唯一命中、Instruction 受控替身和 Solution Oracle 比较，并返回分层安全摘要。测试证据、案例状态和 journey revision 在同一事务中提交。
+
+现有 `rg.scenario.test` 需要调用方提供 Scenario 引用和出口期望，保留在 `PLATFORM_AUTHORING`。它不进入 `BUSINESS_SOLUTION` 的 allowed tools，也不能替代完整业务案例批准。
+
 journey association 存在业务资产外层元数据，不进入四实体业务契约身份。旧客户端未声明 `BUSINESS_SOLUTION` 时继续使用现有输入 Schema；业务 surface 开启 `enforce-journey-actions` 后缺少 envelope 返回 `JOURNEY_REQUIRED`。
 
 ## 8. Journey 状态机
@@ -622,8 +739,8 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 | `DEFINING_RULES` | Feature 可用 | `rg.scenario.define` | 规则唯一命中、含 otherwise |
 | `DEFINING_ACTIONS` | 规则出口明确 | `rg.instruction.define` | 所有出口有结果和 reasoning；WRITE 有治理声明 |
 | `COMPOSING` | 四实体引用完整 | `rg.solution.compose` | 纯函数投影编译通过 |
-| `WAITING_GOLDEN_APPROVAL` | Solution 已组合 | 提议案例、读取看板 | HUMAN/USER 批准当前 revision 的 GOLDEN |
-| `TESTING` | ACTIVE GOLDEN 完整 | scenario test、solution baseline | 当前 revision GREEN 且零外呼逻辑证据有效 |
+| `WAITING_GOLDEN_APPROVAL` | Solution 已组合 | 提议完整业务案例、读取看板 | HUMAN/USER 批准当前 `goldenCaseFingerprint` |
+| `TESTING` | ACTIVE GOLDEN 完整 | 受控假设编译、solution baseline | 当前 revision GREEN；计划为 `DENY_ALL`；零外呼证据有效 |
 | `WAITING_WRITE_ENGINEERING` | WRITE Instruction 未实现或未对账 | engineering handoff 后只读等待 | 实现绑定且受控写对账完成 |
 | `WAITING_SIGNOFF` | 技术和业务门已通过 | commit、readiness | 独立签署绑定当前证据和 revision |
 | `PUBLISHABLE` | readiness 全部通过 | publish | immutable publication 创建 |
@@ -640,11 +757,12 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 3. Feature 工程状态。
 4. Scenario 和 Instruction 完整性。
 5. Solution compose 及其 authoring receipt。
-6. GOLDEN 当前性和批准状态。
-7. RED/GREEN evidence 当前性。
-8. WRITE 实现和对账。
-9. signoff 当前性。
-10. publication 状态。
+6. GOLDEN 内容、假设和批准当前性。
+7. 受控假设计划与 Solution 上下文当前性。
+8. RED/GREEN evidence 当前性。
+9. WRITE 实现和对账。
+10. signoff 当前性。
+11. publication 状态。
 
 后置证据不能掩盖前置事实失效。例如 Feature 业务定义变化后，即使旧 GREEN 和 signoff 仍存在，stage 也必须退回 `DEFINING_FEATURES` 或 `WAITING_GOLDEN_APPROVAL`，旧证据由既有 fingerprint 规则失效。
 
@@ -680,6 +798,35 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 
 `stage`、`blockingReasons`、readiness 和 allowed tools 不持久化，每次从 association 指向的当前资产重新派生。association revision 只记录最近一次确认坐标；资产当前 revision 变化时触发重新读取和阶段回退。
 
+### 8.5 业务案例生命周期
+
+`BusinessGoldenCase` 是 journey-scoped 测试资产，不进入 `BusinessCapabilityIndex`。能力索引描述可以跨 journey 复用的 Feature、Scenario、Instruction、Solution 和算子；业务案例描述当前方案在受控假设下必须满足的标准答案。混合两者会让一次测试假设污染后续能力召回。
+
+| 状态 | 进入条件 | 允许动作 | 退出条件 |
+|---|---|---|---|
+| `DRAFT` | Codex 提议完整案例 | 修正业务内容、读取安全摘要 | HUMAN/USER 批准完整案例指纹 |
+| `ACTIVE` | 当前案例指纹已批准 | 编译计划、RED/GREEN 测试 | 案例内容或所引用业务契约变化，或业务主动退役 |
+| `STALE` | 案例内容或所引用的 Feature/Instruction 业务契约变化 | 重新读取、重新提议 | 新指纹获批 |
+| `RETIRED` | 业务负责人明确停止使用 | 只读审计 | 终态；新需要必须建立新案例 |
+
+批准发生在执行之前。批准前只允许 Schema、唯一匹配和契约兼容性校验，不运行 Scenario 或 Solution，不生成 evidence，不更新 `qualityState`。批准后，RED 和 GREEN 使用同一个 `goldenCaseFingerprint`。Codex 修正规则或组合逻辑不能修改案例，也不能使案例批准失效；业务负责人修改案例或业务契约后必须重新批准。
+
+### 8.6 `rg.journey.next` 的测试阶段投影
+
+进入 `WAITING_GOLDEN_APPROVAL` 时，返回：
+
+- `allowedNextTools=[rg.solution.golden.propose, rg.solution.golden.list, rg.journey.next]`。
+- `forbiddenUntilResolved=[rg.solution.baseline, rg.solution.commit]`。
+- `responsibleRole=BUSINESS_OWNER`。
+
+进入 `TESTING` 时，返回：
+
+- `allowedNextTools=[rg.solution.golden.list, rg.solution.baseline, rg.journey.next]`。
+- GREEN 前 `forbiddenUntilResolved=[rg.solution.commit]`。
+- 假设无法唯一解析时 `stageStatus=BLOCKED`，并返回一个业务澄清问题。
+
+`allowedNextTools` 仍受 surface 和 purpose 交集约束。列表不能授予新权限。
+
 ## 9. Surface 与工具可见性
 
 ### 9.1 `BUSINESS_SOLUTION`
@@ -687,10 +834,12 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 默认面向业务负责人的 Codex 会话只显示：
 
 - 前门：`rg.journey.start`、`rg.journey.next`、`rg.library.overview.get`、`rg.capability.search`、`rg.entity.list/get`。
-- 四实体：`rg.feature.define/handoff/evaluate`、`rg.scenario.define/test`、`rg.instruction.define`、`rg.solution.compose/getContract/baseline/commit/readiness/performance/publish/invoke`、`rg.engineering.handoff`。
-- 业务案例：`rg.solution.golden.propose/list`；不得暴露底层图引用。
+- 四实体：`rg.feature.define/handoff/evaluate`、`rg.scenario.define`、`rg.instruction.define`、`rg.solution.compose/getContract/baseline/commit/readiness/performance/publish/invoke`、`rg.engineering.handoff`。
+- 业务案例：`rg.solution.golden.propose/list`；以业务语言表达事实、依赖结果和预期处置，不得暴露底层图引用。
 
 默认不显示 `rg.library.upsert`、`rg.resource.declare`、`rg.feature.compose`、`rg.tool.compose`、`rg.dsl.*`、`rg.gate.check`、`rg.tool.*`、`rg.simulate` 和 fixture 管理工具。
+
+业务 surface 不新增独立 fixture 工具。受控假设由 `rg.solution.golden.propose` 接收，由 `BusinessFixtureCompiler` 在服务器内部编译。Codex 不得因为需要测试失败路径而切换到 `PLATFORM_AUTHORING`。
 
 如果 Solution lowering 内部需要 DSL，平台内部完成；只有进入 `PLATFORM_AUTHORING` 时，Codex 才直接使用 DSL 参考和修正工具。业务 compose 使用 `solutionContextFingerprint`，不伪装成 DSL authoring context。
 
@@ -701,7 +850,7 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 - library、resource、contract 和 capability 工具。
 - DSL reference、preview 和 gate。
 - Feature/Tool Graph compose。
-- instruction、cases、stubs、fixture、simulate、baseline、spec 和 Tool publish。
+- instruction、cases、`rg.scenario.test`、stubs、fixture、simulate、baseline、spec 和 Tool publish。
 
 该 surface 不自动授予工程履约、平台实景证明、Oracle 批准或发布签署权限。
 
@@ -775,6 +924,13 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 | `JOURNEY_REQUIRED` | 业务 surface 写操作缺 journey envelope | false | 先调用 journey.start/next |
 | `SOLUTION_CONTEXT_STALE` | 四实体或编译上下文在 compose 前变化 | true | 重新读取 journey.next 和相关业务契约 |
 | `CAPABILITY_INDEX_UNSTABLE` | 多次读取都无法取得稳定 generation vector | true | 稍后重试，不使用部分候选 |
+| `ASSUMPTION_CAPABILITY_UNRESOLVED` | 一个事实或依赖名称在当前 Solution 中没有候选 | false | 确认业务名称或先定义缺失能力 |
+| `ASSUMPTION_CAPABILITY_AMBIGUOUS` | 一个事实或依赖名称匹配多个当前能力 | false | 只询问返回的业务差异，不猜测引用 |
+| `CONTROLLED_ASSUMPTION_REQUIRED` | 测试路径可能触达外部依赖，但案例未定义对应假设 | false | 补充依赖的业务结果后重新提议案例 |
+| `CONTROLLED_TEST_EGRESS_DENIED` | 受控测试尝试离开进程或进入真实 dispatch channel | false | 记录测试缺口；不得改用真实调用重试 |
+| `GOLDEN_CASE_STALE` | 案例内容、批准指纹或所引用业务契约已变化 | false | 重新读取案例摘要并发起新批准；不得自动重试执行 |
+| `GOLDEN_MATERIAL_UNAVAILABLE` | 受保护案例材料无法写入、解密或通过完整性校验 | false | 停止提议或测试，由平台负责人恢复 material store |
+| `LEGACY_GOLDEN_REAPPROVAL_REQUIRED` | 旧案例只有 expect-level 批准，缺少完整案例指纹 | false | 以业务语言重新提议并批准完整案例 |
 
 错误 `details` 只返回闭集字段、候选安全摘要和稳定引用，不包含原始业务 payload、DSL source、binding、URL、token 或异常消息。
 
@@ -787,8 +943,9 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 | overview/search/entity/journey.next | 是 | 是 | 是 | 是 | 按现有策略 |
 | journey.start | 否 | 是 | 否 | 否 | 否 |
 | 四实体草稿 | 否 | 是 | 否 | 否 | 否 |
+| GOLDEN 案例提议 | 否 | 是 | 否 | 否 | 否 |
 | 测试与运行 | 否 | 否 | 是 | 否 | 平台内部另门 |
-| Oracle 批准与发布 | 否 | 否 | 否 | 是 | 否 |
+| 完整 GOLDEN 案例批准与发布 | 否 | 否 | 否 | 是 | 否 |
 | Feature/Instruction 履约 | 否 | 否 | 否 | 否 | FEATURE_ENG/INSTRUCTION_ENG |
 
 surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续是最终授权依据。
@@ -797,6 +954,8 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 
 - `BusinessCapabilityIndex` 默认按请求重建冻结快照；当资产量达到性能阈值后可增加物化索引，但权威来源不变。
 - `BusinessJourney` 只保存协调元数据、引用、revision vector 和默认的业务目标指纹；原文加密存储必须显式启用。
+- `BusinessGoldenCase` 的事实值、依赖返回值和预期结果属于业务 payload。复用受保护的 fixture material 存储保存这些值；case-set 只保存 material receipt、安全摘要、生命周期和指纹。受保护存储不可用时，禁止保存业务案例，不降级为明文 `agent_tdd_assets`。
+- `ControlledAssumptionPlan` 默认不持久化。证据只保存计划指纹、案例指纹、revision vector、分层判定和外呼计数。
 - 原始业务对话仍保留在 Codex 会话，不复制到 RG。
 - 搜索遥测只记录闭集 intentKind、assetKind、matchType、候选数量、是否澄清和最终动作，不记录原始 query 文本或 assetRef。
 
@@ -829,6 +988,8 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | `rg.capability.context.stale` | sourceKind | 目录或契约漂移频率 |
 | `rg.journey.stage` | stage、status | 各阶段停留和阻塞分布 |
 | `rg.journey.action.rejected` | stage、reason | Codex 工具误召回趋势 |
+| `rg.business.assumption.compile` | result、assumptionKind | 发现名称歧义、缺失假设和契约不兼容 |
+| `rg.business.controlled_test` | side、result、egressDenied | 证明受控测试结果和外呼拒绝 |
 | `rg.agent.recall.certification` | suite、result | 真实 Codex 召回验收结果 |
 
 标签不得包含 tenant、project、actor、原始业务文本、assetRef、contract fingerprint 或业务 payload。
@@ -839,6 +1000,8 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 - `CAPABILITY_QUERY_INCOMPLETE` 集中在某个字段：改进 Codex 业务提问和工作台引导。
 - `JOURNEY_ACTION_NOT_ALLOWED` 集中在近义工具：调整 surface 或工具描述，不让提示词继续变长。
 - `CAPABILITY_CONTEXT_STALE` 集中在某类 registry：检查发布和索引 revision 传播。
+- `CONTROLLED_ASSUMPTION_REQUIRED` 持续上升：补充业务提问模板或能力显示语义，不为测试默认生成成功结果。
+- `CONTROLLED_TEST_EGRESS_DENIED` 非零：补充受控适配器或案例假设；不开放真实外呼。
 - 真实认证 Top-1 下降：阻止发布新的 MCP 描述或模型配置，直到回归通过。
 
 ### 13.3 容量和性能目标
@@ -867,6 +1030,10 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | journey | 每个状态的进入、回退、阻塞、责任角色和 allowed tools |
 | 并发 | snapshot 漂移、journey stale revision、资产写入后投影自愈 |
 | compose context | business solution context 与 DSL authoring context 不可混用；四实体 revision 漂移失败关闭 |
+| BusinessGoldenCase | 字段校验、完整案例指纹、maker-checker、ACTIVE/STALE/RETIRED 生命周期 |
+| 案例 material | 加密写入、receipt 完整性、同事务提交、解密失败、存储不可用时失败关闭 |
+| 假设解析 | 事实和动作唯一匹配；零候选、多候选、契约不兼容、上下文漂移均失败关闭 |
+| 受控计划 | Feature 值钉定、READ/WRITE Instruction 替身、依赖失败、MUST_NOT_BE_USED、全外呼拒绝 |
 | 零载荷 | search、entity、journey、错误和指标不含业务 payload 或实现详情 |
 
 ### 14.2 集成测试
@@ -880,6 +1047,14 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 7. GOLDEN、GREEN、signoff 任一失效，journey 从 PUBLISHABLE 回退到正确阶段。
 8. 四实体写入与 journey association 原子提交；任一失败不留下虚假阶段进度。
 9. 业务 Solution compose 全程不调用或暴露 DSL reference，仍使用冻结 `solutionContextFingerprint`。
+10. GOLDEN 提议中的一个业务名称匹配多个能力时，整批案例不保存，并返回一个澄清问题。
+11. 修改 `givenFacts`、依赖假设、预期结果或所引用业务契约后，旧批准和旧证据全部失效；只修改 Solution 实现时保留业务批准，但旧证据失效。
+12. Feature 值由案例钉定后，不调用真实 `FeatureEvaluationBackend`。
+13. READ 和 WRITE Instruction 都不能进入真实 `InstructionDispatchChannel`；未定义依赖假设时失败关闭。
+14. 受控测试进程尝试外呼时返回 `CONTROLLED_TEST_EGRESS_DENIED`，不保存 GREEN 证据。
+15. 其他 journey 的搜索和能力列表不返回 `BusinessGoldenCase` 或 `ControlledAssumptionPlan`。
+16. material 写入、case-set 保存或 journey CAS 任一步失败时，数据库中不留下孤立 material 或虚假案例元数据。
+17. 旧 expect-level 批准不能自动转换为完整案例批准；重新发布前必须形成新的 `goldenCaseFingerprint`。
 
 ### 14.3 真实 Codex 业务召回集
 
@@ -897,6 +1072,11 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | surface 干扰 | 同时有 feature.define 和 feature.compose | 业务会话只看到前者 |
 | 跨会话 | 新 Codex 会话继续已存在 journey | 能重新发现四实体和当前阶段 |
 | 语义漂移 | 工程完成后 Feature 结果范围变化 | 旧确认失效，返回业务复核 |
+| 事实假设 | “先假定责任方是乘客，看规则是否维持原判” | 提议业务案例；不要求业务负责人提供 Feature 引用 |
+| 依赖不可用 | “如果责任服务查不到，应该转人工” | 编译 UNAVAILABLE 假设并验证失败路径 |
+| 动作桩化 | “退款按成功处理，但演练时不要真的退款” | 编译 SUCCEEDS_WITHOUT_EFFECT；外呼为零 |
+| 禁止调用 | “乘客责任明确时不能发起退款” | 编译 MUST_NOT_BE_USED；触达该动作即案例失败 |
+| 假设歧义 | 同时存在两个名为“退款执行”的不同业务动作 | 必须澄清，不把名称猜成 Instruction 或 node |
 
 ### 14.4 验收指标
 
@@ -910,6 +1090,10 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | 错误 surface 工具调用成功 | 0 |
 | 未完成前置阶段仍推进 journey | 0 |
 | 未批准或未签署发布 | 0 |
+| 受控案例调用真实 Feature/Instruction 后端 | 0 |
+| 受控测试真实外呼 | 0 |
+| 案例或业务契约变化后旧批准仍有效 | 0 |
+| Solution 实现变化后旧证据仍有效 | 0 |
 | 当前 HEAD 真实 Codex 认证 | 必须通过 |
 
 Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单次 PARTIAL、CONFLICT 或多 EXACT 仍必须失败关闭。
@@ -932,14 +1116,20 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
       "capabilityOutcome": "EXACT|CLARIFIED|NONE",
       "selectedContractFingerprint": "hmac-sha256:...",
       "toolSequenceClass": "VALID",
-      "humanBoundaryRespected": true
+      "humanBoundaryRespected": true,
+      "controlledAssumptionClass": "VALID",
+      "egressDeniedCount": 0,
+      "goldenCaseCurrent": true,
+      "executionPlanCurrent": true
     }
   ],
   "metrics": {
     "recallAt3": 1.0,
     "top1": 0.97,
     "clarificationRate": 1.0,
-    "unsafeEscapeCount": 0
+    "unsafeEscapeCount": 0,
+    "controlledTestEgressCount": 0,
+    "staleGoldenAcceptedCount": 0
   }
 }
 ```
@@ -1001,7 +1191,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 
 建议独立提交：`feat(resource-gateway): structure feature business semantics`。
 
-### P4：服务端 journey 导航
+### P4：服务端 journey 与受控业务假设测试
 
 范围：
 
@@ -1010,17 +1200,30 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 - 通过 revision CAS、资产事实重建和回退优先级处理并发和漂移。
 - 为业务写工具增加 journey action envelope，并原子保存四实体和 association。
 - 增加 `SolutionAuthoringContextService` 和 `rg.solution.golden.propose/list`。
+- 增加 `BusinessGoldenCase`、受保护 material receipt 和完整案例批准指纹。
+- 让受保护 material、case-set 元数据和 journey revision 使用同一事务管理器提交，并增加 readiness 探针。
+- 增加旧 expect-level GOLDEN 的只读投影和 `LEGACY_REVIEW_REQUIRED` 迁移，不自动生成完整批准。
+- 增加 `BusinessFixtureCompiler` 和 case-scoped Feature/Instruction 受控适配器。
+- 为 Scenario 和 Solution 测试安装 `DENY_ALL` 外呼权限；READ/WRITE 依赖均不得进入真实 channel。
+- 将业务测试语义编译为现有 Feature 值、Instruction 契约桩和 Graph fixture；不得向业务 surface 暴露映射结果。
 - 初始化说明要求业务会话先 start/next，不再记忆整条技术步骤。
 
-完成标准：Codex 在每一幕都能读取唯一允许的下一步；工程、人工或平台边界未完成时不能继续；已有后置证据不能掩盖前置契约失效。
+完成标准：Codex 在每一幕都能读取唯一允许的下一步；业务负责人可以表达事实、依赖结果和预期处置；完整案例在执行前获得独立批准；RED/GREEN 全程无法外呼；已有后置证据不能掩盖前置契约或案例失效。
 
-建议独立提交：`feat(resource-gateway): add deterministic business journey navigation`。
+P4 按以下子阶段提交：
+
+1. P4a：`feat(resource-gateway): add deterministic business journey navigation`，只交付 stage 派生、allowed tools、CAS 和 association。
+2. P4b：`feat(resource-gateway): govern complete business golden cases`，交付受保护 material、完整案例批准、no-store 审阅和旧案例迁移。
+3. P4c：`feat(resource-gateway): compile controlled business assumptions`，交付 `BusinessFixtureCompiler`、case-scoped adapter、`DENY_ALL` 和证据绑定。
+
+P4a 可以先作为只读建议发布。P4b 和 P4c 未通过验收前，不得开启 `enforce-journey-actions`，也不得将旧 baseline 描述为受控业务假设测试。
 
 ### P5：真实召回认证与演示同步
 
 范围：
 
 - 建立业务话语、同义改写、干扰能力、歧义和跨会话测试集。
+- 增加事实假设、依赖不可用、无副作用成功、禁止调用和假设歧义话语集。
 - 扩展真实 Codex trace reducer 和证书 Schema。
 - 当前 HEAD 重新认证，旧证书只保留历史用途或归档。
 - 更新业务演示剧本：业务专家只说业务意图，Codex 通过新前门完成发现和导航。
@@ -1038,8 +1241,9 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 2. 发布 surface，但旧客户端暂时走 `LEGACY_ALL` 并记录使用量。
 3. 发布 capability index 和只读工具，不改变写路径。
 4. 发布 Feature v2；旧版只读兼容，新写入使用 v2。
-5. 发布 journey；先作为建议导航，再在真实认证通过后强制阶段限制。
-6. 最后切换默认 Codex 配置和演示剧本。
+5. 发布 journey 和业务 GOLDEN 入口；先只校验与投影，不执行受控案例。
+6. 发布 `BusinessFixtureCompiler` 和 `DENY_ALL` 执行边界；真实认证通过后强制阶段限制。
+7. 最后切换默认 Codex 配置和演示剧本。
 
 ### 16.2 灰度开关
 
@@ -1050,19 +1254,34 @@ resource-gateway:
       enabled: false
       require-surface: false
       enforce-journey-actions: false
+      controlled-business-tests-enabled: false
       allow-legacy-feature-contract: true
       semantic-ranker-enabled: false
 ```
 
-灰度顺序：READ 投影 → surface 过滤 → Feature v2 写入 → journey 建议 → journey 强制。每一步都可单独回退。
+灰度顺序：READ 投影 → surface 过滤 → Feature v2 写入 → journey 建议 → GOLDEN 业务入口 → 受控测试 → journey 强制。每一步都可单独回退。
 
 ### 16.3 回滚边界
 
 - 关闭 semantic recall 后，现有 42 个工具继续工作。
 - 关闭 surface 强制后，回到旧目录可见性，但 purpose 权限不变。
 - 关闭 journey 强制后，journey 仍可只读，不删除状态。
+- 关闭受控业务测试后，已批准案例保留为只读；不回退到 node-level fixture 或真实外呼。
 - Feature v2 不回写为 v1；旧服务不认识 v2 时禁止回滚到旧二进制，必须通过兼容 reader 或数据库备份恢复。
 - 已发布 Tool/Solution、GOLDEN、evidence 和 signoff 不因本方案回滚而删除。
+
+### 16.4 旧 GOLDEN 迁移
+
+现有 case-set 中的 `given`、`stubs` 和 `expect` 可以继续服务 `PLATFORM_AUTHORING`，但旧 Oracle 批准只绑定 `expect`，不能证明业务负责人审阅过全部事实和依赖假设。迁移遵守以下规则：
+
+1. 已经发布的 Tool 或 Solution 不追溯失效，仍按原 publication 运行。
+2. 新建 `BusinessJourney` 时，旧案例只投影为 `LEGACY_REVIEW_REQUIRED`，不能进入 `ACTIVE`。
+3. Codex 将旧案例转换为 `BusinessGoldenCase` 提议时，必须重新解析业务语义并生成受保护 material；不得复制 node、stub 或 binding 到业务字段。
+4. HUMAN/USER 在 no-store 审阅面重新核对完整案例并批准 `goldenCaseFingerprint`。
+5. 任何重新发布、修改后发布或新 Solution 引用旧案例，都必须完成该迁移。
+6. 关闭受控业务测试开关不会把新案例降级写回旧行结构。
+
+迁移不自动批准，不从历史 GREEN 推断业务负责人认可，也不允许管理员批量补造批准指纹。
 
 ## 17. 风险与反例
 
@@ -1072,6 +1291,11 @@ resource-gateway:
 | aliases 被滥用，多个能力互相抢召回 | 候选噪声增加 | aliases 只用于召回，不参与 EXACT；冲突指标触发能力治理 |
 | 统一索引被误当权威仓储 | 数据和事务边界混乱 | 所有卡片携带 source、revision 和 contractFingerprint；索引可重建 |
 | journey 变成第二套业务状态机 | 与资产事实漂移 | stage 只派生，不接受客户端直接推进；资产事实优先 |
+| 业务名称错误绑定到 Feature 或 Instruction | 测试证明了错误对象 | 只在冻结 Solution 上下文中唯一匹配；零候选和多候选都停止 |
+| 测试替身只覆盖 WRITE | READ 依赖可能真实外呼 | case-scoped adapter 加 `DENY_ALL` 权限；所有外部依赖必须显式假设 |
+| 修改假设后继续使用旧批准 | 标准答案与证据主体不一致 | `goldenCaseFingerprint` 绑定完整案例和业务契约；执行计划另行绑定 Solution 上下文 |
+| 测试案例进入能力索引 | 一次性假设污染跨 journey 复用 | `BusinessGoldenCase` 只属于 journey；索引构建测试排除该 asset kind |
+| 旧 expect-level 批准被自动升级 | 业务负责人没有审阅事实和依赖假设 | 旧案例标记 `LEGACY_REVIEW_REQUIRED`；重新发布前人工批准完整案例 |
 | surface 只在客户端过滤 | 可直接 call 绕过 | 服务端 list/call 共用 `McpSurfacePolicy` |
 | embedding 对中文同义词排序不稳定 | 选错能力 | ranker 只排序，结构化 matcher 决定能否复用 |
 | 旧 Feature 永久停留 PARTIAL | 复用率下降 | 看板形成补全待办；不为提高复用率伪造缺失语义 |
@@ -1105,7 +1329,7 @@ resource-gateway:
 
 - `.codex/config.toml`：显式 surface，业务和平台会话分开。
 - `docs/resource-gateway-agent-tdd-mcp.md`：启动、配置、工具前门、错误恢复和认证命令。
-- `docs/resource-gateway-agent-tdd-demo-script.md`：业务专家只表达业务事实；增加候选差异、Feature 多轮定义、工程等待和跨会话恢复。
+- `docs/resource-gateway-agent-tdd-demo-script.md`：业务专家只表达业务事实；增加候选差异、Feature 多轮定义、工程等待、跨会话恢复，以及“提出业务假设—批准完整案例—RED—修正—GREEN”一幕；不展示 fixture、stub、node 或行为枚举。
 - `resource-gateway-examples/README.md`：默认业务 surface 和兼容期说明。
 - MCP Schema、证书 Schema、认证脚本及证书样例。
 
@@ -1126,8 +1350,8 @@ resource-gateway:
 | P1 surface 隔离 | 待实施 | list/call 双重过滤；业务会话近义工具不可见 |
 | P2 统一能力索引 | 待实施 | 五类资产统一发现；scope、snapshot、cursor 测试 |
 | P3 Feature 语义契约 v2 | 待实施 | 字段级 matcher；旧版 PARTIAL；工程履约不改业务定义 |
-| P4 journey 导航 | 待实施 | 完整状态机、回退、CAS、allowed tools、业务 compose context、GOLDEN 业务入口和阻塞责任测试 |
-| P5 真实召回认证 | 待实施 | §14.4 指标全部通过；当前 HEAD 证书；演示与手册同步 |
+| P4 journey 与受控测试 | 待实施 | 完整状态机、回退、CAS、allowed tools、业务 compose context、完整 GOLDEN 批准、旧案例迁移、受控假设编译和 `DENY_ALL` 测试 |
+| P5 真实召回认证 | 待实施 | §14.4 指标全部通过；假设话语集；当前 HEAD 证书；演示与手册同步 |
 
 ## 21. 审阅决策点
 
@@ -1138,6 +1362,118 @@ resource-gateway:
 3. 是否接受 Feature v2 将业务对象、结果范围、判断时点、UNKNOWN 策略、取值责任和权威来源设为必填语义。
 4. 是否接受旧 Feature 在补全语义前最多为 PARTIAL，宁可降低自动复用率，也不把缺失信息推断成 EXACT。
 5. 是否接受 journey stage 由资产事实派生，客户端不能直接推进状态。
-6. 是否接受真实 Codex 召回指标成为 MCP 描述、surface 和默认模型配置发布门。
+6. 是否接受业务负责人批准完整 `BusinessGoldenCase`，而不是只批准预期结果；案例或业务契约变化必须重新批准，实现变化只使执行证据失效。
+7. 是否接受受控测试对全部外部 Feature/Instruction 依赖执行 `DENY_ALL`；未定义业务假设时失败关闭，不调用真实后端补齐结果。
+8. 是否接受真实 Codex 召回和受控假设测试指标成为 MCP 描述、surface 和默认模型配置发布门。
 
-这些决策一旦通过，P0—P5 可以按顺序实施并逐步提交；如果第 1、2 或 3 项被否决，需要重新打开总体架构，而不是局部修改字段。
+这些决策一旦通过，P0—P5 可以按顺序实施并逐步提交；如果第 1、2、3、6 或 7 项被否决，需要重新打开总体架构，而不是局部修改字段。
+
+## 附录 A：受控业务假设的字段映射
+
+### A.1 业务契约与内部契约
+
+| 业务字段 | 解析依据 | 内部目标 | 失败条件 |
+|---|---|---|---|
+| `givenFacts[].factName` | 当前 journey 关联的 Feature 业务名称、aliases 和 semantic key | Solution 输入名和预采集 Feature 值 | 不属于当前 Solution；零候选；多个候选；值不符合输出契约 |
+| `dependencyAssumptions[].capabilityName` | 当前 Scenario 可达的 Feature 或 Instruction 业务语义 | case-scoped Feature adapter 或 Instruction adapter | 不可达；零候选；多个候选；effect 不匹配 |
+| `dependencyAssumptions[].outcome` | 闭集业务测试结果 | 受控返回、稳定失败、无副作用成功、无副作用失败或禁止调用断言 | 结果不适用于目标能力；缺少必填 value |
+| `expectedOutcome.result` | Solution 输出契约 | Oracle 结果子集 | 类型、枚举或结构不兼容 |
+| `expectedOutcome.reasoningClass` | Instruction reasoning 契约和业务规则分类 | Oracle reasoning 分类 | 分类未声明或与出口不兼容 |
+
+名称和 aliases 只用于找到候选。编译前必须使用 semantic key、asset revision 和 contract fingerprint 完成确定性确认。显示名称相同不能直接建立绑定。
+
+### A.2 业务结果到执行策略的映射
+
+| 业务结果 | Feature | READ Instruction | WRITE Instruction | Graph/Tool 兼容适配 |
+|---|---|---|---|---|
+| `RETURNS` | 返回契约校验后的受控值 | 返回契约校验后的受控值 | 不允许；改用无副作用结果 | 编译为 RETURN fixture |
+| `UNAVAILABLE` | 返回稳定不可用错误 | 返回稳定不可用错误 | 返回稳定不可用错误 | 编译为 ERROR fixture |
+| `SUCCEEDS_WITHOUT_EFFECT` | 不适用 | 返回契约形状的成功结果 | 返回契约形状的成功结果，不进入真实 channel | 使用本地 adapter；不得伪造真实执行证明 |
+| `FAILS_WITHOUT_EFFECT` | 返回稳定失败 | 返回稳定失败 | 返回稳定失败，不进入真实 channel | 编译为 ERROR fixture |
+| `MUST_NOT_BE_USED` | 调用即失败 | 调用即失败 | 调用即失败 | 编译为 MUST_NOT_CALL fixture |
+
+该表只定义编译语义，不规定业务人员输入底层行为。底层 `RETURN`、`ERROR` 和 `MUST_NOT_CALL` 不进入 `BUSINESS_SOLUTION` MCP Schema、看板或演示剧本。
+
+### A.3 服务职责
+
+```java
+interface BusinessFixtureCompiler {
+    ControlledAssumptionPlan compile(
+            ApprovedBusinessGoldenCase golden,
+            SolutionAuthoringContextSnapshot solutionContext,
+            BusinessCapabilitySnapshot capabilitySnapshot);
+}
+
+interface ControlledFeatureAdapter {
+    JsonNode valueFor(ExactFeatureBinding feature, ControlledAssumptionPlan plan);
+}
+
+interface ControlledInstructionAdapter {
+    Map<String, Object> execute(
+            ExactInstructionBinding instruction,
+            Map<String, Object> inputs,
+            ControlledAssumptionPlan plan);
+}
+```
+
+`BusinessFixtureCompiler` 只接受已批准案例。`ControlledFeatureAdapter` 和 `ControlledInstructionAdapter` 只接受计划中冻结的精确绑定。三个接口都不能读取可变 registry 重新解析目标。
+
+### A.4 原子执行边界
+
+```text
+lock journey revision
+lock case-set revision
+lock solution revision
+verify goldenCaseFingerprint
+verify solutionContextFingerprint
+freeze reachable Feature and Instruction contracts
+compile ControlledAssumptionPlan
+install DENY_ALL egress authority
+run Scenario and Solution
+verify no real backend or channel was entered
+save evidence with revision CAS
+commit
+```
+
+以下情况使整次执行失败，且不能保存 GREEN、更新案例为 READY 或触发后续实景证明：
+
+- 任一锁定 revision 变化。
+- 案例批准指纹不匹配。
+- 业务名称不能唯一解析。
+- 测试值不符合当前契约。
+- 执行请求计划外 Feature 或 Instruction。
+- 真实 `FeatureEvaluationBackend`、`InstructionDispatchChannel`、HTTP client 或其他外呼边界被触达。
+- 证据写入 CAS 失败。
+
+### A.5 证据身份
+
+受控测试 evidence fingerprint 至少覆盖：
+
+```text
+scopeFingerprint
++ journeyRef@revision
++ solutionRef@revision
++ solutionContextFingerprint
++ caseSetRef@revision
++ ordered goldenCaseFingerprints
++ controlledAssumptionPlanFingerprints
++ frozen Feature and Instruction contract fingerprints
++ compilerVersion
++ egressPolicy
++ side
+```
+
+案例材料的顺序规范化后参与指纹。业务负责人修改事实、依赖假设、预期结果或所引用业务契约时，`goldenCaseFingerprint` 必须变化。平台修改 Feature、Instruction、Scenario 或 Solution 的实现或绑定时，`solutionContextFingerprint` 必须变化。第一类变化使业务批准、evidence、signoff 和 publication readiness 失效；第二类变化保留业务批准，只使执行计划、evidence、signoff 和 publication readiness 失效。
+
+### A.6 与现有底座的关系
+
+| 现有底座 | 可以复用 | 不能据此声称 |
+|---|---|---|
+| `FeatureEvaluationBackend` | Feature 求值接口和契约校验 | 已支持按案例反转，或已经阻止真实求值 |
+| `SolutionExecutionService.simulate` | 消费预采集 Feature 值和执行 Scenario | 所有 Instruction 都已经桩化 |
+| `InstructionDispatchChannel` | Instruction 的单一 dispatch 缝 | READ Instruction 不会外呼 |
+| `InstructionStubFactory` | WRITE Instruction 的契约形状结果 | 已支持业务指定的成功、失败和禁止调用语义 |
+| `NodeFixture.DependencyBehavior` | Tool/Graph 测试内核的 RETURN、ERROR 和 MUST_NOT_CALL 等行为 | 业务名称可以直接映射为 nodeId |
+| 受保护 fixture material 存储 | 保存和解析加密测试材料 | 业务案例生命周期、完整批准和 Solution 上下文绑定已存在 |
+
+P4 的工作不是再造测试内核，而是补齐业务语义解析、完整案例治理、case-scoped adapter、冻结上下文和全外呼拒绝。只有这些能力全部通过 §14 测试后，才能将受控业务假设测试标记为已完成。
