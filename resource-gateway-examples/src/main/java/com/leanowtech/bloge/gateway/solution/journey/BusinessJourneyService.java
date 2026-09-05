@@ -34,11 +34,16 @@ public final class BusinessJourneyService {
     public static final String JOURNEY = "BUSINESS_JOURNEY";
     private static final int MAX_BYTES = 16 * 1024 * 1024;
     private final AgentTddStateRepository states;
+    private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
 
     /** Creates deterministic navigation over the existing durable asset repository. */
-    public BusinessJourneyService(AgentTddStateRepository states, ObjectMapper mapper) {
+    public BusinessJourneyService(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ObjectMapper mapper) {
         this.states = Objects.requireNonNull(states, "states");
+        this.registry = Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -212,7 +217,7 @@ public final class BusinessJourneyService {
                 .flatMap(ref -> states.find(scope, SolutionEntityRegistry.INSTRUCTION, ref).stream())
                 .anyMatch(asset -> asset.data().path("speccing").asBoolean());
 
-        if (!feature) return projection("DISCOVERING", "READY",
+        if (!feature) return projection("DEFINING_FEATURES", "READY",
                 List.of("rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
                         "rg.feature.define", "rg.journey.next"), List.of(), "BUSINESS_OWNER",
                 "这项政策需要依据哪些业务事实作判断？", "确认已有事实能力或定义新的业务事实。", journey);
@@ -265,21 +270,11 @@ public final class BusinessJourneyService {
                                             Map<String, List<String>> refs) {
         AgentTddStoredAsset evidence = states.find(scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
                 .orElse(null);
-        AgentTddStoredAsset solution = states.find(scope, SolutionEntityRegistry.SOLUTION, solutionRef)
-                .orElse(null);
-        if (evidence == null || solution == null || !"GREEN".equals(evidence.data().path("side").asText())
-                || !evidence.data().path("businessBacklog").isArray()
-                || !evidence.data().path("businessBacklog").isEmpty()
-                || evidence.data().path("solutionRevision").asLong(-1) != solution.revision()
-                || !solution.data().path("contractFingerprint").asText()
-                    .equals(evidence.data().path("solutionContractFingerprint").asText())) return false;
+        if (evidence == null) return false;
         String caseSetRef = evidence.data().path("caseSetRef").asText();
         return refs.getOrDefault("CASE_SET", List.of()).contains(caseSetRef)
-                && states.find(scope, AgentTddMutationService.CASE_SET, caseSetRef)
-                .map(current -> current.revision() == evidence.data().path("caseSetRevision").asLong(-1))
-                .orElse(false)
-                && SolutionEvidenceCurrentness.currentJourneyContext(
-                        states, mapper, scope, evidence.data());
+                && SolutionEvidenceCurrentness.isCurrent(
+                        states, registry, mapper, scope, solutionRef, evidence);
     }
 
     private boolean hasCurrentSignoff(String scope, String solutionRef) {

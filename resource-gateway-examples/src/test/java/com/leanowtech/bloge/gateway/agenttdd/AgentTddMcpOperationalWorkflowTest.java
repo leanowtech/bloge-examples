@@ -577,7 +577,7 @@ class AgentTddMcpOperationalWorkflowTest {
                 "businessGoal", "乘客超时取消时维持取消费并给出责任解释",
                 "idempotencyKey", "journey-business-cancel-ops"), "AGENT_TDD_AUTHORING");
         String journeyRef = started.at("/data/journeyRef").asText();
-        assertThat(started.at("/data/stage").asText()).isEqualTo("DISCOVERING");
+        assertThat(started.at("/data/stage").asText()).isEqualTo("DEFINING_FEATURES");
 
         JsonNode stale = callBusiness("rg.feature.define", Map.of(
                 "journeyRef", journeyRef, "expectedJourneyRevision", 1,

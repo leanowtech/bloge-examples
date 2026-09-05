@@ -31,7 +31,7 @@ class BusinessJourneyServiceTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
     private final SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
-    private final BusinessJourneyService journeys = new BusinessJourneyService(states, mapper);
+    private final BusinessJourneyService journeys = new BusinessJourneyService(states, registry, mapper);
     private final TestMaterialStore materials = new TestMaterialStore(mapper);
     private final BusinessGoldenService golden = new BusinessGoldenService(states, mapper, materials);
 
@@ -69,7 +69,7 @@ class BusinessJourneyServiceTest {
     void derivesStagesFromAssetsAndRejectsStaleOrOutOfOrderActions() {
         Map<String, Object> started = journeys.start(startRequest("journey-start-1"), agent());
         String ref = started.get("journeyRef").toString();
-        assertThat(started).containsEntry("stage", "DISCOVERING");
+        assertThat(started).containsEntry("stage", "DEFINING_FEATURES");
 
         ObjectNode featureAction = action(ref, 1);
         journeys.executeAction("rg.feature.define", featureAction, agent(),
@@ -156,6 +156,25 @@ class BusinessJourneyServiceTest {
                 proposed.get("caseSetRef").toString(), "GREEN", agent());
         assertThat(baseline).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
         assertThat(((List<?>) baseline.get("cases"))).singleElement().asString().contains("GREEN_PASS");
+        assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "WAITING_SIGNOFF");
+
+        AgentTddStoredAsset observedEvidence = states.find(
+                SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel").orElseThrow();
+        ObjectNode changedPlan = (ObjectNode) observedEvidence.data().deepCopy();
+        changedPlan.withArray("controlledAssumptionPlanFingerprints").add("sha256:"
+                + "a".repeat(64));
+        states.save(SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel", changedPlan);
+        assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "TESTING");
+
+        testing.baseline(SCOPE, "sol:cancel", proposed.get("caseSetRef").toString(), "GREEN", agent());
+        assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "WAITING_SIGNOFF");
+        registry.upsertScenario(SCOPE, new ScenarioContract("scn:cancel", List.of("party"),
+                ScenarioContract.HitPolicy.UNIQUE, List.of(new ScenarioContract.Rule("R1",
+                mapper.valueToTree(Map.of("party", Map.of("eq", "passenger"))),
+                new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                        "ins:uphold", Map.of("party", "party"), ""))),
+                new ScenarioContract.Outlet(ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "REVIEW")));
+        assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "TESTING");
 
         BusinessFactSemanticContract revisedSemantics = new BusinessFactSemanticContract(
                 BusinessFactSemanticContract.SCHEMA_VERSION,
