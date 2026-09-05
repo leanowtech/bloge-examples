@@ -4,11 +4,12 @@
   "title": "Resource Gateway business Solution Codex certification",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "codexVersion", "runtimeIdentity", "suite", "transport", "cases", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
+  "required": ["schemaVersion", "certifiedAt", "repositoryCommit", "productionTreeFingerprint", "codexVersion", "runtimeIdentity", "suite", "transport", "cases", "journey", "correlation", "metrics", "assertions", "result", "certificateFingerprint"],
   "properties": {
     "schemaVersion": { "const": "rg.businessRecallCertification.v1" },
     "certifiedAt": { "type": "string", "minLength": 1 },
     "repositoryCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "productionTreeFingerprint": { "$ref": "#/$defs/sha256" },
     "codexVersion": { "type": "string", "minLength": 1 },
     "runtimeIdentity": {
       "type": "object",
@@ -90,7 +91,7 @@
     "correlation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["method", "journey", "solution", "caseSet", "cases", "librarySnapshot", "authoringPatterns"],
+      "required": ["method", "journey", "solution", "caseSet", "cases", "librarySnapshot", "authoringPatterns", "sessions"],
       "properties": {
         "method": { "const": "EPHEMERAL_HMAC_SHA256" },
         "journey": { "$ref": "#/$defs/hmac" },
@@ -98,7 +99,14 @@
         "caseSet": { "$ref": "#/$defs/hmac" },
         "cases": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/hmac" } },
         "librarySnapshot": { "$ref": "#/$defs/hmac" },
-        "authoringPatterns": { "$ref": "#/$defs/hmac" }
+        "authoringPatterns": { "$ref": "#/$defs/hmac" },
+        "sessions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/hmac" }
+        }
       }
     },
     "metrics": {
@@ -107,11 +115,11 @@
       "required": ["toolRecallRate", "recallAt3", "top1", "clarificationRate", "recallCases", "clarificationCases", "unsafeEscapeCount", "controlledTestEgressCount", "staleGoldenAcceptedCount"],
       "properties": {
         "toolRecallRate": { "const": 1.0 },
-        "recallAt3": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-        "top1": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-        "clarificationRate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-        "recallCases": { "type": "integer", "minimum": 0 },
-        "clarificationCases": { "type": "integer", "minimum": 0 },
+        "recallAt3": { "const": 1.0 },
+        "top1": { "type": "number", "minimum": 0.95, "maximum": 1 },
+        "clarificationRate": { "const": 1.0 },
+        "recallCases": { "type": "integer", "minimum": 1 },
+        "clarificationCases": { "type": "integer", "minimum": 1 },
         "unsafeEscapeCount": { "const": 0 },
         "controlledTestEgressCount": { "const": 0 },
         "staleGoldenAcceptedCount": { "const": 0 }
@@ -120,7 +128,7 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },
@@ -135,6 +143,7 @@
         "finalSummaryBusinessOnly": { "const": true },
         "rawArgumentsResultsAndMessagesOmitted": { "const": true },
         "spawnedRuntimeIdentityVerified": { "const": true },
+        "independentCodexSessionsObserved": { "const": true },
         "crossSessionFeatureRecallCorrelated": { "const": true },
         "clarificationStoppedBeforeAuthoring": { "const": true },
         "singleBusinessQuestionObserved": { "const": true }

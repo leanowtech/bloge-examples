@@ -202,6 +202,10 @@ if sandbox-exec -f "${SANDBOX_PROFILE}" /usr/bin/true >/dev/null 2>&1; then
 fi
 
 REPOSITORY_COMMIT="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+PRODUCTION_TREE_OBJECT="$(git -C "${ROOT_DIR}" rev-parse \
+    "${REPOSITORY_COMMIT}:resource-gateway-examples/src/main")"
+PRODUCTION_TREE_FINGERPRINT="sha256:$(printf '%s' "${PRODUCTION_TREE_OBJECT}" \
+    | openssl dgst -sha256 | awk '{print $2}')"
 "${MVN_BIN}" -f "${ROOT_DIR}/resource-gateway-examples/pom.xml" clean package -DskipTests
 if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
         || ! repository_is_clean; then
@@ -422,6 +426,7 @@ python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TR
     --certified-at "${CERTIFIED_AT}" \
     --runtime-instance-nonce "${INSTANCE_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \
+    --production-tree-fingerprint "${PRODUCTION_TREE_FINGERPRINT}" \
     --board-projection "${BOARD_FILE}" \
     --exit-code "${CODEX_EXIT}" \
     --recall-exit-code "${RECALL_CODEX_EXIT}" \

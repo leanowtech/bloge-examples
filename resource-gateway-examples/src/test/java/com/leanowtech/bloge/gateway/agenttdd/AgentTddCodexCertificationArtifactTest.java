@@ -119,6 +119,8 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
         assertThat(certificate.path("repositoryCommit").asText())
                 .isEqualTo(certificate.at("/runtimeIdentity/repositoryCommit").asText());
+        assertThat(certificate.path("productionTreeFingerprint").asText())
+                .isEqualTo(productionTreeFingerprint(certificate.path("repositoryCommit").asText()));
         assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
                 "rg.feature.define", "rg.scenario.define", "rg.instruction.define",
                 "rg.solution.compose", "rg.solution.golden.propose");
@@ -150,6 +152,9 @@ class AgentTddCodexCertificationArtifactTest {
                 .matches("hmac-sha256:[0-9a-f]{64}");
         assertThat(certificate.at("/correlation/authoringPatterns").asText())
                 .matches("hmac-sha256:[0-9a-f]{64}");
+        assertThat(textValues(certificate.at("/correlation/sessions")))
+                .hasSize(3).doesNotHaveDuplicates()
+                .allMatch(value -> value.matches("hmac-sha256:[0-9a-f]{64}"));
         assertThat(certificate.at(
                 "/assertions/compilerValidatedAuthoringPatternsObservedBeforeCreation").asBoolean())
                 .isTrue();
@@ -199,6 +204,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
+                "--production-tree-fingerprint", "PRODUCTION_TREE_FINGERPRINT",
                 "--recall-trace", "--clarification-trace", "--recall-exit-code",
                 "--clarification-exit-code", "RECALL_PROMPT_FILE", "CLARIFICATION_PROMPT_FILE",
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
@@ -232,7 +238,17 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 36 tests", "OK");
+        assertThat(output).contains("Ran 37 tests", "OK");
+    }
+
+    private String productionTreeFingerprint(String commit) throws Exception {
+        Process process = new ProcessBuilder("git", "rev-parse",
+                commit + ":resource-gateway-examples/src/main")
+                .directory(REPOSITORY.toFile()).redirectErrorStream(true).start();
+        String tree = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        assertThat(process.waitFor()).as(tree).isZero();
+        return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(tree.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

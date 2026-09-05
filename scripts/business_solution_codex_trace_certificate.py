@@ -69,11 +69,12 @@ def structured_result(item: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
-    """Load only MCP correlation material and the last final message."""
+def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool, str]:
+    """Load MCP correlation material, completion state and the opaque Codex thread id."""
     calls: list[dict[str, Any]] = []
     final_message = ""
     completed = False
+    thread_id = ""
     with path.open("r", encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
             try:
@@ -82,6 +83,13 @@ def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
                 raise CertificationFailure(f"trace line {line_number} is not JSON") from failure
             if event.get("type") == "turn.completed":
                 completed = True
+            if event.get("type") == "thread.started":
+                observed_thread = event.get("thread_id", event.get("threadId"))
+                if not isinstance(observed_thread, str) or not observed_thread.strip():
+                    raise CertificationFailure("thread.started does not contain a thread id")
+                if thread_id and thread_id != observed_thread.strip():
+                    raise CertificationFailure("one trace contains multiple Codex threads")
+                thread_id = observed_thread.strip()
             item = event.get("item")
             event_type = str(event.get("type", ""))
             if event_type.startswith("item.") and isinstance(item, dict):
@@ -103,7 +111,9 @@ def load_trace(path: Path) -> tuple[list[dict[str, Any]], str, bool]:
                 "data": structured.get("data") if isinstance(structured.get("data"), dict) else {},
                 "arguments": object_value(item.get("arguments")),
             })
-    return calls, final_message, completed
+    if not thread_id:
+        raise CertificationFailure("trace does not identify its Codex thread")
+    return calls, final_message, completed, thread_id
 
 
 def required_text(value: Any, label: str) -> str:
@@ -248,7 +258,7 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
 
 def require_recall_trace(path: Path, chain: dict[str, Any], exit_code: int) -> dict[str, Any]:
     """Prove that a new read-only Codex turn recalled the exact authored Feature."""
-    calls, final_message, completed = load_trace(path)
+    calls, final_message, completed, thread_id = load_trace(path)
     if len(calls) > 40 or not completed or exit_code != 0:
         raise CertificationFailure("recall turn did not complete within the bounded call budget")
     for call in calls:
@@ -279,12 +289,13 @@ def require_recall_trace(path: Path, chain: dict[str, Any], exit_code: int) -> d
         raise CertificationFailure("recall candidates do not contain the authored Feature in the top three")
     if best_rank != 1:
         raise CertificationFailure("the unique recall sample did not rank the authored Feature first")
-    return {"rank": best_rank, "matchType": best_match_type, "calls": calls}
+    return {"rank": best_rank, "matchType": best_match_type, "calls": calls,
+            "threadId": thread_id}
 
 
 def require_clarification_trace(path: Path, exit_code: int) -> dict[str, Any]:
     """Prove that Codex asked one business question before any authoring mutation."""
-    calls, final_message, completed = load_trace(path)
+    calls, final_message, completed, thread_id = load_trace(path)
     if len(calls) > 40 or not completed or exit_code != 0:
         raise CertificationFailure("clarification turn did not complete within the bounded call budget")
     for call in calls:
@@ -303,7 +314,7 @@ def require_clarification_trace(path: Path, exit_code: int) -> dict[str, Any]:
         raise CertificationFailure("clarification turn must ask exactly one business question")
     if TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("clarification final summary exposes technical vocabulary")
-    return {"calls": calls}
+    return {"calls": calls, "threadId": thread_id}
 
 
 def verify_board(board: Any, chain: dict[str, Any]) -> None:
@@ -323,26 +334,29 @@ def verify_board(board: Any, chain: dict[str, Any]) -> None:
 def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = None,
             clarification_trace: Path | None = None) -> dict[str, Any]:
     """Build the safe certificate after all private correlation checks pass."""
-    calls, final_message, completed = load_trace(trace)
+    calls, final_message, completed, authoring_thread_id = load_trace(trace)
     if len(calls) > 80 or not completed or metadata["exitCode"] != 0:
         raise CertificationFailure("Codex turn did not complete within the bounded call budget")
     chain, _proposal = require_business_sequence(calls)
     if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure("Codex final summary is missing or exposes technical vocabulary")
     verify_board(metadata.get("boardProjection"), chain)
-    if (recall_trace is None) != (clarification_trace is None):
-        raise CertificationFailure("recall and clarification traces must be supplied together")
-    recall_proof = None
-    clarification_proof = None
-    if recall_trace is not None and clarification_trace is not None:
-        recall_proof = require_recall_trace(
-            recall_trace, chain, metadata.get("recallExitCode", -1))
-        clarification_proof = require_clarification_trace(
-            clarification_trace, metadata.get("clarificationExitCode", -1))
+    if recall_trace is None or clarification_trace is None:
+        raise CertificationFailure("recall and clarification traces are required")
+    recall_proof = require_recall_trace(
+        recall_trace, chain, metadata.get("recallExitCode", -1))
+    clarification_proof = require_clarification_trace(
+        clarification_trace, metadata.get("clarificationExitCode", -1))
+    if len({authoring_thread_id, recall_proof["threadId"],
+            clarification_proof["threadId"]}) != 3:
+        raise CertificationFailure("certification requires three independent Codex threads")
     runtime_nonce = required_text(metadata.get("runtimeInstanceNonce"), "runtime nonce")
     runtime_jar = required_text(metadata.get("runtimeJarSha256"), "runtime JAR")
+    production_tree = required_text(metadata.get("productionTreeFingerprint"),
+                                    "production tree fingerprint")
     if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce) \
-            or not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_jar):
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_jar) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", production_tree):
         raise CertificationFailure("runtime identity is malformed")
 
     key = secrets.token_bytes(32)
@@ -356,6 +370,7 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
         "schemaVersion": "rg.businessRecallCertification.v1",
         "certifiedAt": metadata["certifiedAt"],
         "repositoryCommit": metadata["repositoryCommit"],
+        "productionTreeFingerprint": production_tree,
         "codexVersion": metadata["codexVersion"],
         "runtimeIdentity": {
             "schemaVersion": "rg.agentTddCertificationInstance.v1",
@@ -395,6 +410,8 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
             "cases": [opaque("case", case_id) for case_id in chain["caseIds"]],
             "librarySnapshot": opaque("library-snapshot", chain["librarySnapshotFingerprint"]),
             "authoringPatterns": opaque("authoring-patterns", chain["authoringPatternsFingerprint"]),
+            "sessions": [opaque("codex-thread", value) for value in (
+                authoring_thread_id, recall_proof["threadId"], clarification_proof["threadId"])],
         },
         "metrics": {
             "toolRecallRate": 1.0, "recallAt3": None, "top1": None,
@@ -417,14 +434,14 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
             "finalSummaryBusinessOnly": True,
             "rawArgumentsResultsAndMessagesOmitted": True,
             "spawnedRuntimeIdentityVerified": True,
+            "independentCodexSessionsObserved": True,
         },
         "result": "CERTIFIED",
     }
-    if recall_proof is not None and clarification_proof is not None:
-        match_type = recall_proof["matchType"]
-        if match_type not in {"EXACT", "PARTIAL", "CONFLICT", "NONE"}:
-            match_type = "NONE"
-        certificate["cases"].extend([
+    match_type = recall_proof["matchType"]
+    if match_type not in {"EXACT", "PARTIAL", "CONFLICT", "NONE"}:
+        match_type = "NONE"
+    certificate["cases"].extend([
             {
                 "caseFingerprint": opaque("recall-case", chain["recalledFeatureRef"]),
                 "expectedIntentKind": "RECALL_CAPABILITY",
@@ -451,19 +468,19 @@ def certify(trace: Path, metadata: dict[str, Any], recall_trace: Path | None = N
                 "egressDeniedCount": 0,
                 "goldenCaseCurrent": None,
             },
-        ])
-        certificate["metrics"].update({
-            "recallAt3": 1.0,
-            "top1": 1.0,
-            "clarificationRate": 1.0,
-            "recallCases": 1,
-            "clarificationCases": 1,
-        })
-        certificate["assertions"].update({
-            "crossSessionFeatureRecallCorrelated": True,
-            "clarificationStoppedBeforeAuthoring": True,
-            "singleBusinessQuestionObserved": True,
-        })
+    ])
+    certificate["metrics"].update({
+        "recallAt3": 1.0,
+        "top1": 1.0,
+        "clarificationRate": 1.0,
+        "recallCases": 1,
+        "clarificationCases": 1,
+    })
+    certificate["assertions"].update({
+        "crossSessionFeatureRecallCorrelated": True,
+        "clarificationStoppedBeforeAuthoring": True,
+        "singleBusinessQuestionObserved": True,
+    })
     canonical = json.dumps(certificate, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     certificate["certificateFingerprint"] = "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
     return certificate
@@ -478,6 +495,7 @@ def main() -> int:
     parser.add_argument("--exit-code", required=True, type=int)
     parser.add_argument("--runtime-instance-nonce", required=True)
     parser.add_argument("--runtime-jar-sha256", required=True)
+    parser.add_argument("--production-tree-fingerprint", required=True)
     parser.add_argument("--board-projection", required=True, type=Path)
     parser.add_argument("--recall-trace", type=Path)
     parser.add_argument("--clarification-trace", type=Path)
@@ -490,7 +508,9 @@ def main() -> int:
             "repositoryCommit": args.repository_commit, "codexVersion": args.codex_version,
             "certifiedAt": args.certified_at, "exitCode": args.exit_code,
             "runtimeInstanceNonce": args.runtime_instance_nonce,
-            "runtimeJarSha256": args.runtime_jar_sha256, "boardProjection": board,
+            "runtimeJarSha256": args.runtime_jar_sha256,
+            "productionTreeFingerprint": args.production_tree_fingerprint,
+            "boardProjection": board,
             "recallExitCode": args.recall_exit_code,
             "clarificationExitCode": args.clarification_exit_code,
         }, args.recall_trace, args.clarification_trace)
