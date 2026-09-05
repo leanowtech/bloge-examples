@@ -49,6 +49,9 @@ class AgentTddLibraryOverviewServiceTest {
         assertThat(worldModel.get("types").toString())
                 .contains("ride:order-lookup.order", "orderId", "feeCharged");
         assertThat(overview.get("snapshotFingerprint").toString()).startsWith("sha256:");
+        assertThat(overview.get("authoringPatterns").toString())
+                .contains("featureYaml", "scenarioYaml", "instructionYaml", "solutionYaml")
+                .doesNotContain("http://", "bindingRef");
     }
 
     @Test

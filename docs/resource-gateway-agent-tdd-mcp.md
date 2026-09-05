@@ -487,7 +487,7 @@ curl --fail-with-body http://localhost:8081/mcp \
 
 ## 8. 回归验证
 
-### 8.1 真实 Codex 第 3 幕创作认证
+### 8.1 真实 Codex 业务旅程创作认证
 
 先停止本仓库已经运行的 Resource Gateway，再在干净且已提交的工作区执行：
 
@@ -504,35 +504,30 @@ HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证
 服务同时返回一次性实例随机量、提交号和实际 JAR SHA-256；证书只保留随机量指纹和非敏感构建身份。
 随后它通过 macOS `sandbox-exec` 在操作系统层拒绝 Codex 执行任意进程、读取仓库/原始 Codex
 状态和私有 trace，以及写入一次性运行目录之外的位置。Codex 使用只复制 `auth.json` 的隔离目录，
-在临时只读工作目录启动，不读用户配置与规则，只提供四个 HTTP MCP 连接和一段
-业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义，
-不要求 Agent 执行僵化的工具仪式：依赖行为和待审批 Oracle 可在提交标准案例时一并写入，
-也可通过专用操作补充。最终必须证明以下事实：
+在临时只读工作目录启动，不读用户配置与规则，只提供带 `BUSINESS_SOLUTION` surface 的 READ、AUTHORING 两个 HTTP MCP 连接和一段业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义和服务端 journey，不要求 Agent 记忆固定工具仪式。最终必须证明以下事实：
 
-- Codex 先发现业务能力与契约，再获取 DSL 参考，且只有 `accepted=true` 的 preview/gate 才计为通过；
-- preview、gate、compose 的 source、library refs、context 与 receipt 完全一致；
-- compose、Instruction、CaseSet、回读案例、依赖行为和待审批 Oracle 全部关联同一个新 Tool 与至少两条分支案例，
-  且回读、补充依赖和 Oracle 证据必须发生在本次 upsert 之后；
-- 同一新 Tool 必须出现在认证结束时读取的 `STRUCTURE_ONLY` 看板，包含非空业务流程、至少两条可评审决策分支，且上述分支案例全部出现在该 Tool 的案例表；显式规则行和非空 `otherwise` 都按一条业务分支计算；
-- Agent 在人工批准 GOLDEN 前停下，没有执行、签署或发布；
+- Codex 创建一条新业务旅程，读取库概览和创作说明，并对“取消责任方”执行结构化能力搜索；
+- Feature、Scenario、Instruction、Solution 和完整 GOLDEN 提议都绑定同一 journey，写入 revision 单调连续；
+- Solution compose 使用 `rg.journey.next` 返回的当前 `solutionContextFingerprint`；
+- GOLDEN 提议与同一 Solution、case-set 和至少两条业务分支案例关联，随后通过业务读取面回读为 `PENDING`；
+- 同一批案例出现在 `STRUCTURE_ONLY` 看板的待审区，但 Agent 在人工批准前停下，没有执行、签署或发布；
 - trace 中的外部动作只能是已配置 MCP 调用；出现 shell、文件修改、Web 搜索或任何
   未识别的 action item 时，认证失败关闭；
-- 最终回复只使用业务语言；首次 preview 通过时如实记录 `firstPassAccepted`，不人为制造错误；若声称自主修正，则必须观察到 preview/gate 成功返回 `accepted=false` 和阻断诊断指纹，随后同一工具接受修正候选；参考查询重试或 MCP 传输失败不能充数；
-- preview 不超过“首次尝试 + 三轮修正”；同一组阻断指纹连续出现两次后没有第三次 preview/gate。
+- 最终回复只使用业务语言，不出现 YAML、Schema、MCP、内部引用或指纹等实现词汇。
 
-认证提示词以“按用户编号决定客服接待方式”为业务任务，用“选中资料来源后，先单独查看它公开的输入信息和返回信息说明，不能只凭名称猜”驱动 contract-first 行为，并要求 premium 与默认接待方式形成业务规则表。提示词不会把 `rg.contract.get`、DSL、MCP 参数或其他实现术语交给业务人员。
+认证提示词以“取消费争议”为业务任务，要求先盘点业务积木并精确查找“取消责任方”，再表达乘客与司机两条规则、两种处置及两条完整标准案例。提示词不提供 YAML、DSL、MCP 参数、内部引用或技术字段；Coding Agent 只能从服务端库概览中的 `authoringPatterns` 自行获得四实体创作约束。
 
-默认输出为 `resource-gateway-examples/target/agent-tdd-codex-certification.json`。原始 Codex trace
+默认输出为 `resource-gateway-examples/target/business-solution-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理；外层 sandbox
 仅允许 Codex 通过父进程预先打开的 stdout 文件描述符写该 trace，不允许读取它，也不允许启动
 shell 或其他子进程绕过边界；结束时删除；
 仅在获批本机排障时才设置 `KEEP_RAW_CODEX_TRACE=true`，排障后立即删除。认证器只在私有内存中
 比较真实 ID 与候选内容；可入库证书保留工具名、顺序、状态、布尔断言、服务提交/JAR 摘要、实例
-nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 Tool、CaseSet、case、DSL
+nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。密钥立即丢弃，因此证书可证明链内相等关系，但不能反推出 journey、Solution、case-set、case
 或业务值。证书不保留参数、结果、消息和业务载荷。已审核样例见
-[`docs/acceptance/agent-tdd/codex-certification-v1.json`](acceptance/agent-tdd/codex-certification-v1.json)，
+[`docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json`](acceptance/agent-tdd/business-solution-codex-certification-v1.json)，
 严格 Schema 见
-[`docs/schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json`](schemas/resource-gateway-agent-tdd-codex-certification-v1.schema.json)。
+[`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。证书中的 `recallAt3` 和 `clarificationRate` 只有在真实话语集中出现对应样本时才写数值；当前单旅程证据没有覆盖这两类样本，因此写 `null`，不伪造满分。
 
 脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”。清理 `trap` 在创建第一个临时目录之前
 安装，因此后续 `mktemp`、权限调整、凭据复制、随机量生成、构建或认证任一步失败，均会清理已经
@@ -556,12 +551,12 @@ mvn -f resource-gateway-examples/pom.xml \
   -Dtest='AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslAuthoringRepairMatrixTest,DslReferenceCertificationTest,AgentTddCodexCertificationArtifactTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
   test
 
-python3 -m unittest scripts/agent_tdd_codex_trace_certificate_test.py
+python3 -m unittest scripts/business_solution_codex_trace_certificate_test.py
 
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、`capability.list → contract.get` 动态 binding 发现、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务，贯穿用户资料查询。它还以 Solution 路径从 MCP lifecycle 开始，完成四实体定义、设计态工程交接、binding、GREEN、平台专用 WRITE 执行与对账、Chrome 打开 exact proposal 并输入 signoffRef、readiness 和发布；正式验收必须确认该类 5 个测试全部执行且 `skipped=0`。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务。新增业务 surface 用例从 initialize 开始，贯穿 journey、Feature/Scenario/Instruction/Solution、受保护 GOLDEN、HUMAN 批准与 GREEN；正式验收必须确认该类 6 个测试全部执行且 `skipped=0`。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 

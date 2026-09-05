@@ -105,9 +105,28 @@ public final class AgentTddLibraryOverviewService {
                 "worldModel", worldModel);
         return Map.of(
                 "buildingBlocks", frozenBlocks,
+                "authoringPatterns", authoringPatterns(),
                 "samples", includeSamples ? samples(identity) : List.of(),
                 "worldModel", worldModel,
                 "snapshotFingerprint", VisualBundleFingerprint.fromMaterial(fingerprintMaterial));
+    }
+
+    /**
+     * Returns compact machine guidance for the coding Agent that translates business intent into
+     * four entity YAML contracts. The guidance is not business output and contains no runtime refs.
+     */
+    private static Map<String, String> authoringPatterns() {
+        return Map.of(
+                "featureYaml", "One top-level feature ref with output.type, evaluationKind, determinism, "
+                        + "one evaluation/component/prompt ref, businessSemantics, and complete businessDefinition "
+                        + "{semanticKey,intent,domain,businessObject,requiredContext,resultDomain,asOf,"
+                        + "unknownPolicy,acquisitionOwner,freshness,effect}.",
+                "scenarioYaml", "One top-level scenario ref with inputs, hitPolicy: unique, ordered rules "
+                        + "{ruleId,when,outlet}, and otherwise. Each outlet is TERMINAL, INSTRUCTION, or SCENARIO.",
+                "instructionYaml", "One top-level instruction ref with inputs, output {result,reasoning}, "
+                        + "effect READ or WRITE, and businessSemantics. WRITE also requires writeGovernance.",
+                "solutionYaml", "One top-level solution ref with problem, inputs mapping local fact names to "
+                        + "Feature refs, scenarioTree.root, instructions, and golden.");
     }
 
     private List<Map<String, Object>> samples(IntegrationRequestContext identity) {

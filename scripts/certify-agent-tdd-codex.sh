@@ -8,16 +8,16 @@ MVN_BIN="${MVN:-mvn}"
 RG_CERT_PORT="${RG_CERT_PORT:-18081}"
 RG_MCP_ENDPOINT="http://127.0.0.1:${RG_CERT_PORT}/mcp"
 RG_INSTANCE_ENDPOINT="${RG_MCP_ENDPOINT%/mcp}/internal/agent-tdd/certification-instance"
-OUTPUT_FILE="${1:-${ROOT_DIR}/resource-gateway-examples/target/agent-tdd-codex-certification.json}"
+OUTPUT_FILE="${1:-${ROOT_DIR}/resource-gateway-examples/target/business-solution-codex-certification.json}"
 JAVA_BIN="${JAVA_BIN:-java}"
 
 usage() {
     cat <<'EOF'
 Usage: scripts/certify-agent-tdd-codex.sh [certificate.json]
 
-Builds and starts Resource Gateway from the current clean commit, then certifies a branched
-business-rule journey through a repository-blind Codex process and the same Tool's board
-projection. RG_CERT_PORT defaults to 18081.
+Builds and starts Resource Gateway from the current clean commit, then certifies a business-language
+Solution journey through a repository-blind Codex process and the BUSINESS_SOLUTION MCP surface.
+RG_CERT_PORT defaults to 18081.
 The private raw Codex trace is removed by default. Set KEEP_RAW_CODEX_TRACE=true only for
 an approved local investigation; the script then prints its mode-0600 temporary path.
 EOF
@@ -42,7 +42,7 @@ if ! repository_is_clean; then
     echo "Certification requires a clean committed worktree." >&2
     exit 1
 fi
-for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk chflags curl git lsof python3 openssl sandbox-exec; do
+for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk chflags curl git lsof python3 openssl sandbox-exec tr; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "Required command is unavailable: ${command}" >&2
         exit 1
@@ -89,7 +89,7 @@ cleanup() {
         kill "${SERVICE_PID}" 2>/dev/null || true
         wait "${SERVICE_PID}" 2>/dev/null || true
     fi
-    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN
+    unset RG_MCP_TOKEN AGENT_TOKEN REVIEW_TOKEN FIXTURE_KEY
     if [ -n "${TEMP_OUTPUT:-}" ]; then
         rm -f "${TEMP_OUTPUT}"
     fi
@@ -144,6 +144,7 @@ chmod 600 "${ISOLATED_CODEX_DIR}/auth.json"
 
 AGENT_TOKEN="$(openssl rand -hex 32)"
 REVIEW_TOKEN="$(openssl rand -hex 32)"
+FIXTURE_KEY="$(openssl rand -base64 32 | tr -d '\n')"
 if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ]; then
     echo "Generated demo identities unexpectedly collided." >&2
     exit 1
@@ -226,6 +227,10 @@ fi
         RG_API_RESOURCE_AUTHORING_ENABLED=true \
         RG_REUSABLE_FLOW_AUTHORING_ENABLED=true \
         RG_AUTHORING_LOCAL_SCHEMA_BOOTSTRAP_ENABLED=true \
+        RG_CORRECTNESS_ENABLED=true \
+        RG_CORRECTNESS_FIXTURE_MATERIAL_ENABLED=true \
+        RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID=business-cert-v1 \
+        RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING="business-cert-v1=${FIXTURE_KEY}" \
         RG_INTEGRATION_DEMO_TOKEN="${AGENT_TOKEN}" \
         RG_INTEGRATION_DEMO_REVIEW_TOKEN="${REVIEW_TOKEN}" \
         RG_INTEGRATION_ENVIRONMENT_ID=local \
@@ -279,17 +284,15 @@ curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/d
 
 BATCH_LABEL="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 cat > "${PROMPT_FILE}" <<EOF
-请把“按用户编号决定客服接待方式”做成客服助手可用的业务能力。这次演示批次是 ${BATCH_LABEL}，请创建一份独立草稿，不要复用旧草稿。
+请为取消费争议建立一项新的业务解法。这次演示批次是 ${BATCH_LABEL}，请创建独立版本，不要复用名称相近但业务含义不同的旧能力。
 
-用户资料由公司现有的用户资料服务负责。请在已经连接的平台中自行查找可用的只读来源；如果找不到，只告诉我应该找哪类系统负责人，不要让我填写地址或数据结构。
+先了解平台已经具备哪些业务积木，并查找“取消责任方”是否已有含义完全一致、当前可用的业务事实。如果没有，就把它定义为由客服人员在当前争议订单中确认的事实，可能值只有“乘客”和“司机”；无法确认时必须转人工复核。
 
-确定资料来源后，请先单独查看并核对它当前公开的输入信息和返回信息说明，再开始设计能力；不能只根据来源名称猜测。
+业务规则是：乘客在免费取消时限之后主动取消，由乘客承担，维持取消费；司机导致取消，由司机承担，退还取消费；其他情况转人工复核。每个处置都要返回结果和业务解释。
 
-这项能力接收一个用户编号，返回用户姓名、会员等级和接待方式。会员等级为 premium 时使用“优先服务”，其余情况使用“常规服务”；请把两条分支形成清晰、可供业务人员审阅的业务规则表。请同时为客服助手写清楚什么时候使用、需要用户提供什么、会返回什么，以及资料暂时不可用时应该如何向业务人员说明。
+请组合这项解法，并提交两条等待我确认的标准案例：一条是乘客超时取消，假设“维持取消费”返回成功，预期维持且解释为乘客责任；另一条是司机导致取消，假设“退还取消费”返回成功，预期退还且解释为司机责任。标准答案负责人是取消争议业务负责人。
 
-请准备两条待我确认的标准案例，并确认它们确实归属于刚创建的能力：查询用户 u-100 时，资料来源返回 Alice、会员等级 premium，能力应返回 Alice、premium 和“优先服务”；查询用户 u-200 时，资料来源返回 Bob、会员等级 standard，能力应返回 Bob、standard 和“常规服务”。
-
-请自行完成平台需要的工作和检查，不要向我展示过程或真实用户资料。完成后只用业务语言告诉我：资料来源是否匹配、能力草稿是否有效、标准案例是否已提交，以及我接下来需要在看板完成什么。不要替我确认标准案例，也不要开始验证或发布。
+请自行使用平台提供的创作说明完成结构化定义，不要让我提供格式、字段或技术引用。不要替我批准案例，不要开始验证、签署或发布。完成后只用业务语言告诉我：复用了还是新建了哪些业务能力、规则是否完整、两条案例是否已提交，以及我下一步需要确认什么。
 EOF
 
 CODEX_VERSION="$(CODEX_HOME="${ISOLATED_CODEX_DIR}" TMPDIR="${CODEX_RUNTIME_DIR}" \
@@ -314,24 +317,14 @@ CODEX_ARGS+=(
     --sandbox read-only -C "${WORKSPACE_DIR}"
     -c "mcp_servers.rg_read.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_read.bearer_token_env_var="RG_MCP_TOKEN"'
-    -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ"}'
-    -c 'mcp_servers.rg_read.enabled_tools=["rg.capability.list","rg.contract.get","rg.scenario.listCases","rg.dsl.reference.get","rg.dsl.preview","rg.gate.check"]'
+    -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ","X-RG-Surface"="BUSINESS_SOLUTION"}'
+    -c 'mcp_servers.rg_read.enabled_tools=["rg.library.overview.get","rg.capability.search","rg.entity.list","rg.entity.get","rg.journey.next","rg.solution.golden.list"]'
     -c 'mcp_servers.rg_read.required=true'
     -c "mcp_servers.rg_author.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_author.bearer_token_env_var="RG_MCP_TOKEN"'
-    -c 'mcp_servers.rg_author.http_headers={"X-Purpose"="AGENT_TDD_AUTHORING"}'
-    -c 'mcp_servers.rg_author.enabled_tools=["rg.tool.compose","rg.tool.setInstruction","rg.scenario.upsertCases","rg.scenario.setDependencyBehavior","rg.oracle.propose"]'
+    -c 'mcp_servers.rg_author.http_headers={"X-Purpose"="AGENT_TDD_AUTHORING","X-RG-Surface"="BUSINESS_SOLUTION"}'
+    -c 'mcp_servers.rg_author.enabled_tools=["rg.journey.start","rg.feature.define","rg.feature.handoff","rg.scenario.define","rg.instruction.define","rg.solution.compose","rg.solution.golden.propose"]'
     -c 'mcp_servers.rg_author.required=true'
-    -c "mcp_servers.rg_execute.url=\"${RG_MCP_ENDPOINT}\""
-    -c 'mcp_servers.rg_execute.bearer_token_env_var="RG_MCP_TOKEN"'
-    -c 'mcp_servers.rg_execute.http_headers={"X-Purpose"="AGENT_TDD_EXECUTION"}'
-    -c 'mcp_servers.rg_execute.enabled_tools=["rg.simulate","rg.feature.rehearse","rg.tool.baseline"]'
-    -c 'mcp_servers.rg_execute.required=true'
-    -c "mcp_servers.rg_govern.url=\"${RG_MCP_ENDPOINT}\""
-    -c 'mcp_servers.rg_govern.bearer_token_env_var="RG_MCP_TOKEN"'
-    -c 'mcp_servers.rg_govern.http_headers={"X-Purpose"="AGENT_TDD_GOVERNANCE"}'
-    -c 'mcp_servers.rg_govern.enabled_tools=["rg.fixture.promote","rg.fixture.provide","rg.tool.publish"]'
-    -c 'mcp_servers.rg_govern.required=true'
     -
 )
 
@@ -370,7 +363,7 @@ rm -f "${BOARD_CURL_CONFIG}"
 chmod 600 "${BOARD_FILE}"
 
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
-python3 "${ROOT_DIR}/scripts/agent_tdd_codex_trace_certificate.py" "${TRACE_FILE}" \
+python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TRACE_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
     --certified-at "${CERTIFIED_AT}" \

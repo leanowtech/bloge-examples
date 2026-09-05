@@ -99,7 +99,8 @@ class McpToolCatalogTest {
                 .containsExactly("includeSamples");
         assertThat(stringKeys(dataProperties(overview)))
                 .containsExactlyInAnyOrder(
-                        "buildingBlocks", "worldModel", "samples", "snapshotFingerprint");
+                        "buildingBlocks", "worldModel", "authoringPatterns",
+                        "samples", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.list"))))
                 .containsExactlyInAnyOrder("entities", "nextCursor", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.get"))))

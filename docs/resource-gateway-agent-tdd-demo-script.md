@@ -1,6 +1,6 @@
 # 用业务语言把取消费政策变成可信业务能力
 
-这是一份面向业务人员的 v1.4.5 现场演示导演脚本。主角是客服政策负责人小李。她不写代码，也不需要理解 MCP、DSL、YAML、Schema、binding、接口地址或内部标识。她只负责业务目标、判断依据、政策规则和标准答案。
+这是一份面向业务人员的 v1.4.6 现场演示导演脚本。主角是客服政策负责人小李。她不写代码，也不需要理解 MCP、DSL、YAML、Schema、binding、接口地址或内部标识。她只负责业务目标、判断依据、政策规则和标准答案。
 
 Codex 负责把小李的表达翻译为平台中的事实、场景、处置和解法；平台负责校验、留证和守门；工程师只履行平台生成的交接单；人工负责人保留标准答案批准和上线签署权。
 
@@ -40,7 +40,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 1. 启动 Resource Gateway，并显式开启取消费 demo adapter。
 2. 给 Codex 的进程只注入 Agent token。
 3. reviewer、feature-engineer、instruction-engineer 三份 token 由人分别保管，Codex 进程不可继承。
-4. 在 Codex 输入 `/mcp`，确认 `rg_read`、`rg_author`、`rg_execute`、`rg_govern` 全部已连接。
+4. 在 Codex 输入 `/mcp`，确认 `rg_read`、`rg_author`、`rg_execute`、`rg_govern` 全部已连接，且四个连接都固定 `X-RG-Surface=BUSINESS_SOLUTION`。
 5. 打开业务看板，但不要提前批准或签署。
 
 必须检查以下入口可见：
@@ -50,7 +50,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 - 场景、处置、解法创作；
 - 标准案例提议、GREEN、readiness 与发布。
 
-如果 Codex 说“没有规则编写入口”，先检查 `.codex/config.toml` 的 `enabled_tools` 是否包含 `rg.library.overview.get`、`rg.feature.handoff`、`rg.scenario.define`、`rg.instruction.define` 和 `rg.solution.compose`，然后彻底重启 Codex。不要让小李补写 DSL。
+如果 Codex 说“没有规则编写入口”，先检查 `.codex/config.toml` 的 `enabled_tools` 是否包含 `rg.journey.start`、`rg.journey.next`、`rg.library.overview.get`、`rg.capability.search`、`rg.feature.handoff`、`rg.scenario.define`、`rg.instruction.define`、`rg.solution.compose` 和 `rg.solution.golden.propose`，并确认 Header 为 `BUSINESS_SOLUTION`，然后彻底重启 Codex。不要让小李补写 DSL。
 
 ## 4. 开场约定
 
@@ -61,7 +61,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 
 我只负责说明业务目标、判断依据、规则和标准答案。请你使用已经连接的业务工具平台，自行完成能力发现、契约设计、实现草稿、检查和修正。
 
-和我沟通时只使用业务语言，不展示代码、配置、数据结构、内部标识或技术诊断。缺少业务含义时可以问我一个明确问题；缺少系统实现时请建立工程交接，不要让我提供技术方案。每完成一幕就停下来让我核对。不要替我批准标准答案，不要替我签署上线，也不要发布未经签署的内容。
+和我沟通时只使用业务语言，不展示代码、配置、数据结构、内部标识或技术诊断。收到业务目标后先启动一条新的业务旅程；每次继续前读取平台给出的当前阶段、阻塞原因和允许动作，只在允许范围内推进。缺少业务含义时可以问我一个明确问题；缺少系统实现时请建立工程交接，不要让我提供技术方案。每完成一幕就停下来让我核对。不要替我批准标准答案，不要替我签署上线，也不要发布未经签署的内容。
 
 请用一句话复述我们的分工，然后等我提出业务目标。
 ```
@@ -146,7 +146,9 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 
 ### Codex 后台应完成
 
+- 创建本次变更的业务旅程。后续每项写入都携带同一旅程和当前 revision；不得凭提示词记忆跳过阶段。
 - 先读取当前作用域的业务能力库概览；发现可能复用的能力时，再读取其当前业务契约。
+- 从库概览提供的创作说明中自行生成 Feature、Scenario、Instruction 和 Solution 定义；这些说明只供 Coding Agent 使用，不向小李展示。
 - 不能只凭名称相似复用。业务含义、所需上下文、可能结果、不可判断情形和取值责任必须全部一致。
 - 每轮保留待确认的事实定义摘要；只有小李确认三项定义后，才写入或复用权威契约。
 - 建立“责任方”“是否在免费取消时段”“当前选择的争议订单”三项事实契约。
@@ -248,15 +250,16 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 
 ### Codex 应完成
 
-- 提议四条 GOLDEN 标准案例，分别保留小李给出的业务意图。
+- 提议四条完整 GOLDEN 标准案例，分别保留小李给出的业务意图、给定事实、依赖结果假设、期望处置、解释类别和标准答案负责人。
 - 标准答案保持独立，不根据实现结果改写。
+- 平台把事实值、依赖返回值和预期结果写入加密 material；案例列表和 MCP 响应只显示计数、生命周期与指纹，不返回案例正文。
 - 告诉小李需要到看板逐条确认，并停止在人工停点。
 
 ### 人工停点一：批准业务应然
 
 小李在看板逐条打开详情，核对“前提事实、期望处置、业务意图、负责人”，再批准。审批期间如案例被修改，服务端拒绝旧 revision，必须刷新重审。
 
-成功信号：四条案例均为 ACTIVE；Codex 不能用 Agent token 调批准接口；看板能显示规则矩阵、处置清单、事实卡和四条案例。
+成功信号：四条案例均为 ACTIVE；Codex 不能用 Agent token 调批准接口；看板能在独立 HUMAN 会话中解密展示完整案例，业务 MCP 只能看到安全摘要；看板能显示规则矩阵、处置清单、事实卡和四条案例。
 
 ## 8. 第四幕：GREEN、受控写对账与上线签署
 
@@ -273,6 +276,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 ### 平台应完成
 
 - GREEN 逻辑验证中 `realExternalCalls=0`，四条案例均为 GREEN_PASS。
+- 每条案例使用自己的受控事实和依赖结果；READ 与 WRITE 依赖都不能进入真实 channel。缺少假设时失败关闭，不回退到默认实现。
 - 只有 `GREEN + GO + handoff=IMPLEMENTED` 时，平台才派生内部写权限。
 - 平台只消费当前 ACTIVE GOLDEN，在本地 demo ledger 中执行退款和建单并回读。
 - 对账为 RECONCILED 后，写交接单从 IMPLEMENTED 变为 CLOSED。
@@ -340,7 +344,7 @@ Codex 的后台顺序必须是：
 6. 工程履约后重新读取能力库和当前契约，确认业务定义没有漂移。
 7. 所有必需能力就绪后，才进入规则、案例和发布流程。
 
-工程履约只能补实现，不能修改业务契约。若输入、结果、业务影响或绑定实现发生漂移，既有 GREEN 证据与上线签署必须失效并重新生成。
+工程履约只能补实现，不能修改业务契约。Feature 或 Instruction 业务契约变化时，完整案例变为 `GOLDEN_CASE_STALE`，必须重新提议并批准；旧版明文或仅批准预期结果的案例变为 `LEGACY_GOLDEN_REAPPROVAL_REQUIRED`。实现绑定变化时，案例批准可以保留，但 GREEN 证据与上线签署必须失效并重新生成。
 
 ## 11. 主持人故障分流
 
@@ -369,4 +373,4 @@ Codex 的后台顺序必须是：
 
 本地取消费适配器使用预置的原子订单事实。它能证明事实契约、工程交接、取值签名和发布门禁可以贯通，但不能证明生产系统已经正确实现“选择最新生效判责”或“按取消时点匹配历史政策”。现场应把这两项描述为已经确认并受治理交接的业务定义，不得描述为生产口径已经通过认证。接入生产来源前，还需要以特征级业务样例验证缺失、冲突、订单切换和时点边界。
 
-这份自动验收证明平台路径可运行；现场仍要证明业务人员只用上述自然语言提示即可让当前 Codex 完成同一业务旅程。两者不能互相冒充。
+这份自动验收证明平台路径可运行。`AgentTddMcpOperationalWorkflowTest.businessSurfaceRunsProtectedGoldenThroughTheRealMcpLifecycle` 还从真实 MCP lifecycle 证明 `BUSINESS_SOLUTION` surface 的 journey、受保护 GOLDEN、独立批准和零外呼 GREEN。`./scripts/certify-agent-tdd-codex.sh` 则在隔离且看不到仓库的当前 Codex 中执行第一幕到人工案例确认停点；两类证据必须分别成立，不能互相冒充。

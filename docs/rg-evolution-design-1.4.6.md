@@ -1119,8 +1119,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
       "humanBoundaryRespected": true,
       "controlledAssumptionClass": "VALID",
       "egressDeniedCount": 0,
-      "goldenCaseCurrent": true,
-      "executionPlanCurrent": true
+      "goldenCaseCurrent": true
     }
   ],
   "metrics": {
@@ -1135,6 +1134,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 ```
 
 证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。
+创作认证停在人工批准之前，不生成受控执行计划，因此不声明 `executionPlanCurrent`。受控执行当前性和零外呼由真实 HTTP 主线与服务级并发测试证明。单次清晰话语没有能力复用或歧义样本时，`recallAt3` 和 `clarificationRate` 必须为 `null`，不能写成 `1.0`。
 
 ## 15. 实施计划
 
@@ -1350,8 +1350,8 @@ resource-gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
 | P3 Feature 语义契约 v2 | 已完成 | `BusinessFactSemanticContract` 完整字段校验；新写入拒绝自由文本语义；旧版 UNKNOWN/PARTIAL 兼容投影；字段级 EXACT/PARTIAL/CONFLICT matcher；多 EXACT 歧义停止；实现 binding 排除于业务身份；业务定义纳入指纹 |
-| P4 journey 与受控测试 | 部分完成 | 已完成 journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED` 和零外呼测试；待完成真实 HTTP 业务主线认证 |
-| P5 真实召回认证 | 待实施 | §14.4 指标全部通过；假设话语集；当前 HEAD 证书；演示与手册同步 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效、零外呼测试及真实 HTTP MCP 主线认证 |
+| P5 真实召回认证 | 部分完成 | 已完成库概览四实体 `authoringPatterns`、隔离 Codex 启动器、业务 surface trace 关联验证器、严格证书 Schema、24 个证书负例与演示/手册同步；待当前提交真实 Codex 运行证书与完整话语集量化 |
 
 ## 21. 审阅决策点
 

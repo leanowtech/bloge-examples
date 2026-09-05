@@ -109,7 +109,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "--disable apps", "--disable plugins", "--disable skill_search", "--disable shell_tool",
                 "--disable unified_exec", "--disable browser_use", "--disable computer_use",
                 "mktemp -d", "chmod 700 \"${PRIVATE_DIR}\"", "chmod 600 \"${TEMP_OUTPUT}\"",
-                "trap cleanup EXIT", "agent_tdd_codex_trace_certificate.py",
+                "trap cleanup EXIT", "business_solution_codex_trace_certificate.py",
                 "repository_is_clean", "ls-files --others --exclude-standard",
                 "clean package -DskipTests", "cd \"${WORKSPACE_DIR}\"",
                 "(deny process-exec)", "codex-code-mode-host", "(deny file-write*)",
@@ -117,6 +117,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
+                "X-RG-Surface\"=\"BUSINESS_SOLUTION",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
                 "PRIVATE_JAR", "chflags uchg", "expected-jar-sha256");
         assertThat(cleanupTrap).isGreaterThanOrEqualTo(0).isLessThan(firstTemporaryDirectory);
@@ -125,24 +126,25 @@ class AgentTddCodexCertificationArtifactTest {
                 "--sandbox danger-full-access", "example-services.sh\" start resource-gateway",
                 "example-services.sh\" stop resource-gateway");
         assertThat(prompt).contains(
-                "按用户编号决定客服接待方式", "公开的输入信息和返回信息说明",
-                "不能只根据来源名称猜测", "什么时候使用", "待我确认的标准案例",
-                "优先服务", "常规服务", "业务规则表", "不要替我确认标准案例",
-                "不要开始验证或发布");
+                "取消费争议", "平台已经具备哪些业务积木", "取消责任方",
+                "不要复用名称相近但业务含义不同", "乘客超时取消", "司机导致取消",
+                "等待我确认的标准案例", "不要替我批准案例", "不要开始验证、签署或发布");
         assertThat(prompt).doesNotContain(
                 "DSL", "Schema", "binding", "MCP", "operator", "toolRef", "caseSetRef", "代码", "节点", "端口");
     }
 
     @Test
     void certificationReducerExecutesMismatchAcceptanceAndBoundedRepairNegativeCases() throws Exception {
-        Process process = new ProcessBuilder("python3",
-                REPOSITORY.resolve("scripts/agent_tdd_codex_trace_certificate_test.py").toString())
+        Process process = new ProcessBuilder("python3", "-m", "unittest",
+                "agent_tdd_codex_trace_certificate_test",
+                "business_solution_codex_trace_certificate_test")
+                .directory(REPOSITORY.resolve("scripts").toFile())
                 .redirectErrorStream(true)
                 .start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 16 tests", "OK");
+        assertThat(output).contains("Ran 24 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

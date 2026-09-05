@@ -789,8 +789,13 @@ public final class McpToolCatalog {
                 List.of("fixtureId", "lifecycle", "sourceKind", "outputPort"));
         return structuredObject(props(
                 "buildingBlocks", arrayOf(block), "worldModel", worldModel,
+                "authoringPatterns", structuredObject(props(
+                        "featureYaml", string(), "scenarioYaml", string(),
+                        "instructionYaml", string(), "solutionYaml", string()),
+                        List.of("featureYaml", "scenarioYaml", "instructionYaml", "solutionYaml")),
                 "samples", arrayOf(sample), "snapshotFingerprint", string()),
-                List.of("buildingBlocks", "worldModel", "samples", "snapshotFingerprint"));
+                List.of("buildingBlocks", "worldModel", "authoringPatterns",
+                        "samples", "snapshotFingerprint"));
     }
 
     /** Strict business-only card shared by list, get and search output schemas. */
