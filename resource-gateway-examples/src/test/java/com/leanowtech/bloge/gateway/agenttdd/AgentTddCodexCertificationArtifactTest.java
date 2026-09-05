@@ -144,6 +144,9 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at(
                 "/assertions/compilerValidatedAuthoringPatternsObservedBeforeCreation").asBoolean())
                 .isTrue();
+        assertThat(certificate.at(
+                "/assertions/fourEntityWritesBoundToAuthoringPatterns").asBoolean())
+                .isTrue();
 
         String serialized = mapper.writeValueAsString(certificate);
         assertThat(serialized).doesNotContain(
@@ -157,8 +160,8 @@ class AgentTddCodexCertificationArtifactTest {
 
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
-                certificate.path("repositoryCommit").asText(), "24", "2 + 1 + 3",
-                "两条完整标准案例", "服务端模板先读", "指纹已关联",
+                certificate.path("repositoryCommit").asText(), "23", "2 + 1 + 3",
+                "两条完整标准案例", "服务端模板先读", "写入已绑定",
                 "未批准、未执行、未发布");
         var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
         assertThat(screenshot).isNotNull();
@@ -218,7 +221,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 28 tests", "OK");
+        assertThat(output).contains("Ran 30 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

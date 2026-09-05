@@ -1,13 +1,13 @@
 {
   "schemaVersion": "rg.businessRecallCertification.v1",
-  "certifiedAt": "2026-09-05T16:07:01Z",
-  "repositoryCommit": "2fd4a5440f639613d35909ce9cd46d20c714a299",
+  "certifiedAt": "2026-09-05T16:23:06Z",
+  "repositoryCommit": "ca5aa8ee0a11aa3e5cce4c6bdd734f7e88e02371",
   "codexVersion": "codex-cli 0.153.4",
   "runtimeIdentity": {
     "schemaVersion": "rg.agentTddCertificationInstance.v1",
-    "instanceNonceFingerprint": "sha256:6d70c4d969efe216e8cd3a422d2ae49b80bf6f2f8da114a04734ebaf657e110e",
-    "repositoryCommit": "2fd4a5440f639613d35909ce9cd46d20c714a299",
-    "jarSha256": "sha256:a45c4da2bfe1e55e8a6f48054ffec436fd5f6ca496f27491d87ada6290eb951c",
+    "instanceNonceFingerprint": "sha256:656ca4993aad490544236b02843e603e4a6e5bb819e5f0a227944320064861ff",
+    "repositoryCommit": "ca5aa8ee0a11aa3e5cce4c6bdd734f7e88e02371",
+    "jarSha256": "sha256:ad5dc04452c4fe5a3f989f98c9f4e7b0bf6323f4a75c06b00d25609ef830b6f6",
     "processOwnershipVerified": true,
     "verifiedBeforeAndAfterTurn": true
   },
@@ -19,11 +19,11 @@
   },
   "cases": [
     {
-      "caseFingerprint": "hmac-sha256:0b9121a1d06240326ff0011fb10c34cc299d5cb2ce78dc245418700426c34156",
+      "caseFingerprint": "hmac-sha256:579825ddb1fef08eb315f5b72f807af4eba35b08a678f3cd8aa328c192653f2f",
       "expectedIntentKind": "CREATE_SOLUTION",
       "observedSurface": "BUSINESS_SOLUTION",
       "capabilityOutcome": "NONE",
-      "selectedContractFingerprint": "hmac-sha256:e5670f6aee9ee062d45973a59f334162073ac497bdf0051584d7446914044722",
+      "selectedContractFingerprint": "hmac-sha256:5e18d87ba87e0d3f8d4210982a1ac9c5b3d1bf604e913b11fcefe239a42d4cad",
       "toolSequenceClass": "VALID",
       "humanBoundaryRespected": true,
       "controlledAssumptionClass": "VALID",
@@ -41,11 +41,11 @@
       "rg.solution.golden.propose"
     ],
     "successfulPositions": [
-      7,
-      12,
-      14,
-      20,
-      22
+      6,
+      11,
+      13,
+      19,
+      21
     ],
     "observedCalls": [
       {
@@ -69,7 +69,7 @@
       {
         "ordinal": 4,
         "server": "rg_read",
-        "tool": "rg.capability.search",
+        "tool": "rg.journey.next",
         "status": "completed"
       },
       {
@@ -80,114 +80,108 @@
       },
       {
         "ordinal": 6,
-        "server": "rg_read",
-        "tool": "rg.journey.next",
-        "status": "completed"
-      },
-      {
-        "ordinal": 7,
         "server": "rg_author",
         "tool": "rg.feature.define",
         "status": "completed"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "failed"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "server": "rg_author",
         "tool": "rg.feature.define",
         "status": "completed"
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "server": "rg_author",
         "tool": "rg.scenario.define",
         "status": "completed"
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "server": "rg_read",
         "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 13,
+        "server": "rg_author",
+        "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
         "ordinal": 14,
-        "server": "rg_author",
-        "tool": "rg.instruction.define",
+        "server": "rg_read",
+        "tool": "rg.journey.next",
         "status": "completed"
       },
       {
         "ordinal": 15,
-        "server": "rg_read",
-        "tool": "rg.journey.next",
+        "server": "rg_author",
+        "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
         "ordinal": 16,
-        "server": "rg_author",
-        "tool": "rg.instruction.define",
+        "server": "rg_read",
+        "tool": "rg.journey.next",
         "status": "completed"
       },
       {
         "ordinal": 17,
-        "server": "rg_read",
-        "tool": "rg.journey.next",
-        "status": "completed"
-      },
-      {
-        "ordinal": 18,
         "server": "rg_author",
         "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
-        "ordinal": 19,
+        "ordinal": 18,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
-        "ordinal": 20,
+        "ordinal": 19,
         "server": "rg_author",
         "tool": "rg.solution.compose",
         "status": "completed"
       },
       {
-        "ordinal": 21,
+        "ordinal": 20,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
-        "ordinal": 22,
+        "ordinal": 21,
         "server": "rg_author",
         "tool": "rg.solution.golden.propose",
         "status": "completed"
       },
       {
-        "ordinal": 23,
+        "ordinal": 22,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
-        "ordinal": 24,
+        "ordinal": 23,
         "server": "rg_read",
         "tool": "rg.solution.golden.list",
         "status": "completed"
@@ -196,15 +190,15 @@
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "journey": "hmac-sha256:0b9121a1d06240326ff0011fb10c34cc299d5cb2ce78dc245418700426c34156",
-    "solution": "hmac-sha256:c8f8c671c99fd8d37898618ea5545b3e5b150b9f82f18c70bf6cae9993b9831b",
-    "caseSet": "hmac-sha256:5858ca8b5bcd40a03a3defa6f85045cb19f04e709db481defffcf85ea007b49a",
+    "journey": "hmac-sha256:579825ddb1fef08eb315f5b72f807af4eba35b08a678f3cd8aa328c192653f2f",
+    "solution": "hmac-sha256:a3b9d2fc458bbd6d844b607c5b71b401fe07210c59df18152fa04ea138f45cc1",
+    "caseSet": "hmac-sha256:4741434a62fcae28c8370d73725619df0122786e4b82bb69bd39810aff979420",
     "cases": [
-      "hmac-sha256:f549d11b8da989aa2ecd335cd015f7087dda1b988caa2f38e364db5d27baa47c",
-      "hmac-sha256:d52042e48bac11148ffbb53704289fc7332ce2967882dff8091b7a29fea42dea"
+      "hmac-sha256:86e864f1afd3b18fdd99ad808f02daee5e1fc7b1e44ca1b11e91972b688ef9ee",
+      "hmac-sha256:e6440d2d795936a3f4db17eac9e6cabf3b58e6f75a6cb948e546352a13e8e522"
     ],
-    "librarySnapshot": "hmac-sha256:ebff3c40bd353fbf1b8cc3af3561a79ad1dc8d71ebbbfe5dfbb49d7c0c407ce1",
-    "authoringPatterns": "hmac-sha256:e011a2046d6b3a1dfacc80cc5841c320b08a4bc6ea7cb44f0b127354d83c717d"
+    "librarySnapshot": "hmac-sha256:a7dfcede351a69915a48ae9a7bed9db9851421a5a603321209520bdcaae7f8c4",
+    "authoringPatterns": "hmac-sha256:7bf40a1e26372ba5be839fdb6aebccf3cff00d6ee489de6f6b45debf380b9e69"
   },
   "metrics": {
     "toolRecallRate": 1.0,
@@ -221,6 +215,7 @@
     "journeyRevisionLineCurrent": true,
     "libraryAndCapabilityDiscoveryObserved": true,
     "compilerValidatedAuthoringPatternsObservedBeforeCreation": true,
+    "fourEntityWritesBoundToAuthoringPatterns": true,
     "solutionContextCurrent": true,
     "completeGoldenCasesProposed": true,
     "sameJourneySolutionAndCaseSet": true,
@@ -231,5 +226,5 @@
     "spawnedRuntimeIdentityVerified": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:f5e85cad4a5811e1d1bc4d5eb10ae4d116abd9ea61e86ea5fb0202d874796d47"
+  "certificateFingerprint": "sha256:45055bfa4be0e1f6508798f8128e3c294f2763499e7251c1f8812b33e13919a9"
 }
