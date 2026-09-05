@@ -174,6 +174,7 @@ class BusinessCapabilityIndexTest {
     private JsonNode contract() throws Exception {
         return mapper.readTree("""
                 {
+                  "schemaVersion":"rg.businessFactSemanticContract.v1",
                   "semanticKey":"ride.cancel.party",
                   "intent":"判断取消责任",
                   "domain":"ride-cancellation",

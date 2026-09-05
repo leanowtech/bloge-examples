@@ -699,6 +699,7 @@ public final class McpToolCatalog {
             case "rg.solution.baseline" -> structuredObject(props(
                     "solutionRef", string(), "caseSetRef", string(), "caseSetRevision", integer(),
                     "solutionRevision", integer(), "solutionContractFingerprint", string(),
+                    "implementationFingerprint", string(),
                     "scopeFingerprint", string(), "journeyRef", string(), "journeyRevision", integer(),
                     "solutionContextFingerprint", string(), "planFingerprint", string(),
                     "compilerVersion", string(), "egressPolicy", enumString("DENY_ALL"),

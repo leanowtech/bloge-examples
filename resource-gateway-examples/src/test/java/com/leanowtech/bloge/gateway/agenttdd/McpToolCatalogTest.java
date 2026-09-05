@@ -176,6 +176,8 @@ class McpToolCatalogTest {
         assertThat(cases.keySet().stream().map(Object::toString).toList())
                 .contains("oneOf").doesNotContain("properties", "required");
         assertThat((List<?>) cases.get("oneOf")).hasSize(2);
+        assertThat(stringKeys(dataProperties(catalog.require("rg.solution.baseline"))))
+                .contains("implementationFingerprint");
     }
 
     @Test
