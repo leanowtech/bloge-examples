@@ -45,28 +45,41 @@ public final class McpProtocolController {
     private final McpToolInvoker invoker;
     private final McpRequestLimiter limiter;
     private final McpAgentInstructionRenderer instructions;
+    private final McpSurfacePolicy surfaces;
 
     /** Creates the authenticated MCP transport. */
     public McpProtocolController(ObjectMapper mapper,
                                  McpToolCatalog catalog,
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker) {
-        this(mapper, catalog, authenticator, invoker, McpRequestLimiter.defaults());
+        this(mapper, catalog, authenticator, invoker, McpRequestLimiter.defaults(),
+                AgentTddAuthoringTelemetry.noop());
     }
 
-    /** Creates the Spring transport with configured pre-dispatch rate and concurrency admission. */
-    @Autowired
+    /** Creates a transport with configured pre-dispatch admission and inert surface telemetry. */
     public McpProtocolController(ObjectMapper mapper,
                                  McpToolCatalog catalog,
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker,
                                  McpRequestLimiter limiter) {
+        this(mapper, catalog, authenticator, invoker, limiter, AgentTddAuthoringTelemetry.noop());
+    }
+
+    /** Creates the Spring transport with rate, concurrency and surface observability. */
+    @Autowired
+    public McpProtocolController(ObjectMapper mapper,
+                                 McpToolCatalog catalog,
+                                 IntegrationRequestAuthenticator authenticator,
+                                 McpToolInvoker invoker,
+                                 McpRequestLimiter limiter,
+                                 AgentTddAuthoringTelemetry telemetry) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.invoker = Objects.requireNonNull(invoker, "invoker");
         this.limiter = Objects.requireNonNull(limiter, "limiter");
         this.instructions = new McpAgentInstructionRenderer(catalog);
+        this.surfaces = new McpSurfacePolicy(telemetry);
     }
 
     /**
@@ -91,9 +104,9 @@ public final class McpProtocolController {
             String method = text(request, "method");
             validateRouting(headers, method, request.path("params"));
             Object result = switch (method) {
-                case "server/discover" -> discover();
-                case "initialize" -> initialize(request.path("params"));
-                case "tools/list" -> listTools(authenticate(headers, McpToolImpact.READ));
+                case "server/discover" -> discover(headers);
+                case "initialize" -> initialize(request.path("params"), headers);
+                case "tools/list" -> listTools(authenticate(headers, McpToolImpact.READ), headers);
                 case "tools/call" -> callTool(request.path("params"), headers);
                 default -> throw new McpProtocolException(-32601, "Unsupported MCP method");
             };
@@ -179,6 +192,7 @@ public final class McpProtocolController {
         requireSchemaMatch(definition.inputSchema(), arguments, -32602,
                 "Tool arguments do not match the declared input schema");
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
+        surfaces.requireVisible(definition, surface(headers), identity);
         JsonNode structured;
         try (McpRequestLimiter.Permit ignored = limiter.acquire(identity, name)) {
             structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
@@ -197,20 +211,22 @@ public final class McpProtocolController {
         );
     }
 
-    private Map<String, Object> listTools(IntegrationRequestContext ignored) {
-        return Map.of("tools", catalog.all().stream().map(McpToolDefinition::protocolView).toList());
+    private Map<String, Object> listTools(IntegrationRequestContext identity, HttpHeaders headers) {
+        return Map.of("tools", surfaces.visibleDefinitions(catalog.all(), surface(headers), identity).stream()
+                .map(McpToolDefinition::protocolView).toList());
     }
 
-    private Map<String, Object> discover() {
+    private Map<String, Object> discover(HttpHeaders headers) {
+        McpSurfacePolicy.Surface surface = surface(headers);
         return Map.of(
                 "protocolVersion", MODERN_PROTOCOL_VERSION,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
-                "instructions", instructions.render()
+                "instructions", instructions.render(surface)
         );
     }
 
-    private Map<String, Object> initialize(JsonNode params) {
+    private Map<String, Object> initialize(JsonNode params, HttpHeaders headers) {
         String requested = text(params, "protocolVersion");
         if (!requested.isBlank() && !MODERN_PROTOCOL_VERSION.equals(requested)
                 && !LEGACY_PROTOCOL_VERSION.equals(requested)
@@ -221,8 +237,12 @@ public final class McpProtocolController {
                 "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
                 "capabilities", Map.of("tools", Map.of("listChanged", false)),
-                "instructions", instructions.render()
+                "instructions", instructions.render(surface(headers))
         );
+    }
+
+    private McpSurfacePolicy.Surface surface(HttpHeaders headers) {
+        return surfaces.resolve(header(headers, "X-RG-Surface"));
     }
 
     private IntegrationRequestContext authenticate(HttpHeaders headers, McpToolImpact impact) {

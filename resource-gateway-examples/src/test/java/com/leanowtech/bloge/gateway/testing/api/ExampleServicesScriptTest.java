@@ -156,11 +156,14 @@ class ExampleServicesScriptTest {
                 "[mcp_servers.rg_read]", "[mcp_servers.rg_author]",
                 "[mcp_servers.rg_execute]", "[mcp_servers.rg_govern]",
                 "bearer_token_env_var = \"RG_MCP_TOKEN\"",
+                "\"X-RG-Surface\" = \"BUSINESS_SOLUTION\"",
                 "\"rg.library.overview.get\"", "\"rg.feature.handoff\"",
                 "\"rg.scenario.define\"", "\"rg.instruction.define\"",
                 "\"rg.solution.compose\"", "\"rg.solution.baseline\"",
                 "\"rg.solution.readiness\"", "\"rg.solution.publish\"");
         assertThat(config).doesNotContain(
+                "\"rg.tool.compose\"", "\"rg.dsl.reference.get\"", "\"rg.scenario.test\"",
+                "\"rg.fixture.provide\"",
                 "bloge-aneke-demo-token", "bloge-reviewer-demo-token",
                 "RG_INTEGRATION_DEMO_REVIEW_TOKEN", "FEATURE_ENGINEER_TOKEN",
                 "INSTRUCTION_ENGINEER_TOKEN");

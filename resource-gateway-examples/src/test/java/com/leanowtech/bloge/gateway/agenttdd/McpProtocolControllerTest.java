@@ -79,6 +79,50 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void businessSurfaceListsOnlyPurposeAuthorizedBusinessTools() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity("AGENT_TDD_READ"));
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of());
+        HttpHeaders headers = modernHeaders("tools/list", null);
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode response = controller.exchange(request(81, "tools/list", Map.of()), headers).getBody();
+        String listed = response.at("/result/tools").toString();
+
+        assertThat(listed)
+                .contains("rg.library.overview.get", "rg.solution.getContract", "rg.solution.readiness")
+                .doesNotContain("rg.tool.compose", "rg.dsl.reference.get", "rg.scenario.test",
+                        "rg.fixture.provide");
+    }
+
+    @Test
+    void businessSurfaceRejectsAHiddenToolBeforeInvocation() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))
+                .thenReturn(identity("AGENT_TDD_AUTHORING"));
+        McpToolControllerProbe invoker = new McpToolControllerProbe();
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, invoker);
+        HttpHeaders headers = modernHeaders("tools/call", "rg.tool.compose");
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode response = controller.exchange(request(82, "tools/call", Map.of(
+                "name", "rg.tool.compose", "arguments", Map.of(
+                        "toolRef", "tool:hidden", "graph", Map.of("dsl", "graph hidden {}"),
+                        "libraryRefs", List.of(), "authoringContextFingerprint", "sha256:context",
+                        "authoringReceiptFingerprint", "sha256:receipt",
+                        "idempotencyKey", "hidden-tool"))), headers).getBody();
+
+        assertThat(response.path("error").path("code").asInt()).isEqualTo(-32031);
+        assertThat(response.path("error").path("message").asText())
+                .isEqualTo("TOOL_NOT_VISIBLE_IN_SURFACE");
+        assertThat(invoker.called).isFalse();
+    }
+
+    @Test
     void acceptsLegacyInitializedNotificationWithoutJsonRpcResponse() {
         McpProtocolController controller = new McpProtocolController(
                 mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
@@ -541,6 +585,22 @@ class McpProtocolControllerTest {
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }
 
+    @Test
+    void initializeReturnsInstructionsForTheRequestedSurfaceOnly() {
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
+                (name, arguments, identity) -> Map.of());
+        HttpHeaders businessHeaders = new HttpHeaders();
+        businessHeaders.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode response = controller.exchange(request(13, "initialize", Map.of(
+                "protocolVersion", McpProtocolController.CODEX_PROTOCOL_VERSION)), businessHeaders).getBody();
+
+        assertThat(response.at("/result/instructions").asText())
+                .contains("rg.library.overview.get")
+                .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
+    }
+
     private JsonNode request(int id, String method, Map<String, ?> params) {
         return mapper.valueToTree(Map.of("jsonrpc", "2.0", "id", id, "method", method, "params", params));
     }
@@ -556,9 +616,13 @@ class McpProtocolControllerTest {
     }
 
     private static IntegrationRequestContext identity() {
+        return identity("AGENT_TDD_EXECUTION");
+    }
+
+    private static IntegrationRequestContext identity(String purpose) {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "agent-1",
-                "", "AGENT_TDD_EXECUTE", "corr-1");
+                "", purpose, "corr-1");
     }
 
     private static GraphDraft decisionDraft() {

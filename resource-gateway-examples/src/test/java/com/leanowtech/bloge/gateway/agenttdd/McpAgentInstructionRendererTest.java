@@ -31,4 +31,21 @@ class McpAgentInstructionRendererTest {
                         "rg.dsl.reference.get", "rg.readiness.get",
                         "Never ask the business user for YAML", "never ask the user to write DSL");
     }
+
+    @Test
+    void rendersGuidanceThatDoesNotRecommendToolsHiddenFromTheSelectedSurface() {
+        McpToolCatalog catalog = new McpToolCatalog();
+        McpAgentInstructionRenderer renderer = new McpAgentInstructionRenderer(catalog);
+
+        String business = renderer.render(McpSurfacePolicy.Surface.BUSINESS_SOLUTION);
+        String platform = renderer.render(McpSurfacePolicy.Surface.PLATFORM_AUTHORING);
+        String operations = renderer.render(McpSurfacePolicy.Surface.OPERATIONS);
+
+        assertThat(business).contains("rg.library.overview.get", "rg.feature.handoff")
+                .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
+        assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
+                .doesNotContain("rg.feature.handoff", "rg.solution.compose");
+        assertThat(operations).contains("read-only operations surface", "rg.readiness.get")
+                .doesNotContain("rg.dsl.reference.get", "rg.solution.publish");
+    }
 }

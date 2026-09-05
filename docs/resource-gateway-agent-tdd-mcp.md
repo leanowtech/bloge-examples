@@ -99,12 +99,9 @@ Codex Desktop、CLI 和 IDE 插件共用 MCP 配置。项目级配置放在仓�
 [mcp_servers.rg_read]
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
-http_headers = { "X-Purpose" = "AGENT_TDD_READ" }
+http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.capability.list", "rg.library.get", "rg.library.list", "rg.library.overview.get",
-  "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
-  "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get", "rg.dsl.preview",
-  "rg.gate.check", "rg.readiness.get", "rg.solution.getContract",
+  "rg.library.overview.get", "rg.solution.getContract",
   "rg.solution.readiness", "rg.solution.performance"
 ]
 required = true
@@ -114,11 +111,8 @@ tool_timeout_sec = 60
 [mcp_servers.rg_author]
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
-http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING" }
+http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
-  "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
-  "rg.scenario.setDependencyBehavior", "rg.tool.publishSpec",
   "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
   "rg.solution.commit", "rg.feature.handoff", "rg.engineering.handoff"
 ]
@@ -129,10 +123,9 @@ tool_timeout_sec = 60
 [mcp_servers.rg_execute]
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
-http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION" }
+http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.simulate", "rg.feature.rehearse", "rg.tool.baseline",
-  "rg.feature.evaluate", "rg.scenario.test", "rg.solution.baseline", "rg.solution.invoke"
+  "rg.feature.evaluate", "rg.solution.baseline", "rg.solution.invoke"
 ]
 required = true
 startup_timeout_sec = 10
@@ -141,16 +134,20 @@ tool_timeout_sec = 120
 [mcp_servers.rg_govern]
 url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
-http_headers = { "X-Purpose" = "AGENT_TDD_GOVERNANCE" }
+http_headers = { "X-Purpose" = "AGENT_TDD_GOVERNANCE", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
-  "rg.fixture.promote", "rg.fixture.provide", "rg.tool.publish", "rg.solution.publish"
+  "rg.solution.publish"
 ]
 required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 120
 ```
 
+上面的项目配置固定使用 `BUSINESS_SOLUTION`。服务端在 `tools/list` 和 `tools/call` 两处执行同一可见性判定，并与已认证 purpose 取交集。业务会话不会列出，也不能直接调用 DSL、Graph/Tool、fixture、stub 或底层 `rg.scenario.test`。需要维护算子库或底层 Tool 时，应在独立 Codex 会话中把 Header 改为 `PLATFORM_AUTHORING`，并只启用该任务需要的工具；不要在业务会话中同时配置两个 surface。只读运维会话使用 `OPERATIONS`。
+
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
+
+兼容期内，缺少 `X-RG-Surface` 的旧客户端仍能看到原目录，服务端记录 `rg.mcp.surface.requests{surface="legacy_all"}`。显式传入未知 surface 会返回 JSON-RPC `-32602`；直接调用当前 surface 不可见的工具返回 `-32031 / TOOL_NOT_VISIBLE_IN_SURFACE`。兼容模式不应出现在新的 Codex 配置中。
 
 不要把 Bearer token 直接写进 TOML。在独立的 **终端 B** 中只注入 Agent token，再从这里启动 Codex CLI：
 

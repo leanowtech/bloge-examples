@@ -104,6 +104,12 @@ round-trip, stale-context, and limiter-rejection measurements. Labels are restri
 diagnostic codes, and catalog tool names; identity, source, fingerprints, operator references, and exception prose
 are never metric labels. Cross-call repair rounds remain a Codex trace-certificate fact rather than creating
 session state in the stateless MCP server.
+Resource Gateway 1.4.6 accepts `X-RG-Surface=BUSINESS_SOLUTION|PLATFORM_AUTHORING|OPERATIONS`.
+The same server-side policy filters both discovery and direct calls, then intersects visibility with the
+authenticated purpose. The checked-in Codex configuration uses only `BUSINESS_SOLUTION`, so a business
+conversation cannot discover or bypass into DSL, Graph/Tool, fixture, stub, or low-level scenario-test tools.
+Headerless clients retain the 1.4.5 catalog during the compatibility window and increment the payload-free
+`rg.mcp.surface.requests{surface="legacy_all"}` metric.
 Sandbox attestation also rejects stable or mixed DNS answers in private and RFC special-purpose ranges, including
 documentation, benchmark, protocol-assignment, discard-only, transition and reserved addresses.
 The board derives each Tool's position and next business action along the five-act journey from

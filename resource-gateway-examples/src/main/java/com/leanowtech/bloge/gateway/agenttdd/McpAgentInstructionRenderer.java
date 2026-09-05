@@ -60,6 +60,53 @@ public final class McpAgentInstructionRenderer {
                 + " before publish and publish only when publishable=true.";
     }
 
+    /**
+     * Returns guidance limited to the selected product surface.
+     *
+     * @param surface server-resolved product surface
+     * @return instructions that never recommend a tool hidden from that surface
+     */
+    public String render(McpSurfacePolicy.Surface surface) {
+        Objects.requireNonNull(surface, "surface");
+        return switch (surface) {
+            case LEGACY_ALL -> render();
+            case BUSINESS_SOLUTION -> businessInstructions();
+            case PLATFORM_AUTHORING -> platformInstructions();
+            case OPERATIONS -> operationsInstructions();
+        };
+    }
+
+    private String businessInstructions() {
+        return "Converse only in business language. Elicit the goal, decision facts, complete rules, "
+                + "otherwise outcome, possible dispositions, and representative expected examples. Never ask "
+                + "the business user for YAML, DSL, schemas, bindings, operator references, or implementation "
+                + "details. Start with " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and reuse only governed "
+                + "business capabilities whose meaning is current. Define a missing Feature as design-only, "
+                + "then call " + name(McpToolCatalog.FEATURE_HANDOFF) + "; never invent or fulfil an evaluator. "
+                + "For an unimplemented WRITE result, call " + name(McpToolCatalog.ENGINEERING_HANDOFF)
+                + " and stop at the accountable engineering boundary. Propose complete GOLDEN examples but "
+                + "never approve them. Never invent runtime bindings, approval, GREEN, attestation, or signoff "
+                + "evidence. Call " + name(McpToolCatalog.READINESS)
+                + " before publish and publish only when publishable=true.";
+    }
+
+    private String platformInstructions() {
+        return "Operate on the platform authoring surface. Read the exact library and contract before changing "
+                + "a Tool. Start DSL work with " + name(McpToolCatalog.DSL_REFERENCE)
+                + " and treat its languageVersion, contracts, examples, and authoringContextFingerprint as "
+                + "authoritative. Generate DSL from business intent, preview it, revise only from safe authoring "
+                + "diagnostics, and gate the exact accepted source. Stop after three repair rounds or when the "
+                + "same blocking fingerprint set appears twice. Never invent a binding, Oracle approval, GREEN, "
+                + "attestation, or signoff. Call " + name(McpToolCatalog.READINESS)
+                + " before a Tool publication attempt.";
+    }
+
+    private String operationsInstructions() {
+        return "This is a read-only operations surface. Inspect current contracts, evidence, verdicts, "
+                + "performance, and " + name(McpToolCatalog.READINESS)
+                + ". Do not propose, execute, approve, sign, or publish changes.";
+    }
+
     private String name(String catalogName) {
         return catalog.require(catalogName).name();
     }

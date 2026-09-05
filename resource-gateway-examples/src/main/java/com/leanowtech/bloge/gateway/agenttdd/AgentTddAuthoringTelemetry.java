@@ -106,6 +106,12 @@ public final class AgentTddAuthoringTelemetry {
                 "tool", tool(toolName), "reason", limitReason(reason)).increment());
     }
 
+    /** Records one resolved MCP product surface without retaining caller identity. */
+    void surfaceUsed(String surface) {
+        safely(() -> registry.counter("rg.mcp.surface.requests",
+                "surface", mcpSurface(surface)).increment());
+    }
+
     private void safely(Runnable measurement) {
         if (!enabled) return;
         try {
@@ -177,6 +183,13 @@ public final class AgentTddAuthoringTelemetry {
     private static String tool(String value) {
         if (value == null || value.length() > 96 || !value.matches("rg\\.[a-zA-Z0-9._-]+")) return "other";
         return value;
+    }
+
+    private static String mcpSurface(String value) {
+        return switch (normalized(value)) {
+            case "business_solution", "platform_authoring", "operations", "legacy_all" -> normalized(value);
+            default -> "other";
+        };
     }
 
     private static String normalized(String value) {
