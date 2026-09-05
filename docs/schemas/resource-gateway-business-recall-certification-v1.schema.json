@@ -194,13 +194,14 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved", "allRequiredRecallFamiliesObserved"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "fourEntityBusinessDisplaysDeclared", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved", "allRequiredRecallFamiliesObserved"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },
         "libraryAndCapabilityDiscoveryObserved": { "const": true },
         "compilerValidatedAuthoringPatternsObservedBeforeCreation": { "const": true },
         "fourEntityWritesBoundToAuthoringPatterns": { "const": true },
+        "fourEntityBusinessDisplaysDeclared": { "const": true },
         "solutionContextCurrent": { "const": true },
         "completeGoldenCasesProposed": { "const": true },
         "sameJourneySolutionAndCaseSet": { "const": true },

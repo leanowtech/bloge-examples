@@ -219,6 +219,12 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
     four_entity_tools = {
         "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
     }
+    source_fields = {
+        "rg.feature.define": "featureYaml",
+        "rg.scenario.define": "scenarioYaml",
+        "rg.instruction.define": "instructionYaml",
+        "rg.solution.compose": "solutionYaml",
+    }
     revision = 1
     for call in authored:
         if call["arguments"].get("journeyRef") != journey_ref:
@@ -229,6 +235,11 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
                 and call["arguments"].get("authoringPatternsFingerprint") != authoring_patterns:
             raise CertificationFailure(
                 "four-entity authoring was not bound to the server-validated template context")
+        if call["tool"] in four_entity_tools:
+            source = call["arguments"].get(source_fields[call["tool"]])
+            if not isinstance(source, str) or "\n  display:" not in source:
+                raise CertificationFailure(
+                    "four-entity authoring omitted the server-required business display")
         revision += 1
 
     required_kinds = ["rg.feature.define", "rg.scenario.define", "rg.instruction.define",
@@ -824,6 +835,7 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             "libraryAndCapabilityDiscoveryObserved": True,
             "compilerValidatedAuthoringPatternsObservedBeforeCreation": True,
             "fourEntityWritesBoundToAuthoringPatterns": True,
+            "fourEntityBusinessDisplaysDeclared": True,
             "solutionContextCurrent": True,
             "completeGoldenCasesProposed": True,
             "sameJourneySolutionAndCaseSet": True,

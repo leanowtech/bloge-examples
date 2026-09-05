@@ -48,7 +48,8 @@ def valid_events() -> list[dict]:
         call("rg_author", "rg.feature.define",
              {"journeyRef": journey, "expectedJourneyRevision": 1,
               "authoringPatternsFingerprint": patterns,
-              "featureYaml": "private", "idempotencyKey": "feature"},
+              "featureYaml": "feature:test:\n  display: { businessName: test, description: test }",
+              "idempotencyKey": "feature"},
              {"featureId": "feature:test", "contractFingerprint": "sha256:" + "e" * 64}),
         call("rg_read", "rg.journey.next", {"journeyRef": journey, "expectedRevision": 2},
              {"journeyRef": journey, "revision": 2, "stage": "DEFINING_RULES",
@@ -56,12 +57,14 @@ def valid_events() -> list[dict]:
         call("rg_author", "rg.scenario.define",
              {"journeyRef": journey, "expectedJourneyRevision": 2,
               "authoringPatternsFingerprint": patterns,
-              "scenarioYaml": "private", "libraryRefs": [], "idempotencyKey": "scenario"},
+              "scenarioYaml": "scenario:test:\n  display: { businessName: test, description: test }",
+              "libraryRefs": [], "idempotencyKey": "scenario"},
              {"scenarioId": "scenario:test"}),
         call("rg_author", "rg.instruction.define",
              {"journeyRef": journey, "expectedJourneyRevision": 3,
               "authoringPatternsFingerprint": patterns,
-              "instructionYaml": "private", "idempotencyKey": "instruction"},
+              "instructionYaml": "instruction:test:\n  display: { businessName: test, description: test }",
+              "idempotencyKey": "instruction"},
              {"instructionId": "instruction:test"}),
         call("rg_read", "rg.journey.next", {"journeyRef": journey, "expectedRevision": 4},
              {"journeyRef": journey, "revision": 4, "stage": "COMPOSING",
@@ -69,7 +72,8 @@ def valid_events() -> list[dict]:
         call("rg_author", "rg.solution.compose",
              {"journeyRef": journey, "expectedJourneyRevision": 4,
               "authoringPatternsFingerprint": patterns,
-              "solutionContextFingerprint": context, "solutionYaml": "private",
+              "solutionContextFingerprint": context,
+              "solutionYaml": "solution:test:\n  display: { businessName: test, description: test }",
               "idempotencyKey": "solution"},
              {"solutionRef": "solution:test", "contractFingerprint": "sha256:" + "d" * 64}),
         call("rg_author", "rg.solution.golden.propose",
@@ -338,6 +342,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertTrue(certificate["assertions"]
                         ["compilerValidatedAuthoringPatternsObservedBeforeCreation"])
         self.assertTrue(certificate["assertions"]["fourEntityWritesBoundToAuthoringPatterns"])
+        self.assertTrue(certificate["assertions"]["fourEntityBusinessDisplaysDeclared"])
         self.assertRegex(certificate["setupIdentity"]["seedManifestFingerprint"],
                          r"^hmac-sha256:")
         self.assertRegex(certificate["setupIdentity"]["setupFingerprint"], r"^sha256:")
@@ -548,6 +553,12 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         events = valid_events()
         events[6]["item"]["arguments"]["authoringPatternsFingerprint"] = "sha256:" + "c" * 64
         with self.assertRaisesRegex(MODULE.CertificationFailure, "not bound"):
+            self.certify(events)
+
+    def test_rejects_entity_write_without_business_display(self) -> None:
+        events = valid_events()
+        events[6]["item"]["arguments"]["instructionYaml"] = "instruction:test:\n  effect: READ"
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "business display"):
             self.certify(events)
 
     def test_rejects_cross_journey_asset(self) -> None:

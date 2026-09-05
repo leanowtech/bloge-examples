@@ -142,6 +142,27 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.primary = {"assetRef": "feature:primary",
                         "contractFingerprint": "sha256:" + "0" * 64}
 
+    def test_every_structured_seed_declares_business_display(self) -> None:
+        structured_sources = []
+        for feature in self.fixture["features"]:
+            structured_sources.append(feature["featureYaml"])
+        for instruction in self.fixture["instructions"]:
+            structured_sources.extend([
+                instruction["prerequisiteFeatureYaml"],
+                instruction["prerequisiteScenarioYaml"],
+                instruction["instructionYaml"],
+            ])
+        drift = self.fixture["semanticDrift"]
+        structured_sources.extend(drift[name] for name in (
+            "featureBeforeYaml", "featureAfterYaml", "scenarioYaml",
+            "instructionYaml", "solutionYaml"))
+
+        self.assertEqual(14, len(structured_sources))
+        for source in structured_sources:
+            self.assertIn("\n  display: {", source)
+            self.assertIn("businessName:", source)
+            self.assertIn("description:", source)
+
     def test_builds_fingerprint_from_actual_seed_relationships(self) -> None:
         api = FakeApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)

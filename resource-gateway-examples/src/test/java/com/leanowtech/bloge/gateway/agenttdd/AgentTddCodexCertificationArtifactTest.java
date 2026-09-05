@@ -177,6 +177,9 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at(
                 "/assertions/fourEntityWritesBoundToAuthoringPatterns").asBoolean())
                 .isTrue();
+        assertThat(certificate.at(
+                "/assertions/fourEntityBusinessDisplaysDeclared").asBoolean())
+                .isTrue();
 
         String serialized = mapper.writeValueAsString(certificate);
         assertThat(serialized).doesNotContain(
