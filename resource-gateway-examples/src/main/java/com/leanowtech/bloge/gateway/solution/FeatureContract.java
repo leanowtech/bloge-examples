@@ -25,6 +25,7 @@ import java.util.Map;
  * @param promptRef interactive prompt reference for {@link EvaluationKind#USER_CONVERSATION}
  * @param businessSemantics business-language meaning shown on engineering handoff tickets
  * @param businessDefinition structured, implementation-independent fact identity
+ * @param display independently revised business discovery and presentation material
  */
 public record FeatureContract(
         String featureRef,
@@ -36,7 +37,8 @@ public record FeatureContract(
         String componentRef,
         String promptRef,
         String businessSemantics,
-        BusinessFactSemanticContract businessDefinition
+        BusinessFactSemanticContract businessDefinition,
+        @com.fasterxml.jackson.annotation.JsonIgnore BusinessCapabilityDisplay display
 ) {
     /**
      * Preserves the v1.4.4 constructor for existing callers that do not yet supply business text.
@@ -50,7 +52,7 @@ public record FeatureContract(
                            String componentRef,
                            String promptRef) {
         this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
-                componentRef, promptRef, featureRef, null);
+                componentRef, promptRef, featureRef, null, null);
     }
 
     /** Preserves v1.4.5 callers while projecting missing business dimensions as UNKNOWN. */
@@ -64,7 +66,22 @@ public record FeatureContract(
                            String promptRef,
                            String businessSemantics) {
         this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
-                componentRef, promptRef, businessSemantics, null);
+                componentRef, promptRef, businessSemantics, null, null);
+    }
+
+    /** Preserves v1.4.6 callers while deriving a compatibility display. */
+    public FeatureContract(String featureRef,
+                           JsonNode output,
+                           EvaluationKind evaluationKind,
+                           Determinism determinism,
+                           JsonNode inputs,
+                           String evaluationRef,
+                           String componentRef,
+                           String promptRef,
+                           String businessSemantics,
+                           BusinessFactSemanticContract businessDefinition) {
+        this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
+                componentRef, promptRef, businessSemantics, businessDefinition, null);
     }
 
     /** Supported feature evaluation runtimes. */
@@ -109,6 +126,9 @@ public record FeatureContract(
         businessDefinition = businessDefinition == null
                 ? BusinessFactSemanticContract.legacy(featureRef, businessSemantics, inputs, output)
                 : businessDefinition;
+        display = display == null
+                ? BusinessCapabilityDisplay.legacy(businessSemantics, businessDefinition.intent())
+                : display;
         if (evaluationKind.interactive() != (determinism == Determinism.INTERACTIVE)) {
             throw new IllegalArgumentException("Interactive feature kind and determinism must agree");
         }
@@ -158,6 +178,24 @@ public record FeatureContract(
                 "businessSemantics", businessSemantics,
                 "businessDefinition", businessDefinition
         );
+    }
+
+    /** @return executable Feature identity excluding independently revised display material */
+    public Map<String, Object> implementationIdentity() {
+        return Map.ofEntries(
+                Map.entry("featureRef", featureRef), Map.entry("output", output),
+                Map.entry("evaluationKind", evaluationKind),
+                Map.entry("determinism", determinism), Map.entry("inputs", inputs),
+                Map.entry("evaluationRef", evaluationRef), Map.entry("componentRef", componentRef),
+                Map.entry("promptRef", promptRef), Map.entry("businessSemantics", businessSemantics),
+                Map.entry("businessDefinition", businessDefinition));
+    }
+
+    /** Returns the same Feature with independently revised discovery material. */
+    public FeatureContract withDisplay(BusinessCapabilityDisplay revisedDisplay) {
+        return new FeatureContract(featureRef, output, evaluationKind, determinism, inputs,
+                evaluationRef, componentRef, promptRef, businessSemantics, businessDefinition,
+                revisedDisplay);
     }
 
     private static JsonNode copy(JsonNode value) {

@@ -113,6 +113,7 @@ class SolutionAgentToolsTest {
                           inputs:
                             orderId: string
                           evaluationRef: ride-responsibility-service.decide#$.party
+                          display: { businessName: 取消责任方, description: 判断取消责任 }
                           businessDefinition: { semanticKey: ride.cancel.party, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: responsibility-center, freshness: { mode: AS_OF_EVENT }, effect: READ }
                         """)
                 .put("idempotencyKey", "feature-party-v1");
@@ -223,6 +224,7 @@ class SolutionAgentToolsTest {
                           determinism: DETERMINISTIC
                           inputs: { orderId: string }
                           businessSemantics: Determine who is responsible for the cancellation fee.
+                          display: { businessName: Cancellation responsibility, description: Determine cancellation responsibility }
                           businessDefinition: { semanticKey: ride.cancel.party, intent: Determine cancellation responsibility, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: string }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: responsibility-center, freshness: { mode: AS_OF_EVENT }, effect: READ }
                         """)
                 .put("idempotencyKey", "feature-party-design-v1");
@@ -500,7 +502,8 @@ class SolutionAgentToolsTest {
                 .put("featureYaml", "%s: { output: { type: string }, evaluationKind: API, "
                         .formatted(featureRef)
                         + "determinism: DETERMINISTIC, inputs: { orderId: string }, "
-                        + "evaluationRef: resource:test#$.value, businessDefinition: { semanticKey: '"
+                        + "evaluationRef: resource:test#$.value, display: { businessName: 'Collect fact', "
+                        + "description: 'Collect a governed fact' }, businessDefinition: { semanticKey: '"
                         + featureRef + "', intent: 'Collect fact', domain: 'test', businessObject: 'order', "
                         + "requiredContext: [], resultDomain: { type: string }, asOf: CURRENT, "
                         + "unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, "

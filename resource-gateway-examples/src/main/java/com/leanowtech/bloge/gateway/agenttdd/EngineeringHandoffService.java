@@ -137,7 +137,8 @@ public final class EngineeringHandoffService {
         InstructionContract bound = new InstructionContract(
                 instruction.instructionRef(), instruction.inputs(), instruction.output(),
                 instruction.effect(), bindingRef.trim(), instruction.writeGovernance(),
-                instruction.businessSemantics());
+                instruction.businessSemantics(), instruction.businessDefinition(),
+                instruction.display());
         return states.executeAtomically(() -> {
             states.lockRevision(scope, HANDOFF, solutionRef, handoff.revision());
             states.lockRevision(scope, SolutionEntityRegistry.INSTRUCTION,

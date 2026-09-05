@@ -34,6 +34,9 @@ public final class McpAgentInstructionRenderer {
                 + "bindings, operator references, or implementation details. Translate the agreed intent "
                 + "yourself into Feature, Scenario, Instruction, Solution, and GOLDEN proposals. Use "
                 + overview + " to reuse governed business building blocks. " + recallInstructions()
+                + "For every new entity, derive its businessName, description, aliases, whenToUse, "
+                + "and whenNotToUse from the agreed business phrases and include the complete display "
+                + "contract from the server template. "
                 + "Define a missing Feature as "
                 + "design-only, then call " + featureHandoff + "; never fulfil that handoff or invent an "
                 + "evaluator. Every Instruction must include plain businessSemantics. A WRITE Instruction "
@@ -85,7 +88,9 @@ public final class McpAgentInstructionRenderer {
                 + " and follow only the allowedNextTools returned by " + name(McpToolCatalog.JOURNEY_NEXT)
                 + ". Use " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and "
                 + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse governed business capabilities. "
-                + recallInstructions() + "Carry the returned "
+                + recallInstructions() + "For every new entity, derive its businessName, description, "
+                + "aliases, whenToUse, and whenNotToUse from the agreed business phrases and include the "
+                + "complete display contract from the server template. Carry the returned "
                 + "authoringPatternsFingerprint unchanged in every journey-scoped Feature, Scenario, "
                 + "Instruction, and Solution authoring call; refetch the overview when it is rejected as stale. "
                 + "Define a missing Feature as design-only, "

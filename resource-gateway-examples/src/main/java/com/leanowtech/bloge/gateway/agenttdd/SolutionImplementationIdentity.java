@@ -63,12 +63,15 @@ final class SolutionImplementationIdentity {
 
     /** Computes the same identity directly from the immutable publication snapshot. */
     static String fingerprint(ObjectMapper mapper, PublishedSolutionSnapshot snapshot) {
-        List<FeatureContract> features = snapshot.features().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).map(Map.Entry::getValue).toList();
-        List<ScenarioContract> scenarios = snapshot.scenarios().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).map(Map.Entry::getValue).toList();
-        List<InstructionContract> instructions = snapshot.instructions().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey()).map(Map.Entry::getValue).toList();
+        List<Map<String, Object>> features = snapshot.features().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getValue().implementationIdentity()).toList();
+        List<Map<String, Object>> scenarios = snapshot.scenarios().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getValue().implementationIdentity()).toList();
+        List<Map<String, Object>> instructions = snapshot.instructions().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getValue().implementationIdentity()).toList();
         return VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
                 "solutionRef", snapshot.solution().solutionRef(),
                 "features", features,

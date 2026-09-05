@@ -311,6 +311,8 @@ flowchart LR
 
 `BusinessCapabilityDisplay` 只参与候选召回和业务展示，不进入 Feature 业务契约指纹。改名称、别名或说明不会让 GREEN、signoff 和 publication 失效；改变 `BusinessFactSemanticContract` 的任一业务字段则必须生成新契约 revision，并使旧证据按现有 fingerprint 规则失效。
 
+实现将显示契约保存到独立的 `SOLUTION_CAPABILITY_DISPLAY` 资产行。该资产行使用自己的 `revision` 和 `displayFingerprint`，并纳入能力索引 generation vector。Feature、Scenario、Instruction 和 Solution 主资产不存储显示契约。仅修改显示契约时，主资产 revision、contract fingerprint 和 implementation fingerprint 保持不变，已批准案例与当前执行证据继续有效。
+
 ### 5.2 语义契约族
 
 统一索引使用共同 envelope：`schemaVersion + semanticKey + intent + domain + businessObject`，再按资产类型使用不同 profile。不同 profile 之间可以参与候选召回，但不能互相判为 EXACT。
@@ -345,6 +347,8 @@ Scenario、Instruction 和 Solution 的现有契约字段继续是运行时权�
 `semanticKey` 不是技术实现引用。它由业务能力治理者维护，用于识别“同一业务概念”；aliases 和自然语言只帮助找到该概念。Codex 首次通过别名命中候选后，必须读取候选的业务定义并让后续查询携带该 `semanticKey`。没有 semanticKey，或别名同时映射到多个 semanticKey 时，服务器不得返回 EXACT。
 
 显示信息另行约束：`businessName`、`description` 必填；aliases、tags、whenToUse 和 whenNotToUse 可选。显示信息不得包含 URL、binding、凭据或业务样本。
+
+新的结构化四实体写入必须同时提供 `BusinessCapabilityDisplay`。服务端模板要求 Codex 根据已确认的业务话语生成 `businessName`、`description`、`aliases`、`whenToUse` 和 `whenNotToUse`。字段未知、值类型错误、列表重复或单类超过 64 项时，解码器返回稳定的 `<ENTITY>_DISPLAY_INVALID`。只有不含 `businessDefinition` 的旧契约可以使用兼容投影；投影的 `displayRevision=0` 且 `legacyDisplayProjection=true`。
 
 ### 5.4 Feature 契约演进
 
@@ -1377,8 +1381,8 @@ gateway:
 |---|---|---|
 | P0 目录真相统一 | 已完成 | 50 项 catalog 与 invoker 对齐；`rg.library.overview.get` 严格输入/输出 Schema；目录生成初始化说明；config、分发器、脚本和手册一致性测试；真实 MCP 边界调用测试 |
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
-| P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；五源集成测试覆盖确定性去重、排序和 scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL；六项灰度状态经 MCP 初始化投影 |
-| P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile；journey 新写入拒绝自由文本兼容投影；旧版 UNKNOWN/PARTIAL 只读兼容；matcher 按 profile 比较封闭业务维度；多 EXACT 歧义停止；实现 binding 排除于业务身份；四实体业务定义纳入契约指纹和服务端创作模板 |
+| P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；独立 display 资产行进入 generation vector；索引按 businessName、aliases、tags、whenToUse 和 whenNotToUse 召回；同一 alias 命中多个 ACTIVE semantic key 时返回 AMBIGUOUS，且候选不升格为 EXACT；范围隔离、确定性去重、排序、游标绑定与 stale 失败关闭均有测试 |
+| P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile 和独立 `BusinessCapabilityDisplay`；journey 新写入拒绝缺少 display 的结构化定义；未知字段和超界列表失败关闭；旧版 UNKNOWN/PARTIAL 和 legacy display 只读兼容；matcher 按 profile 比较封闭业务维度；实现 binding 排除于业务身份；display-only 修订不改变 contract fingerprint、implementation fingerprint、主资产 revision 或证据 currentness；服务端四实体模板提供完整 display 构造 |
 | P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 已完成 | 当前干净提交已通过三个独立真实 Codex 会话：“业务创作→新会话同义召回→缺字段时单问题澄清”；三个 thread identity 仅以一次性 HMAC 留存且必须互不相同；召回候选与主链 Feature 按真实引用和契约指纹关联，目标位于 Top-1/Top-3；澄清会话可见业务写面但写调用为零；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板和库快照，Schema 直接编码 §14.4 的非零样本与指标门；37 个证书正反例通过；JSON、可视化过程报告和 1440×1440 截图留存。§14.3 的 15 类语义反例由 matcher、surface、journey、currentness 和受控假设测试逐类失败关闭，真实 Codex 证书保留三类代表性端到端会话 |
 

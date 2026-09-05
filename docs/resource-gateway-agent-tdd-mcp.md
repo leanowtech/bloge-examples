@@ -150,7 +150,7 @@ tool_timeout_sec = 120
 
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
 
-跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。
+跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、显示契约、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。四实体的显示契约使用独立 revision 和 fingerprint。它只影响名称、别名和适用场景召回，不进入业务契约、实现指纹或执行证据 currentness。旧实体缺少独立显示契约时返回 `displayRevision=0` 和 `legacyDisplayProjection=true`。
 
 能力召回分两次搜索。Codex 先判断当前是在找事实、决策、处置还是完整解法；已知类型时，
 第一次搜索只传业务意图和对应的一种 `assetKinds`。第一次结果只用于发现候选，不能根据 Top-1
@@ -362,7 +362,7 @@ Feature 创作不是让业务人员一次性填写技术表单。Codex 应先读
 
 `rg.feature.define` 的新写入必须包含结构化 `businessDefinition`：`semanticKey`、`intent`、`domain`、`businessObject`、`requiredContext`、`resultDomain`、`asOf`、`unknownPolicy`、`acquisitionOwner`、`freshness` 和 `effect`；平台取值还必须包含 `authoritySource`。这些字段由 Codex 根据已确认的业务表述生成，业务人员不需要填写字段名。旧 Feature 读取时会生成带 `UNKNOWN` 的兼容投影，只能作为 `PARTIAL` 候选，不能自动复用。实现团队改变 `evaluationRef` 不改变业务契约指纹；改变业务定义必须产生新指纹并使旧证据失效。
 
-Scenario、Instruction 和 Solution 的 journey 新写入也必须包含服务端模板规定的结构化 `businessDefinition`。Scenario 固定决策事实、命中策略、可达处置和兜底策略；Instruction 固定所需事实、结果范围、解释要求、效应和失败策略；Solution 固定问题分类、事实集合、根决策和可达处置。Codex 根据业务对话生成这些字段，业务人员只核对事实、规则、处置和目标。缺少完整 profile 时，服务端分别返回 `SCENARIO_BUSINESS_DEFINITION_REQUIRED`、`INSTRUCTION_BUSINESS_DEFINITION_REQUIRED` 或 `SOLUTION_BUSINESS_DEFINITION_REQUIRED`，并拒绝推进 journey。旧版非 journey 客户端仍可读取兼容投影，但兼容投影不能作为跨 journey 的 EXACT 能力复用依据。
+四实体的结构化新写入还必须包含服务端模板规定的 `display`。Codex 根据已确认的业务话语生成 `businessName`、`description`、`aliases`、`tags`、`whenToUse` 和 `whenNotToUse`，业务人员不需要填写字段名。未知字段、重复值、技术 binding、URL、凭据形态或任一列表超过 64 项时，服务端返回 `<ENTITY>_DISPLAY_INVALID`。Scenario、Instruction 和 Solution 的 journey 新写入也必须包含服务端模板规定的结构化 `businessDefinition`。Scenario 固定决策事实、命中策略、可达处置和兜底策略；Instruction 固定所需事实、结果范围、解释要求、效应和失败策略；Solution 固定问题分类、事实集合、根决策和可达处置。Codex 根据业务对话生成这些字段，业务人员只核对事实、规则、处置和目标。缺少完整 profile 时，服务端分别返回 `SCENARIO_BUSINESS_DEFINITION_REQUIRED`、`INSTRUCTION_BUSINESS_DEFINITION_REQUIRED` 或 `SOLUTION_BUSINESS_DEFINITION_REQUIRED`，并拒绝推进 journey。旧版非 journey 客户端仍可读取兼容投影，但兼容投影不能作为跨 journey 的 EXACT 能力复用依据。
 
 `rg.capability.search` 的 `query` 是封闭 Schema，显式列出四类业务实体的语义维度。首次查询只
 要求业务 `intent`；`assetKinds` 只接受 `FEATURE`、`SCENARIO`、`INSTRUCTION`、`SOLUTION`。

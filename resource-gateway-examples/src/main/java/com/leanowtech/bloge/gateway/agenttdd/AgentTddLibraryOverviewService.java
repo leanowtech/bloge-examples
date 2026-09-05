@@ -128,6 +128,14 @@ public final class AgentTddLibraryOverviewService {
                           inputs: {}
                           promptRef: prompt:fact-example
                           businessSemantics: Ask the responsible business person for this fact.
+                          display:
+                            schemaVersion: rg.businessCapabilityDisplay.v1
+                            businessName: Example business fact
+                            description: States the fact needed before the decision.
+                            aliases: [Alternative business phrase]
+                            tags: [example]
+                            whenToUse: [Use before deciding the example outcome.]
+                            whenNotToUse: [Do not use for an unrelated business object.]
                           businessDefinition:
                             semanticKey: example.fact
                             intent: State the business question answered by this fact.
@@ -150,6 +158,14 @@ public final class AgentTddLibraryOverviewService {
                               when: { fact: { eq: VALUE_A } }
                               outlet: { kind: INSTRUCTION, ref: 'ins:action-a', bind: { fact: fact } }
                           otherwise: { kind: INSTRUCTION, ref: 'ins:manual-review', bind: { fact: fact } }
+                          display:
+                            schemaVersion: rg.businessCapabilityDisplay.v1
+                            businessName: Example business decision
+                            description: Selects one disposition from governed facts.
+                            aliases: [Example rule decision]
+                            tags: [example]
+                            whenToUse: [Use after the required facts are available.]
+                            whenNotToUse: [Do not use for an unrelated business object.]
                           businessDefinition:
                             semanticKey: example.decision
                             intent: Decide the business outcome from the governed facts.
@@ -168,6 +184,14 @@ public final class AgentTddLibraryOverviewService {
                             reasoning: required
                           effect: READ
                           businessSemantics: State the business disposition performed by this action.
+                          display:
+                            schemaVersion: rg.businessCapabilityDisplay.v1
+                            businessName: Example disposition
+                            description: Applies and explains the selected business disposition.
+                            aliases: [Example action]
+                            tags: [example]
+                            whenToUse: [Use when the example decision selects this disposition.]
+                            whenNotToUse: [Do not use for an unrelated business object.]
                           businessDefinition:
                             semanticKey: example.action-a
                             intent: Apply the selected business disposition.
@@ -187,6 +211,14 @@ public final class AgentTddLibraryOverviewService {
                           scenarioTree: { root: 'scn:example' }
                           instructions: ['ins:action-a', 'ins:manual-review']
                           golden: 'caseSet:example'
+                          display:
+                            schemaVersion: rg.businessCapabilityDisplay.v1
+                            businessName: Example governed solution
+                            description: Resolves the example business problem.
+                            aliases: [Example problem handling]
+                            tags: [example]
+                            whenToUse: [Use for the example business problem.]
+                            whenNotToUse: [Do not use for an unrelated problem class.]
                           businessDefinition:
                             semanticKey: example.solution
                             intent: Resolve the example business problem.

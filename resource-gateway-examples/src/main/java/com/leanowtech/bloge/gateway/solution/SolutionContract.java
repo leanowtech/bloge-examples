@@ -20,6 +20,7 @@ import java.util.Set;
  * @param instructions instructions that the tree may dispatch
  * @param goldenRef approved-case-set reference used for validation
  * @param businessDefinition structured, implementation-independent solution identity
+ * @param display independently revised business discovery and presentation material
  */
 public record SolutionContract(
         String solutionRef,
@@ -28,7 +29,8 @@ public record SolutionContract(
         String rootScenarioRef,
         List<String> instructions,
         String goldenRef,
-        BusinessSolutionSemanticContract businessDefinition
+        BusinessSolutionSemanticContract businessDefinition,
+        @com.fasterxml.jackson.annotation.JsonIgnore BusinessCapabilityDisplay display
 ) {
     /** Normalizes references and rejects duplicate or incomplete pure-function declarations. */
     public SolutionContract {
@@ -53,6 +55,16 @@ public record SolutionContract(
         businessDefinition = businessDefinition == null
                 ? BusinessSolutionSemanticContract.legacy(solutionRef, inputs.keySet().stream().toList())
                 : businessDefinition;
+        display = display == null
+                ? BusinessCapabilityDisplay.legacy(problem, businessDefinition.intent()) : display;
+    }
+
+    /** Preserves v1.4.6 callers while deriving a compatibility display. */
+    public SolutionContract(String solutionRef, String problem, Map<String, String> inputs,
+                            String rootScenarioRef, List<String> instructions, String goldenRef,
+                            BusinessSolutionSemanticContract businessDefinition) {
+        this(solutionRef, problem, inputs, rootScenarioRef, instructions, goldenRef,
+                businessDefinition, null);
     }
 
     /** Preserves contracts authored before structured Solution business semantics. */
@@ -71,6 +83,17 @@ public record SolutionContract(
                 "instructions", instructions,
                 "goldenRef", goldenRef,
                 "businessDefinition", businessDefinition);
+    }
+
+    /** @return executable Solution identity excluding independently revised display material */
+    public Map<String, Object> implementationIdentity() {
+        return contractIdentity();
+    }
+
+    /** Returns the same Solution with independently revised discovery material. */
+    public SolutionContract withDisplay(BusinessCapabilityDisplay revisedDisplay) {
+        return new SolutionContract(solutionRef, problem, inputs, rootScenarioRef, instructions,
+                goldenRef, businessDefinition, revisedDisplay);
     }
 
     private static Map<String, String> normalizeMap(Map<String, String> values) {

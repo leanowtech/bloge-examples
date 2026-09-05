@@ -900,9 +900,11 @@ public final class McpToolCatalog {
                 "assetRef", string(), "assetKind", string(), "display", businessObject(),
                 "business", businessObject(), "lifecycle", string(), "speccing", bool(),
                 "runtimeState", string(), "owner", string(), "contractFingerprint", string(),
-                "revision", integer(), "source", source),
+                "revision", integer(), "displayRevision", integer(),
+                "displayFingerprint", string(), "legacyDisplayProjection", bool(), "source", source),
                 List.of("assetRef", "assetKind", "display", "business", "lifecycle", "speccing",
-                        "runtimeState", "owner", "contractFingerprint", "revision", "source"));
+                        "runtimeState", "owner", "contractFingerprint", "revision",
+                        "displayRevision", "displayFingerprint", "legacyDisplayProjection", "source"));
     }
 
     /** Strict search projection. Candidate contracts remain payload-free business summaries. */

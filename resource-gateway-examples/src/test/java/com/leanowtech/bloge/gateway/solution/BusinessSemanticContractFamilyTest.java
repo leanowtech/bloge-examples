@@ -22,6 +22,9 @@ class BusinessSemanticContractFamilyTest {
         assertThat(instruction.businessDefinition().reasoningPolicy()).isEqualTo("REQUIRED");
         assertThat(solution.businessDefinition().dispositionSemanticKeys())
                 .containsExactly("ride.cancel.uphold");
+        assertThat(scenario.display().businessName()).isEqualTo("取消费争议判定");
+        assertThat(instruction.display().businessName()).isEqualTo("维持取消费");
+        assertThat(solution.display().businessName()).isEqualTo("取消费争议处理");
         assertThat(scenario.contractIdentity()).containsKey("businessDefinition");
         assertThat(instruction.contractIdentity()).containsKey("businessDefinition");
         assertThat(solution.contractIdentity()).containsKey("businessDefinition");
@@ -77,6 +80,9 @@ class BusinessSemanticContractFamilyTest {
     private static String scenarioYaml() {
         return """
                 scn:cancel:
+                  display:
+                    businessName: 取消费争议判定
+                    description: 根据责任事实选择处置
                   inputs: [party]
                   hitPolicy: unique
                   rules:
@@ -99,6 +105,9 @@ class BusinessSemanticContractFamilyTest {
     private static String instructionYaml() {
         return """
                 ins:uphold:
+                  display:
+                    businessName: 维持取消费
+                    description: 维持乘客取消费并解释原因
                   inputs: { party: string }
                   output:
                     result: { type: { fields: { disposition: string } } }
@@ -122,6 +131,9 @@ class BusinessSemanticContractFamilyTest {
     private static String solutionYaml() {
         return """
                 sol:cancel:
+                  display:
+                    businessName: 取消费争议处理
+                    description: 根据取消责任处理取消费争议
                   problem: 处理取消费争议
                   inputs: { party: feature:party }
                   scenarioTree: { root: 'scn:cancel' }

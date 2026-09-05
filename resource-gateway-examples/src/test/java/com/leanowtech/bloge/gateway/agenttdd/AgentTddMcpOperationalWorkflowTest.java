@@ -445,6 +445,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           evaluationKind: USER_COMPONENT
                           determinism: INTERACTIVE
                           componentRef: party-picker-v1
+                          display: { businessName: 取消责任方, description: 判断取消责任 }
                           businessDefinition: { semanticKey: ride.cancel.party.browser, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE }
                         """,
                 "idempotencyKey", "feature-party-browser-ops"), "AGENT_TDD_AUTHORING");
@@ -455,6 +456,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           evaluationKind: USER_COMPONENT
                           determinism: INTERACTIVE
                           componentRef: order-picker-v1
+                          display: { businessName: 争议订单, description: 选择需要处理的争议订单 }
                           businessDefinition: { semanticKey: ride.dispute.order.browser, intent: 选择争议订单, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: string }, asOf: CURRENT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: CURRENT }, effect: PURE }
                         """,
                 "idempotencyKey", "feature-order-browser-ops"), "AGENT_TDD_AUTHORING");
@@ -607,6 +609,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           determinism: INTERACTIVE
                           componentRef: cancellation-party-v1
                           businessSemantics: 取消责任方
+                          display: { businessName: 取消责任方, description: 判断取消责任, aliases: [取消归责] }
                           businessDefinition: { semanticKey: ride.cancel.party.business, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum, values: [passenger, driver] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE }
                         """,
                 "idempotencyKey", "feature-business-cancel-ops"), "AGENT_TDD_AUTHORING");
@@ -622,6 +625,7 @@ class AgentTddMcpOperationalWorkflowTest {
                               when: { party: { eq: passenger } }
                               outlet: { kind: INSTRUCTION, ref: '%s', bind: { party: party } }
                           otherwise: { kind: TERMINAL, terminalKind: ESCALATE }
+                          display: { businessName: 取消费争议判定, description: 根据取消责任选择处置 }
                           businessDefinition: { semanticKey: ride.cancel.decision.business, intent: 判定取消费争议处置, domain: ride-cancellation, businessObject: ride-order, inputFactKeys: [ride.cancel.party.business], decisionPolicy: UNIQUE, outletSemanticKeys: [ride.cancel.uphold.business, ride.cancel.manual-review.business], otherwisePolicy: ESCALATE }
                         """.formatted(scenarioRef, instructionRef),
                 "libraryRefs", List.of(),
@@ -637,6 +641,7 @@ class AgentTddMcpOperationalWorkflowTest {
                             reasoning: required
                           effect: READ
                           businessSemantics: 维持取消费
+                          display: { businessName: 维持取消费, description: 维持乘客取消费并解释原因 }
                           businessDefinition: { semanticKey: ride.cancel.uphold.business, intent: 维持乘客取消费并解释原因, domain: ride-cancellation, businessObject: ride-order, requiredFactKeys: [ride.cancel.party.business], resultDomain: { type: object, decision: { enum: [UPHELD] } }, reasoningPolicy: REQUIRED, effect: READ, failurePolicy: ESCALATE, writeGovernanceClass: NONE }
                         """.formatted(instructionRef),
                 "idempotencyKey", "instruction-business-cancel-ops"), "AGENT_TDD_AUTHORING");
@@ -656,6 +661,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           scenarioTree: { root: '%s' }
                           instructions: ['%s']
                           golden: 'caseSet:business-cancel-ops'
+                          display: { businessName: 取消费争议处理, description: 处理乘客超时取消费争议 }
                           businessDefinition: { semanticKey: ride.cancel.solution.business, intent: 处理乘客超时取消费争议, domain: ride-cancellation, businessObject: ride-order, problemClass: CANCELLATION_FEE_DISPUTE, requiredFactKeys: [ride.cancel.party.business], scenarioSemanticKey: ride.cancel.decision.business, dispositionSemanticKeys: [ride.cancel.uphold.business, ride.cancel.manual-review.business], runtimeUse: GOVERNED_DECISION }
                         """.formatted(solutionRef, scenarioRef, instructionRef),
                 "idempotencyKey", "compose-business-cancel-ops"), "AGENT_TDD_AUTHORING");

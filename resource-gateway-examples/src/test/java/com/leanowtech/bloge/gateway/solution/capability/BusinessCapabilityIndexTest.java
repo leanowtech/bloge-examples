@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -91,6 +92,61 @@ class BusinessCapabilityIndexTest {
         assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("PARTIAL");
         assertThat(result.at("/candidates/0/reuseAllowed").asBoolean()).isFalse();
         assertThat(result.at("/clarification/required").asBoolean()).isTrue();
+    }
+
+    @Test
+    void recallsAnEntityByItsIndependentBusinessAlias() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveSemanticFeature(states, "feature:cancel-party", contract());
+        saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:cancel-party",
+                display("取消责任方", List.of("谁导致取消")));
+
+        JsonNode result = mapper.valueToTree(index(states).search(mapper.valueToTree(Map.of(
+                "query", Map.of("intent", "谁导致取消"),
+                "assetKinds", List.of("FEATURE"), "limit", 10)), identity("project-a")));
+
+        assertThat(result.path("status").asText()).isEqualTo("INCOMPLETE");
+        assertThat(result.at("/candidates/0/assetRef").asText()).isEqualTo("feature:cancel-party");
+        assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("PARTIAL");
+        assertThat(result.at("/candidates/0/reuseAllowed").asBoolean()).isFalse();
+    }
+
+    @Test
+    void reportsAnActiveAliasCollisionAsAmbiguousWithoutPromotingEitherCandidate() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveSemanticFeature(states, "feature:ride-cancel", contract());
+        ObjectNode other = contract().deepCopy();
+        other.put("semanticKey", "traffic.accident.responsibility");
+        other.put("domain", "traffic-accident");
+        saveSemanticFeature(states, "feature:traffic-accident", other);
+        BusinessCapabilityDisplay shared = display("责任认定", List.of("谁导致取消"));
+        saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:ride-cancel", shared);
+        saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:traffic-accident", shared);
+
+        JsonNode result = mapper.valueToTree(index(states).search(mapper.valueToTree(Map.of(
+                "query", Map.of("intent", "谁导致取消"),
+                "assetKinds", List.of("FEATURE"), "limit", 10)), identity("project-a")));
+
+        assertThat(result.path("status").asText()).isEqualTo("AMBIGUOUS");
+        assertThat(result.path("candidates")).allSatisfy(candidate ->
+                assertThat(candidate.path("matchType").asText()).isNotEqualTo("EXACT"));
+        assertThat(result.at("/clarification/dimension").asText()).isEqualTo("aliasConflict");
+    }
+
+    @Test
+    void isolatesDisplayRowsByScopeAndMarksOldEntitiesAsLegacyProjections() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveSemanticFeature(states, "feature:cancel-party", contract());
+        saveDisplay(states, scope(identity("project-b")), "FEATURE", "feature:cancel-party",
+                display("其他项目的名称", List.of("其他别名")));
+
+        BusinessCapabilityIndex.Card card = index(states).freeze(identity("project-a"))
+                .capabilities().getFirst();
+
+        assertThat(card.display().path("businessName").asText()).isEqualTo("取消责任方");
+        assertThat(card.displayRevision()).isZero();
+        assertThat(card.legacyDisplayProjection()).isTrue();
+        assertThat(card.displayFingerprint()).startsWith("sha256:");
     }
 
     @Test
@@ -181,7 +237,8 @@ class BusinessCapabilityIndexTest {
         BusinessCapabilityIndex.Snapshot second = index.freeze(identity);
 
         assertThat(first.catalogRevisionVector().keySet()).containsExactlyInAnyOrder(
-                "solutionEntities", "operatorLibraries", "runtimeCatalog", "graphDrafts", "publications");
+                "solutionEntities", "solutionEntityDisplays", "operatorLibraries", "runtimeCatalog",
+                "graphDrafts", "publications");
         assertThat(first.capabilities()).extracting(BusinessCapabilityIndex.Card::assetRef)
                 .containsExactly("feature:cancel.party", "risk:eligibility", "risk:scoreFacts",
                         "publication:cancel", "solution:cancel", "draft:cancel");
@@ -255,6 +312,25 @@ class BusinessCapabilityIndexTest {
         data.put("contractFingerprint", "sha256:" + "a".repeat(64));
         data.put("speccing", false);
         states.save(scope(identity("project-a")), SolutionEntityRegistry.FEATURE, ref, data);
+    }
+
+    private void saveDisplay(InMemoryAgentTddStateRepository states, String scope, String entityKind,
+                             String entityRef, BusinessCapabilityDisplay display) {
+        ObjectNode data = mapper.createObjectNode();
+        data.put("schemaVersion", "rg.businessCapabilityDisplayRecord.v1");
+        data.put("entityKind", entityKind);
+        data.put("entityRef", entityRef);
+        data.set("display", mapper.valueToTree(display));
+        data.put("displayFingerprint", com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint
+                .fromCanonicalValue(mapper, display, 16 * 1024 * 1024));
+        states.save(scope, SolutionEntityRegistry.CAPABILITY_DISPLAY,
+                SolutionEntityRegistry.displayAssetRef(entityKind, entityRef), data);
+    }
+
+    private static BusinessCapabilityDisplay display(String name, List<String> aliases) {
+        return new BusinessCapabilityDisplay(BusinessCapabilityDisplay.SCHEMA_VERSION, name,
+                "判断业务责任", aliases, List.of("责任"),
+                List.of("需要判断业务责任时"), List.of("不同业务领域"));
     }
 
     private JsonNode contract() throws Exception {

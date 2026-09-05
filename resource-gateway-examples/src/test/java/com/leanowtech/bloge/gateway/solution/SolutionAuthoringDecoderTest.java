@@ -73,4 +73,63 @@ class SolutionAuthoringDecoderTest {
         assertThat(result.diagnosticCode()).isEqualTo("FEATURE_CONTRACT_UNKNOWN_FIELD")
                 .doesNotContain("private", "should-never-return");
     }
+
+    @Test
+    void decodesAClosedBusinessCapabilityDisplay() {
+        SolutionAuthoringDecoder.DecodeResult<FeatureContract> result = decoder.decodeFeature("""
+                feature:cancel-party:
+                  display:
+                    schemaVersion: rg.businessCapabilityDisplay.v1
+                    businessName: 取消责任方
+                    description: 判断订单取消的责任主体
+                    aliases: [取消归责, 谁导致取消]
+                    tags: [取消费]
+                    whenToUse: [计算取消费前]
+                    whenNotToUse: [交通事故责任认定]
+                  output: { type: string }
+                  evaluationKind: API
+                  determinism: DETERMINISTIC
+                  inputs: {}
+                  businessSemantics: 取消责任方
+                """.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.value().display().businessName()).isEqualTo("取消责任方");
+        assertThat(result.value().display().aliases()).containsExactly("取消归责", "谁导致取消");
+    }
+
+    @Test
+    void rejectsUnknownDisplayFieldsWithPayloadFreeDiagnostic() {
+        SolutionAuthoringDecoder.DecodeResult<FeatureContract> result = decoder.decodeFeature("""
+                feature:private:
+                  display:
+                    businessName: 取消责任方
+                    description: 判断取消责任
+                    secretBinding: should-never-return
+                  output: { type: string }
+                  evaluationKind: API
+                  determinism: DETERMINISTIC
+                  inputs: {}
+                """.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.diagnosticCode()).isEqualTo("FEATURE_DISPLAY_INVALID")
+                .doesNotContain("private", "should-never-return");
+    }
+
+    @Test
+    void requiresDisplayForANewStructuredBusinessDefinition() {
+        SolutionAuthoringDecoder.DecodeResult<FeatureContract> result = decoder.decodeFeature("""
+                feature:cancel-party:
+                  output: { type: string }
+                  evaluationKind: API
+                  determinism: DETERMINISTIC
+                  inputs: {}
+                  businessDefinition:
+                    semanticKey: ride.cancel.party
+                """.getBytes(StandardCharsets.UTF_8));
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.diagnosticCode()).isEqualTo("FEATURE_DISPLAY_INVALID");
+    }
 }

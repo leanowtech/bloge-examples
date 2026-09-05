@@ -454,6 +454,7 @@ class McpProtocolControllerTest {
                                 "featureYaml", "responsibility.party: { output: { type: string }, "
                                         + "evaluationKind: API, determinism: DETERMINISTIC, "
                                         + "inputs: { orderId: string }, evaluationRef: resource:test#$.value, "
+                                        + "display: { businessName: Cancellation responsibility, description: Decide cancellation responsibility }, "
                                         + "businessDefinition: { semanticKey: ride.cancel.party, intent: Decide party, "
                                         + "domain: ride-cancellation, businessObject: ride-order, requiredContext: [], "
                                         + "resultDomain: { type: string }, asOf: CURRENT, unknownPolicy: HUMAN_REVIEW, "

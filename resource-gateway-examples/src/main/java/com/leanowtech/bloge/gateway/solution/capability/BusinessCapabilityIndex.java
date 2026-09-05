@@ -2,13 +2,13 @@ package com.leanowtech.bloge.gateway.solution.capability;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddMutationService;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
@@ -139,23 +139,33 @@ public final class BusinessCapabilityIndex {
         String intent = text(query, "intent").toLowerCase(Locale.ROOT);
         Set<String> kinds = upperSet(arguments.path("assetKinds"));
         int limit = boundedLimit(arguments.path("limit").asInt(10));
-        List<Map<String, Object>> ranked = snapshot.capabilities().stream()
+        List<Card> recalled = snapshot.capabilities().stream()
                 .filter(card -> kinds.isEmpty() || kinds.contains(card.assetKind()))
                 .filter(card -> intent.isBlank() || searchableText(card).contains(intent)
                         || tokens(intent).stream().anyMatch(searchableText(card)::contains))
-                .map(card -> candidate(card, matcher.match(query, card.business())))
+                .toList();
+        boolean aliasConflict = text(query, "semanticKey").isBlank()
+                && recalled.stream().filter(card -> exactDisplayPhrase(card, intent))
+                .filter(BusinessCapabilityIndex::activeSemanticKey)
+                .map(BusinessCapabilityIndex::semanticKey).filter(value -> !value.isBlank())
+                .distinct().limit(2).count() > 1;
+        JsonNode contractQuery = contractQuery(query);
+        List<Map<String, Object>> ranked = recalled.stream()
+                .map(card -> candidate(card, matcher.match(contractQuery, card.business())))
                 .sorted(Comparator.<Map<String, Object>>comparingInt(
                                 value -> matchRank(value.get("matchType").toString()))
                         .thenComparing(value -> value.get("assetRef").toString()))
                 .toList();
         long exact = ranked.stream().filter(value -> "EXACT".equals(value.get("matchType"))).count();
         List<Map<String, Object>> candidates = ranked.stream().limit(limit).toList();
-        String status = candidates.isEmpty() ? "NONE" : exact > 1 ? "AMBIGUOUS" : exact == 1 ? "EXACT" : "INCOMPLETE";
-        boolean clarificationRequired = !candidates.isEmpty() && exact != 1;
+        String status = candidates.isEmpty() ? "NONE" : aliasConflict || exact > 1
+                ? "AMBIGUOUS" : exact == 1 ? "EXACT" : "INCOMPLETE";
+        boolean clarificationRequired = !candidates.isEmpty() && (aliasConflict || exact != 1);
         return Map.of("status", status,
                 "snapshotFingerprint", snapshot.snapshotFingerprint(), "candidates", candidates,
                 "clarification", Map.of("required", clarificationRequired,
-                        "dimension", exact > 1 ? "ambiguousExactMatch" : "businessDefinition",
+                        "dimension", aliasConflict ? "aliasConflict"
+                                : exact > 1 ? "ambiguousExactMatch" : "businessDefinition",
                         "question", clarificationRequired ? "请补充或确认候选能力的业务定义。" : ""));
     }
 
@@ -182,6 +192,13 @@ public final class BusinessCapabilityIndex {
         String scope = AgentTddMutationService.scopeKey(identity);
         List<AgentTddStoredAsset> entities = ENTITY_KINDS.stream().sorted()
                 .flatMap(kind -> states.list(scope, kind).stream()).toList();
+        List<AgentTddStoredAsset> entityDisplays = states.list(
+                scope, SolutionEntityRegistry.CAPABILITY_DISPLAY);
+        Map<String, AgentTddStoredAsset> displaysByEntity = entityDisplays.stream().collect(
+                java.util.stream.Collectors.toUnmodifiableMap(
+                        asset -> displayKey(asset.data().path("entityKind").asText(),
+                                asset.data().path("entityRef").asText()),
+                        java.util.function.Function.identity(), (first, ignored) -> first));
         List<OperatorLibrary> libraryValues = libraries.all().stream().filter(Objects::nonNull)
                 .map(library -> scopedLibrary(library, identity))
                 .filter(library -> !library.operators().isEmpty())
@@ -202,13 +219,15 @@ public final class BusinessCapabilityIndex {
 
         LinkedHashMap<String, String> vector = new LinkedHashMap<>();
         vector.put("solutionEntities", fingerprint(entities.stream().map(this::entityIdentity).toList()));
+        vector.put("solutionEntityDisplays", fingerprint(
+                entityDisplays.stream().map(this::entityIdentity).toList()));
         vector.put("operatorLibraries", fingerprint(libraryValues));
         vector.put("runtimeCatalog", fingerprint(runtime));
         vector.put("graphDrafts", fingerprint(draftValues.stream().map(this::draftIdentity).toList()));
         vector.put("publications", fingerprint(publicationValues.stream().map(this::publicationIdentity).toList()));
 
         LinkedHashMap<String, Card> cards = new LinkedHashMap<>();
-        entities.forEach(asset -> put(cards, entityCard(asset)));
+        entities.forEach(asset -> put(cards, entityCard(asset, displaysByEntity)));
         libraryValues.forEach(library -> library.operators().stream().filter(Objects::nonNull)
                 .forEach(operator -> put(cards, operatorCard(operator, library.owner(), "OPERATOR_LIBRARY"))));
         runtime.forEach(operator -> put(cards, operatorCard(operator, "", "RUNTIME_CATALOG")));
@@ -239,21 +258,19 @@ public final class BusinessCapabilityIndex {
         return new Snapshot(scopeFingerprint, capture.vector(), snapshotFingerprint, Instant.now(), capture.cards());
     }
 
-    private Card entityCard(AgentTddStoredAsset asset) {
+    private Card entityCard(
+            AgentTddStoredAsset asset, Map<String, AgentTddStoredAsset> displaysByEntity) {
         JsonNode data = asset.data();
         String kind = data.path("entityKind").asText(kindFromStored(asset.kind()));
         JsonNode contract = data.path("contract");
-        ObjectNode display = mapper.createObjectNode();
-        JsonNode summary = contract.path("businessSemantics");
-        display.put("businessName", firstText(summary, "businessName", "name", "intent", asset.assetRef()));
-        display.put("description", firstText(summary, "description", "intent", "", ""));
-        display.set("aliases", safeArray(summary.path("aliases")));
-        display.set("tags", safeArray(summary.path("tags")));
+        DisplayProjection projected = displayProjection(
+                displaysByEntity.get(displayKey(kind, asset.assetRef())), contract, asset.assetRef());
         ObjectNode business = safeEntityBusiness(kind, contract);
         boolean speccing = data.path("speccing").asBoolean(false);
-        return new Card(asset.assetRef(), kind, display, business,
+        return new Card(asset.assetRef(), kind, projected.display(), business,
                 speccing ? "DRAFT" : "READY", speccing, speccing ? "SPECCING" : "READY", "",
                 data.path("contractFingerprint").asText(asset.fingerprint()), asset.revision(),
+                projected.revision(), projected.fingerprint(), projected.legacy(),
                 new Source("SOLUTION_ENTITY", false));
     }
 
@@ -264,6 +281,34 @@ public final class BusinessCapabilityIndex {
                 "determinism", "inputs", "rules", "otherwise", "effect", "writeGovernance",
                 "problem", "rootScenarioRef", "instructions", "goldenRef");
         return safe;
+    }
+
+    private DisplayProjection displayProjection(
+            AgentTddStoredAsset displayAsset, JsonNode contract, String assetRef) {
+        if (displayAsset != null) {
+            JsonNode data = displayAsset.data();
+            try {
+                BusinessCapabilityDisplay display = BusinessCapabilityDisplay.decode(data.path("display"));
+                String fingerprint = fingerprint(display);
+                if (fingerprint.equals(data.path("displayFingerprint").asText())) {
+                    return new DisplayProjection(mapper.valueToTree(display), displayAsset.revision(),
+                            fingerprint, false);
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Corrupt display rows cannot leak into recall; the entity remains a legacy projection.
+            }
+        }
+        JsonNode definition = contract.path("businessDefinition");
+        JsonNode summary = contract.path("businessSemantics");
+        String businessSemantics = summary.isTextual() ? summary.asText() : "";
+        String legacyName = summary.isObject() ? summary.path("businessName").asText() : "";
+        String legacyDescription = summary.isObject() ? summary.path("description").asText() : "";
+        String name = firstNonBlank(legacyName, businessSemantics, definition.path("intent").asText(),
+                contract.path("problem").asText(), assetRef);
+        String description = firstNonBlank(legacyDescription, definition.path("intent").asText(),
+                contract.path("problem").asText(), businessSemantics, assetRef);
+        BusinessCapabilityDisplay display = BusinessCapabilityDisplay.legacy(name, description);
+        return new DisplayProjection(mapper.valueToTree(display), 0, fingerprint(display), true);
     }
 
     private Card operatorCard(OperatorDefinition operator, String owner, String registry) {
@@ -280,7 +325,8 @@ public final class BusinessCapabilityIndex {
         boolean ready = operator.runtimeReadiness().executable();
         return new Card(operator.operatorRef(), "OPERATOR", display, business,
                 ready ? "READY" : "DRAFT", !ready, operator.runtimeReadiness().state(), owner,
-                operator.fingerprint(), 0, new Source(registry, false));
+                operator.fingerprint(), 0, 0, fingerprint(display), false,
+                new Source(registry, false));
     }
 
     private Card draftCard(GraphDraft draft) {
@@ -296,7 +342,8 @@ public final class BusinessCapabilityIndex {
         business.set("inputs", mapper.valueToTree(draft.inputSchema()));
         business.set("outputs", mapper.valueToTree(draft.outputSchema()));
         return new Card(draft.draftId(), kind, display, business, "DRAFT", true, draft.status(), "",
-                fingerprint(draftIdentity(draft)), draft.revision(), new Source("GRAPH_DRAFT", false));
+                fingerprint(draftIdentity(draft)), draft.revision(), 0, fingerprint(display), false,
+                new Source("GRAPH_DRAFT", false));
     }
 
     private Card publicationCard(VisualGraphPublication publication) {
@@ -310,7 +357,8 @@ public final class BusinessCapabilityIndex {
         business.put("artifactKind", publication.artifactKind());
         return new Card(publication.publicationId(), "PUBLICATION", display, business,
                 "PUBLISHED", false, publication.artifactKind(), "",
-                fingerprint(publicationIdentity(publication)), publication.draftRevision(),
+                fingerprint(publicationIdentity(publication)), publication.draftRevision(), 0,
+                fingerprint(display), false,
                 new Source("PUBLICATION_STORE", false));
     }
 
@@ -331,6 +379,33 @@ public final class BusinessCapabilityIndex {
         if (value.isTextual() && value.asText().contains(":")) refs.add(value.asText());
         else if (value.isArray()) value.forEach(item -> collectText(item, refs));
         else if (value.isObject()) value.fields().forEachRemaining(entry -> collectText(entry.getValue(), refs));
+    }
+
+    private static boolean activeSemanticKey(Card card) {
+        return "ACTIVE".equals(card.business().at("/businessDefinition/lifecycle").asText());
+    }
+
+    private static String semanticKey(Card card) {
+        return card.business().at("/businessDefinition/semanticKey").asText();
+    }
+
+    private static boolean exactDisplayPhrase(Card card, String intent) {
+        if (intent.isBlank()) return false;
+        JsonNode display = card.display();
+        if (intent.equals(display.path("businessName").asText().trim().toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+        for (JsonNode alias : display.path("aliases")) {
+            if (intent.equals(alias.asText().trim().toLowerCase(Locale.ROOT))) return true;
+        }
+        return false;
+    }
+
+    private static JsonNode contractQuery(JsonNode query) {
+        if (!text(query, "semanticKey").isBlank() || !query.isObject()) return query;
+        ObjectNode discoveryOnly = ((ObjectNode) query).deepCopy();
+        discoveryOnly.remove("intent");
+        return discoveryOnly;
     }
 
     private String encodeCursor(IntegrationRequestContext identity, Snapshot snapshot, String query, int offset) {
@@ -391,21 +466,17 @@ public final class BusinessCapabilityIndex {
         };
     }
 
+    private static String displayKey(String entityKind, String entityRef) {
+        return entityKind.trim().toUpperCase(Locale.ROOT) + '\u001f' + entityRef.trim();
+    }
+
     private void copy(ObjectNode target, JsonNode source, String... names) {
         for (String name : names) if (source.has(name)) target.set(name, source.path(name).deepCopy());
     }
 
-    private ArrayNode safeArray(JsonNode value) {
-        return value != null && value.isArray() ? (ArrayNode) value.deepCopy() : mapper.createArrayNode();
-    }
-
-    private static String firstText(JsonNode node, String a, String b, String c, String fallback) {
-        for (String name : List.of(a, b, c)) {
-            if (!name.isBlank() && node.path(name).isTextual() && !node.path(name).asText().isBlank()) {
-                return node.path(name).asText();
-            }
-        }
-        return fallback;
+    private static String firstNonBlank(String... values) {
+        for (String value : values) if (value != null && !value.trim().isBlank()) return value.trim();
+        return "Legacy business capability";
     }
 
     private static int boundedLimit(int value) {
@@ -443,6 +514,9 @@ public final class BusinessCapabilityIndex {
                 .toLowerCase(Locale.ROOT);
     }
 
+    private record DisplayProjection(
+            ObjectNode display, long revision, String fingerprint, boolean legacy) { }
+
     private record Capture(Map<String, String> vector, List<Card> cards) { }
 
     /** Immutable, scope-bound index snapshot used by one list, get or search operation. */
@@ -469,6 +543,9 @@ public final class BusinessCapabilityIndex {
                        String owner,
                        String contractFingerprint,
                        long revision,
+                       long displayRevision,
+                       String displayFingerprint,
+                       boolean legacyDisplayProjection,
                        Source source) {
         /** Freezes JSON projections and normalizes all public text values. */
         public Card {
@@ -480,6 +557,7 @@ public final class BusinessCapabilityIndex {
             runtimeState = runtimeState == null ? "" : runtimeState;
             owner = owner == null ? "" : owner;
             contractFingerprint = contractFingerprint == null ? "" : contractFingerprint;
+            displayFingerprint = displayFingerprint == null ? "" : displayFingerprint;
         }
 
         @Override public JsonNode display() { return display.deepCopy(); }

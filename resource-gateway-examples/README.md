@@ -40,7 +40,12 @@ operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, 
 stores canonical revisions within the authenticated tenant/project/environment scope. Solution
 composition resolves every direct Feature, root Scenario, and Instruction reference before it
 persists a pure-function projection; unresolved references fail closed rather than surfacing as a
-later DSL surprise. Codex first receives a scoped, versioned,
+later DSL surprise. Current structured writes also carry a bounded business display contract with
+the business name, description, aliases, tags, and positive/negative usage cues. Resource Gateway
+stores that display in an independently revisioned row used only by capability recall and review.
+Changing display copy never changes the entity revision, business-contract fingerprint,
+implementation fingerprint, or current execution evidence. Legacy entities receive a read-only
+display projection until they are explicitly re-authored. Codex first receives a scoped, versioned,
 graph-only and payload-free syntax/contract/example snapshot, then previews and gates the exact source
 against that immutable authoring context. Compose accepts the DSL envelope plus its context and receipt
 fingerprints rather than trusting a client-authored `GraphDraft`; the mutation reruns the production

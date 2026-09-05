@@ -21,6 +21,7 @@ import java.util.Set;
  * @param rules ordered explicit rules
  * @param otherwise mandatory fallback outlet
  * @param businessDefinition structured, implementation-independent decision identity
+ * @param display independently revised business discovery and presentation material
  */
 public record ScenarioContract(
         String scenarioRef,
@@ -28,7 +29,8 @@ public record ScenarioContract(
         HitPolicy hitPolicy,
         List<Rule> rules,
         Outlet otherwise,
-        BusinessScenarioSemanticContract businessDefinition
+        BusinessScenarioSemanticContract businessDefinition,
+        @com.fasterxml.jackson.annotation.JsonIgnore BusinessCapabilityDisplay display
 ) {
     /** Supported deterministic decision-table hit policy. */
     public enum HitPolicy { UNIQUE }
@@ -93,6 +95,16 @@ public record ScenarioContract(
         }
         businessDefinition = businessDefinition == null
                 ? BusinessScenarioSemanticContract.legacy(scenarioRef, inputs) : businessDefinition;
+        display = display == null
+                ? BusinessCapabilityDisplay.legacy(businessDefinition.intent(), businessDefinition.intent())
+                : display;
+    }
+
+    /** Preserves v1.4.6 callers while deriving a compatibility display. */
+    public ScenarioContract(String scenarioRef, List<String> inputs, HitPolicy hitPolicy,
+                            List<Rule> rules, Outlet otherwise,
+                            BusinessScenarioSemanticContract businessDefinition) {
+        this(scenarioRef, inputs, hitPolicy, rules, otherwise, businessDefinition, null);
     }
 
     /** Preserves contracts authored before structured Scenario business semantics. */
@@ -123,6 +135,17 @@ public record ScenarioContract(
                 "otherwise", otherwise,
                 "businessDefinition", businessDefinition
         );
+    }
+
+    /** @return executable Scenario identity excluding independently revised display material */
+    public Map<String, Object> implementationIdentity() {
+        return contractIdentity();
+    }
+
+    /** Returns the same Scenario with independently revised discovery material. */
+    public ScenarioContract withDisplay(BusinessCapabilityDisplay revisedDisplay) {
+        return new ScenarioContract(scenarioRef, inputs, hitPolicy, rules, otherwise,
+                businessDefinition, revisedDisplay);
     }
 
     private List<Outlet> outlets() {

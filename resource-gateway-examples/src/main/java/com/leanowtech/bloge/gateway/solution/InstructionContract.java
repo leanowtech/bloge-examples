@@ -23,6 +23,7 @@ import java.util.Map;
  * @param writeGovernance downstream reconciliation contract for writes
  * @param businessSemantics human-readable disposition shown on review surfaces
  * @param businessDefinition structured, implementation-independent disposition identity
+ * @param display independently revised business discovery and presentation material
  */
 public record InstructionContract(
         String instructionRef,
@@ -32,7 +33,8 @@ public record InstructionContract(
         String bindingRef,
         WriteGovernance writeGovernance,
         String businessSemantics,
-        BusinessInstructionSemanticContract businessDefinition
+        BusinessInstructionSemanticContract businessDefinition,
+        @com.fasterxml.jackson.annotation.JsonIgnore BusinessCapabilityDisplay display
 ) {
     /** Effect boundary used by simulation and governed runtime dispatch. */
     public enum Effect { READ, WRITE }
@@ -85,6 +87,18 @@ public record InstructionContract(
         businessDefinition = businessDefinition == null
                 ? BusinessInstructionSemanticContract.legacy(instructionRef, output, effect)
                 : businessDefinition;
+        display = display == null
+                ? BusinessCapabilityDisplay.legacy(businessSemantics, businessDefinition.intent())
+                : display;
+    }
+
+    /** Preserves v1.4.6 callers while deriving a compatibility display. */
+    public InstructionContract(String instructionRef, JsonNode inputs, JsonNode output, Effect effect,
+                               String bindingRef, WriteGovernance writeGovernance,
+                               String businessSemantics,
+                               BusinessInstructionSemanticContract businessDefinition) {
+        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance,
+                businessSemantics, businessDefinition, null);
     }
 
     /** Preserves contracts authored before structured Instruction business semantics. */
@@ -92,13 +106,14 @@ public record InstructionContract(
                                String bindingRef, WriteGovernance writeGovernance,
                                String businessSemantics) {
         this(instructionRef, inputs, output, effect, bindingRef, writeGovernance,
-                businessSemantics, null);
+                businessSemantics, null, null);
     }
 
     /** Compatibility constructor for stored and authored contracts predating business labels. */
     public InstructionContract(String instructionRef, JsonNode inputs, JsonNode output, Effect effect,
                                String bindingRef, WriteGovernance writeGovernance) {
-        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance, instructionRef, null);
+        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance,
+                instructionRef, null, null);
     }
 
     @Override
@@ -137,6 +152,26 @@ public record InstructionContract(
         identity.put("businessDefinition", businessDefinition);
         if (writeGovernance != null) identity.put("writeGovernance", writeGovernance);
         return Map.copyOf(identity);
+    }
+
+    /** @return executable Instruction identity excluding independently revised display material */
+    public Map<String, Object> implementationIdentity() {
+        java.util.LinkedHashMap<String, Object> identity = new java.util.LinkedHashMap<>();
+        identity.put("instructionRef", instructionRef);
+        identity.put("inputs", inputs);
+        identity.put("output", output);
+        identity.put("effect", effect);
+        identity.put("bindingRef", bindingRef);
+        identity.put("writeGovernance", writeGovernance);
+        identity.put("businessSemantics", businessSemantics);
+        identity.put("businessDefinition", businessDefinition);
+        return java.util.Collections.unmodifiableMap(identity);
+    }
+
+    /** Returns the same Instruction with independently revised discovery material. */
+    public InstructionContract withDisplay(BusinessCapabilityDisplay revisedDisplay) {
+        return new InstructionContract(instructionRef, inputs, output, effect, bindingRef,
+                writeGovernance, businessSemantics, businessDefinition, revisedDisplay);
     }
 
     /** Parses a case-insensitive enum value without accepting unknown spellings. */

@@ -386,6 +386,8 @@ public final class SolutionAgentTools {
         SolutionEntityRegistry.RegisteredEntity stored =
                 registry.upsertSolution(scopeKey, contract, speccing,
                         lowered == null ? null : lowered.draft(), authoringReceiptFingerprint);
+        String effectiveAuthoringReceiptFingerprint = registry.requireSolutionAuthoringReceipt(
+                scopeKey, contract.solutionRef());
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("solutionRef", stored.ref());
         result.put("inputContract", Map.copyOf(inputs));
@@ -398,7 +400,7 @@ public final class SolutionAgentTools {
                 "operators", List.of("bloge:scenarioCall", "bloge:instructionCall")));
         result.put("speccing", stored.speccing());
         result.put("authoringContextFingerprint", contextFingerprint);
-        result.put("authoringReceiptFingerprint", authoringReceiptFingerprint);
+        result.put("authoringReceiptFingerprint", effectiveAuthoringReceiptFingerprint);
         result.put("revision", stored.revision());
         result.put("contractFingerprint", stored.contractFingerprint());
         result.put("honestVerdict", draftVerdict("Solution"));

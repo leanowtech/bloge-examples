@@ -26,18 +26,18 @@ public final class SolutionAuthoringDecoder {
     private static final int MAX_BYTES = 1024 * 1024;
     private static final Set<String> FEATURE_FIELDS = Set.of(
             "output", "evaluationKind", "determinism", "inputs", "evaluationRef",
-            "componentRef", "promptRef", "businessSemantics", "businessDefinition");
+            "componentRef", "promptRef", "businessSemantics", "businessDefinition", "display");
     private static final Set<String> SCENARIO_FIELDS = Set.of(
-            "inputs", "hitPolicy", "rules", "otherwise", "businessDefinition");
+            "inputs", "hitPolicy", "rules", "otherwise", "businessDefinition", "display");
     private static final Set<String> RULE_FIELDS = Set.of("ruleId", "when", "outlet");
     private static final Set<String> OUTLET_FIELDS = Set.of("kind", "ref", "bind", "terminalKind");
     private static final Set<String> INSTRUCTION_FIELDS = Set.of(
             "inputs", "output", "effect", "bindingRef", "writeGovernance", "businessSemantics",
-            "businessDefinition");
+            "businessDefinition", "display");
     private static final Set<String> WRITE_GOVERNANCE_FIELDS = Set.of(
             "downstreamSystem", "reconciliationKey", "reconciliationAdapterRef");
     private static final Set<String> SOLUTION_FIELDS = Set.of(
-            "problem", "inputs", "scenarioTree", "instructions", "golden", "businessDefinition");
+            "problem", "inputs", "scenarioTree", "instructions", "golden", "businessDefinition", "display");
     private static final Set<String> SCENARIO_TREE_FIELDS = Set.of("root");
     private static final Set<String> DOCUMENT_FIELDS = Set.of(
             "schemaVersion", "features", "scenarios", "instructions", "solutions");
@@ -91,6 +91,7 @@ public final class SolutionAuthoringDecoder {
             if (!body.isObject() || hasUnknownField(body, FEATURE_FIELDS)) {
                 return DecodeResult.failed("FEATURE_CONTRACT_UNKNOWN_FIELD");
             }
+            BusinessCapabilityDisplay display = display(body);
             FeatureContract contract = new FeatureContract(
                     entry.getKey(), required(body, "output"),
                     FeatureContract.enumValue(FeatureContract.EvaluationKind.class,
@@ -104,8 +105,11 @@ public final class SolutionAuthoringDecoder {
                     body.has("businessDefinition")
                             ? mapper.treeToValue(body.path("businessDefinition"),
                                     BusinessFactSemanticContract.class)
-                            : null);
+                            : null,
+                    display);
             return DecodeResult.decoded(contract);
+        } catch (DisplayDecodeException failure) {
+            return DecodeResult.failed("FEATURE_DISPLAY_INVALID");
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("FEATURE_CONTRACT_INVALID");
         }
@@ -181,6 +185,7 @@ public final class SolutionAuthoringDecoder {
             if (!body.isObject() || hasUnknownField(body, SCENARIO_FIELDS)) {
                 return DecodeResult.failed("SCENARIO_CONTRACT_UNKNOWN_FIELD");
             }
+            BusinessCapabilityDisplay display = display(body);
             List<ScenarioContract.Rule> rules = new ArrayList<>();
             JsonNode rows = required(body, "rules");
             if (!rows.isArray()) return DecodeResult.failed("SCENARIO_RULES_INVALID");
@@ -199,8 +204,11 @@ public final class SolutionAuthoringDecoder {
                     rules, outlet(required(body, "otherwise")),
                     body.has("businessDefinition")
                             ? mapper.treeToValue(body.path("businessDefinition"),
-                                    BusinessScenarioSemanticContract.class) : null);
+                                    BusinessScenarioSemanticContract.class) : null,
+                    display);
             return DecodeResult.decoded(contract);
+        } catch (DisplayDecodeException failure) {
+            return DecodeResult.failed("SCENARIO_DISPLAY_INVALID");
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("SCENARIO_CONTRACT_INVALID");
         }
@@ -219,6 +227,7 @@ public final class SolutionAuthoringDecoder {
             if (!body.isObject() || hasUnknownField(body, INSTRUCTION_FIELDS)) {
                 return DecodeResult.failed("INSTRUCTION_CONTRACT_UNKNOWN_FIELD");
             }
+            BusinessCapabilityDisplay display = display(body);
             JsonNode governanceNode = body.path("writeGovernance");
             InstructionContract.WriteGovernance governance = null;
             if (!governanceNode.isMissingNode() && !governanceNode.isNull()) {
@@ -240,8 +249,11 @@ public final class SolutionAuthoringDecoder {
                             ? requiredText(body, "businessSemantics") : entry.getKey(),
                     body.has("businessDefinition")
                             ? mapper.treeToValue(body.path("businessDefinition"),
-                                    BusinessInstructionSemanticContract.class) : null);
+                                    BusinessInstructionSemanticContract.class) : null,
+                    display);
             return DecodeResult.decoded(contract);
+        } catch (DisplayDecodeException failure) {
+            return DecodeResult.failed("INSTRUCTION_DISPLAY_INVALID");
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("INSTRUCTION_CONTRACT_INVALID");
         }
@@ -260,6 +272,7 @@ public final class SolutionAuthoringDecoder {
             if (!body.isObject() || hasUnknownField(body, SOLUTION_FIELDS)) {
                 return DecodeResult.failed("SOLUTION_CONTRACT_UNKNOWN_FIELD");
             }
+            BusinessCapabilityDisplay display = display(body);
             JsonNode scenarioTree = required(body, "scenarioTree");
             if (!scenarioTree.isObject() || hasUnknownField(scenarioTree, SCENARIO_TREE_FIELDS)) {
                 return DecodeResult.failed("SOLUTION_SCENARIO_TREE_INVALID");
@@ -272,12 +285,29 @@ public final class SolutionAuthoringDecoder {
                     requiredText(body, "golden"),
                     body.has("businessDefinition")
                             ? mapper.treeToValue(body.path("businessDefinition"),
-                                    BusinessSolutionSemanticContract.class) : null);
+                                    BusinessSolutionSemanticContract.class) : null,
+                    display);
             return DecodeResult.decoded(contract);
+        } catch (DisplayDecodeException failure) {
+            return DecodeResult.failed("SOLUTION_DISPLAY_INVALID");
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("SOLUTION_CONTRACT_INVALID");
         }
     }
+
+    private static BusinessCapabilityDisplay display(JsonNode body) {
+        if (!body.has("display")) {
+            if (body.has("businessDefinition")) throw new DisplayDecodeException();
+            return null;
+        }
+        try {
+            return BusinessCapabilityDisplay.decode(body.path("display"));
+        } catch (IllegalArgumentException failure) {
+            throw new DisplayDecodeException();
+        }
+    }
+
+    private static final class DisplayDecodeException extends RuntimeException { }
 
     private Map.Entry<String, JsonNode> singleEntity(byte[] source, String failureCode)
             throws java.io.IOException {
