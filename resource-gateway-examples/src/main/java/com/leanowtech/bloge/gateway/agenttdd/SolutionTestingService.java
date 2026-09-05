@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
-import com.leanowtech.bloge.gateway.solution.InstructionStubFactory;
 import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
@@ -13,6 +12,9 @@ import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenContractGuard;
+import com.leanowtech.bloge.gateway.solution.journey.ControlledFeatureAdapter;
+import com.leanowtech.bloge.gateway.solution.journey.ControlledInstructionAdapter;
+import com.leanowtech.bloge.gateway.solution.journey.ControlledTestEgressGuard;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -37,6 +39,7 @@ public final class SolutionTestingService {
     private final ObjectMapper mapper;
     private final InstructionDispatchChannel fallbackChannel;
     private final BusinessGoldenMaterialStore goldenMaterials;
+    private final ControlledTestEgressGuard egressGuard;
 
     /** Creates a testing pyramid over the canonical entities and shared approved-case repository. */
     public SolutionTestingService(
@@ -54,11 +57,24 @@ public final class SolutionTestingService {
             ObjectMapper mapper,
             InstructionDispatchChannel instructionChannel,
             BusinessGoldenMaterialStore goldenMaterials) {
+        this(states, registry, mapper, instructionChannel, goldenMaterials,
+                new ControlledTestEgressGuard());
+    }
+
+    /** Creates a testing boundary with an explicit deny-all egress probe. */
+    public SolutionTestingService(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ObjectMapper mapper,
+            InstructionDispatchChannel instructionChannel,
+            BusinessGoldenMaterialStore goldenMaterials,
+            ControlledTestEgressGuard egressGuard) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.fallbackChannel = Objects.requireNonNull(instructionChannel, "instructionChannel");
         this.goldenMaterials = goldenMaterials;
+        this.egressGuard = Objects.requireNonNull(egressGuard, "egressGuard");
     }
 
     /** Evaluates explicit Feature values against expected Scenario outlet subsets. */
@@ -173,10 +189,19 @@ public final class SolutionTestingService {
                     : compiledPlan));
             SolutionExecutionService.ExecutionResult result;
             try {
-                SolutionExecutionService execution = controlledExecution(row);
-                result = row.path("controlledAssumptions").isObject()
-                        ? execution.simulateControlled(scopeKey, solutionRef, row.path("given"))
-                        : execution.simulate(scopeKey, solutionRef, row.path("given"));
+                if (row.path("controlledAssumptions").isObject()) {
+                    ControlledFeatureAdapter.Resolution features = new ControlledFeatureAdapter(
+                            egressGuard).resolve(solutionContract, row.path("given"),
+                            row.path("controlledAssumptions"));
+                    result = features.failed()
+                            ? new SolutionExecutionService.ExecutionResult(
+                            features.failureResult(), features.reasoning(), "", List.of(), 0)
+                            : controlledExecution(row).simulateControlled(
+                            scopeKey, solutionRef, features.values());
+                } else {
+                    result = controlledExecution(row).simulate(
+                            scopeKey, solutionRef, row.path("given"));
+                }
             } catch (SolutionContractException failure) {
                 throw new AgentTddToolException(failure.code(), failure.getMessage());
             }
@@ -335,36 +360,12 @@ public final class SolutionTestingService {
         return approved;
     }
 
-    /**
-     * Builds a case-scoped IoC channel. Business GOLDEN rows fail closed when an external READ
-     * instruction has no explicit assumption; legacy rows retain their existing test channel.
-     */
+    /** Builds a case-scoped channel with no reference to the governed runtime channel. */
     private SolutionExecutionService controlledExecution(JsonNode row) {
         JsonNode assumptions = row.path("controlledAssumptions");
         if (!assumptions.isObject()) return new SolutionExecutionService(registry, mapper, fallbackChannel);
-        InstructionDispatchChannel controlled = (instruction, values, context) -> {
-            JsonNode assumption = assumptions.path(instruction.instructionRef());
-            if (!assumption.isObject()) throw new SolutionContractException(
-                    "CONTROLLED_ASSUMPTION_REQUIRED", "A controlled dependency assumption is required.");
-            return switch (assumption.path("outcome").asText()) {
-                case "RETURNS" -> {
-                    JsonNode value = assumption.path("value");
-                    if (!value.isObject() || !value.has("result") || !value.has("reasoning")) {
-                        throw new SolutionContractException(
-                                "CONTROLLED_ASSUMPTION_REQUIRED", "A contract-shaped return is required.");
-                    }
-                    yield mapper.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() { });
-                }
-                case "SUCCEEDS_WITHOUT_EFFECT" -> InstructionStubFactory.from(instruction);
-                case "UNAVAILABLE", "FAILS_WITHOUT_EFFECT" -> throw new SolutionContractException(
-                        "CONTROLLED_DEPENDENCY_FAILED", "The controlled dependency is unavailable.");
-                case "MUST_NOT_BE_USED" -> throw new SolutionContractException(
-                        "CONTROLLED_DEPENDENCY_FORBIDDEN", "A forbidden dependency path was selected.");
-                default -> throw new SolutionContractException(
-                        "CONTROLLED_ASSUMPTION_REQUIRED", "A controlled dependency assumption is required.");
-            };
-        };
-        return new SolutionExecutionService(registry, mapper, controlled);
+        return new SolutionExecutionService(
+                registry, mapper, new ControlledInstructionAdapter(assumptions, mapper));
     }
 
     private static boolean contains(JsonNode actual, JsonNode expected) {

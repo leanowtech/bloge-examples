@@ -389,6 +389,8 @@ implementation fingerprint 一致的不可变 publication；草稿存在不等�
 - Solution 使用同一个 `rg.scenario.upsertCases`，但 `toolRef` 填 Solution ref；服务端会在当前作用域解析它，不需要伪造一个同名 Tool draft。
 - `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
 - `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。业务旅程中的案例必须同时具有完整案例指纹和受保护 material receipt；执行时才在服务端内存中恢复 `given`、依赖假设和 Oracle。旧明文或仅有 `expect` 批准的行不能推进新旅程，返回 `LEGACY_GOLDEN_REAPPROVAL_REQUIRED`。
+- `dependencyAssumptions` 可以按业务名称指向当前 Solution 输入 Feature 或可达 Instruction。`RETURNS` 的值必须符合当前 Feature 输出或 Instruction `result + reasoning` 契约；`UNAVAILABLE` 和 `FAILS_WITHOUT_EFFECT` 分别产生稳定的 `dependencyStatus=UNAVAILABLE`、`dependencyStatus=FAILED_WITHOUT_EFFECT` 业务结果，由批准的 `expectedOutcome` 显式匹配。`MUST_NOT_BE_USED` 只在规则路径实际使用目标能力时失败。
+- 受控 Feature adapter 不持有真实 `FeatureEvaluationBackend`，受控 Instruction adapter 不持有真实 `InstructionDispatchChannel`。测试进程触达 HTTP、真实 Feature 后端或真实 Instruction 通道时，服务端在保存 GREEN evidence 前返回 `CONTROLLED_TEST_EGRESS_DENIED`。
 - 业务旅程的 baseline 响应返回 `journeyRevision`、`solutionContextFingerprint`、`planFingerprint`、`compilerVersion` 和 `egressPolicy=DENY_ALL`。持久 evidence 还绑定当前 scope、排序后的 GOLDEN 指纹以及冻结的 Feature/Instruction revision 与契约指纹。任一坐标变化后，旧 evidence 不能推进签署或发布。
 - GREEN 后需要执行受治理 WRITE 时，平台执行器使用同一 material receipt 在进程内恢复已批准案例，再完成写入与读后对账。执行器不从 case-set 元数据猜测 `given` 或 `expect`，也不把解密后的事实值、期望结果或依赖返回值写入 reconciliation 证据。receipt 缺失、内容指纹不一致或业务契约已变化时，执行停止。
 - Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。

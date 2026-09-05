@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
+import com.leanowtech.bloge.gateway.solution.journey.ControlledTestEgressGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -209,6 +210,74 @@ class SolutionTestingServiceTest {
     }
 
     @Test
+    void treatsAControlledInstructionFailureAsTheApprovedBusinessFallback() {
+        storeControlledCases(Map.of("ins:refund", Map.of(
+                        "assetKind", "INSTRUCTION", "outcome", "UNAVAILABLE")),
+                Map.of("result", Map.of("dependencyStatus", "UNAVAILABLE"),
+                        "reasoning", "CONTROLLED_DEPENDENCY_UNAVAILABLE"));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void exercisesAFeatureFailureWithoutEnteringARealFeatureBackend() {
+        storeControlledCases(Map.of("responsibility.party", Map.of(
+                        "assetKind", "FEATURE", "inputAlias", "party", "outcome", "UNAVAILABLE")),
+                Map.of("result", Map.of("dependencyStatus", "UNAVAILABLE"),
+                        "reasoning", "CONTROLLED_DEPENDENCY_UNAVAILABLE"));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void rejectsAnEgressProbeBeforeExecutionAndDoesNotSaveGreenEvidence() {
+        storeControlledCases(Map.of("ins:refund", Map.of(
+                "assetKind", "INSTRUCTION", "outcome", "SUCCEEDS_WITHOUT_EFFECT")));
+        ControlledTestEgressGuard guard = new ControlledTestEgressGuard(
+                candidate -> candidate.deny("HTTP"));
+        SolutionTestingService guarded = new SolutionTestingService(
+                states, registry, mapper, (instruction, values, context) -> {
+                    writes.incrementAndGet();
+                    return Map.of();
+                }, null, guard);
+
+        assertThatThrownBy(() -> guarded.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN"))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("CONTROLLED_TEST_EGRESS_DENIED"));
+        assertThat(guard.deniedAttempts()).isEqualTo(1);
+        assertThat(writes).hasValue(0);
+        assertThat(states.find(SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel")).isEmpty();
+        assertThat(states.find(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel")
+                .orElseThrow().data().at("/rows/0/qualityState").asText())
+                .isEqualTo("DESIGNED_NOT_RUN");
+    }
+
+    @Test
+    void doesNotFailAMustNotBeUsedAssumptionWhenTheScenarioDoesNotSelectIt() {
+        storeControlledCases(Map.of("ins:refund", Map.of(
+                        "assetKind", "INSTRUCTION", "outcome", "MUST_NOT_BE_USED")),
+                Map.of("result", Map.of("terminalKind", "ESCALATE"),
+                        "reasoning", "TERMINAL_SCENARIO_OUTLET"),
+                Map.of("party", "driver", "orderId", "O-1"));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO");
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
     void reportsBusinessBacklogAndRefusesUnapprovedOracleRows() {
         storeCases("ACTIVE", Map.of("result", Map.of("decision", "UPHELD")));
         Map<String, Object> failed = testing.baseline(
@@ -255,6 +324,17 @@ class SolutionTestingServiceTest {
     }
 
     private void storeControlledCases(Map<String, Object> assumptions) {
+        storeControlledCases(assumptions, Map.of("result", Map.of("decision", "WAIVED")));
+    }
+
+    private void storeControlledCases(
+            Map<String, Object> assumptions, Map<String, Object> expect) {
+        storeControlledCases(assumptions, expect, Map.of("party", "none", "orderId", "O-1"));
+    }
+
+    private void storeControlledCases(
+            Map<String, Object> assumptions, Map<String, Object> expect,
+            Map<String, Object> given) {
         ObjectNode data = mapper.createObjectNode();
         data.put("caseSetRef", "caseSet:cancel");
         data.put("toolRef", "sol:cancel");
@@ -262,9 +342,9 @@ class SolutionTestingServiceTest {
                 Map.entry("caseId", "g-controlled"), Map.entry("category", "GOLDEN"),
                 Map.entry("lifecycle", "ACTIVE"), Map.entry("qualityState", "DESIGNED_NOT_RUN"),
                 Map.entry("oracleOwner", "cx-ops"),
-                Map.entry("given", Map.of("party", "none", "orderId", "O-1")),
+                Map.entry("given", given),
                 Map.entry("stubs", Map.of()), Map.entry("controlledAssumptions", assumptions),
-                Map.entry("expect", Map.of("result", Map.of("decision", "WAIVED")))))));
+                Map.entry("expect", expect)))));
         states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", data);
     }
 

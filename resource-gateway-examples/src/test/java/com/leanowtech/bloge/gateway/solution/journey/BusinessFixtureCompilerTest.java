@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.solution.journey;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
@@ -166,6 +167,109 @@ class BusinessFixtureCompilerTest {
                 .isEqualTo("BUSINESS_ASSUMPTION_EFFECT_INVALID");
     }
 
+    @Test
+    void resolvesAFeatureDependencyAndInjectsItsContractCheckedReturn() {
+        ObjectNode fixture = (ObjectNode) fixture("UNAVAILABLE").deepCopy();
+        fixture.set("givenFacts", mapper.valueToTree(List.of(
+                Map.of("factName", "订单编号", "value", "O-1"))));
+        fixture.set("dependencyAssumptions", mapper.valueToTree(List.of(Map.of(
+                "capabilityName", "取消责任方", "outcome", "RETURNS", "value", "passenger"))));
+
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
+                SCOPE, "sol:cancel", fixture);
+
+        assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
+        assertThat(plan.dependencyAssumptions().at("/feature:party/assetKind").asText())
+                .isEqualTo("FEATURE");
+        assertThat(plan.dependencyAssumptions().at("/feature:party/inputAlias").asText())
+                .isEqualTo("party");
+    }
+
+    @Test
+    void rejectsInstructionReturnThatViolatesItsCurrentOutputDomain() {
+        ObjectNode fixture = (ObjectNode) fixture("RETURNS", "余额查询").deepCopy();
+        fixture.set("dependencyAssumptions", mapper.valueToTree(List.of(Map.of(
+                "capabilityName", "余额查询", "outcome", "RETURNS",
+                "value", Map.of("result", 42, "reasoning", "余额已读取")))));
+
+        assertThatThrownBy(() -> compiler.compile(SCOPE, "sol:cancel", fixture))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_ASSUMPTION_SCHEMA_INVALID");
+    }
+
+    @Test
+    void rejectsAnInvalidEnumInsideANestedInstructionResult() {
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:balance", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of(
+                        "result", Map.of("type", "object", "properties", Map.of(
+                                "decision", Map.of("type", "string", "enum", List.of("WAIVED")),
+                                "details", Map.of("type", "object", "properties", Map.of(
+                                        "source", Map.of("type", "string")),
+                                        "required", List.of("source"))),
+                                "required", List.of("decision", "details")),
+                        "reasoning", "required")),
+                InstructionContract.Effect.READ, "operator:balance", null, "余额查询"));
+        ObjectNode fixture = (ObjectNode) fixture("RETURNS", "余额查询").deepCopy();
+        fixture.set("dependencyAssumptions", mapper.valueToTree(List.of(Map.of(
+                "capabilityName", "余额查询", "outcome", "RETURNS",
+                "value", Map.of("result", Map.of(
+                        "decision", "NOT_DECLARED", "details", Map.of("source", "ledger")),
+                        "reasoning", "余额已读取")))));
+
+        assertThatThrownBy(() -> compiler.compile(SCOPE, "sol:cancel", fixture))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_ASSUMPTION_SCHEMA_INVALID");
+    }
+
+    @Test
+    void rejectsAnExpectedDispositionOutsideEveryReachableOutletContract() {
+        ObjectNode fixture = (ObjectNode) fixture("UNAVAILABLE").deepCopy();
+        fixture.set("expectedOutcome", mapper.valueToTree(Map.of(
+                "result", Map.of("decision", "NOT_DECLARED"),
+                "reasoningClass", "责任在乘客")));
+
+        assertThatThrownBy(() -> compiler.validateBusinessCase(SCOPE, "sol:cancel", fixture))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_EXPECTED_OUTCOME_INVALID");
+    }
+
+    @Test
+    void compilesFeatureFailureToAReachableBusinessFallbackWithoutCallingAFeatureBackend() {
+        ObjectNode fixture = (ObjectNode) fixture("UNAVAILABLE").deepCopy();
+        fixture.set("givenFacts", mapper.valueToTree(List.of(
+                Map.of("factName", "订单编号", "value", "O-1"))));
+        fixture.set("dependencyAssumptions", mapper.valueToTree(List.of(Map.of(
+                "capabilityName", "取消责任方", "outcome", "UNAVAILABLE"))));
+        fixture.set("expectedOutcome", mapper.valueToTree(Map.of(
+                "result", Map.of("dependencyStatus", "UNAVAILABLE"),
+                "reasoningClass", "CONTROLLED_DEPENDENCY_UNAVAILABLE")));
+
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
+                SCOPE, "sol:cancel", fixture);
+
+        assertThat(plan.dependencyAssumptions().at("/feature:party/outcome").asText())
+                .isEqualTo("UNAVAILABLE");
+    }
+
+    @Test
+    void rejectsTheSameFeatureAsBothAGivenFactAndADependencyAssumption() {
+        ObjectNode fixture = (ObjectNode) fixture("UNAVAILABLE").deepCopy();
+        fixture.set("dependencyAssumptions", mapper.valueToTree(List.of(Map.of(
+                "capabilityName", "取消责任方", "outcome", "UNAVAILABLE"))));
+        fixture.set("expectedOutcome", mapper.valueToTree(Map.of(
+                "result", Map.of("dependencyStatus", "UNAVAILABLE"),
+                "reasoningClass", "CONTROLLED_DEPENDENCY_UNAVAILABLE")));
+
+        assertThatThrownBy(() -> compiler.validateBusinessCase(SCOPE, "sol:cancel", fixture))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_ASSUMPTION_DUPLICATE");
+    }
+
     private InstructionContract instruction(String ref, String semantics) {
         return new InstructionContract(ref, mapper.valueToTree(Map.of("orderId", "string")),
                 mapper.valueToTree(Map.of("result", Map.of("type", "string"),
@@ -207,7 +311,7 @@ class BusinessFixtureCompilerTest {
         dependency.put("capabilityName", capabilityName);
         dependency.put("outcome", outcome);
         if ("RETURNS".equals(outcome)) dependency.put("value", Map.of(
-                "result", Map.of("decision", "WAIVED"), "reasoning", "符合政策"));
+                "result", "WAIVED", "reasoning", "符合政策"));
         return mapper.valueToTree(Map.of(
                 "givenFacts", List.of(Map.of("factName", "取消责任方", "value", "passenger")),
                 "dependencyAssumptions", List.of(dependency)));

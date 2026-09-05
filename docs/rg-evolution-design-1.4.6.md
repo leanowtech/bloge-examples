@@ -1354,7 +1354,7 @@ gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；五源集成测试覆盖确定性去重、排序和 scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL；六项灰度状态经 MCP 初始化投影 |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile；journey 新写入拒绝自由文本兼容投影；旧版 UNKNOWN/PARTIAL 只读兼容；matcher 按 profile 比较封闭业务维度；多 EXACT 歧义停止；实现 binding 排除于业务身份；四实体业务定义纳入契约指纹和服务端创作模板 |
-| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；独立 `BusinessFixtureCompiler` 将业务事实和五类依赖结果编译为确定性 `ControlledAssumptionPlan`，拒绝歧义、不可达能力和不适用于 WRITE 的返回事实；case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 已完成 | 当前干净提交已通过三个独立真实 Codex 会话：“业务创作→新会话同义召回→缺字段时单问题澄清”；三个 thread identity 仅以一次性 HMAC 留存且必须互不相同；召回候选与主链 Feature 按真实引用和契约指纹关联，目标位于 Top-1/Top-3；澄清会话可见业务写面但写调用为零；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板和库快照，Schema 直接编码 §14.4 的非零样本与指标门；37 个证书正反例通过；JSON、可视化过程报告和 1440×1440 截图留存。§14.3 的 15 类语义反例由 matcher、surface、journey、currentness 和受控假设测试逐类失败关闭，真实 Codex 证书保留三类代表性端到端会话 |
 
 ## 21. 审阅决策点
@@ -1381,7 +1381,7 @@ gateway:
 | `givenFacts[].factName` | 当前 journey 关联的 Feature 业务名称、aliases 和 semantic key | Solution 输入名和预采集 Feature 值 | 不属于当前 Solution；零候选；多个候选；值不符合输出契约 |
 | `dependencyAssumptions[].capabilityName` | 当前 Scenario 可达的 Feature 或 Instruction 业务语义 | case-scoped Feature adapter 或 Instruction adapter | 不可达；零候选；多个候选；effect 不匹配 |
 | `dependencyAssumptions[].outcome` | 闭集业务测试结果 | 受控返回、稳定失败、无副作用成功、无副作用失败或禁止调用断言 | 结果不适用于目标能力；缺少必填 value |
-| `expectedOutcome.result` | Solution 输出契约 | Oracle 结果子集 | 类型、枚举或结构不兼容 |
+| `expectedOutcome.result` | Solution 输出契约或案例声明的闭集受控失败结果 | Oracle 结果子集 | 类型、枚举、结构或依赖状态不兼容 |
 | `expectedOutcome.reasoningClass` | Instruction reasoning 契约和业务规则分类 | Oracle reasoning 分类 | 分类未声明或与出口不兼容 |
 
 名称和 aliases 只用于找到候选。编译前必须使用 semantic key、asset revision 和 contract fingerprint 完成确定性确认。显示名称相同不能直接建立绑定。
@@ -1391,9 +1391,9 @@ gateway:
 | 业务结果 | Feature | READ Instruction | WRITE Instruction | Graph/Tool 兼容适配 |
 |---|---|---|---|---|
 | `RETURNS` | 返回契约校验后的受控值 | 返回契约校验后的受控值 | 不允许；改用无副作用结果 | 编译为 RETURN fixture |
-| `UNAVAILABLE` | 返回稳定不可用错误 | 返回稳定不可用错误 | 返回稳定不可用错误 | 编译为 ERROR fixture |
+| `UNAVAILABLE` | 返回 `dependencyStatus=UNAVAILABLE` | 返回 `dependencyStatus=UNAVAILABLE` | 返回 `dependencyStatus=UNAVAILABLE` | 编译为稳定受控失败结果 |
 | `SUCCEEDS_WITHOUT_EFFECT` | 不适用 | 返回契约形状的成功结果 | 返回契约形状的成功结果，不进入真实 channel | 使用本地 adapter；不得伪造真实执行证明 |
-| `FAILS_WITHOUT_EFFECT` | 返回稳定失败 | 返回稳定失败 | 返回稳定失败，不进入真实 channel | 编译为 ERROR fixture |
+| `FAILS_WITHOUT_EFFECT` | 返回 `dependencyStatus=FAILED_WITHOUT_EFFECT` | 返回 `dependencyStatus=FAILED_WITHOUT_EFFECT` | 返回同一稳定结果，不进入真实 channel | 编译为稳定受控失败结果 |
 | `MUST_NOT_BE_USED` | 调用即失败 | 调用即失败 | 调用即失败 | 编译为 MUST_NOT_CALL fixture |
 
 该表只定义编译语义，不规定业务人员输入底层行为。底层 `RETURN`、`ERROR` 和 `MUST_NOT_CALL` 不进入 `BUSINESS_SOLUTION` MCP Schema、看板或演示剧本。

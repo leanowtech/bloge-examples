@@ -91,10 +91,15 @@ public final class BusinessFixtureCompiler {
             String scope, String solutionRef, JsonNode fixtureCase) {
         FrozenClosure closure = freeze(scope, solutionRef);
         List<JsonNode> vector = new ArrayList<>();
-        fixtureCase.path("givenFacts").forEach(fact -> validateFact(closure, fact, vector));
+        Set<String> suppliedTargets = new LinkedHashSet<>();
+        fixtureCase.path("givenFacts").forEach(fact -> {
+            String featureRef = validateFact(closure, fact, vector);
+            if (!suppliedTargets.add("FEATURE:" + featureRef)) throw duplicateAssumption();
+        });
         fixtureCase.path("dependencyAssumptions")
                 .forEach(assumption -> validateDependency(
-                        assumption, closure.instructions(), vector));
+                        assumption, closure, suppliedTargets, vector));
+        validateExpectedOutcome(fixtureCase, closure);
         List<JsonNode> stableVector = vector.stream()
                 .map(value -> (JsonNode) value.deepCopy())
                 .sorted(Comparator.comparing(BusinessFixtureCompiler::semanticCoordinateOrder))
@@ -113,7 +118,10 @@ public final class BusinessFixtureCompiler {
         ObjectNode dependencies = mapper.createObjectNode();
         fixtureCase.path("dependencyAssumptions")
                 .forEach(assumption -> compileDependency(
-                        assumption, closure.instructions(), dependencies, businessVector));
+                        assumption, closure, given, dependencies, businessVector));
+        if (fixtureCase.path("expectedOutcome").isObject()) {
+            validateExpectedOutcome(fixtureCase, closure);
+        }
         List<JsonNode> sortedBusinessVector = businessVector.stream()
                 .map(value -> (JsonNode) value.deepCopy())
                 .sorted(Comparator.comparing(BusinessFixtureCompiler::coordinateOrder))
@@ -165,7 +173,7 @@ public final class BusinessFixtureCompiler {
         instructions.stream().map(value -> closureCoordinate("INSTRUCTION", value))
                 .forEach(coordinates::add);
         return new FrozenClosure(solution, Map.copyOf(features), List.copyOf(instructions),
-                List.copyOf(coordinates));
+                List.copyOf(scenarios.values()), List.copyOf(coordinates));
     }
 
     private <T> FrozenEntity<T> lockAndDecode(
@@ -209,12 +217,13 @@ public final class BusinessFixtureCompiler {
             throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
                     "A supplied business fact value does not match its current contract.");
         }
+        if (given.has(match.alias())) throw duplicateAssumption();
         given.set(match.alias(), fact.path("value").deepCopy());
         vector.add(businessCoordinate("FEATURE", match.feature(),
                 match.feature().contract().businessDefinition().semanticKey()));
     }
 
-    private void validateFact(FrozenClosure closure, JsonNode fact, List<JsonNode> vector) {
+    private String validateFact(FrozenClosure closure, JsonNode fact, List<JsonNode> vector) {
         String name = requiredText(fact, "factName");
         List<InputFeature> matches = closure.solution().contract().inputs().entrySet().stream()
                 .map(entry -> new InputFeature(
@@ -232,64 +241,223 @@ public final class BusinessFixtureCompiler {
         }
         vector.add(stableBusinessCoordinate(match.feature().contract()
                 .businessDefinition().semanticKey(), match.feature().contractFingerprint()));
+        return match.feature().ref();
     }
 
-    private void compileDependency(JsonNode assumption,
-                                   List<FrozenEntity<InstructionContract>> reachable,
-                                   ObjectNode dependencies,
-                                   List<JsonNode> vector) {
-        String name = requiredText(assumption, "capabilityName");
-        List<FrozenEntity<InstructionContract>> matches = reachable.stream()
-                .filter(instruction -> instructionMatches(instruction.contract(), name)).toList();
-        if (matches.size() != 1) throw ambiguous("dependency");
-        FrozenEntity<InstructionContract> frozen = matches.getFirst();
-        InstructionContract instruction = frozen.contract();
-        String outcome = requiredText(assumption, "outcome").toUpperCase(Locale.ROOT);
-        if (!OUTCOMES.contains(outcome)) throw schema();
-        if ("RETURNS".equals(outcome) && instruction.effect() == InstructionContract.Effect.WRITE) {
-            throw new AgentTddToolException("BUSINESS_ASSUMPTION_EFFECT_INVALID",
-                    "A write capability cannot be represented as a returned fact.");
-        }
-        if ("RETURNS".equals(outcome) && (!assumption.path("value").isObject()
-                || !assumption.path("value").has("result")
-                || !assumption.path("value").has("reasoning"))) {
-            throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
-                    "A returned dependency result must contain result and reasoning.");
-        }
-        ObjectNode compiled = dependencies.putObject(instruction.instructionRef());
+    private void compileDependency(JsonNode assumption, FrozenClosure closure, ObjectNode given,
+                                   ObjectNode dependencies, List<JsonNode> vector) {
+        DependencyTarget target = resolveDependency(closure, assumption);
+        String outcome = validateDependencyOutcome(assumption, target);
+        if (dependencies.has(target.ref())) throw duplicateAssumption();
+        ObjectNode compiled = dependencies.putObject(target.ref());
+        compiled.put("assetKind", target.kind());
+        compiled.put("semanticKey", target.semanticKey());
         compiled.put("outcome", outcome);
+        if (target.feature() != null) compiled.put("inputAlias", target.inputAlias());
         if (assumption.has("value")) compiled.set("value", assumption.path("value").deepCopy());
-        vector.add(businessCoordinate("INSTRUCTION", frozen,
-                instruction.businessDefinition().semanticKey()));
+        if (target.feature() != null && given.has(target.inputAlias())) {
+            throw new AgentTddToolException("BUSINESS_ASSUMPTION_DUPLICATE",
+                    "A business fact cannot be supplied by two assumptions in one case.");
+        }
+        if (target.feature() != null && "RETURNS".equals(outcome)) {
+            given.set(target.inputAlias(), assumption.path("value").deepCopy());
+        }
+        FrozenEntity<?> entity = target.feature() == null ? target.instruction() : target.feature();
+        vector.add(businessCoordinate(target.kind(), entity, target.semanticKey()));
     }
 
-    private void validateDependency(JsonNode assumption,
-                                    List<FrozenEntity<InstructionContract>> reachable,
-                                    List<JsonNode> vector) {
+    private void validateDependency(
+            JsonNode assumption, FrozenClosure closure, Set<String> suppliedTargets,
+            List<JsonNode> vector) {
+        DependencyTarget target = resolveDependency(closure, assumption);
+        validateDependencyOutcome(assumption, target);
+        if (!suppliedTargets.add(target.kind() + ':' + target.ref())) throw duplicateAssumption();
+        FrozenEntity<?> entity = target.feature() == null ? target.instruction() : target.feature();
+        vector.add(stableBusinessCoordinate(target.semanticKey(), entity.contractFingerprint()));
+    }
+
+    private DependencyTarget resolveDependency(FrozenClosure closure, JsonNode assumption) {
         String name = requiredText(assumption, "capabilityName");
-        List<FrozenEntity<InstructionContract>> matches = reachable.stream()
-                .filter(instruction -> instructionMatches(instruction.contract(), name)).toList();
+        List<DependencyTarget> matches = new ArrayList<>();
+        closure.solution().contract().inputs().entrySet().stream()
+                .map(entry -> new InputFeature(entry.getKey(), closure.features().get(entry.getValue())))
+                .filter(input -> input.feature() != null && featureMatches(input.feature().contract(),
+                        name, input.alias(), input.feature().ref()))
+                .map(input -> DependencyTarget.feature(input.alias(), input.feature()))
+                .forEach(matches::add);
+        closure.instructions().stream()
+                .filter(instruction -> instructionMatches(instruction.contract(), name))
+                .map(DependencyTarget::instruction).forEach(matches::add);
         if (matches.size() != 1) throw ambiguous("dependency");
-        FrozenEntity<InstructionContract> frozen = matches.getFirst();
-        validateDependencyOutcome(assumption, frozen.contract());
-        vector.add(stableBusinessCoordinate(
-                frozen.contract().businessDefinition().semanticKey(), frozen.contractFingerprint()));
+        return matches.getFirst();
     }
 
-    private static void validateDependencyOutcome(
-            JsonNode assumption, InstructionContract instruction) {
+    private static String validateDependencyOutcome(
+            JsonNode assumption, DependencyTarget target) {
         String outcome = requiredText(assumption, "outcome").toUpperCase(Locale.ROOT);
         if (!OUTCOMES.contains(outcome)) throw schema();
-        if ("RETURNS".equals(outcome) && instruction.effect() == InstructionContract.Effect.WRITE) {
+        if (!"RETURNS".equals(outcome) && assumption.has("value")) throw assumptionSchema();
+        if (target.feature() != null && "SUCCEEDS_WITHOUT_EFFECT".equals(outcome)) {
+            throw new AgentTddToolException("BUSINESS_ASSUMPTION_EFFECT_INVALID",
+                    "A fact capability cannot be represented as a no-effect action.");
+        }
+        if (target.instruction() != null && "RETURNS".equals(outcome)
+                && target.instruction().contract().effect() == InstructionContract.Effect.WRITE) {
             throw new AgentTddToolException("BUSINESS_ASSUMPTION_EFFECT_INVALID",
                     "A write capability cannot be represented as a returned fact.");
         }
-        if ("RETURNS".equals(outcome) && (!assumption.path("value").isObject()
-                || !assumption.path("value").has("result")
-                || !assumption.path("value").has("reasoning"))) {
-            throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
-                    "A returned dependency result must contain result and reasoning.");
+        if ("RETURNS".equals(outcome)) {
+            if (!assumption.has("value")) throw assumptionSchema();
+            if (target.feature() != null) {
+                FeatureContract feature = target.feature().contract();
+                if (!SolutionValueSchemaValidator.featureValueMatches(
+                        feature.output(), assumption.path("value"))
+                        || !matchesDeclaredValue(feature.businessDefinition().resultDomain(),
+                        assumption.path("value"))) throw assumptionSchema();
+            } else {
+                JsonNode value = assumption.path("value");
+                InstructionContract instruction = target.instruction().contract();
+                if (!value.isObject() || !value.path("reasoning").isTextual()
+                        || value.path("reasoning").asText().isBlank()
+                        || !matchesDeclaredValue(instruction.output().path("result"),
+                        value.path("result"))
+                        || !matchesBusinessResultDomain(
+                        instruction.businessDefinition().resultDomain(), value.path("result"))) {
+                    throw assumptionSchema();
+                }
+            }
         }
+        return outcome;
+    }
+
+    private static void validateExpectedOutcome(JsonNode fixtureCase, FrozenClosure closure) {
+        JsonNode expected = fixtureCase.path("expectedOutcome");
+        if (!expected.isObject() || !expected.has("result")
+                || !expected.path("reasoningClass").isTextual()
+                || expected.path("reasoningClass").asText().isBlank()) throw expectedOutcomeInvalid();
+        JsonNode result = expected.path("result");
+        boolean instructionDisposition = closure.instructions().stream().anyMatch(instruction ->
+                matchesDeclaredValue(instruction.contract().output().path("result"), result)
+                        && matchesBusinessResultDomain(
+                        instruction.contract().businessDefinition().resultDomain(), result));
+        boolean terminalDisposition = result.isObject() && result.path("terminalKind").isTextual()
+                && closure.scenarios().stream().map(FrozenEntity::contract)
+                .flatMap(scenario -> scenarioOutlets(scenario).stream())
+                .filter(outlet -> outlet.kind() == ScenarioContract.OutletKind.TERMINAL)
+                .anyMatch(outlet -> outlet.terminalKind().equals(result.path("terminalKind").asText()));
+        Set<String> controlledFailureStatuses = new LinkedHashSet<>();
+        fixtureCase.path("dependencyAssumptions").forEach(assumption -> {
+            switch (assumption.path("outcome").asText().toUpperCase(Locale.ROOT)) {
+                case "UNAVAILABLE" -> controlledFailureStatuses.add("UNAVAILABLE");
+                case "FAILS_WITHOUT_EFFECT" -> controlledFailureStatuses.add("FAILED_WITHOUT_EFFECT");
+                default -> { }
+            }
+        });
+        boolean controlledFailure = result.isObject()
+                && controlledFailureStatuses.contains(result.path("dependencyStatus").asText());
+        if (controlledFailure && (result.size() != 1
+                || !("UNAVAILABLE".equals(result.path("dependencyStatus").asText())
+                ? "CONTROLLED_DEPENDENCY_UNAVAILABLE"
+                : "CONTROLLED_DEPENDENCY_FAILED_WITHOUT_EFFECT")
+                .equals(expected.path("reasoningClass").asText()))) {
+            throw expectedOutcomeInvalid();
+        }
+        if (!instructionDisposition && !terminalDisposition && !controlledFailure) {
+            throw expectedOutcomeInvalid();
+        }
+    }
+
+    private static boolean matchesBusinessResultDomain(JsonNode domain, JsonNode value) {
+        if (domain == null || !domain.isObject() || domain.isEmpty()
+                || "UNKNOWN".equalsIgnoreCase(domain.path("type").asText())) return true;
+        JsonNode resultDomain = domain.has("result") ? domain.path("result") : domain;
+        return matchesDeclaredValue(resultDomain, value);
+    }
+
+    private static boolean matchesDeclaredValue(JsonNode declaration, JsonNode value) {
+        if (declaration == null || declaration.isMissingNode() || declaration.isNull()
+                || value == null || value.isMissingNode()) return false;
+        if (declaration.path("enum").isArray()) {
+            for (JsonNode candidate : declaration.path("enum")) if (candidate.equals(value)) return true;
+            return false;
+        }
+        JsonNode type = declaration.has("type") ? declaration.path("type") : declaration;
+        if (type.isTextual()) {
+            if ("enum".equalsIgnoreCase(type.asText()) && declaration.path("values").isArray()) {
+                for (JsonNode candidate : declaration.path("values")) {
+                    if (candidate.equals(value)) return true;
+                }
+                return false;
+            }
+            return switch (type.asText().trim().toLowerCase(Locale.ROOT)) {
+                case "string" -> value.isTextual();
+                case "boolean" -> value.isBoolean();
+                case "number", "decimal" -> value.isNumber();
+                case "integer" -> value.isIntegralNumber();
+                case "array" -> value.isArray() && (!declaration.has("items")
+                        || iterable(value).stream().allMatch(item ->
+                        matchesDeclaredValue(declaration.path("items"), item)));
+                case "object" -> objectMatches(declaration, value);
+                default -> false;
+            };
+        }
+        if (!type.isObject()) return false;
+        if (type.path("enum").isArray()) {
+            for (JsonNode candidate : type.path("enum")) if (candidate.equals(value)) return true;
+            return false;
+        }
+        return objectMatches(type, value);
+    }
+
+    private static boolean objectMatches(JsonNode declaration, JsonNode value) {
+        if (!value.isObject()) return false;
+        JsonNode fields = declaration.has("fields")
+                ? declaration.path("fields") : declaration.path("properties");
+        if (!fields.isObject()) return true;
+        Set<String> required = new LinkedHashSet<>();
+        if (declaration.has("fields") || !declaration.path("required").isArray()) {
+            fields.fieldNames().forEachRemaining(required::add);
+        } else {
+            declaration.path("required").forEach(node -> {
+                if (node.isTextual()) required.add(node.asText());
+            });
+        }
+        if (required.stream().anyMatch(field -> !value.has(field))) return false;
+        var iterator = fields.fields();
+        while (iterator.hasNext()) {
+            Map.Entry<String, JsonNode> field = iterator.next();
+            if (value.has(field.getKey())
+                    && !matchesDeclaredValue(field.getValue(), value.path(field.getKey()))) return false;
+        }
+        return true;
+    }
+
+    private static List<JsonNode> iterable(JsonNode array) {
+        ArrayList<JsonNode> values = new ArrayList<>();
+        array.forEach(values::add);
+        return List.copyOf(values);
+    }
+
+    private static List<ScenarioContract.Outlet> scenarioOutlets(ScenarioContract scenario) {
+        ArrayList<ScenarioContract.Outlet> outlets = new ArrayList<>();
+        scenario.rules().forEach(rule -> outlets.add(rule.outlet()));
+        outlets.add(scenario.otherwise());
+        return List.copyOf(outlets);
+    }
+
+    private static AgentTddToolException assumptionSchema() {
+        return new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
+                "A controlled dependency result does not match its current business contract.");
+    }
+
+    private static AgentTddToolException duplicateAssumption() {
+        return new AgentTddToolException("BUSINESS_ASSUMPTION_DUPLICATE",
+                "A business capability can be supplied only once in one case.");
+    }
+
+    private static AgentTddToolException expectedOutcomeInvalid() {
+        return new AgentTddToolException("BUSINESS_EXPECTED_OUTCOME_INVALID",
+                "The expected outcome does not match a reachable Solution disposition.");
     }
 
     private boolean featureMatches(FeatureContract feature, String name,
@@ -374,9 +542,26 @@ public final class BusinessFixtureCompiler {
     private record FrozenClosure(FrozenEntity<SolutionContract> solution,
                                  Map<String, FrozenEntity<FeatureContract>> features,
                                  List<FrozenEntity<InstructionContract>> instructions,
+                                 List<FrozenEntity<ScenarioContract>> scenarios,
                                  List<JsonNode> coordinates) { }
 
     private record InputFeature(String alias, FrozenEntity<FeatureContract> feature) { }
+
+    private record DependencyTarget(String kind, String ref, String inputAlias,
+                                    FrozenEntity<FeatureContract> feature,
+                                    FrozenEntity<InstructionContract> instruction,
+                                    String semanticKey) {
+        private static DependencyTarget feature(
+                String inputAlias, FrozenEntity<FeatureContract> feature) {
+            return new DependencyTarget("FEATURE", feature.ref(), inputAlias, feature, null,
+                    feature.contract().businessDefinition().semanticKey());
+        }
+
+        private static DependencyTarget instruction(FrozenEntity<InstructionContract> instruction) {
+            return new DependencyTarget("INSTRUCTION", instruction.ref(), "", null, instruction,
+                    instruction.contract().businessDefinition().semanticKey());
+        }
+    }
 
     /**
      * Immutable pre-approval validation result without any controlled execution plan.
