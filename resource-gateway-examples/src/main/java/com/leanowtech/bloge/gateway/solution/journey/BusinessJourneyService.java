@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -33,8 +34,17 @@ import java.util.function.Supplier;
 public final class BusinessJourneyService {
     public static final String JOURNEY = "BUSINESS_JOURNEY";
     private static final int MAX_BYTES = 16 * 1024 * 1024;
+    private static final List<String> JOURNEY_READ_KINDS = List.of(
+            JOURNEY,
+            AgentTddMutationService.CASE_SET,
+            SolutionEntityRegistry.FEATURE,
+            SolutionEntityRegistry.SCENARIO,
+            SolutionEntityRegistry.INSTRUCTION,
+            SolutionEntityRegistry.SOLUTION,
+            SolutionTestingService.SOLUTION_EVIDENCE,
+            SolutionGovernanceService.SIGNOFF,
+            SolutionGovernanceService.PUBLICATION);
     private final AgentTddStateRepository states;
-    private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
 
     /** Creates deterministic navigation over the existing durable asset repository. */
@@ -43,7 +53,7 @@ public final class BusinessJourneyService {
             SolutionEntityRegistry registry,
             ObjectMapper mapper) {
         this.states = Objects.requireNonNull(states, "states");
-        this.registry = Objects.requireNonNull(registry, "registry");
+        Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
@@ -71,18 +81,18 @@ public final class BusinessJourneyService {
             data.put("createdBy", identity.actorId());
             data.put("status", "ACTIVE");
             data.putArray("associations");
-            AgentTddStoredAsset stored = states.save(scope, JOURNEY, journeyRef, data);
-            return mapper.valueToTree(project(stored));
+            states.save(scope, JOURNEY, journeyRef, data);
+            return mapper.valueToTree(project(freeze(scope, journeyRef)));
         });
         return mapper.convertValue(response, new com.fasterxml.jackson.core.type.TypeReference<>() { });
     }
 
     /** Re-derives one journey and rejects a stale client revision. */
     public Map<String, Object> next(JsonNode arguments, IntegrationRequestContext identity) {
-        AgentTddStoredAsset journey = require(arguments, identity);
+        FrozenJourney frozen = freeze(arguments, identity);
         long expected = arguments.path("expectedRevision").asLong(-1);
-        if (expected != journey.revision()) throw stale();
-        return project(journey);
+        if (expected != frozen.journey().revision()) throw stale();
+        return project(frozen);
     }
 
     /**
@@ -111,7 +121,9 @@ public final class BusinessJourneyService {
         String scope = AgentTddMutationService.scopeKey(identity);
         return states.executeAtomically(() -> {
             AgentTddStoredAsset locked = states.lockRevision(scope, JOURNEY, observed.assetRef(), expected);
-            Projection projection = derive(locked);
+            FrozenJourney frozen = freeze(scope, locked.assetRef());
+            if (frozen.journey().revision() != locked.revision()) throw stale();
+            Projection projection = derive(frozen);
             if (!projection.allowedNextTools().contains(toolName)) {
                 throw new AgentTddToolException("JOURNEY_ACTION_NOT_ALLOWED",
                         "The requested action is not allowed in the current journey stage.");
@@ -145,8 +157,8 @@ public final class BusinessJourneyService {
 
     /** Resolves the case set associated with a journey so business baseline needs no technical ref. */
     public String associatedCaseSet(JsonNode arguments, IntegrationRequestContext identity) {
-        AgentTddStoredAsset journey = require(arguments, identity);
-        for (JsonNode association : journey.data().path("associations")) {
+        FrozenJourney frozen = freeze(arguments, identity);
+        for (JsonNode association : frozen.journey().data().path("associations")) {
             if ("CASE_SET".equals(association.path("assetKind").asText())) {
                 return association.path("assetRef").asText();
             }
@@ -160,8 +172,32 @@ public final class BusinessJourneyService {
                 .orElseThrow(() -> new AgentTddToolException("JOURNEY_NOT_FOUND", "Journey was not found."));
     }
 
-    private Map<String, Object> project(AgentTddStoredAsset journey) {
-        Projection projection = derive(journey);
+    /**
+     * Captures every store used by journey derivation at one repository read point.
+     *
+     * <p>All contract, evidence, signoff and publication checks run against the returned read-only
+     * repository. A later asset change can affect the next request but cannot split one response
+     * across two revision vectors.</p>
+     */
+    private FrozenJourney freeze(JsonNode arguments, IntegrationRequestContext identity) {
+        Objects.requireNonNull(identity, "identity").requireComplete();
+        return freeze(AgentTddMutationService.scopeKey(identity), requiredText(arguments, "journeyRef"));
+    }
+
+    private FrozenJourney freeze(String scope, String journeyRef) {
+        AgentTddStateRepository.AssetReadSnapshot snapshot =
+                states.readSnapshot(scope, JOURNEY_READ_KINDS);
+        AgentTddStoredAsset journey = snapshot.find(JOURNEY, journeyRef)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "JOURNEY_NOT_FOUND", "Journey was not found."));
+        AgentTddStateRepository frozenStates = new SnapshotStateRepository(snapshot);
+        return new FrozenJourney(journey, frozenStates,
+                new SolutionEntityRegistry(frozenStates, mapper));
+    }
+
+    private Map<String, Object> project(FrozenJourney frozen) {
+        AgentTddStoredAsset journey = frozen.journey();
+        Projection projection = derive(frozen);
         return Map.ofEntries(
                 Map.entry("journeyRef", journey.assetRef()), Map.entry("revision", journey.revision()),
                 Map.entry("surface", "BUSINESS_SOLUTION"), Map.entry("stage", projection.stage()),
@@ -177,113 +213,124 @@ public final class BusinessJourneyService {
                 Map.entry("nextAction", projection.nextAction()));
     }
 
-    private Projection derive(AgentTddStoredAsset journey) {
+    private Projection derive(FrozenJourney frozen) {
+        AgentTddStoredAsset journey = frozen.journey();
+        AgentTddStateRepository snapshot = frozen.states();
         String scope = journey.scopeKey();
         Map<String, List<String>> refs = associations(journey.data().path("associations"));
+        if ("CANCELLED".equals(journey.data().path("status").asText())) {
+            return projection("CANCELLED", "READY", List.of("rg.journey.next"), List.of(),
+                    "BUSINESS_OWNER", "", "业务旅程已取消，仅保留只读导航。", frozen);
+        }
         boolean feature = !refs.getOrDefault("FEATURE", List.of()).isEmpty();
         boolean scenario = !refs.getOrDefault("SCENARIO", List.of()).isEmpty();
         boolean instruction = !refs.getOrDefault("INSTRUCTION", List.of()).isEmpty();
         boolean solution = !refs.getOrDefault("SOLUTION", List.of()).isEmpty();
         boolean caseSet = !refs.getOrDefault("CASE_SET", List.of()).isEmpty();
         boolean activeGolden = refs.getOrDefault("CASE_SET", List.of()).stream()
-                .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
+                .flatMap(ref -> snapshot.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
                 .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
                         "GOLDEN".equals(row.path("category").asText())
                                 && "ACTIVE".equals(row.path("lifecycle").asText())
                                 && !row.path("goldenCaseFingerprint").asText().isBlank()
                                 && row.path("materialReceipt").isObject()
                                 && "APPROVED".equals(row.at("/proposedOracle/status").asText())
-                                && BusinessGoldenContractGuard.isCurrent(states, scope, row)));
+                                && BusinessGoldenContractGuard.isCurrent(snapshot, scope, row)));
         boolean legacyGolden = refs.getOrDefault("CASE_SET", List.of()).stream()
-                .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
+                .flatMap(ref -> snapshot.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
                 .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
                         "GOLDEN".equals(row.path("category").asText())
                                 && "ACTIVE".equals(row.path("lifecycle").asText())
                                 && (!row.path("materialReceipt").isObject()
                                 || row.path("goldenCaseFingerprint").asText().isBlank())));
         boolean staleGolden = refs.getOrDefault("CASE_SET", List.of()).stream()
-                .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
+                .flatMap(ref -> snapshot.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
                 .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
                         "GOLDEN".equals(row.path("category").asText())
                                 && "ACTIVE".equals(row.path("lifecycle").asText())
                                 && row.path("materialReceipt").isObject()
-                                && !BusinessGoldenContractGuard.isCurrent(states, scope, row)));
+                                && !BusinessGoldenContractGuard.isCurrent(snapshot, scope, row)));
         boolean evidence = refs.getOrDefault("SOLUTION", List.of()).stream()
-                .anyMatch(ref -> hasCurrentGreenEvidence(scope, ref, refs));
+                .anyMatch(ref -> hasCurrentGreenEvidence(snapshot, frozen.registry(), scope, ref, refs));
         boolean speccingFeature = refs.getOrDefault("FEATURE", List.of()).stream()
-                .flatMap(ref -> states.find(scope, SolutionEntityRegistry.FEATURE, ref).stream())
+                .flatMap(ref -> snapshot.find(scope, SolutionEntityRegistry.FEATURE, ref).stream())
                 .anyMatch(asset -> asset.data().path("speccing").asBoolean());
         boolean speccingInstruction = refs.getOrDefault("INSTRUCTION", List.of()).stream()
-                .flatMap(ref -> states.find(scope, SolutionEntityRegistry.INSTRUCTION, ref).stream())
+                .flatMap(ref -> snapshot.find(scope, SolutionEntityRegistry.INSTRUCTION, ref).stream())
                 .anyMatch(asset -> asset.data().path("speccing").asBoolean());
 
         if (!feature) return projection("DEFINING_FEATURES", "READY",
                 List.of("rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
                         "rg.feature.define", "rg.journey.next"), List.of(), "BUSINESS_OWNER",
-                "这项政策需要依据哪些业务事实作判断？", "确认已有事实能力或定义新的业务事实。", journey);
+                "这项政策需要依据哪些业务事实作判断？", "确认已有事实能力或定义新的业务事实。", frozen);
         if (speccingFeature) return projection("WAITING_FEATURE_ENGINEERING", "BLOCKED",
                 List.of("rg.feature.define", "rg.feature.handoff", "rg.entity.get", "rg.journey.next"),
                 List.of("rg.scenario.define", "rg.solution.compose"), "FEATURE_ENGINEER", "",
-                "等待特征工程完成，不需要业务负责人补充技术信息。", journey);
+                "等待特征工程完成，不需要业务负责人补充技术信息。", frozen);
         if (!scenario) return projection("DEFINING_RULES", "READY",
                 List.of("rg.feature.define", "rg.scenario.define", "rg.journey.next"), List.of("rg.solution.compose"),
-                "BUSINESS_OWNER", "这些事实如何共同决定业务处置？", "定义规则和兜底处置。", journey);
+                "BUSINESS_OWNER", "这些事实如何共同决定业务处置？", "定义规则和兜底处置。", frozen);
         if (!instruction) return projection("DEFINING_ACTIONS", "READY",
                 List.of("rg.instruction.define", "rg.journey.next"), List.of("rg.solution.compose"),
-                "BUSINESS_OWNER", "每条规则应产生什么结果并如何解释？", "定义处置及解释。", journey);
+                "BUSINESS_OWNER", "每条规则应产生什么结果并如何解释？", "定义处置及解释。", frozen);
         if (!solution) return projection("COMPOSING", "READY",
                 List.of("rg.instruction.define", "rg.solution.compose", "rg.journey.next"),
                 List.of("rg.solution.commit"),
-                "CODING_AGENT", "", "组合当前事实、规则和处置。", journey);
+                "CODING_AGENT", "", "组合当前事实、规则和处置。", frozen);
         if (!caseSet || !activeGolden) return projection("WAITING_GOLDEN_APPROVAL", "BLOCKED",
                 List.of("rg.solution.golden.propose", "rg.solution.golden.list", "rg.journey.next"),
                 List.of("rg.solution.baseline", "rg.solution.commit"), "BUSINESS_OWNER", "",
                 legacyGolden ? "旧案例需用业务语言重新提议并批准完整内容。"
                         : staleGolden ? "案例引用的业务契约已变化，需重新提议并批准。"
                         : "提交并独立批准完整业务案例。",
-                journey, legacyGolden ? "LEGACY_GOLDEN_REAPPROVAL_REQUIRED"
+                frozen, legacyGolden ? "LEGACY_GOLDEN_REAPPROVAL_REQUIRED"
                         : staleGolden ? "GOLDEN_CASE_STALE" : "GOLDEN_REQUIRES_APPROVAL");
         if (!evidence) return projection("TESTING", "READY",
                 List.of("rg.solution.golden.list", "rg.solution.baseline", "rg.journey.next"),
-                List.of("rg.solution.commit"), "CODING_AGENT", "", "运行受控 RED/GREEN 基线。", journey);
+                List.of("rg.solution.commit"), "CODING_AGENT", "", "运行受控 RED/GREEN 基线。", frozen);
         if (speccingInstruction) return projection("WAITING_WRITE_ENGINEERING", "BLOCKED",
                 List.of("rg.engineering.handoff", "rg.solution.readiness", "rg.journey.next"),
                 List.of("rg.solution.commit"), "INSTRUCTION_ENGINEER", "",
-                "等待写能力实现和对账，不需要业务负责人提供技术定义。", journey);
+                "等待写能力实现和对账，不需要业务负责人提供技术定义。", frozen);
         boolean signed = refs.getOrDefault("SOLUTION", List.of()).stream()
-                .anyMatch(solutionRef -> hasCurrentSignoff(scope, solutionRef));
+                .anyMatch(solutionRef -> hasCurrentSignoff(snapshot, scope, solutionRef));
         boolean published = refs.getOrDefault("SOLUTION", List.of()).stream().anyMatch(solutionRef ->
-                states.list(scope, SolutionGovernanceService.PUBLICATION).stream().anyMatch(publication ->
+                snapshot.list(scope, SolutionGovernanceService.PUBLICATION).stream().anyMatch(publication ->
                         solutionRef.equals(publication.data().path("solutionRef").asText())));
         if (published) return projection("PUBLISHED", "READY",
                 List.of("rg.solution.readiness", "rg.solution.performance", "rg.journey.next"), List.of(),
-                "BUSINESS_OWNER", "", "观察当前版本的业务结果。", journey);
+                "BUSINESS_OWNER", "", "观察当前版本的业务结果。", frozen);
         if (signed) return projection("PUBLISHABLE", "READY",
                 List.of("rg.solution.readiness", "rg.solution.publish", "rg.journey.next"), List.of(),
-                "BUSINESS_OWNER", "", "确认当前门禁并发布不可变版本。", journey);
+                "BUSINESS_OWNER", "", "确认当前门禁并发布不可变版本。", frozen);
         return projection("WAITING_SIGNOFF", "READY",
                 List.of("rg.solution.commit", "rg.solution.readiness", "rg.journey.next"), List.of(),
-                "BUSINESS_OWNER", "", "提交当前证据供独立签署。", journey);
+                "BUSINESS_OWNER", "", "提交当前证据供独立签署。", frozen);
     }
 
-    private boolean hasCurrentGreenEvidence(String scope, String solutionRef,
+    private boolean hasCurrentGreenEvidence(AgentTddStateRepository snapshot,
+                                            SolutionEntityRegistry snapshotRegistry,
+                                            String scope, String solutionRef,
                                             Map<String, List<String>> refs) {
-        AgentTddStoredAsset evidence = states.find(scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
+        AgentTddStoredAsset evidence = snapshot.find(
+                        scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
                 .orElse(null);
         if (evidence == null) return false;
         String caseSetRef = evidence.data().path("caseSetRef").asText();
         return refs.getOrDefault("CASE_SET", List.of()).contains(caseSetRef)
                 && SolutionEvidenceCurrentness.isCurrent(
-                        states, registry, mapper, scope, solutionRef, evidence);
+                        snapshot, snapshotRegistry, mapper, scope, solutionRef, evidence);
     }
 
-    private boolean hasCurrentSignoff(String scope, String solutionRef) {
-        AgentTddStoredAsset solution = states.find(scope, SolutionEntityRegistry.SOLUTION, solutionRef)
+    private boolean hasCurrentSignoff(AgentTddStateRepository snapshot,
+                                      String scope, String solutionRef) {
+        AgentTddStoredAsset solution = snapshot.find(scope, SolutionEntityRegistry.SOLUTION, solutionRef)
                 .orElse(null);
-        AgentTddStoredAsset evidence = states.find(scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
+        AgentTddStoredAsset evidence = snapshot.find(
+                        scope, SolutionTestingService.SOLUTION_EVIDENCE, solutionRef)
                 .orElse(null);
         if (solution == null || evidence == null) return false;
-        return states.list(scope, SolutionGovernanceService.SIGNOFF).stream().anyMatch(signoff ->
+        return snapshot.list(scope, SolutionGovernanceService.SIGNOFF).stream().anyMatch(signoff ->
                 "APPROVED".equals(signoff.data().path("status").asText())
                         && solutionRef.equals(signoff.data().path("solutionRef").asText())
                         && signoff.data().path("solutionRevision").asLong(-1) == solution.revision()
@@ -295,15 +342,17 @@ public final class BusinessJourneyService {
     }
 
     private Projection projection(String stage, String status, List<String> allowed, List<String> forbidden,
-                                  String role, String question, String action, AgentTddStoredAsset journey) {
-        return projection(stage, status, allowed, forbidden, role, question, action, journey, "");
+                                  String role, String question, String action, FrozenJourney frozen) {
+        return projection(stage, status, allowed, forbidden, role, question, action, frozen, "");
     }
 
     private Projection projection(String stage, String status, List<String> allowed, List<String> forbidden,
-                                  String role, String question, String action, AgentTddStoredAsset journey,
+                                  String role, String question, String action, FrozenJourney frozen,
                                   String blockingReason) {
-        String context = "COMPOSING".equals(stage) || journey.data().path("associations").size() >= 3
-                ? currentContext(journey) : "";
+        AgentTddStoredAsset journey = frozen.journey();
+        String context = !"CANCELLED".equals(stage)
+                && ("COMPOSING".equals(stage) || journey.data().path("associations").size() >= 3)
+                ? currentContext(frozen) : "";
         return new Projection(stage, status, List.of(), status.equals("BLOCKED")
                 ? List.of(!blockingReason.isBlank() ? blockingReason
                 : stage.equals("WAITING_FEATURE_ENGINEERING") ? "FEATURE_BINDING_REQUIRED"
@@ -311,8 +360,9 @@ public final class BusinessJourneyService {
     }
 
     /** Fingerprints the current associated contracts, not the revisions observed when associated. */
-    private String currentContext(AgentTddStoredAsset journey) {
-        return SolutionEvidenceCurrentness.journeyContextFingerprint(states, mapper, journey);
+    private String currentContext(FrozenJourney frozen) {
+        return SolutionEvidenceCurrentness.journeyContextFingerprint(
+                frozen.states(), mapper, frozen.journey());
     }
 
     private void associate(ObjectNode journey, Map<String, Object> result) {
@@ -361,6 +411,82 @@ public final class BusinessJourneyService {
     }
     private static AgentTddToolException stale() {
         return new AgentTddToolException("JOURNEY_REVISION_STALE", "Journey revision changed.", Map.of(), true);
+    }
+
+    /** Journey plus every dependency resolved from the same immutable asset snapshot. */
+    private record FrozenJourney(
+            AgentTddStoredAsset journey,
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry
+    ) { }
+
+    /**
+     * Read-only repository adapter used by existing currentness verifiers during journey projection.
+     * Any accidental write fails before it can escape the snapshot boundary.
+     */
+    private static final class SnapshotStateRepository implements AgentTddStateRepository {
+        private final AssetReadSnapshot snapshot;
+
+        private SnapshotStateRepository(AssetReadSnapshot snapshot) {
+            this.snapshot = Objects.requireNonNull(snapshot, "snapshot");
+        }
+
+        @Override
+        public Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef) {
+            return snapshot.scopeKey().equals(scopeKey)
+                    ? snapshot.find(kind, assetRef) : Optional.empty();
+        }
+
+        @Override
+        public List<AgentTddStoredAsset> list(String scopeKey, String kind) {
+            return snapshot.scopeKey().equals(scopeKey) ? snapshot.list(kind) : List.of();
+        }
+
+        @Override
+        public AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
+            throw readOnly();
+        }
+
+        @Override
+        public AgentTddStoredAsset saveIfRevision(
+                String scopeKey, String kind, String assetRef, long expectedRevision, JsonNode data) {
+            throw readOnly();
+        }
+
+        @Override
+        public Optional<JsonNode> replay(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            throw readOnly();
+        }
+
+        @Override
+        public void record(String scopeKey, String operation, String idempotencyKey,
+                           String requestFingerprint, JsonNode response) {
+            throw readOnly();
+        }
+
+        @Override
+        public JsonNode executeOnce(String scopeKey, String operation, String idempotencyKey,
+                                    String requestFingerprint, Supplier<JsonNode> action) {
+            throw readOnly();
+        }
+
+        @Override
+        public ExternalExecutionReservation reserveExternalExecution(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            throw readOnly();
+        }
+
+        @Override
+        public JsonNode completeExternalExecution(
+                String scopeKey, String operation, String idempotencyKey,
+                String requestFingerprint, JsonNode response) {
+            throw readOnly();
+        }
+
+        private static UnsupportedOperationException readOnly() {
+            return new UnsupportedOperationException("Journey projection snapshots are read-only.");
+        }
     }
 
     private record Projection(String stage, String stageStatus, List<Map<String, Object>> facts,

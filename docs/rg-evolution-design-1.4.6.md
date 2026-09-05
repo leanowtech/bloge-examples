@@ -746,7 +746,7 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 | `PUBLISHABLE` | readiness 全部通过 | publish | immutable publication 创建 |
 | `PUBLISHED` | 发布完成 | invoke、performance | 运行和运营观察持续进行 |
 | `BLOCKED` | 存在冲突、漂移或平台问题 | 只允许恢复动作 | 阻塞事实消失后回到派生阶段 |
-| `CANCELLED` | 业务负责人取消 | 只读 | 终态 |
+| `CANCELLED` | 业务负责人取消 | 只允许 `rg.journey.next` | 终态 |
 
 ### 8.2 阶段派生优先级
 
@@ -770,7 +770,7 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 
 - `rg.journey.start` 必须使用 `idempotencyKey`，同 key 同请求返回 exact replay，不同请求返回 `IDEMPOTENCY_CONFLICT`。
 - journey 更新使用 revision CAS；客户端旧 revision 返回 `JOURNEY_REVISION_STALE`。
-- `rg.journey.next` 是只读派生，但返回的 revision vector 必须与一次事务或冻结快照一致。
+- `rg.journey.next` 是只读派生。仓储通过 `AssetReadSnapshot` 返回同一读点的 revision vector 和资产内容。JDBC 实现使用一条查询；内存实现使用一个互斥区。阶段派生、案例当前性、证据当前性、签署和发布判断只读取该快照。
 - 业务资产写入成功、journey 投影刷新失败时，不回滚权威资产；下次 `next` 必须从资产事实自愈。
 - 不允许依赖“先写 journey stage，再写业务资产”的双写顺序推进状态。
 
@@ -1354,7 +1354,7 @@ gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；五源集成测试覆盖确定性去重、排序和 scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL；六项灰度状态经 MCP 初始化投影 |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile；journey 新写入拒绝自由文本兼容投影；旧版 UNKNOWN/PARTIAL 只读兼容；matcher 按 profile 比较封闭业务维度；多 EXACT 歧义停止；实现 binding 排除于业务身份；四实体业务定义纳入契约指纹和服务端创作模板 |
-| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 已完成 | 当前干净提交已通过三个独立真实 Codex 会话：“业务创作→新会话同义召回→缺字段时单问题澄清”；三个 thread identity 仅以一次性 HMAC 留存且必须互不相同；召回候选与主链 Feature 按真实引用和契约指纹关联，目标位于 Top-1/Top-3；澄清会话可见业务写面但写调用为零；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板和库快照，Schema 直接编码 §14.4 的非零样本与指标门；37 个证书正反例通过；JSON、可视化过程报告和 1440×1440 截图留存。§14.3 的 15 类语义反例由 matcher、surface、journey、currentness 和受控假设测试逐类失败关闭，真实 Codex 证书保留三类代表性端到端会话 |
 
 ## 21. 审阅决策点

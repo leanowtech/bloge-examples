@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -110,6 +112,36 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                         rs.getString("asset_ref"), rs.getLong("revision"), rs.getString("fingerprint"),
                         read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
                 scopeKey, kind);
+    }
+
+    /**
+     * Captures the requested kinds with one SQL statement and therefore one database read point.
+     */
+    @Override
+    public AssetReadSnapshot readSnapshot(String scopeKey, List<String> kinds) {
+        List<String> selectedKinds = kinds == null ? List.of() : kinds.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(kind -> !kind.isBlank())
+                .distinct()
+                .sorted()
+                .toList();
+        if (selectedKinds.isEmpty()) return new AssetReadSnapshot(scopeKey, List.of());
+        String placeholders = String.join(",", Collections.nCopies(selectedKinds.size(), "?"));
+        ArrayList<Object> parameters = new ArrayList<>();
+        parameters.add(scopeKey);
+        parameters.addAll(selectedKinds);
+        List<AgentTddStoredAsset> assets = jdbc.query("""
+                        SELECT asset_kind, asset_ref, revision, fingerprint, state_json, updated_at
+                          FROM agent_tdd_assets
+                         WHERE scope_key = ? AND asset_kind IN (%s)
+                         ORDER BY asset_kind, asset_ref
+                        """.formatted(placeholders), (rs, row) -> new AgentTddStoredAsset(
+                        scopeKey, rs.getString("asset_kind"), rs.getString("asset_ref"),
+                        rs.getLong("revision"), rs.getString("fingerprint"),
+                        read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
+                parameters.toArray());
+        return new AssetReadSnapshot(scopeKey, assets);
     }
 
     @Override

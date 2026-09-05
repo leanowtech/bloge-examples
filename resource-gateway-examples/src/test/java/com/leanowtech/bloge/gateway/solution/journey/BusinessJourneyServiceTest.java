@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddReviewService;
 import com.leanowtech.bloge.gateway.agenttdd.SolutionTestingService;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.BusinessFactSemanticContract;
@@ -21,6 +22,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -247,6 +250,79 @@ class BusinessJourneyServiceTest {
                         failure -> assertThat(failure.code()).isEqualTo("SOLUTION_CONTEXT_STALE"));
     }
 
+    @Test
+    void cancelledJourneyIsTerminalAndExposesOnlyReadNavigation() {
+        String ref = journeys.start(startRequest("journey-cancelled"), agent())
+                .get("journeyRef").toString();
+        AgentTddStoredAsset current = states.find(SCOPE, BusinessJourneyService.JOURNEY, ref)
+                .orElseThrow();
+        ObjectNode cancelled = (ObjectNode) current.data().deepCopy();
+        cancelled.put("status", "CANCELLED");
+        long cancelledRevision = states.saveIfRevision(SCOPE, BusinessJourneyService.JOURNEY,
+                ref, current.revision(), cancelled).revision();
+
+        Map<String, Object> projection = journeys.next(next(ref, cancelledRevision), agent());
+
+        assertThat(projection).containsEntry("stage", "CANCELLED")
+                .containsEntry("stageStatus", "READY")
+                .containsEntry("allowedNextTools", List.of("rg.journey.next"));
+        assertThatThrownBy(() -> journeys.executeAction("rg.feature.define",
+                action(ref, cancelledRevision), agent(), Map::of))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("JOURNEY_ACTION_NOT_ALLOWED"));
+    }
+
+    @Test
+    void blockedFeatureJourneyRecoversFromCurrentAuthoritativeAssets() {
+        registry.upsertFeature(SCOPE, featureWithBinding(""));
+        String ref = journeys.start(startRequest("journey-blocked-recovery"), agent())
+                .get("journeyRef").toString();
+        associate(ref, 1, "rg.feature.define",
+                Map.of("featureId", "responsibility.party", "revision", 2));
+
+        assertThat(journeys.next(next(ref, 2), agent()))
+                .containsEntry("stage", "WAITING_FEATURE_ENGINEERING")
+                .containsEntry("stageStatus", "BLOCKED")
+                .extractingByKey("blockingReasons").asList()
+                .containsExactly("FEATURE_BINDING_REQUIRED");
+
+        registry.upsertFeature(SCOPE, featureWithBinding("resource:responsibility#$.party"));
+
+        assertThat(journeys.next(next(ref, 2), agent()))
+                .containsEntry("stage", "DEFINING_RULES")
+                .containsEntry("stageStatus", "READY")
+                .containsEntry("blockingReasons", List.of());
+    }
+
+    @Test
+    void nextDerivesOneProjectionFromOneFrozenAssetReadPoint() {
+        registry.upsertFeature(SCOPE, featureWithBinding(""));
+        String ref = journeys.start(startRequest("journey-frozen-read"), agent())
+                .get("journeyRef").toString();
+        associate(ref, 1, "rg.feature.define",
+                Map.of("featureId", "responsibility.party", "revision", 2));
+        MutationAfterSnapshotRepository drifting = new MutationAfterSnapshotRepository(states,
+                () -> registry.upsertFeature(SCOPE,
+                        featureWithBinding("resource:responsibility#$.party")));
+        BusinessJourneyService frozenJourneys = new BusinessJourneyService(
+                drifting, new SolutionEntityRegistry(drifting, mapper), mapper);
+        drifting.arm();
+
+        assertThat(frozenJourneys.next(next(ref, 2), agent()))
+                .containsEntry("stage", "WAITING_FEATURE_ENGINEERING")
+                .containsEntry("stageStatus", "BLOCKED");
+        assertThat(frozenJourneys.next(next(ref, 2), agent()))
+                .containsEntry("stage", "DEFINING_RULES")
+                .containsEntry("stageStatus", "READY");
+    }
+
+    private FeatureContract featureWithBinding(String evaluationRef) {
+        FeatureContract current = registry.requireFeature(SCOPE, "responsibility.party");
+        return new FeatureContract(current.featureRef(), current.output(), current.evaluationKind(),
+                current.determinism(), current.inputs(), evaluationRef, current.componentRef(),
+                current.promptRef(), current.businessSemantics(), current.businessDefinition());
+    }
+
     private void associate(String ref, long revision, String tool, Map<String, Object> result) {
         journeys.executeAction(tool, action(ref, revision), agent(), () -> result);
     }
@@ -294,6 +370,100 @@ class BusinessJourneyServiceTest {
         @Override
         public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
             return payloads.get(receiptNode.path("fingerprint").asText()).deepCopy();
+        }
+    }
+
+    /** Moves one authoritative asset immediately after the caller's chosen read boundary. */
+    private static final class MutationAfterSnapshotRepository implements AgentTddStateRepository {
+        private final AgentTddStateRepository delegate;
+        private final Runnable mutation;
+        private boolean armed;
+
+        private MutationAfterSnapshotRepository(AgentTddStateRepository delegate, Runnable mutation) {
+            this.delegate = delegate;
+            this.mutation = mutation;
+        }
+
+        private void arm() {
+            armed = true;
+        }
+
+        @Override
+        public Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef) {
+            Optional<AgentTddStoredAsset> observed = delegate.find(scopeKey, kind, assetRef);
+            if (armed && BusinessJourneyService.JOURNEY.equals(kind)) mutate();
+            return observed;
+        }
+
+        @Override
+        public List<AgentTddStoredAsset> list(String scopeKey, String kind) {
+            return delegate.list(scopeKey, kind);
+        }
+
+        @Override
+        public AssetReadSnapshot readSnapshot(String scopeKey, List<String> kinds) {
+            AssetReadSnapshot snapshot = delegate.readSnapshot(scopeKey, kinds);
+            if (armed) mutate();
+            return snapshot;
+        }
+
+        private void mutate() {
+            armed = false;
+            mutation.run();
+        }
+
+        @Override
+        public AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
+            return delegate.save(scopeKey, kind, assetRef, data);
+        }
+
+        @Override
+        public AgentTddStoredAsset saveIfRevision(
+                String scopeKey, String kind, String assetRef, long expectedRevision, JsonNode data) {
+            return delegate.saveIfRevision(scopeKey, kind, assetRef, expectedRevision, data);
+        }
+
+        @Override
+        public <T> T executeAtomically(Supplier<T> action) {
+            return delegate.executeAtomically(action);
+        }
+
+        @Override
+        public AgentTddStoredAsset lockRevision(
+                String scopeKey, String kind, String assetRef, long expectedRevision) {
+            return delegate.lockRevision(scopeKey, kind, assetRef, expectedRevision);
+        }
+
+        @Override
+        public Optional<JsonNode> replay(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            return delegate.replay(scopeKey, operation, idempotencyKey, requestFingerprint);
+        }
+
+        @Override
+        public void record(String scopeKey, String operation, String idempotencyKey,
+                           String requestFingerprint, JsonNode response) {
+            delegate.record(scopeKey, operation, idempotencyKey, requestFingerprint, response);
+        }
+
+        @Override
+        public JsonNode executeOnce(String scopeKey, String operation, String idempotencyKey,
+                                    String requestFingerprint, Supplier<JsonNode> action) {
+            return delegate.executeOnce(scopeKey, operation, idempotencyKey, requestFingerprint, action);
+        }
+
+        @Override
+        public ExternalExecutionReservation reserveExternalExecution(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            return delegate.reserveExternalExecution(scopeKey, operation, idempotencyKey, requestFingerprint);
+        }
+
+        @Override
+        public JsonNode completeExternalExecution(
+                String scopeKey, String operation, String idempotencyKey,
+                String requestFingerprint, JsonNode response) {
+            return delegate.completeExternalExecution(
+                    scopeKey, operation, idempotencyKey, requestFingerprint, response);
         }
     }
 }

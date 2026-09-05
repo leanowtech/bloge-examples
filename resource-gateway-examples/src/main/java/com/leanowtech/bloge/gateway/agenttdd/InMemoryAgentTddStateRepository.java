@@ -31,6 +31,20 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
                 .toList();
     }
 
+    /** Captures all selected kinds while the same monitor excludes concurrent local writes. */
+    @Override
+    public synchronized AssetReadSnapshot readSnapshot(String scopeKey, List<String> kinds) {
+        java.util.Set<String> selectedKinds = kinds == null ? java.util.Set.of() : kinds.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(kind -> !kind.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return new AssetReadSnapshot(scopeKey, assets.values().stream()
+                .filter(asset -> asset.scopeKey().equals(scopeKey)
+                        && selectedKinds.contains(asset.kind()))
+                .toList());
+    }
+
     @Override
     public synchronized AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
         AgentTddStoredAsset previous = assets.get(assetKey(scopeKey, kind, assetRef));
