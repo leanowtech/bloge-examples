@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenContractGuard;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -19,10 +22,19 @@ import java.util.Map;
 @Service
 public final class AgentTddReviewService {
     private final AgentTddStateRepository states;
+    private final BusinessGoldenMaterialStore goldenMaterials;
 
-    /** Creates the review boundary over the durable Agent overlay repository. */
+    /** Creates a focused legacy review boundary without protected business material access. */
     public AgentTddReviewService(AgentTddStateRepository states) {
+        this(states, null);
+    }
+
+    /** Creates the Spring review boundary with protected business GOLDEN material access. */
+    @Autowired
+    public AgentTddReviewService(AgentTddStateRepository states,
+                                 BusinessGoldenMaterialStore goldenMaterials) {
         this.states = Objects.requireNonNull(states, "states");
+        this.goldenMaterials = goldenMaterials;
     }
 
     /**
@@ -54,13 +66,15 @@ public final class AgentTddReviewService {
             throw new AgentTddToolException("DRAFT_NOT_FOUND", "Pending GOLDEN case was not found.");
         }
         JsonNode proposal = selected.path("proposedOracle");
-        if (!"PENDING".equals(proposal.path("status").asText()) || !proposal.has("expect")) {
+        JsonNode material = protectedMaterial(selected, identity);
+        JsonNode materialProposal = material == null ? proposal : material.path("proposedOracle");
+        if (!"PENDING".equals(proposal.path("status").asText()) || !materialProposal.has("expect")) {
             throw new AgentTddToolException("GOLDEN_REQUIRES_APPROVAL",
                     "The GOLDEN case has no pending Oracle proposal.");
         }
         requireIndependentHuman(identity, proposal.path("proposedBy").asText());
         requireProposalFingerprint(proposal, proposalFingerprint);
-        selected.set("expect", proposal.path("expect").deepCopy());
+        if (material == null) selected.set("expect", proposal.path("expect").deepCopy());
         selected.put("oracleOwner", proposal.path("oracleOwner").asText());
         selected.put("lifecycle", "ACTIVE");
         ((ObjectNode) proposal).put("status", "APPROVED");
@@ -185,19 +199,40 @@ public final class AgentTddReviewService {
             if (!caseId.equals(row.path("caseId").asText())) continue;
             JsonNode proposal = row.path("proposedOracle");
             if (!"PENDING".equals(proposal.path("status").asText())) break;
+            JsonNode material = protectedMaterial(row, identity);
+            JsonNode reviewRow = material == null ? row : material;
+            JsonNode reviewProposal = reviewRow.path("proposedOracle");
             return Map.of(
                     "caseSetRef", caseSetRef,
                     "caseId", caseId,
                     "revision", current.revision(),
-                    "intent", row.path("intent").deepCopy(),
-                    "given", row.path("given").deepCopy(),
-                    "stubs", row.path("stubs").deepCopy(),
-                    "expect", proposal.path("expect").deepCopy(),
+                    "intent", reviewRow.path("intent").deepCopy(),
+                    "given", reviewRow.path("given").deepCopy(),
+                    "stubs", reviewRow.path("controlledAssumptions").isObject()
+                            ? reviewRow.path("controlledAssumptions").deepCopy()
+                            : reviewRow.path("stubs").deepCopy(),
+                    "expect", reviewProposal.path("expect").deepCopy(),
                     "oracleOwner", proposal.path("oracleOwner").asText(),
                     "proposedBy", proposal.path("proposedBy").asText(),
                     "proposalFingerprint", proposal.path("proposalFingerprint").asText());
         }
         throw new AgentTddToolException("DRAFT_NOT_FOUND", "Pending GOLDEN case was not found.");
+    }
+
+    private JsonNode protectedMaterial(JsonNode row, IntegrationRequestContext identity) {
+        JsonNode receipt = row.path("materialReceipt");
+        if (!receipt.isObject()) return null;
+        BusinessGoldenContractGuard.requireCurrent(
+                states, AgentTddMutationService.scopeKey(identity), row);
+        if (goldenMaterials == null) throw new AgentTddToolException(
+                "FIXTURE_MATERIAL_UNAVAILABLE", "Protected business case material is unavailable.");
+        JsonNode material = goldenMaterials.read(receipt, identity);
+        if (!row.path("goldenCaseFingerprint").asText().equals(
+                material.path("goldenCaseFingerprint").asText())) {
+            throw new AgentTddToolException("FIXTURE_MATERIAL_UNAVAILABLE",
+                    "Protected business case material does not match its case metadata.");
+        }
+        return material;
     }
 
     /** Returns the exact pending publish specification that a human must inspect before approval. */

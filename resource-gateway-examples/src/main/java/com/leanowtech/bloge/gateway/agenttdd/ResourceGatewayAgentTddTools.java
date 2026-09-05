@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.capability.BusinessCapabilityIndex;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
@@ -189,11 +190,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         AgentTddLibraryOverviewService libraryOverview,
                                         BusinessCapabilityIndex capabilityIndex,
                                         BusinessJourneyService journeys,
-                                        BusinessGoldenService businessGolden) {
+                                        BusinessGoldenService businessGolden,
+                                        BusinessGoldenMaterialStore goldenMaterials) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
-                writeRunners.getIfUnique(), libraryOverview, capabilityIndex, journeys, businessGolden);
+                writeRunners.getIfUnique(), libraryOverview, capabilityIndex, journeys, businessGolden,
+                goldenMaterials);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -214,7 +217,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          SolutionWriteExecutionRunner writeRunner) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
-                tokenKeys, writeRunner, null, null, null, null);
+                tokenKeys, writeRunner, null, null, null, null, null);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -236,7 +239,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          AgentTddLibraryOverviewService libraryOverview,
                                          BusinessCapabilityIndex capabilityIndex,
                                          BusinessJourneyService journeys,
-                                         BusinessGoldenService businessGolden) {
+                                         BusinessGoldenService businessGolden,
+                                         BusinessGoldenMaterialStore goldenMaterials) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -261,7 +265,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.journeys = journeys;
         this.businessGolden = businessGolden;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
-                states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner);
+                states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner,
+                goldenMaterials);
     }
 
     /**

@@ -61,7 +61,7 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN \
 
 启动脚本会管理 PID、日志、端口和 readiness，默认绑定 `127.0.0.1`，并设置 `RG_INTEGRATION_ENVIRONMENT_ID=local`。这个值很重要：Agent TDD 执行在 `prod` 环境会失败关闭。需要覆盖时，启动前显式传入 `RG_INTEGRATION_ENVIRONMENT_ID=test` 或 `local`。只有在已配置正式身份提供方、网络访问控制和 TLS 后，才可将 `RESOURCE_GATEWAY_ADDRESS` 设置为 `0.0.0.0`；启动脚本仍通过 loopback 做 readiness。直接运行 Spring Boot 时才使用 `SERVER_ADDRESS`。
 
-上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 需要把样例加密后存入受治理的 Fixture 仓库。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它，并在每次读取前重新收紧为 `0600`。`target/example-secrets` 目录或 key 路径若是符号链接，或者不是预期的普通目录/文件，启动会失败关闭。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
+上例显式开启 Correctness 元数据与 Fixture material，因为 `rg.fixture.provide` 的样例，以及 `rg.solution.golden.propose` 中的给定事实、依赖返回值和预期结果，都必须加密后存入受治理的 material 仓库。case-set 只保留 receipt、安全计数、生命周期和指纹。首次启动时，脚本用 `openssl` 生成一个本机 AES-256 key，权限设为 `0600`，保存到 `target/example-secrets/resource-gateway-fixture-material.key`；后续启动复用它，并在每次读取前重新收紧为 `0600`。`target/example-secrets` 目录或 key 路径若是符号链接，或者不是预期的普通目录/文件，启动会失败关闭。脚本不会打印该 key，文件也位于 Git 忽略的 `target/` 下。若已由密钥管理系统注入 `RG_CORRECTNESS_FIXTURE_MATERIAL_ACTIVE_KEY_ID` 和 `RG_CORRECTNESS_FIXTURE_MATERIAL_KEY_RING`，脚本不会生成本地 key。生产环境不得使用这个本地演示 key。
 
 本地单进程未配置 Feature token 密钥时，RG 会在内存中生成一代临时 HMAC key，重启后旧 token 自然失效。多副本、需要跨重启稳定或生产部署必须通过密钥管理系统注入 `RG_FEATURE_TOKEN_ACTIVE_KEY_ID` 和 `RG_FEATURE_TOKEN_KEY_RING`；后者为逗号分隔的 `keyId=base64(至少 32 字节)`，旧 key 可在最大 token TTL 之后再移除。不完整或弱密钥配置会使启动失败关闭，密钥不得写入手册、shell history 或 Codex 配置。
 
@@ -89,7 +89,7 @@ unset RG_AGENT_DEMO_TOKEN RG_REVIEW_DEMO_TOKEN \
 
 取消费演示开关默认关闭。只有设置 `RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED=true` 才会装配本地责任判定、免费时段、退款、工单和对账适配器；这些适配器只操作进程内 demo ledger。生产部署不得开启。
 
-Codex 只需要上表四个 `AGENT_TDD_*` 用途。Fixture material 的底层 `CORRECTNESS_FIXTURE_MATERIAL_WRITE` 由服务端在验证 `AGENT_TDD_GOVERNANCE` 后派生，不能加入 Codex token 的用途列表。外部 PostgreSQL 应由正式迁移工具依次应用仓库中所需的版本化 migration，至少包括 `V20260815_005` 至 `V20260816_010` 的 Correctness 表，以及 `V20260903_020__agent_tdd_runtime.sql`；应用不会在外部数据源上自行执行 DDL。嵌入式 H2 的本地启动器会校验并执行完整 authoring migration 集，checksum 漂移或缺表时失败关闭。
+Codex 只需要上表四个 `AGENT_TDD_*` 用途。Fixture material 的底层 `CORRECTNESS_FIXTURE_MATERIAL_WRITE` 和 `CORRECTNESS_FIXTURE_MATERIAL_RESOLVE` 由服务端分别在业务案例提议、人工审阅和受控测试边界内派生，不能加入 Codex token 的用途列表。外部 PostgreSQL 应由正式迁移工具依次应用仓库中所需的版本化 migration，至少包括 `V20260815_005` 至 `V20260816_010` 的 Correctness 表，以及 `V20260903_020__agent_tdd_runtime.sql`；应用不会在外部数据源上自行执行 DDL。嵌入式 H2 的本地启动器会校验并执行完整 authoring migration 集，checksum 漂移或缺表时失败关闭。
 
 ## 3. 把 MCP 配进 Codex
 
@@ -382,7 +382,7 @@ implementation fingerprint 一致的不可变 publication；草稿存在不等�
 - `rg.simulate.cases` 必须二选一：只传 `caseSetRef`，或只传临时 `rows`。
 - Solution 使用同一个 `rg.scenario.upsertCases`，但 `toolRef` 填 Solution ref；服务端会在当前作用域解析它，不需要伪造一个同名 Tool draft。
 - `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
-- `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。只有提案、没有有效 `expect` 的行返回 `GOLDEN_REQUIRES_APPROVAL`。
+- `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。业务旅程中的案例必须同时具有完整案例指纹和受保护 material receipt；执行时才在服务端内存中恢复 `given`、依赖假设和 Oracle。旧明文或仅有 `expect` 批准的行不能推进新旅程，返回 `LEGACY_GOLDEN_REAPPROVAL_REQUIRED`。
 - Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。
 
 WRITE Instruction 在 GREEN baseline 中始终使用服务端从输出契约合成的桩，`realExternalCalls=0`。
@@ -448,6 +448,9 @@ DSL authoring diagnostics 只返回注册表允许的稳定字段：`level`、`c
 | `FORBIDDEN_PURPOSE` / 400 或 403 | purpose 缺失、非法或越权 | 使用四 server 配置并检查 allowed purposes |
 | `GATE_REJECTED` / 503 | 身份/审计基础设施不可用，或生产 admission | 查日志；本地脚本应使用 environment `local` |
 | `GOLDEN_REQUIRES_APPROVAL` | GOLDEN 未人工批准 | 看板批准精确 revision，再读 case set |
+| `GOLDEN_CASE_STALE` | 案例引用的 Feature 或 Instruction 业务契约已变化 | 按当前业务契约重新提议并批准案例 |
+| `LEGACY_GOLDEN_REAPPROVAL_REQUIRED` | 旧 GOLDEN 未证明完整案例已审阅 | 用业务语言重新提议完整案例并由另一 HUMAN 批准 |
+| `FIXTURE_MATERIAL_UNAVAILABLE` | 受保护案例材料无法保存或解析 | 恢复 material store；不得改用明文案例 |
 | `GATE_REJECTED` / 409（审批） | 使用了 Agent token、自批，或 proposal fingerprint 已变化 | 改用独立 reviewer token，重新打开详情并复核 |
 | `SCHEMA_NONCONFORMANT` | binding、stub 或行为参数不匹配 | 重读 contract，按真实端口/schema 修复 |
 | `DSL_LIBRARY_NOT_VISIBLE` | libraryRefs 缺失或在当前项目不可见 | 核对当前项目的授权库并重新 discovery；服务端不区分这两种情况 |

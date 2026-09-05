@@ -167,7 +167,25 @@ public final class BusinessJourneyService {
                 .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
                 .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
                         "GOLDEN".equals(row.path("category").asText())
-                                && "ACTIVE".equals(row.path("lifecycle").asText())));
+                                && "ACTIVE".equals(row.path("lifecycle").asText())
+                                && !row.path("goldenCaseFingerprint").asText().isBlank()
+                                && row.path("materialReceipt").isObject()
+                                && "APPROVED".equals(row.at("/proposedOracle/status").asText())
+                                && BusinessGoldenContractGuard.isCurrent(states, scope, row)));
+        boolean legacyGolden = refs.getOrDefault("CASE_SET", List.of()).stream()
+                .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
+                .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
+                        "GOLDEN".equals(row.path("category").asText())
+                                && "ACTIVE".equals(row.path("lifecycle").asText())
+                                && (!row.path("materialReceipt").isObject()
+                                || row.path("goldenCaseFingerprint").asText().isBlank())));
+        boolean staleGolden = refs.getOrDefault("CASE_SET", List.of()).stream()
+                .flatMap(ref -> states.find(scope, AgentTddMutationService.CASE_SET, ref).stream())
+                .anyMatch(asset -> iterable(asset.data().path("rows")).stream().anyMatch(row ->
+                        "GOLDEN".equals(row.path("category").asText())
+                                && "ACTIVE".equals(row.path("lifecycle").asText())
+                                && row.path("materialReceipt").isObject()
+                                && !BusinessGoldenContractGuard.isCurrent(states, scope, row)));
         boolean evidence = refs.getOrDefault("SOLUTION", List.of()).stream()
                 .anyMatch(ref -> hasCurrentGreenEvidence(scope, ref, refs));
         boolean speccingFeature = refs.getOrDefault("FEATURE", List.of()).stream()
@@ -198,7 +216,11 @@ public final class BusinessJourneyService {
         if (!caseSet || !activeGolden) return projection("WAITING_GOLDEN_APPROVAL", "BLOCKED",
                 List.of("rg.solution.golden.propose", "rg.solution.golden.list", "rg.journey.next"),
                 List.of("rg.solution.baseline", "rg.solution.commit"), "BUSINESS_OWNER", "",
-                "提交并独立批准完整业务案例。", journey);
+                legacyGolden ? "旧案例需用业务语言重新提议并批准完整内容。"
+                        : staleGolden ? "案例引用的业务契约已变化，需重新提议并批准。"
+                        : "提交并独立批准完整业务案例。",
+                journey, legacyGolden ? "LEGACY_GOLDEN_REAPPROVAL_REQUIRED"
+                        : staleGolden ? "GOLDEN_CASE_STALE" : "GOLDEN_REQUIRES_APPROVAL");
         if (!evidence) return projection("TESTING", "READY",
                 List.of("rg.solution.golden.list", "rg.solution.baseline", "rg.journey.next"),
                 List.of("rg.solution.commit"), "CODING_AGENT", "", "运行受控 RED/GREEN 基线。", journey);
@@ -260,10 +282,17 @@ public final class BusinessJourneyService {
 
     private Projection projection(String stage, String status, List<String> allowed, List<String> forbidden,
                                   String role, String question, String action, AgentTddStoredAsset journey) {
+        return projection(stage, status, allowed, forbidden, role, question, action, journey, "");
+    }
+
+    private Projection projection(String stage, String status, List<String> allowed, List<String> forbidden,
+                                  String role, String question, String action, AgentTddStoredAsset journey,
+                                  String blockingReason) {
         String context = "COMPOSING".equals(stage) || journey.data().path("associations").size() >= 3
                 ? currentContext(journey) : "";
         return new Projection(stage, status, List.of(), status.equals("BLOCKED")
-                ? List.of(stage.equals("WAITING_FEATURE_ENGINEERING") ? "FEATURE_BINDING_REQUIRED"
+                ? List.of(!blockingReason.isBlank() ? blockingReason
+                : stage.equals("WAITING_FEATURE_ENGINEERING") ? "FEATURE_BINDING_REQUIRED"
                 : "GOLDEN_REQUIRES_APPROVAL") : List.of(), allowed, forbidden, context, role, question, action);
     }
 

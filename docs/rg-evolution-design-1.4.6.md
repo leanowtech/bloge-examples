@@ -663,7 +663,7 @@ return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
 
 提议时，服务器根据同一冻结上下文解析全部业务名称。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
 
-人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 只包含案例引用的 semantic key 和业务契约指纹，不包含 evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。aliases 或显示名称变化但 semantic key 和业务契约不变时，批准保持有效。
+人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `caseId + businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 只包含案例引用的实体类型、稳定引用、semantic key 和业务契约指纹，不包含 evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。该向量随 case-set 安全元数据持久化，人工审阅、journey 派生和 baseline 都按当前注册表重新核对。aliases 或显示名称变化但 semantic key 和业务契约不变时，批准保持有效。
 
 任何案例字段或所引用业务契约变化都使批准失效。Coding Agent 修正规则、组合逻辑或实现 binding 时，业务定义不变则保留批准，但旧 `ControlledAssumptionPlan`、RED/GREEN evidence 和 signoff 失效。现有只覆盖 `expect` 的 Oracle 指纹不能作为新业务入口的批准坐标。
 
@@ -929,7 +929,7 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 | `CONTROLLED_ASSUMPTION_REQUIRED` | 测试路径可能触达外部依赖，但案例未定义对应假设 | false | 补充依赖的业务结果后重新提议案例 |
 | `CONTROLLED_TEST_EGRESS_DENIED` | 受控测试尝试离开进程或进入真实 dispatch channel | false | 记录测试缺口；不得改用真实调用重试 |
 | `GOLDEN_CASE_STALE` | 案例内容、批准指纹或所引用业务契约已变化 | false | 重新读取案例摘要并发起新批准；不得自动重试执行 |
-| `GOLDEN_MATERIAL_UNAVAILABLE` | 受保护案例材料无法写入、解密或通过完整性校验 | false | 停止提议或测试，由平台负责人恢复 material store |
+| `FIXTURE_MATERIAL_UNAVAILABLE` | 受保护案例材料无法写入、解密或通过完整性校验 | false | 停止提议或测试，由平台负责人恢复 material store；不得降级为明文案例 |
 | `LEGACY_GOLDEN_REAPPROVAL_REQUIRED` | 旧案例只有 expect-level 批准，缺少完整案例指纹 | false | 以业务语言重新提议并批准完整案例 |
 
 错误 `details` 只返回闭集字段、候选安全摘要和稳定引用，不包含原始业务 payload、DSL source、binding、URL、token 或异常消息。
@@ -1350,7 +1350,7 @@ resource-gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
 | P3 Feature 语义契约 v2 | 已完成 | `BusinessFactSemanticContract` 完整字段校验；新写入拒绝自由文本语义；旧版 UNKNOWN/PARTIAL 兼容投影；字段级 EXACT/PARTIAL/CONFLICT matcher；多 EXACT 歧义停止；实现 binding 排除于业务身份；业务定义纳入指纹 |
-| P4 journey 与受控测试 | 部分完成 | 已完成 journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED` 和零外呼测试；待完成受保护 material 分离、旧案例迁移和真实 HTTP 业务主线认证 |
+| P4 journey 与受控测试 | 部分完成 | 已完成 journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED` 和零外呼测试；待完成真实 HTTP 业务主线认证 |
 | P5 真实召回认证 | 待实施 | §14.4 指标全部通过；假设话语集；当前 HEAD 证书；演示与手册同步 |
 
 ## 21. 审阅决策点

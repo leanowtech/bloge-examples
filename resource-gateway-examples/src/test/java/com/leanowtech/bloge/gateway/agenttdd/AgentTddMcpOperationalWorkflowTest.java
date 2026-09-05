@@ -559,6 +559,115 @@ class AgentTddMcpOperationalWorkflowTest {
                 .at("/data/totalCases").asInt()).isEqualTo(1);
     }
 
+    @Test
+    void businessSurfaceRunsProtectedGoldenThroughTheRealMcpLifecycle() {
+        String solutionRef = "sol:business-cancel-ops";
+        String scenarioRef = "scn:business-cancel-ops";
+        String instructionRef = "ins:business-uphold-ops";
+        negotiateBusinessCodexLifecycle();
+
+        JsonNode started = invokeBusiness("rg.journey.start", Map.of(
+                "intentKind", "CREATE_SOLUTION",
+                "businessGoal", "乘客超时取消时维持取消费并给出责任解释",
+                "idempotencyKey", "journey-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        String journeyRef = started.at("/data/journeyRef").asText();
+        assertThat(started.at("/data/stage").asText()).isEqualTo("DISCOVERING");
+
+        invokeBusiness("rg.feature.define", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 1,
+                "featureYaml", """
+                        dispute.party.business:
+                          output: { type: { enum: [passenger, driver] } }
+                          evaluationKind: USER_COMPONENT
+                          determinism: INTERACTIVE
+                          componentRef: cancellation-party-v1
+                          businessSemantics: 取消责任方
+                          businessDefinition: { semanticKey: ride.cancel.party.business, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum, values: [passenger, driver] }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE }
+                        """,
+                "idempotencyKey", "feature-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        invokeBusiness("rg.scenario.define", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 2,
+                "scenarioYaml", """
+                        %s:
+                          inputs: [party]
+                          hitPolicy: unique
+                          rules:
+                            - ruleId: PASSENGER_LATE
+                              when: { party: { eq: passenger } }
+                              outlet: { kind: INSTRUCTION, ref: '%s', bind: { party: party } }
+                          otherwise: { kind: TERMINAL, terminalKind: ESCALATE }
+                        """.formatted(scenarioRef, instructionRef),
+                "libraryRefs", List.of(),
+                "idempotencyKey", "scenario-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        invokeBusiness("rg.instruction.define", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 3,
+                "instructionYaml", """
+                        %s:
+                          inputs: { party: string }
+                          output:
+                            result: { type: { fields: { decision: { enum: [UPHELD] } } } }
+                            reasoning: required
+                          effect: READ
+                          businessSemantics: 维持取消费
+                        """.formatted(instructionRef),
+                "idempotencyKey", "instruction-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        JsonNode composing = invokeBusiness("rg.journey.next", Map.of(
+                "journeyRef", journeyRef, "expectedRevision", 4), "AGENT_TDD_READ");
+        String contextFingerprint = composing.at("/data/solutionContextFingerprint").asText();
+        assertThat(composing.at("/data/stage").asText()).isEqualTo("COMPOSING");
+
+        invokeBusiness("rg.solution.compose", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 4,
+                "solutionContextFingerprint", contextFingerprint,
+                "solutionYaml", """
+                        %s:
+                          problem: 处理乘客超时取消费争议。
+                          inputs: { party: dispute.party.business }
+                          scenarioTree: { root: '%s' }
+                          instructions: ['%s']
+                          golden: 'caseSet:business-cancel-ops'
+                        """.formatted(solutionRef, scenarioRef, instructionRef),
+                "idempotencyKey", "compose-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        JsonNode proposed = invokeBusiness("rg.solution.golden.propose", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 5,
+                "solutionRef", solutionRef,
+                "cases", List.of(Map.of(
+                        "caseId", "late-cancel",
+                        "businessIntent", "乘客超时取消由乘客承担",
+                        "givenFacts", List.of(Map.of("factName", "取消责任方", "value", "passenger")),
+                        "dependencyAssumptions", List.of(Map.of(
+                                "capabilityName", "维持取消费", "outcome", "RETURNS",
+                                "value", Map.of("result", Map.of("decision", "UPHELD"),
+                                        "reasoning", "责任在乘客"))),
+                        "expectedOutcome", Map.of("result", Map.of("decision", "UPHELD"),
+                                "reasoningClass", "责任在乘客"),
+                        "oracleOwner", "customer-experience-owner")),
+                "idempotencyKey", "golden-business-cancel-ops"), "AGENT_TDD_AUTHORING");
+        String caseSetRef = proposed.at("/data/caseSetRef").asText();
+        assertThat(proposed.at("/data").toString())
+                .doesNotContain("passenger", "UPHELD", "责任在乘客");
+
+        JsonNode review = reviewGet("/api/agent-tdd/reviews/oracles/" + caseSetRef
+                + "/late-cancel?expectedRevision=1");
+        assertThat(review.path("intent").asText()).isEqualTo("乘客超时取消由乘客承担");
+        reviewPost("/api/agent-tdd/reviews/oracles/" + caseSetRef + "/late-cancel/approve", Map.of(
+                "expectedRevision", 1,
+                "proposalFingerprint", review.path("proposalFingerprint").asText()));
+
+        JsonNode testing = invokeBusiness("rg.journey.next", Map.of(
+                "journeyRef", journeyRef, "expectedRevision", 6), "AGENT_TDD_READ");
+        assertThat(testing.at("/data/stage").asText()).isEqualTo("TESTING");
+        JsonNode green = invokeBusiness("rg.solution.baseline", Map.of(
+                "journeyRef", journeyRef, "expectedJourneyRevision", 6,
+                "solutionRef", solutionRef, "side", "GREEN"), "AGENT_TDD_EXECUTION");
+        assertThat(green.at("/data/status").asText()).isEqualTo("GO");
+        assertThat(green.at("/data/realExternalCalls").asInt()).isZero();
+        assertThat(green.at("/data/cases/0/verdict").asText()).isEqualTo("GREEN_PASS");
+        assertThat(invokeBusiness("rg.journey.next", Map.of(
+                "journeyRef", journeyRef, "expectedRevision", 7), "AGENT_TDD_READ")
+                .at("/data/stage").asText()).isEqualTo("WAITING_SIGNOFF");
+    }
+
     /**
      * Exercises the same initialize, initialized notification and tool discovery sequence emitted
      * by a current Codex Streamable-HTTP client before it can call an Agent TDD tool.
@@ -600,6 +709,32 @@ class AgentTddMcpOperationalWorkflowTest {
                 assertThat(tool.path("name").asText()).isEqualTo("rg.tool.publish"));
     }
 
+    private void negotiateBusinessCodexLifecycle() {
+        HttpHeaders initializeHeaders = headers("bloge-aneke-demo-token", "AGENT_TDD_READ");
+        initializeHeaders.set("X-RG-Surface", "BUSINESS_SOLUTION");
+        JsonNode initializeRequest = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0", "id", ++requestId, "method", "initialize",
+                "params", Map.of("protocolVersion", McpProtocolController.CODEX_PROTOCOL_VERSION,
+                        "capabilities", Map.of(),
+                        "clientInfo", Map.of("name", "codex", "version", "0.150.0"))));
+        ResponseEntity<JsonNode> initialized = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(initializeRequest, initializeHeaders), JsonNode.class);
+        assertThat(initialized.getStatusCode().value()).isEqualTo(200);
+        assertThat(initialized.getBody().at("/result/instructions").asText())
+                .contains("business language", "rg.journey.next")
+                .doesNotContain("rg.dsl.preview", "rg.tool.compose");
+        initializeHeaders.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
+        JsonNode listed = mapper.valueToTree(Map.of(
+                "jsonrpc", "2.0", "id", ++requestId, "method", "tools/list", "params", Map.of()));
+        ResponseEntity<JsonNode> response = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(listed, initializeHeaders), JsonNode.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody().at("/result/tools")).anySatisfy(tool ->
+                assertThat(tool.path("name").asText()).isEqualTo("rg.journey.next"));
+        assertThat(response.getBody().at("/result/tools")).noneSatisfy(tool ->
+                assertThat(tool.path("name").asText()).isEqualTo("rg.dsl.preview"));
+    }
+
     private JsonNode invoke(String name, Object arguments) {
         return invoke(name, arguments, "AGENT_TDD_READ");
     }
@@ -608,6 +743,20 @@ class AgentTddMcpOperationalWorkflowTest {
         JsonNode request = mapper.valueToTree(Map.of("jsonrpc", "2.0", "id", ++requestId,
                 "method", "tools/call", "params", Map.of("name", name, "arguments", arguments)));
         HttpHeaders headers = headers("bloge-aneke-demo-token", purpose);
+        headers.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
+        ResponseEntity<JsonNode> response = http.exchange("/mcp", HttpMethod.POST,
+                new HttpEntity<>(request, headers), JsonNode.class);
+        assertThat(response.getStatusCode().is2xxSuccessful()).as(response.toString()).isTrue();
+        JsonNode result = response.getBody().at("/result/structuredContent");
+        assertThat(result.path("ok").asBoolean()).as(response.getBody().toPrettyString()).isTrue();
+        return result;
+    }
+
+    private JsonNode invokeBusiness(String name, Object arguments, String purpose) {
+        JsonNode request = mapper.valueToTree(Map.of("jsonrpc", "2.0", "id", ++requestId,
+                "method", "tools/call", "params", Map.of("name", name, "arguments", arguments)));
+        HttpHeaders headers = headers("bloge-aneke-demo-token", purpose);
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
         headers.set("MCP-Protocol-Version", McpProtocolController.CODEX_PROTOCOL_VERSION);
         ResponseEntity<JsonNode> response = http.exchange("/mcp", HttpMethod.POST,
                 new HttpEntity<>(request, headers), JsonNode.class);

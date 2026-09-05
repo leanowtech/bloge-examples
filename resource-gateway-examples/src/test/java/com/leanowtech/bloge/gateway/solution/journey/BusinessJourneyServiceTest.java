@@ -1,9 +1,11 @@
 package com.leanowtech.bloge.gateway.solution.journey;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddMutationService;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddReviewService;
+import com.leanowtech.bloge.gateway.agenttdd.SolutionTestingService;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
@@ -30,7 +32,8 @@ class BusinessJourneyServiceTest {
     private final InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
     private final SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
     private final BusinessJourneyService journeys = new BusinessJourneyService(states, mapper);
-    private final BusinessGoldenService golden = new BusinessGoldenService(states, mapper);
+    private final TestMaterialStore materials = new TestMaterialStore(mapper);
+    private final BusinessGoldenService golden = new BusinessGoldenService(states, mapper, materials);
 
     @BeforeEach
     void defineCurrentBusinessContracts() {
@@ -47,7 +50,7 @@ class BusinessJourneyServiceTest {
                 mapper.valueToTree(Map.of("orderId", "string")), "resource:responsibility#$.party",
                 "", "", "取消责任方", semantics));
         registry.upsertInstruction(SCOPE, new InstructionContract("ins:uphold",
-                mapper.valueToTree(Map.of("orderId", "string")), mapper.valueToTree(Map.of(
+                mapper.valueToTree(Map.of("party", "string")), mapper.valueToTree(Map.of(
                 "result", Map.of("type", Map.of("fields", Map.of(
                         "decision", Map.of("enum", List.of("UPHELD"))))), "reasoning", "required")),
                 InstructionContract.Effect.READ, "tool:uphold", null, "维持费用"));
@@ -55,7 +58,7 @@ class BusinessJourneyServiceTest {
                 ScenarioContract.HitPolicy.UNIQUE, List.of(new ScenarioContract.Rule("R1",
                 mapper.valueToTree(Map.of("party", Map.of("eq", "passenger"))),
                 new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
-                        "ins:uphold", Map.of("orderId", "orderId"), ""))),
+                        "ins:uphold", Map.of("party", "party"), ""))),
                 new ScenarioContract.Outlet(ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
         registry.upsertSolution(SCOPE, new SolutionContract("sol:cancel", "处理取消费争议",
                 Map.of("party", "responsibility.party"),
@@ -108,13 +111,79 @@ class BusinessJourneyServiceTest {
                 () -> golden.propose(proposal, agent()));
 
         assertThat(proposed.toString()).doesNotContain("passenger", "UPHELD", "责任在乘客");
+        JsonNode metadata = states.find(SCOPE, AgentTddMutationService.CASE_SET,
+                proposed.get("caseSetRef").toString()).orElseThrow().data().at("/rows/0");
+        assertThat(metadata.has("materialReceipt")).isTrue();
+        assertThat(metadata.has("given")).isFalse();
+        assertThat(metadata.has("expect")).isFalse();
+        assertThat(metadata.has("controlledAssumptions")).isFalse();
         assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "WAITING_GOLDEN_APPROVAL");
         Map<?, ?> summary = (Map<?, ?>) ((List<?>) proposed.get("caseSummaries")).getFirst();
-        AgentTddStoredAsset approved = new AgentTddReviewService(states).approveOracle(
+        AgentTddReviewService reviews = new AgentTddReviewService(states, materials);
+        Map<String, Object> review = reviews.oracleReview(
+                proposed.get("caseSetRef").toString(), "g1", 1, reviewer());
+        assertThat(mapper.valueToTree(review).path("intent").asText())
+                .isEqualTo("乘客超时取消由乘客承担");
+        AgentTddStoredAsset approved = reviews.approveOracle(
                 proposed.get("caseSetRef").toString(), "g1", 1,
                 summary.get("goldenCaseFingerprint").toString(), reviewer());
         assertThat(approved.data().at("/rows/0/lifecycle").asText()).isEqualTo("ACTIVE");
         assertThat(journeys.next(next(ref, 6), agent())).containsEntry("stage", "TESTING");
+
+        SolutionTestingService testing = new SolutionTestingService(states, registry, mapper,
+                (instruction, values, executionContext) -> {
+                    throw new AssertionError("A protected controlled test must not use the runtime channel.");
+                }, materials);
+        Map<String, Object> baseline = testing.baseline(SCOPE, "sol:cancel",
+                proposed.get("caseSetRef").toString(), "GREEN", agent());
+        assertThat(baseline).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(((List<?>) baseline.get("cases"))).singleElement().asString().contains("GREEN_PASS");
+
+        BusinessFactSemanticContract revisedSemantics = new BusinessFactSemanticContract(
+                BusinessFactSemanticContract.SCHEMA_VERSION,
+                "ride.cancel.party", "判断取消责任和平台责任", "ride-cancellation", "ride-order",
+                mapper.createArrayNode(),
+                mapper.valueToTree(Map.of("type", "enum",
+                        "values", List.of("passenger", "driver", "platform"))),
+                "CANCELLATION_OCCURRED_AT", "REQUIRE_HUMAN_REVIEW", "PLATFORM",
+                "responsibility-center", mapper.valueToTree(Map.of("mode", "AS_OF_EVENT")),
+                "READ", "ACTIVE");
+        registry.upsertFeature(SCOPE, new FeatureContract("responsibility.party",
+                mapper.valueToTree(Map.of("type", Map.of(
+                        "enum", List.of("passenger", "driver", "platform")))),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "resource:responsibility#$.party",
+                "", "", "取消责任方", revisedSemantics));
+        assertThat(journeys.next(next(ref, 6), agent()).get("blockingReasons"))
+                .isEqualTo(List.of("GOLDEN_CASE_STALE"));
+        assertThatThrownBy(() -> testing.baseline(SCOPE, "sol:cancel",
+                proposed.get("caseSetRef").toString(), "GREEN", agent()))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("GOLDEN_CASE_STALE"));
+    }
+
+    @Test
+    void legacyPlaintextGoldenCannotAdvanceTheBusinessJourney() {
+        String ref = journeys.start(startRequest("journey-start-legacy"), agent()).get("journeyRef").toString();
+        associate(ref, 1, "rg.feature.define", Map.of("featureId", "responsibility.party", "revision", 1));
+        associate(ref, 2, "rg.scenario.define", Map.of("scenarioId", "scn:cancel", "revision", 1));
+        associate(ref, 3, "rg.instruction.define", Map.of("instructionId", "ins:uphold", "revision", 1));
+        ObjectNode compose = action(ref, 4).put("solutionContextFingerprint",
+                journeys.next(next(ref, 4), agent()).get("solutionContextFingerprint").toString());
+        journeys.executeAction("rg.solution.compose", compose, agent(),
+                () -> Map.of("solutionRef", "sol:cancel", "revision", 1));
+        ObjectNode legacy = mapper.createObjectNode().put("toolRef", "sol:cancel");
+        legacy.putArray("rows").addObject().put("caseId", "legacy").put("category", "GOLDEN")
+                .put("lifecycle", "ACTIVE").set("expect", mapper.valueToTree(Map.of("result", Map.of())));
+        AgentTddStoredAsset stored = states.save(SCOPE, AgentTddMutationService.CASE_SET,
+                "caseSet:legacy", legacy);
+        associate(ref, 5, "rg.solution.golden.propose",
+                Map.of("caseSetRef", stored.assetRef(), "revision", stored.revision()));
+
+        assertThat(journeys.next(next(ref, 6), agent()))
+                .containsEntry("stage", "WAITING_GOLDEN_APPROVAL")
+                .extractingByKey("blockingReasons")
+                .asList().containsExactly("LEGACY_GOLDEN_REAPPROVAL_REQUIRED");
     }
 
     @Test
@@ -164,5 +233,28 @@ class BusinessJourneyServiceTest {
     private static IntegrationRequestContext reviewer() {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "sg",
                 "HUMAN", "reviewer", "INTERNAL", "AGENT_TDD_GOVERNANCE", "corr-review");
+    }
+
+    private static final class TestMaterialStore extends BusinessGoldenMaterialStore {
+        private final ObjectMapper mapper;
+        private final Map<String, JsonNode> payloads = new java.util.LinkedHashMap<>();
+
+        private TestMaterialStore(ObjectMapper mapper) {
+            super((com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService) null, mapper);
+            this.mapper = mapper;
+        }
+
+        @Override
+        public JsonNode write(String solutionRef, long solutionRevision, String solutionFingerprint,
+                              String caseId, String goldenFingerprint, String proposalFingerprint, JsonNode payload,
+                              IntegrationRequestContext caller) {
+            payloads.put(goldenFingerprint, payload.deepCopy());
+            return mapper.valueToTree(Map.of("fingerprint", goldenFingerprint));
+        }
+
+        @Override
+        public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
+            return payloads.get(receiptNode.path("fingerprint").asText()).deepCopy();
+        }
     }
 }

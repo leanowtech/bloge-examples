@@ -9,6 +9,9 @@ import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenContractGuard;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.util.ArrayList;
@@ -27,6 +30,7 @@ public final class SolutionTestingService {
     private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
     private final InstructionDispatchChannel fallbackChannel;
+    private final BusinessGoldenMaterialStore goldenMaterials;
 
     /** Creates a testing pyramid over the canonical entities and shared approved-case repository. */
     public SolutionTestingService(
@@ -34,10 +38,21 @@ public final class SolutionTestingService {
             SolutionEntityRegistry registry,
             ObjectMapper mapper,
             InstructionDispatchChannel instructionChannel) {
+        this(states, registry, mapper, instructionChannel, null);
+    }
+
+    /** Creates the business testing boundary with protected GOLDEN material resolution. */
+    public SolutionTestingService(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ObjectMapper mapper,
+            InstructionDispatchChannel instructionChannel,
+            BusinessGoldenMaterialStore goldenMaterials) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.fallbackChannel = Objects.requireNonNull(instructionChannel, "instructionChannel");
+        this.goldenMaterials = goldenMaterials;
     }
 
     /** Evaluates explicit Feature values against expected Scenario outlet subsets. */
@@ -71,6 +86,12 @@ public final class SolutionTestingService {
     /** Runs every approved ACTIVE GOLDEN row against the pure Solution and persists one evidence view. */
     public Map<String, Object> baseline(
             String scopeKey, String solutionRef, String caseSetRef, String side) {
+        return baseline(scopeKey, solutionRef, caseSetRef, side, null);
+    }
+
+    /** Runs a baseline with the caller identity used only to resolve protected case material. */
+    public Map<String, Object> baseline(String scopeKey, String solutionRef, String caseSetRef,
+                                        String side, IntegrationRequestContext identity) {
         String normalizedSide = side == null ? "" : side.trim().toUpperCase(java.util.Locale.ROOT);
         if (!List.of("RED", "GREEN").contains(normalizedSide)) throw schemaFailure();
         AgentTddStoredAsset caseSet = states.find(scopeKey, AgentTddMutationService.CASE_SET, caseSetRef)
@@ -84,7 +105,7 @@ public final class SolutionTestingService {
             throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
         }
         return states.executeAtomically(() -> baselineLocked(
-                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), solution));
+                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), solution, identity));
     }
 
     private Map<String, Object> baselineLocked(
@@ -93,7 +114,8 @@ public final class SolutionTestingService {
             String caseSetRef,
             String normalizedSide,
             long expectedRevision,
-            SolutionEntityRegistry.RegisteredEntity expectedSolution) {
+            SolutionEntityRegistry.RegisteredEntity expectedSolution,
+            IntegrationRequestContext identity) {
         AgentTddStoredAsset caseSet = states.lockRevision(
                 scopeKey, AgentTddMutationService.CASE_SET, caseSetRef, expectedRevision);
         if (!solutionRef.equals(caseSet.data().path("toolRef").asText())) {
@@ -109,14 +131,15 @@ public final class SolutionTestingService {
         caseSet.data().path("rows").forEach(row -> {
             if ("GOLDEN".equals(row.path("category").asText())
                     && "ACTIVE".equals(row.path("lifecycle").asText())
-                    && row.path("expect").isObject()) golden.add(row);
+                    && (row.path("expect").isObject() || row.path("materialReceipt").isObject())) golden.add(row);
         });
         if (golden.isEmpty()) throw new AgentTddToolException(
                 "GOLDEN_REQUIRES_APPROVAL", "Approved Solution GOLDEN cases are required.");
         List<Map<String, Object>> cases = new ArrayList<>();
         List<Map<String, Object>> backlog = new ArrayList<>();
         LinkedHashMap<String, Integer> hitDistribution = new LinkedHashMap<>();
-        for (JsonNode row : golden) {
+        for (JsonNode metadata : golden) {
+            JsonNode row = approvedMaterial(metadata, identity);
             String caseId = requiredText(row, "caseId");
             SolutionExecutionService.ExecutionResult result;
             try {
@@ -157,7 +180,8 @@ public final class SolutionTestingService {
                     caseSetRef, caseSet.revision(), updated).revision();
         }
         String goldenSetId = VisualBundleFingerprint.fromCanonicalValue(mapper,
-                golden.stream().map(JsonNode::deepCopy).toList(), MAX_BYTES);
+                golden.stream().map(row -> row.path("goldenCaseFingerprint").asText(
+                        VisualBundleFingerprint.fromCanonicalValue(mapper, row, MAX_BYTES))).toList(), MAX_BYTES);
         ObjectNode evidence = mapper.createObjectNode();
         evidence.put("solutionRef", solutionRef);
         evidence.put("caseSetRef", caseSetRef);
@@ -187,6 +211,24 @@ public final class SolutionTestingService {
         response.put("realExternalCalls", 0);
         response.put("status", backlog.isEmpty() ? "GO" : "NO_GO");
         return Map.copyOf(response);
+    }
+
+    private JsonNode approvedMaterial(JsonNode metadata, IntegrationRequestContext identity) {
+        if (!metadata.path("materialReceipt").isObject()) return metadata;
+        if (goldenMaterials == null || identity == null) throw new AgentTddToolException(
+                "FIXTURE_MATERIAL_UNAVAILABLE", "Protected business case material is unavailable.");
+        BusinessGoldenContractGuard.requireCurrent(states,
+                AgentTddMutationService.scopeKey(identity), metadata);
+        JsonNode material = goldenMaterials.read(metadata.path("materialReceipt"), identity);
+        if (!metadata.path("goldenCaseFingerprint").asText().equals(
+                material.path("goldenCaseFingerprint").asText())) {
+            throw new AgentTddToolException("FIXTURE_MATERIAL_UNAVAILABLE",
+                    "Protected business case material does not match its case metadata.");
+        }
+        ObjectNode approved = (ObjectNode) material.deepCopy();
+        approved.put("lifecycle", metadata.path("lifecycle").asText());
+        approved.set("expect", material.at("/proposedOracle/expect").deepCopy());
+        return approved;
     }
 
     /**

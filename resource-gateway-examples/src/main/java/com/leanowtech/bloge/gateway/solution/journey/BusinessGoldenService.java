@@ -13,8 +13,10 @@ import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.SolutionValueSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,12 +35,21 @@ public final class BusinessGoldenService {
     private final AgentTddStateRepository states;
     private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
+    private final BusinessGoldenMaterialStore materials;
 
-    /** Creates the business GOLDEN boundary over canonical Solution entities and case sets. */
+    /** Creates a focused boundary whose material vault remains fail-closed until supplied. */
     public BusinessGoldenService(AgentTddStateRepository states, ObjectMapper mapper) {
+        this(states, mapper, new BusinessGoldenMaterialStore((com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService) null, mapper));
+    }
+
+    /** Creates the Spring boundary over canonical entities, case metadata and protected material. */
+    @Autowired
+    public BusinessGoldenService(AgentTddStateRepository states, ObjectMapper mapper,
+                                 BusinessGoldenMaterialStore materials) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = new SolutionEntityRegistry(states, mapper);
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.materials = Objects.requireNonNull(materials, "materials");
     }
 
     /** Proposes complete cases atomically without executing them or making their Oracle effective. */
@@ -47,7 +58,8 @@ public final class BusinessGoldenService {
         String solutionRef = requiredText(arguments, "solutionRef");
         JsonNode cases = arguments.path("cases");
         if (!cases.isArray() || cases.isEmpty()) throw schema();
-        SolutionContract solution = requireSolution(scope, solutionRef);
+        SolutionEntityRegistry.RegisteredEntity registered = requireRegisteredSolution(scope, solutionRef);
+        SolutionContract solution = registry.requireSolution(scope, solutionRef);
         String caseSetRef = "caseSet:journey:" + requiredText(arguments, "journeyRef").substring("journey:".length());
         String key = requiredText(arguments, "idempotencyKey");
         String requestFingerprint = fingerprint(arguments);
@@ -57,13 +69,45 @@ public final class BusinessGoldenService {
             data.put("toolRef", solutionRef);
             data.put("journeyRef", requiredText(arguments, "journeyRef"));
             ArrayNode rows = data.putArray("rows");
-            cases.forEach(raw -> rows.add(compileCase(scope, solution, raw, identity)));
+            cases.forEach(raw -> {
+                ObjectNode compiled = compileCase(scope, solution, raw, identity);
+                rows.add(protectCase(compiled, registered, requestFingerprint, identity));
+            });
             AgentTddStoredAsset stored = states.save(scope, AgentTddMutationService.CASE_SET, caseSetRef, data);
             return mapper.valueToTree(Map.of("caseSetRef", caseSetRef, "revision", stored.revision(),
                     "caseSummaries", summaries(stored.data().path("rows")),
                     "proposalStatus", "PENDING", "awaiting", "human-approval"));
         });
         return mapper.convertValue(response, new com.fasterxml.jackson.core.type.TypeReference<>() { });
+    }
+
+    private ObjectNode protectCase(ObjectNode compiled,
+                                   SolutionEntityRegistry.RegisteredEntity solution,
+                                   String proposalFingerprint,
+                                   IntegrationRequestContext identity) {
+        String goldenFingerprint = compiled.path("goldenCaseFingerprint").asText();
+        JsonNode receipt = materials.write(solution.ref(), solution.revision(),
+                solution.contractFingerprint(), compiled.path("caseId").asText(), goldenFingerprint,
+                proposalFingerprint, compiled, identity);
+        ObjectNode metadata = mapper.createObjectNode();
+        metadata.put("caseId", compiled.path("caseId").asText());
+        metadata.put("category", "GOLDEN");
+        metadata.put("layer", "integration");
+        metadata.put("oracleOwner", compiled.path("oracleOwner").asText());
+        metadata.put("lifecycle", "DRAFT");
+        metadata.put("qualityState", "DESIGNED_NOT_RUN");
+        metadata.put("goldenCaseFingerprint", goldenFingerprint);
+        metadata.put("factCount", compiled.path("given").size());
+        metadata.put("assumptionCount", compiled.path("controlledAssumptions").size());
+        metadata.put("expectedShapeFingerprint", fingerprint(compiled.at("/proposedOracle/expect")));
+        metadata.set("businessContractVector", compiled.path("businessContractVector").deepCopy());
+        metadata.set("materialReceipt", receipt);
+        ObjectNode proposal = metadata.putObject("proposedOracle");
+        proposal.put("status", "PENDING");
+        proposal.put("oracleOwner", compiled.at("/proposedOracle/oracleOwner").asText());
+        proposal.put("proposedBy", compiled.at("/proposedOracle/proposedBy").asText());
+        proposal.put("proposalFingerprint", goldenFingerprint);
+        return metadata;
     }
 
     /** Lists safe summaries without returning business case material. */
@@ -102,8 +146,14 @@ public final class BusinessGoldenService {
             if (matches.size() != 1 || !fact.has("value")) throw ambiguous("fact");
             var match = matches.getFirst();
             FeatureContract feature = registry.requireFeature(scope, match.getValue());
+            if (!SolutionValueSchemaValidator.featureValueMatches(feature.output(), fact.path("value"))) {
+                throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
+                        "A supplied business fact value does not match its current contract.");
+            }
             given.set(match.getKey(), fact.path("value").deepCopy());
             ObjectNode coordinate = contractVector.addObject();
+            coordinate.put("assetKind", "FEATURE");
+            coordinate.put("assetRef", match.getValue());
             coordinate.put("semanticKey", feature.businessDefinition().semanticKey());
             coordinate.put("contractFingerprint", fingerprint(feature.contractIdentity()));
         });
@@ -122,6 +172,8 @@ public final class BusinessGoldenService {
             compiled.put("outcome", outcome);
             if (assumption.has("value")) compiled.set("value", assumption.path("value").deepCopy());
             ObjectNode coordinate = contractVector.addObject();
+            coordinate.put("assetKind", "INSTRUCTION");
+            coordinate.put("assetRef", matches.getFirst().instructionRef());
             coordinate.put("semanticKey", matches.getFirst().instructionRef());
             coordinate.put("contractFingerprint", fingerprint(matches.getFirst().contractIdentity()));
         });
@@ -136,7 +188,11 @@ public final class BusinessGoldenService {
         fingerprintMaterial.set("canonicalDependencyAssumptions", assumptions);
         fingerprintMaterial.set("expectedOutcome", expected);
         fingerprintMaterial.put("oracleOwner", owner);
-        fingerprintMaterial.set("referencedBusinessContractVector", contractVector);
+        List<JsonNode> sortedVector = new ArrayList<>();
+        contractVector.forEach(item -> sortedVector.add(item.deepCopy()));
+        sortedVector.sort(java.util.Comparator.comparing(item -> item.path("semanticKey").asText()));
+        fingerprintMaterial.set("referencedBusinessContractVector", mapper.valueToTree(sortedVector));
+        fingerprintMaterial.put("caseId", caseId);
         String goldenFingerprint = fingerprint(fingerprintMaterial);
 
         ObjectNode row = mapper.createObjectNode();
@@ -145,6 +201,7 @@ public final class BusinessGoldenService {
         row.set("controlledAssumptions", assumptions); row.put("oracleOwner", owner);
         row.put("lifecycle", "DRAFT"); row.put("qualityState", "DESIGNED_NOT_RUN");
         row.put("goldenCaseFingerprint", goldenFingerprint);
+        row.set("businessContractVector", mapper.valueToTree(sortedVector));
         ObjectNode proposal = row.putObject("proposedOracle");
         proposal.set("expect", expect); proposal.put("oracleOwner", owner); proposal.put("status", "PENDING");
         proposal.put("proposedBy", identity.actorId()); proposal.put("proposalFingerprint", goldenFingerprint);
@@ -163,14 +220,16 @@ public final class BusinessGoldenService {
                 "caseId", row.path("caseId").asText(), "lifecycle", row.path("lifecycle").asText(),
                 "approvalState", row.at("/proposedOracle/status").asText("ABSENT"),
                 "goldenCaseFingerprint", row.path("goldenCaseFingerprint").asText(),
-                "factCount", row.path("given").size(),
-                "assumptionCount", row.path("controlledAssumptions").size(),
-                "expectedShapeFingerprint", fingerprint(row.at("/proposedOracle/expect")))));
+                "factCount", row.path("factCount").asInt(row.path("given").size()),
+                "assumptionCount", row.path("assumptionCount").asInt(
+                        row.path("controlledAssumptions").size()),
+                "expectedShapeFingerprint", row.path("expectedShapeFingerprint").asText(
+                        fingerprint(row.at("/proposedOracle/expect"))))));
         return List.copyOf(values);
     }
 
-    private SolutionContract requireSolution(String scope, String ref) {
-        try { return registry.requireSolution(scope, ref); }
+    private SolutionEntityRegistry.RegisteredEntity requireRegisteredSolution(String scope, String ref) {
+        try { return registry.requireRegisteredSolution(scope, ref); }
         catch (SolutionEntityRegistry.EntityUnavailableException failure) {
             throw new AgentTddToolException("REFERENCE_UNRESOLVED", "Solution is unavailable.");
         }

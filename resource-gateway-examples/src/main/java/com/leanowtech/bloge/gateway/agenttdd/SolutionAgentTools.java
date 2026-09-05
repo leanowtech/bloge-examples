@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
 import com.leanowtech.bloge.gateway.solution.SolutionInvocationService;
 import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffService;
 import com.leanowtech.bloge.gateway.solution.ops.OperationsInsightService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.visual.importer.DslImportService;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -77,7 +78,7 @@ public final class SolutionAgentTools {
             FeatureEvaluationBackend featureBackend,
             InstructionDispatchChannel instructionChannel,
             FeatureTokenKeyProvider tokenKeys) {
-        this(states, mapper, importer, featureBackend, instructionChannel, tokenKeys, null);
+        this(states, mapper, importer, featureBackend, instructionChannel, tokenKeys, null, null);
     }
 
     /** Creates the production boundary with optional platform-controlled WRITE reconciliation. */
@@ -89,6 +90,14 @@ public final class SolutionAgentTools {
             InstructionDispatchChannel instructionChannel,
             FeatureTokenKeyProvider tokenKeys,
             SolutionWriteExecutionRunner writeRunner) {
+        this(states, mapper, importer, featureBackend, instructionChannel, tokenKeys, writeRunner, null);
+    }
+
+    /** Creates the production boundary with protected business GOLDEN material resolution. */
+    SolutionAgentTools(AgentTddStateRepository states, ObjectMapper mapper, DslImportService importer,
+                       FeatureEvaluationBackend featureBackend, InstructionDispatchChannel instructionChannel,
+                       FeatureTokenKeyProvider tokenKeys, SolutionWriteExecutionRunner writeRunner,
+                       BusinessGoldenMaterialStore goldenMaterials) {
         this.states = Objects.requireNonNull(states, "states");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.decoder = new SolutionAuthoringDecoder();
@@ -111,7 +120,7 @@ public final class SolutionAgentTools {
         this.featureEvaluation = new FeatureEvaluationService(registry, safeBackend, tokens);
         this.invocation = new SolutionInvocationService(registry, tokens,
                 new SolutionExecutionService(registry, mapper, safeChannel), mapper);
-        this.testing = new SolutionTestingService(states, registry, mapper, safeChannel);
+        this.testing = new SolutionTestingService(states, registry, mapper, safeChannel, goldenMaterials);
         this.performance = new OperationsInsightService(states, mapper);
         this.handoffs = new EngineeringHandoffService(states, registry, mapper);
         this.featureHandoffs = new FeatureHandoffService(states, registry, safeBackend, mapper);
@@ -212,7 +221,7 @@ public final class SolutionAgentTools {
         String scope = AgentTddMutationService.scopeKey(identity);
         Map<String, Object> baseline = testing.baseline(scope,
                 requiredText(arguments, "solutionRef"), requiredText(arguments, "caseSetRef"),
-                requiredText(arguments, "side"));
+                requiredText(arguments, "side"), identity);
         if (writeRunner == null || !"GREEN".equals(baseline.get("side"))
                 || !"GO".equals(baseline.get("status"))
                 || states.find(scope, EngineeringHandoffService.HANDOFF,
