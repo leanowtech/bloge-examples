@@ -389,8 +389,22 @@ if ! verify_runtime_identity; then
     echo "The owned Resource Gateway identity changed or disappeared during the authoring turn." >&2
     exit 1
 fi
-python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${CODEX_EXIT}" <<'PY'
+cat > "${BOARD_CURL_CONFIG}" <<EOF
+url = "${RG_MCP_ENDPOINT%/mcp}/api/agent-tdd/board"
+header = "Authorization: Bearer ${AGENT_TOKEN}"
+header = "X-Purpose: AGENT_TDD_READ"
+fail
+silent
+show-error
+output = "${BOARD_FILE}"
+EOF
+chmod 600 "${BOARD_CURL_CONFIG}"
+curl --config "${BOARD_CURL_CONFIG}"
+rm -f "${BOARD_CURL_CONFIG}"
+chmod 600 "${BOARD_FILE}"
+python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${CODEX_EXIT}" "${BOARD_FILE}" <<'PY'
 import importlib.util
+import json
 import pathlib
 import sys
 
@@ -401,9 +415,10 @@ spec.loader.exec_module(module)
 calls, final_message, completed, _thread_id = module.load_trace(pathlib.Path(sys.argv[2]))
 if int(sys.argv[3]) != 0 or not completed:
     raise SystemExit("Primary Codex authoring turn did not complete.")
-module.require_business_sequence(calls)
+chain, _proposal = module.require_business_sequence(calls)
 if not final_message.strip() or module.TECHNICAL_FINAL_PATTERN.search(final_message):
     raise SystemExit("Primary Codex authoring summary is missing or exposes technical vocabulary.")
+module.verify_board(json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8")), chain)
 PY
 
 # Seed recall-only distractors after the clean authoring turn so certification fixtures cannot
@@ -497,20 +512,6 @@ if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
     echo "Repository commit, tracked files or untracked sources changed during certification." >&2
     exit 1
 fi
-
-cat > "${BOARD_CURL_CONFIG}" <<EOF
-url = "${RG_MCP_ENDPOINT%/mcp}/api/agent-tdd/board"
-header = "Authorization: Bearer ${AGENT_TOKEN}"
-header = "X-Purpose: AGENT_TDD_READ"
-fail
-silent
-show-error
-output = "${BOARD_FILE}"
-EOF
-chmod 600 "${BOARD_CURL_CONFIG}"
-curl --config "${BOARD_CURL_CONFIG}"
-rm -f "${BOARD_CURL_CONFIG}"
-chmod 600 "${BOARD_FILE}"
 
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TRACE_FILE}" \

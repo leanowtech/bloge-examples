@@ -84,11 +84,13 @@ class BusinessRecallSetupTest(unittest.TestCase):
             encoding="utf-8")
 
         authoring = script.index('run_codex_turn "${PROMPT_FILE}" "${TRACE_FILE}"')
+        board = script.index('curl --config "${BOARD_CURL_CONFIG}"')
         preflight = script.index("module.require_business_sequence(calls)")
         setup = script.index('python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py"')
         families = script.index("while IFS=$'\\t' read -r FAMILY_ID FAMILY_EXPECTED")
 
-        self.assertLess(authoring, preflight)
+        self.assertLess(authoring, board)
+        self.assertLess(board, preflight)
         self.assertLess(preflight, setup)
         self.assertLess(setup, families)
     def setUp(self) -> None:
