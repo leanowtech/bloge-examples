@@ -444,6 +444,10 @@ public final class SolutionAgentTools {
             throw new AgentTddToolException("COMPILE_ERROR", "Feature contract is invalid.",
                     Map.of("diagnosticCode", decoded.diagnosticCode()));
         }
+        if (decoded.value().businessDefinition().incompleteLegacyProjection()) {
+            throw new AgentTddToolException("FEATURE_BUSINESS_DEFINITION_REQUIRED",
+                    "A complete structured Feature business definition is required.");
+        }
         SolutionEntityRegistry.RegisteredEntity stored = registry.upsertFeature(
                 AgentTddMutationService.scopeKey(identity), decoded.value());
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();

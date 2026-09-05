@@ -207,6 +207,7 @@ class CancelDisputeSolutionOperationalJourneyTest {
                   determinism: DETERMINISTIC
                   inputs: { orderId: string }
                   businessSemantics: 谁应承担本次取消费用
+                  businessDefinition: { semanticKey: ride.cancel.party, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: responsibility-center, freshness: { mode: AS_OF_EVENT }, effect: READ }
                 """, "idempotencyKey", "feature-party-v145"), "AGENT_TDD_AUTHORING");
         invoke("rg.feature.define", Map.of("featureYaml", """
                 cancel.withinFree.v145:
@@ -215,6 +216,7 @@ class CancelDisputeSolutionOperationalJourneyTest {
                   determinism: DETERMINISTIC
                   inputs: { orderId: string }
                   businessSemantics: 当前订单是否仍在免费取消时段内
+                  businessDefinition: { semanticKey: ride.cancel.within-free, intent: 判断免费取消时段, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: boolean }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: order-policy, freshness: { mode: AS_OF_EVENT }, effect: READ }
                 """, "idempotencyKey", "feature-free-v145"), "AGENT_TDD_AUTHORING");
         invoke("rg.feature.define", Map.of("featureYaml", """
                 dispute.order.v145:
@@ -223,6 +225,7 @@ class CancelDisputeSolutionOperationalJourneyTest {
                   determinism: INTERACTIVE
                   componentRef: order-picker-v1
                   businessSemantics: 客服当前选择的争议订单
+                  businessDefinition: { semanticKey: ride.dispute.order, intent: 选择争议订单, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: string }, asOf: CURRENT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: CURRENT }, effect: PURE }
                 """, "idempotencyKey", "feature-order-v145"), "AGENT_TDD_AUTHORING");
     }
 

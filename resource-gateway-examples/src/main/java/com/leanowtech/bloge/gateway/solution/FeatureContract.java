@@ -24,6 +24,7 @@ import java.util.Map;
  * @param componentRef interactive component reference for {@link EvaluationKind#USER_COMPONENT}
  * @param promptRef interactive prompt reference for {@link EvaluationKind#USER_CONVERSATION}
  * @param businessSemantics business-language meaning shown on engineering handoff tickets
+ * @param businessDefinition structured, implementation-independent fact identity
  */
 public record FeatureContract(
         String featureRef,
@@ -34,7 +35,8 @@ public record FeatureContract(
         String evaluationRef,
         String componentRef,
         String promptRef,
-        String businessSemantics
+        String businessSemantics,
+        BusinessFactSemanticContract businessDefinition
 ) {
     /**
      * Preserves the v1.4.4 constructor for existing callers that do not yet supply business text.
@@ -48,7 +50,21 @@ public record FeatureContract(
                            String componentRef,
                            String promptRef) {
         this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
-                componentRef, promptRef, featureRef);
+                componentRef, promptRef, featureRef, null);
+    }
+
+    /** Preserves v1.4.5 callers while projecting missing business dimensions as UNKNOWN. */
+    public FeatureContract(String featureRef,
+                           JsonNode output,
+                           EvaluationKind evaluationKind,
+                           Determinism determinism,
+                           JsonNode inputs,
+                           String evaluationRef,
+                           String componentRef,
+                           String promptRef,
+                           String businessSemantics) {
+        this(featureRef, output, evaluationKind, determinism, inputs, evaluationRef,
+                componentRef, promptRef, businessSemantics, null);
     }
 
     /** Supported feature evaluation runtimes. */
@@ -90,6 +106,9 @@ public record FeatureContract(
                 || !inputs.isObject() || businessSemantics.isBlank()) {
             throw new IllegalArgumentException("Feature contract is incomplete");
         }
+        businessDefinition = businessDefinition == null
+                ? BusinessFactSemanticContract.legacy(featureRef, businessSemantics, inputs, output)
+                : businessDefinition;
         if (evaluationKind.interactive() != (determinism == Determinism.INTERACTIVE)) {
             throw new IllegalArgumentException("Interactive feature kind and determinism must agree");
         }
@@ -136,7 +155,8 @@ public record FeatureContract(
                 "evaluationKind", evaluationKind.name(),
                 "determinism", determinism.name(),
                 "inputs", inputs,
-                "businessSemantics", businessSemantics
+                "businessSemantics", businessSemantics,
+                "businessDefinition", businessDefinition
         );
     }
 

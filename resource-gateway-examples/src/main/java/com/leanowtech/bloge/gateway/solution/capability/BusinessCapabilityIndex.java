@@ -58,6 +58,7 @@ public final class BusinessCapabilityIndex {
     private final GraphDraftRepository drafts;
     private final VisualGraphPublicationRepository publications;
     private final ObjectMapper mapper;
+    private final BusinessContractMatcher matcher;
 
     /** Creates the production index over the five canonical read sources. */
     public BusinessCapabilityIndex(AgentTddStateRepository states,
@@ -72,6 +73,7 @@ public final class BusinessCapabilityIndex {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.publications = Objects.requireNonNull(publications, "publications");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.matcher = new BusinessContractMatcher();
     }
 
     /**
@@ -142,18 +144,38 @@ public final class BusinessCapabilityIndex {
                 .filter(card -> intent.isBlank() || searchableText(card).contains(intent)
                         || tokens(intent).stream().anyMatch(searchableText(card)::contains))
                 .limit(limit)
-                .map(card -> Map.<String, Object>of(
-                        "assetRef", card.assetRef(), "assetKind", card.assetKind(),
-                        "businessName", card.display().path("businessName").asText(card.assetRef()),
-                        "matchType", "PARTIAL", "matchedFacets", List.of(),
-                        "missingFacets", List.of("semanticKey"), "conflicts", List.of(),
-                        "reuseAllowed", false, "contractFingerprint", card.contractFingerprint(),
-                        "lifecycle", card.lifecycle()))
+                .map(card -> candidate(card, matcher.match(query, card.business())))
+                .sorted(Comparator.<Map<String, Object>>comparingInt(
+                                value -> matchRank(value.get("matchType").toString()))
+                        .thenComparing(value -> value.get("assetRef").toString()))
                 .toList();
-        return Map.of("status", candidates.isEmpty() ? "NONE" : "INCOMPLETE",
+        long exact = candidates.stream().filter(value -> "EXACT".equals(value.get("matchType"))).count();
+        String status = candidates.isEmpty() ? "NONE" : exact > 1 ? "AMBIGUOUS" : exact == 1 ? "EXACT" : "INCOMPLETE";
+        boolean clarificationRequired = !candidates.isEmpty() && exact != 1;
+        return Map.of("status", status,
                 "snapshotFingerprint", snapshot.snapshotFingerprint(), "candidates", candidates,
-                "clarification", Map.of("required", !candidates.isEmpty(), "dimension", "semanticKey",
-                        "question", candidates.isEmpty() ? "" : "请确认候选能力的业务定义是否符合本次意图。"));
+                "clarification", Map.of("required", clarificationRequired,
+                        "dimension", exact > 1 ? "ambiguousExactMatch" : "businessDefinition",
+                        "question", clarificationRequired ? "请补充或确认候选能力的业务定义。" : ""));
+    }
+
+    private Map<String, Object> candidate(Card card, BusinessContractMatcher.Match match) {
+        boolean activeSemanticKey = "ACTIVE".equals(card.business()
+                .at("/businessDefinition/lifecycle").asText());
+        String matchType = match.exact() && !activeSemanticKey ? "PARTIAL" : match.type().name();
+        List<String> missing = match.exact() && !activeSemanticKey
+                ? List.of("semanticLifecycle") : match.missingFacets();
+        return Map.of("assetRef", card.assetRef(), "assetKind", card.assetKind(),
+                "businessName", card.display().path("businessName").asText(card.assetRef()),
+                "matchType", matchType, "matchedFacets", match.matchedFacets(),
+                "missingFacets", missing, "conflicts", match.conflicts(),
+                "reuseAllowed", match.exact() && activeSemanticKey
+                        && List.of("READY", "PUBLISHED").contains(card.lifecycle()),
+                "contractFingerprint", card.contractFingerprint(), "lifecycle", card.lifecycle());
+    }
+
+    private static int matchRank(String type) {
+        return switch (type) { case "EXACT" -> 0; case "PARTIAL" -> 1; default -> 2; };
     }
 
     private Capture capture(IntegrationRequestContext identity) {

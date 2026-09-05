@@ -68,7 +68,7 @@ public final class McpToolCatalog {
                 List.of("libraryRefs")));
 
         values.add(tool("rg.feature.define", "Define feature",
-                "Validate and store one atomic typed feature collection contract.",
+                "Validate and store one atomic fact with a complete structured business definition.",
                 McpToolImpact.DRAFT_WRITE,
                 props("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));

@@ -441,6 +441,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           evaluationKind: USER_COMPONENT
                           determinism: INTERACTIVE
                           componentRef: party-picker-v1
+                          businessDefinition: { semanticKey: ride.cancel.party.browser, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: AS_OF_EVENT }, effect: PURE }
                         """,
                 "idempotencyKey", "feature-party-browser-ops"), "AGENT_TDD_AUTHORING");
         invoke("rg.feature.define", Map.of(
@@ -450,6 +451,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           evaluationKind: USER_COMPONENT
                           determinism: INTERACTIVE
                           componentRef: order-picker-v1
+                          businessDefinition: { semanticKey: ride.dispute.order.browser, intent: 选择争议订单, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: string }, asOf: CURRENT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: USER, freshness: { mode: CURRENT }, effect: PURE }
                         """,
                 "idempotencyKey", "feature-order-browser-ops"), "AGENT_TDD_AUTHORING");
         invoke("rg.instruction.define", Map.of(

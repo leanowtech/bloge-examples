@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(43);
+        assertThat(response.path("result").path("tools")).hasSize(46);
         assertThat(response.path("result").path("tools").toString()).contains("rg.library.overview.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
@@ -74,7 +74,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(43);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(46);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -323,7 +323,12 @@ class McpProtocolControllerTest {
                         "arguments", Map.of(
                                 "featureYaml", "responsibility.party: { output: { type: string }, "
                                         + "evaluationKind: API, determinism: DETERMINISTIC, "
-                                        + "inputs: { orderId: string }, evaluationRef: resource:test#$.value }",
+                                        + "inputs: { orderId: string }, evaluationRef: resource:test#$.value, "
+                                        + "businessDefinition: { semanticKey: ride.cancel.party, intent: Decide party, "
+                                        + "domain: ride-cancellation, businessObject: ride-order, requiredContext: [], "
+                                        + "resultDomain: { type: string }, asOf: CURRENT, unknownPolicy: HUMAN_REVIEW, "
+                                        + "acquisitionOwner: PLATFORM, authoritySource: test, "
+                                        + "freshness: { mode: CURRENT }, effect: READ } }",
                                 "idempotencyKey", "feature-mcp-v1"))),
                 modernHeaders("tools/call", "rg.feature.define")).getBody();
 

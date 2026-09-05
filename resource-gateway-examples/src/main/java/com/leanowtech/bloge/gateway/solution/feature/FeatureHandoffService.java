@@ -106,7 +106,8 @@ public final class FeatureHandoffService {
         FeatureContract original = requireFeature(scope, featureRef);
         FeatureContract bound = new FeatureContract(original.featureRef(), original.output(),
                 original.evaluationKind(), original.determinism(), original.inputs(), evaluationRef,
-                original.componentRef(), original.promptRef(), original.businessSemantics());
+                original.componentRef(), original.promptRef(), original.businessSemantics(),
+                original.businessDefinition());
 
         AgentTddStoredAsset implemented = states.executeAtomically(() -> {
             states.lockRevision(scope, FEATURE_HANDOFF, featureRef, current.revision());

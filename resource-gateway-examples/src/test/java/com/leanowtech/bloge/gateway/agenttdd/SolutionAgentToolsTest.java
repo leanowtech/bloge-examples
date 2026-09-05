@@ -28,6 +28,25 @@ class SolutionAgentToolsTest {
     private final SolutionAgentTools tools = new SolutionAgentTools(states, mapper);
 
     @Test
+    void rejectsNewFeatureWritesThatOnlyCarryLegacyFreeTextSemantics() {
+        ObjectNode arguments = mapper.createObjectNode()
+                .put("featureYaml", """
+                        legacy.fact:
+                          output: { type: string }
+                          evaluationKind: API
+                          determinism: DETERMINISTIC
+                          inputs: { orderId: string }
+                          businessSemantics: legacy text only
+                        """)
+                .put("idempotencyKey", "legacy-feature-v2");
+
+        assertThatThrownBy(() -> tools.defineFeature(arguments, identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("FEATURE_BUSINESS_DEFINITION_REQUIRED"));
+    }
+
+    @Test
     void definesTypedFeatureAsScopedCanonicalAsset() {
         ObjectNode arguments = mapper.createObjectNode()
                 .put("featureYaml", """
@@ -40,6 +59,7 @@ class SolutionAgentToolsTest {
                           inputs:
                             orderId: string
                           evaluationRef: ride-responsibility-service.decide#$.party
+                          businessDefinition: { semanticKey: ride.cancel.party, intent: 判断取消责任, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: enum }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: responsibility-center, freshness: { mode: AS_OF_EVENT }, effect: READ }
                         """)
                 .put("idempotencyKey", "feature-party-v1");
 
@@ -149,6 +169,7 @@ class SolutionAgentToolsTest {
                           determinism: DETERMINISTIC
                           inputs: { orderId: string }
                           businessSemantics: Determine who is responsible for the cancellation fee.
+                          businessDefinition: { semanticKey: ride.cancel.party, intent: Determine cancellation responsibility, domain: ride-cancellation, businessObject: ride-order, requiredContext: [], resultDomain: { type: string }, asOf: CANCELLATION_OCCURRED_AT, unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, authoritySource: responsibility-center, freshness: { mode: AS_OF_EVENT }, effect: READ }
                         """)
                 .put("idempotencyKey", "feature-party-design-v1");
         tools.defineFeature(definition, identity);
@@ -425,7 +446,11 @@ class SolutionAgentToolsTest {
                 .put("featureYaml", "%s: { output: { type: string }, evaluationKind: API, "
                         .formatted(featureRef)
                         + "determinism: DETERMINISTIC, inputs: { orderId: string }, "
-                        + "evaluationRef: resource:test#$.value }")
+                        + "evaluationRef: resource:test#$.value, businessDefinition: { semanticKey: '"
+                        + featureRef + "', intent: 'Collect fact', domain: 'test', businessObject: 'order', "
+                        + "requiredContext: [], resultDomain: { type: string }, asOf: CURRENT, "
+                        + "unknownPolicy: REQUIRE_HUMAN_REVIEW, acquisitionOwner: PLATFORM, "
+                        + "authoritySource: test-source, freshness: { mode: CURRENT }, effect: READ } }")
                 .put("idempotencyKey", idempotencyKey), identity);
     }
 
