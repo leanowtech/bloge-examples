@@ -440,7 +440,7 @@ Scenario、Instruction 和 Solution 的现有契约字段继续是运行时权�
 freeze current scoped capability snapshot
 normalize query aliases and closed-set fields
 filter lifecycle, domain, assetKind, effect and runtime state
-recall candidates by exact name, aliases, tags and tokenized intent
+recall candidates by exact name, aliases, tags and tokenized intent; Chinese intent uses overlapping two-character recall terms
 optionally rank remaining candidates through SemanticCandidateRanker
 compare each candidate through BusinessContractMatcher
 classify each candidate as EXACT, PARTIAL or CONFLICT

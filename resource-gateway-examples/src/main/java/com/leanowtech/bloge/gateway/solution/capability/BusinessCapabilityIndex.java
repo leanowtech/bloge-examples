@@ -131,7 +131,9 @@ public final class BusinessCapabilityIndex {
 
     /**
      * Recalls candidates from business names, aliases, tags and intent without claiming semantic
-     * equivalence. P3's contract matcher is the only component allowed to promote a result to EXACT.
+     * equivalence. Chinese phrases contribute overlapping two-character recall terms so a longer
+     * natural-language sentence can still retrieve a shorter business name. P3's contract matcher
+     * remains the only component allowed to promote a result to EXACT.
      */
     public Map<String, Object> search(JsonNode arguments, IntegrationRequestContext identity) {
         Snapshot snapshot = freeze(identity);
@@ -506,7 +508,18 @@ public final class BusinessCapabilityIndex {
     }
 
     private static List<String> tokens(String value) {
-        return List.of(value.split("[\\s,，。;；:/_-]+" )).stream().filter(token -> token.length() > 1).toList();
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        List.of(value.split("[\\s,，。;；:/_-]+" )).stream()
+                .filter(token -> token.length() > 1).forEach(tokens::add);
+        for (String run : value.split("[^\\p{IsHan}]+")) {
+            int length = run.codePointCount(0, run.length());
+            for (int index = 0; index + 1 < length; index++) {
+                int start = run.offsetByCodePoints(0, index);
+                int end = run.offsetByCodePoints(0, index + 2);
+                tokens.add(run.substring(start, end));
+            }
+        }
+        return List.copyOf(tokens);
     }
 
     private static String searchableText(Card card) {

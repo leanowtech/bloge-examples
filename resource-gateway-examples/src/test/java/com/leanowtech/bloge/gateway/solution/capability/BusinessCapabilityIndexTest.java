@@ -112,6 +112,35 @@ class BusinessCapabilityIndexTest {
     }
 
     @Test
+    void ranksAnExactChineseBusinessContractAheadOfANearMeaningDistractor() throws Exception {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        ObjectNode target = contract().deepCopy();
+        target.put("intent", "由客服人员确认当前争议订单是谁导致取消");
+        saveSemanticFeature(states, "feature:cancel-party", target);
+        saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:cancel-party",
+                display("取消责任方", List.of("谁导致取消")));
+        ObjectNode distractor = contract().deepCopy();
+        distractor.put("semanticKey", "traffic.accident.liability.party");
+        distractor.put("intent", "判断取消责任方");
+        distractor.put("domain", "traffic-accident");
+        distractor.put("businessObject", "traffic-accident-case");
+        saveSemanticFeature(states, "feature:traffic-accident", distractor);
+        saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:traffic-accident",
+                display("交通事故取消责任", List.of("交通事故责任")));
+
+        JsonNode result = mapper.valueToTree(index(states).search(mapper.valueToTree(Map.of(
+                "query", target, "assetKinds", List.of("FEATURE"), "limit", 10)),
+                identity("project-a")));
+
+        assertThat(result.path("status").asText()).isEqualTo("EXACT");
+        assertThat(result.path("candidates")).hasSize(2);
+        assertThat(result.at("/candidates/0/assetRef").asText()).isEqualTo("feature:cancel-party");
+        assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("EXACT");
+        assertThat(result.at("/candidates/1/assetRef").asText()).isEqualTo("feature:traffic-accident");
+        assertThat(result.at("/candidates/1/matchType").asText()).isEqualTo("CONFLICT");
+    }
+
+    @Test
     void reportsAnActiveAliasCollisionAsAmbiguousWithoutPromotingEitherCandidate() throws Exception {
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         saveSemanticFeature(states, "feature:ride-cancel", contract());
