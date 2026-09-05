@@ -61,22 +61,29 @@ class AuthoringDocumentationExampleTest {
     }
 
     @Test
-    void cancellationDemoIntroducesBusinessFactsBeforeRulesAndEngineeringHandoffs() throws Exception {
+    void cancellationDemoEstablishesTheBusinessCapabilityLibraryBeforeRules() throws Exception {
         String script = Files.readString(Path.of(
                 "..", "docs", "resource-gateway-agent-tdd-demo-script.md"));
 
+        int inventory = script.indexOf("读取当前作用域的业务能力库概览");
         int discoverFacts = script.indexOf("建立“责任方”“是否在免费取消时段”“当前选择的争议订单”三项事实契约");
         int defineRules = script.indexOf("建立含四条规则和兜底分支的场景");
         int approveGolden = script.indexOf("提议四条 GOLDEN 标准案例");
 
-        assertThat(discoverFacts).isNotNegative();
+        assertThat(inventory).isNotNegative();
+        assertThat(discoverFacts).isGreaterThan(inventory);
         assertThat(defineRules).isGreaterThan(discoverFacts);
         assertThat(approveGolden).isGreaterThan(defineRules);
         assertThat(script).contains(
-                "先读取当前作用域的业务积木概览",
+                "业务能力库盘点应形成",
+                "不能只凭名称相似复用",
+                "等待工程接入",
+                "待业务定义",
                 "缺少系统实现时请建立工程交接",
                 "Codex 没有询问接口地址、字段类型、DSL 或 YAML",
-                "不能因为写实现尚未完成而让 Codex自行填一个“看起来像”的实现引用");
+                "不能因为写实现尚未完成而让 Codex 自行填一个“看起来像”的实现引用",
+                "底层算子库只在这个幕后层出现",
+                "工程履约只能补实现，不能修改业务契约");
         assertThat(script).doesNotContain("ride-cancellation` 契约库");
     }
 
