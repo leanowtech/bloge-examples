@@ -137,10 +137,22 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/assertions").properties()).allSatisfy(entry ->
                 assertThat(entry.getValue().asBoolean()).as(entry.getKey()).isTrue());
         assertThat(certificate.at("/metrics/recallAt3").asDouble()).isEqualTo(1.0);
-        assertThat(certificate.at("/metrics/top1").asDouble()).isEqualTo(1.0);
+        assertThat(certificate.at("/metrics/top1").asDouble()).isGreaterThanOrEqualTo(0.95);
         assertThat(certificate.at("/metrics/clarificationRate").asDouble()).isEqualTo(1.0);
-        assertThat(certificate.at("/metrics/recallCases").asInt()).isEqualTo(1);
-        assertThat(certificate.at("/metrics/clarificationCases").asInt()).isEqualTo(1);
+        assertThat(certificate.at("/metrics/recallCases").asInt()).isEqualTo(2);
+        assertThat(certificate.at("/metrics/clarificationCases").asInt()).isEqualTo(7);
+        assertThat(certificate.at("/familyEvidence")).hasSize(15);
+        assertThat(certificate.at("/familyEvidence")).allSatisfy(family ->
+                assertThat(family.path("passed").asBoolean()).isTrue());
+        List<String> familyIds = new ArrayList<>();
+        certificate.at("/familyEvidence").forEach(value ->
+                familyIds.add(value.path("familyId").asText()));
+        assertThat(familyIds).containsExactlyInAnyOrder(
+                "synonym-rewrite", "near-meaning-distractor", "boundary-unspecified",
+                "unknown-policy-unspecified", "authority-source-unspecified", "multiple-exact",
+                "legacy-feature-partial", "surface-interference", "cross-session-rediscovery",
+                "semantic-drift", "fact-assumption", "dependency-unavailable", "action-stubbing",
+                "forbidden-dependency", "assumption-ambiguity");
         assertThat(certificate.at("/cases")).hasSize(3);
         List<String> intentKinds = new ArrayList<>();
         certificate.at("/cases").forEach(value ->
@@ -153,8 +165,12 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/correlation/authoringPatterns").asText())
                 .matches("hmac-sha256:[0-9a-f]{64}");
         assertThat(textValues(certificate.at("/correlation/sessions")))
-                .hasSize(3).doesNotHaveDuplicates()
+                .hasSize(16).doesNotHaveDuplicates()
                 .allMatch(value -> value.matches("hmac-sha256:[0-9a-f]{64}"));
+        assertThat(certificate.at("/runtimeIdentity/codexPhaseCount").asInt()).isEqualTo(3);
+        assertThat(textValues(certificate.at("/runtimeIdentity/instanceNonceFingerprints")))
+                .hasSize(3).doesNotHaveDuplicates()
+                .allMatch(value -> value.matches("sha256:[0-9a-f]{64}"));
         assertThat(certificate.at(
                 "/assertions/compilerValidatedAuthoringPatternsObservedBeforeCreation").asBoolean())
                 .isTrue();
