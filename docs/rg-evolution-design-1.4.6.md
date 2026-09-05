@@ -1,0 +1,1143 @@
+# Resource Gateway 产品技术演进详细设计方案 v1.4.6：业务语义召回与工作流导航
+
+> 状态：待审阅。本文承接 v1.4.5 已实现的四实体运行时、业务工作台、工程交接、业务审阅、测试治理和运营回流，但不把本文方案写成已交付事实。v1.4.6 解决一个已经被真实使用暴露的问题：Codex 能看到严格的 MCP 工具契约，却缺少稳定的业务能力发现和工作流导航，仍可能在相似工具、分散资产和不完整语义之间猜测。
+
+## 1. 结论与目标
+
+v1.4.5 已能阻止无权限执行、错误 DSL、未经批准的 Oracle 和缺少签署的发布，但“错误操作会被拦住”不等于“业务意图一定召回正确能力”。当前系统把两类不同问题混在一起：
+
+1. **工作流工具召回**：Codex 当前应该调用 `rg.feature.define`、`rg.feature.compose`，还是先继续询问业务事实。
+2. **业务能力召回**：业务负责人说“取消责任方”时，Codex 应该复用哪个 Feature、API 或库算子，以及它是否与当前业务口径完全一致。
+
+v1.4.6 的目标是把“模型大概率选对”提升为“平台返回可复核候选，歧义时不能继续，下一步由当前状态确定”。业务负责人仍只表达目标、事实、规则和标准答案，不需要知道 MCP 工具名、资产引用、Schema、DSL 或 binding。
+
+### 1.1 目标
+
+- Codex 从一个稳定的业务前门开始，而不是在 42 个工具中自行猜入口。
+- RG 在同一认证 scope 内统一发现 Feature、Scenario、Instruction、Solution、库算子、资源和已发布能力。
+- 业务能力必须携带可比较的业务语义，不再只靠技术引用或一段自由文本匹配。
+- 服务端根据持久化状态返回当前阶段、阻塞原因和允许的下一步工具。
+- 明确区分业务 Solution 创作面和底层 Tool/Graph 开发面，避免近义工具竞争。
+- 通过真实 Codex 业务话语集验证工具召回、能力召回、澄清行为和操作顺序。
+- 保持 v1.4.5 的权限、零载荷、工程交接、GOLDEN、执行证据和发布治理边界不变。
+
+### 1.2 非目标
+
+- 不在 RG 内建设通用自然语言模型或对话引擎。
+- 不用 embedding 分数替代契约比较或业务批准。
+- 不合并现有各类资产的写模型；统一的是只读发现投影，不是底层存储。
+- 不让 RG 代替业务负责人决定模糊或冲突的业务口径。
+- 不把底层 Tool/Graph 能力删除；只改变业务会话的默认可见范围。
+- 不把通过 Schema、编译或 Feature 单测描述为业务正确性证明。
+
+### 1.3 针对性提升计划
+
+| 阶段 | 直接修复的缺口 | 核心交付 | 阶段门 |
+|---|---|---|---|
+| P0 目录真相统一 | 说明引用不存在的工具 | 真实 overview MCP、说明生成器、目录一致性测试 | 文档、配置、目录和分发器零漂移 |
+| P1 Surface 隔离 | 业务和底层工具同屏竞争 | BUSINESS_SOLUTION、PLATFORM_AUTHORING、OPERATIONS | 业务会话不能列出或调用底层 Tool/Graph 工具 |
+| P2 统一能力索引 | 四实体和算子分散、跨会话不可发现 | capability search、entity list/get、冻结快照 | 所有资产可在同一 scope 搜索并抵抗上下文漂移 |
+| P3 结构化业务语义 | 名称和自由文本不能证明业务一致 | 语义契约族、semantic key、字段级 matcher | EXACT、PARTIAL、CONFLICT 可解释且可测试 |
+| P4 Journey 导航 | 顺序依赖提示词记忆 | start/next、状态派生、allowed tools、原子 association | 前置条件不满足时服务端拒绝推进 |
+| P5 真实召回认证 | 单一旧证书不能证明当前主线 | 业务话语集、干扰项、跨会话、当前 HEAD 证书 | §14.4 指标全部通过 |
+
+实施严格按 P0 → P5 推进。每阶段独立提交、独立验证；后阶段不得用提示词补丁掩盖前阶段尚未完成的服务端契约。
+
+## 2. 基线事实与问题分级
+
+### 2.1 当前已交付能力
+
+| 范围 | 当前事实 | v1.4.6 处理方式 |
+|---|---|---|
+| MCP 目录 | 42 个工具，每个工具有名称、标题、描述、输入和输出 Schema、影响级 | 保留现有工具；增加业务前门工具和目录一致性检查 |
+| 权限 | READ、DRAFT_WRITE、PROPOSE、EXECUTE、RUNTIME_EXECUTE、GOVERNED_WRITE 分级鉴权 | 不改变权限含义；业务 surface 只能缩小可见范围，不能扩大权限 |
+| 四实体 | Feature、Scenario、Instruction、Solution 已有持久化和运行时 | 纳入统一业务能力索引和读取面 |
+| DSL | 已有 scoped reference、preview、诊断修正、gate 和收据指纹 | 保持为底层创作机制，不作为业务能力发现入口 |
+| 治理 | GOLDEN、maker-checker、RED/GREEN、实景证明、签署和发布门已具备 | 工作流导航只读取这些事实，不绕开任何门 |
+| 真实 Codex | 有一条业务提示词到 Tool 草稿的真实认证 | 扩展为覆盖四实体、同义词、干扰项、歧义和跨会话的召回测试集 |
+
+### 2.2 P0：目录事实必须唯一
+
+当前 MCP 初始化说明和 Codex 配置要求调用 `rg.library.overview.get`，但 `McpToolCatalog` 和 `ResourceGatewayAgentTddTools` 没有该工具。实际能力只存在于 HTTP 看板接口 `/api/agent-tdd/library-overview`。
+
+影响：Codex 按服务端说明执行仍会找不到入口；文档、配置、目录和分发器可以各自“测试通过”，整体却不可用。
+
+修复原则：
+
+- `McpToolCatalog` 是工具名称、影响级和 Schema 的唯一事实源。
+- `rg.library.overview.get` 正式进入 MCP READ 面，复用现有 `AgentTddLibraryOverviewService`。
+- 初始化说明由工具常量和工作流策略生成，不再手写工具名。
+- Codex 配置、操作手册和认证脚本中的 `enabled_tools` 必须接受目录一致性测试。
+- 任何说明中出现、但目录不存在的 `rg.*` 名称都使构建失败。
+
+### 2.3 P1：业务资产存在，但不能统一发现
+
+`rg.capability.list` 当前扫描库算子、运行时算子和 GraphDraft；四实体则保存在 `SolutionEntityRegistry`。因此，刚定义的原子 Feature 可能无法在后续会话通过能力目录重新发现。当前也没有完整的 `rg.feature.get/list`、`rg.scenario.get/list`、`rg.instruction.get/list` 和 `rg.solution.list`。
+
+影响：无法稳定执行“先找已有能力，完全匹配则复用，不匹配才新建”；跨会话后只能依赖 Codex 记住引用。
+
+修复原则：建立 `BusinessCapabilityIndex` 只读投影，同时读取现有 registry、catalog 和 publication store，不改变各自写入边界。
+
+### 2.4 P1：能力语义不足，无法证明“业务上相同”
+
+`OperatorDefinition.Display` 已有名称、描述和标签，但 `rg.capability.list` 的库算子投影没有输出这些字段。Feature 只有一段 `businessSemantics`，缺少业务对象、判断时点、结果范围、不可判断处理、取值责任和权威来源等可比较字段。
+
+影响：技术类型一致的两个能力可能具有不同业务口径；Codex 只能凭名称猜测，RG 无法判断 EXACT、PARTIAL 或 CONFLICT。
+
+修复原则：引入结构化 `BusinessSemanticContract` 族，并以对应资产类型的业务语义作为复用判定和契约指纹的一部分。
+
+### 2.5 P1：业务主线和底层创作面互相干扰
+
+当前同一 `rg_author` 会话同时暴露：
+
+| 业务 Solution 主线 | 底层 Tool/Graph 主线 | 误用风险 |
+|---|---|---|
+| `rg.feature.define` | `rg.feature.compose` | 原子业务事实和 Feature 图同名竞争 |
+| `rg.scenario.define` | `rg.scenario.upsertCases` | 业务规则定义和测试数据维护混在同一选择面 |
+| `rg.solution.baseline` | `rg.tool.baseline` | 两种基线对象相似，输入和治理线不同 |
+| `rg.solution.readiness` | `rg.readiness.get` | Solution 和 Tool 发布门容易混淆 |
+| `rg.solution.publish` | `rg.tool.publish` | 发布对象选错会进入另一条治理线 |
+
+影响：Schema 可以拒绝参数错误，但无法阻止 Codex 先选择了错误的产品模型。
+
+修复原则：权限和产品 surface 分开建模。purpose 决定能不能做，surface 决定当前会话应该看见什么。
+
+### 2.6 P1：工作流顺序依赖长提示词，没有服务端状态导航
+
+v1.4.5 的初始化说明要求 Codex 补齐业务事实、生成四实体并遵守两个人工门，但 RG 没有返回“当前处于哪一幕、还缺什么、下一步只允许哪些工具”的 MCP 契约。看板有 journey 投影，但它不是 Codex 的工作流控制面。
+
+影响：模型升级、上下文压缩、跨会话或提示词改写后，Codex 可能过早定义 Feature、跳过重新读取契约，或在工程交接未完成时继续组合 Solution。
+
+修复原则：新增持久化 `BusinessJourney` 和只读 `rg.journey.next`，由服务端根据当前资产和门禁事实计算下一步。
+
+### 2.7 P2：真实认证不能证明普遍召回能力
+
+现有证书证明一个固定业务提示曾驱动真实 Codex 依次调用 capability、contract、DSL、compose 和 case 工具，但证书对应的代码提交早于当前四实体主线，且没有覆盖：
+
+- 同一意图的不同说法。
+- 多个相似能力同时存在。
+- 信息不完整时主动澄清。
+- 四实体 Solution 主线和底层 Tool 主线的选择。
+- 跨会话重新发现已有 Feature。
+- 能力发生语义漂移后的重新确认。
+
+修复原则：认证对象从“固定工具序列成功”扩展为“业务意图、候选能力、选择理由、工具顺序和人工停点一致”。
+
+## 3. 核心设计决策
+
+### 3.1 D1：Codex 理解自然语言，RG 证明可复用性
+
+采用混合边界：
+
+- Codex 负责把多轮业务对话整理为结构化 `BusinessIntentQuery`。
+- RG 负责 scope 过滤、候选召回、字段级契约比较、状态验证和稳定排序。
+- RG 不根据模型分数直接选择能力。
+- 如果存在业务歧义，RG 返回缺失维度和一个业务问题；Codex 不得继续创作。
+
+该决策保留 v1.4.5“NL → 四实体归 Agent”的边界，但修正了“平台只提供原始目录就足够”的错误假设。
+
+### 3.2 D2：统一读模型，不统一写模型
+
+不把 OperatorLibrary、VisualOperatorCatalog、SolutionEntityRegistry、GraphDraft 和 publication store 合并成一个大仓储。新增 `BusinessCapabilityIndex`，每次从同一 scope 的冻结快照生成统一投影。
+
+理由：
+
+- 各写模型的生命周期和治理责任不同，强行合并会扩大事务和迁移风险。
+- 召回需要统一语义，不要求统一底层存储。
+- 投影可重建，索引故障不应破坏权威业务契约。
+
+### 3.3 D3：结构化契约是权威，语义排序只扩大候选集
+
+召回采用三段式：
+
+1. 别名、标签和领域词做候选召回。
+2. 可选 `SemanticCandidateRanker` 调整候选顺序。
+3. `BusinessContractMatcher` 按结构化字段做 EXACT、PARTIAL、CONFLICT 判定。
+
+embedding、模型分数和文本相似度都不能直接产生 `reuseAllowed=true`。只有结构化契约完全一致、状态允许且无冲突时，能力才可复用。
+
+### 3.4 D4：业务 surface 是服务端约束，不只靠 Codex 配置
+
+新增请求头 `X-RG-Surface`：
+
+- `BUSINESS_SOLUTION`：四实体创作、测试、审阅、发布和运行。
+- `PLATFORM_AUTHORING`：库、资源、DSL、GraphDraft 和 Tool 创作。
+- `OPERATIONS`：只读运营和证据查询。
+- `LEGACY_ALL`：兼容旧客户端，受配置开关和弃用期约束。
+
+surface 只能缩小当前 purpose 已允许的工具集合，不能授予新权限。`tools/list` 只返回当前 surface 可见工具，`tools/call` 对不可见工具返回稳定错误，防止客户端绕过列表直接调用。
+
+### 3.5 D5：工作流导航基于服务端事实，不基于 Agent 自报进度
+
+`rg.journey.next` 从 BusinessJourney revision、四实体 revision、handoff、GOLDEN、evidence、readiness 和 publication 派生下一步。客户端提交的 `stage` 仅用于并发检查，不能改变服务端状态。
+
+### 3.6 D6：业务专家不选择技术候选
+
+业务负责人只确认：
+
+- 业务事实定义是否正确。
+- 多个业务口径之间应该采用哪一个。
+- 规则和标准答案是否正确。
+- 是否签署发布。
+
+Codex 可以说明候选的业务差异，但不得展示技术 binding、Schema、内部引用或相似度分数。技术候选选择由结构化契约和当前状态完成。
+
+## 4. 目标架构
+
+```mermaid
+flowchart LR
+    BO[业务负责人] -->|目标、事实、规则、标准答案| CX[Codex]
+    CX -->|BusinessIntentQuery| JN[Journey Navigator]
+    JN --> CI[Business Capability Index]
+    CI --> OL[Operator Library]
+    CI --> VC[Visual Operator Catalog]
+    CI --> SR[Solution Entity Registry]
+    CI --> PS[Publication Store]
+    CI --> CM[Business Contract Matcher]
+    JN -->|当前阶段、缺失维度、允许工具| CX
+    CX -->|精确 MCP 调用| TS[Business or Platform Surface]
+    TS --> GV[既有权限、GOLDEN、执行证据与发布门]
+    GV -->|业务语言结果| CX
+    CX --> BO
+```
+
+### 4.1 新增组件
+
+| 组件 | 责任 | 不负责 |
+|---|---|---|
+| `BusinessCapabilityIndex` | 聚合当前 scope 内的业务能力卡片，冻结快照，稳定排序 | 不修改权威资产，不执行能力 |
+| `BusinessContractMatcher` | 比较业务对象、上下文、结果范围、时点、失败处理、来源责任和 effect | 不根据文本相似度批准复用 |
+| `BusinessJourneyService` | 创建 journey，派生阶段、阻塞原因和下一步 | 不批准 Oracle，不签署发布 |
+| `McpSurfacePolicy` | 根据 `X-RG-Surface` 和 purpose 过滤目录及调用 | 不替代身份鉴权 |
+| `McpAgentInstructionRenderer` | 从目录和 journey policy 生成初始化说明 | 不包含业务实例数据 |
+| `SemanticCandidateRanker` | 可选排序适配器 | 不成为一致性或治理事实源 |
+| `SolutionAuthoringContextService` | 冻结 journey 内四实体 revision、业务契约指纹和 lowering/compiler 版本 | 不向业务 surface 暴露 DSL 参考 |
+
+### 4.2 不变量
+
+1. 所有候选必须来自当前认证的 tenant、project 和 environment。
+2. 所有候选必须属于同一冻结索引快照。
+3. `reuseAllowed=true` 必须同时满足 `matchType=EXACT`、状态可用和契约指纹仍为当前值。
+4. PARTIAL、CONFLICT、多个 EXACT 都必须停下并询问业务问题。
+5. `rg.journey.next.allowedNextTools` 只能包含当前 surface 和 purpose 可见工具。
+6. journey 不得把工程履约、Oracle 批准、签署或平台证明标记为 Agent 已完成。
+7. 索引、导航和遥测不得存储业务 payload、用户样本、DSL source、token 或异常原文。
+8. 目录说明、Codex 配置、分发器和文档中的工具名必须可由构建期检查证明一致。
+
+## 5. 业务语义模型
+
+### 5.1 `BusinessFactSemanticContract`
+
+```jsonc
+{
+  "schemaVersion": "rg.businessFactSemanticContract.v1",
+  "semanticKey": "ride-cancellation.responsibility-party",
+  "intent": "判断出行订单的取消责任主体",
+  "domain": "ride-cancellation",
+  "businessObject": "ride-order",
+  "requiredContext": [
+    {
+      "semanticKey": "ride-order.id",
+      "name": "orderId",
+      "meaning": "待处理的出行订单编号",
+      "type": "string",
+      "required": true
+    }
+  ],
+  "resultDomain": {
+    "type": "enum",
+    "values": [
+      { "code": "PASSENGER", "label": "乘客责任" },
+      { "code": "DRIVER", "label": "司机责任" },
+      { "code": "PLATFORM", "label": "平台责任" },
+      { "code": "UNKNOWN", "label": "暂时无法判断" }
+    ]
+  },
+  "asOf": "CANCELLATION_OCCURRED_AT",
+  "unknownPolicy": "REQUIRE_HUMAN_REVIEW",
+  "acquisitionOwner": "PLATFORM",
+  "authoritySource": "ride-responsibility-center",
+  "freshness": {
+    "mode": "AS_OF_EVENT",
+    "maxAgeSeconds": 0
+  },
+  "effect": "READ"
+}
+```
+
+发现用显示信息独立于业务契约：
+
+```jsonc
+{
+  "schemaVersion": "rg.businessCapabilityDisplay.v1",
+  "businessName": "取消责任方",
+  "description": "判断出行订单由乘客、司机还是平台承担取消责任",
+  "aliases": ["取消归责", "谁导致取消", "责任判定"],
+  "tags": ["取消费", "责任认定"],
+  "whenToUse": ["计算取消费前需要确认责任主体"],
+  "whenNotToUse": ["交通事故责任认定"]
+}
+```
+
+`BusinessCapabilityDisplay` 只参与候选召回和业务展示，不进入 Feature 业务契约指纹。改名称、别名或说明不会让 GREEN、signoff 和 publication 失效；改变 `BusinessFactSemanticContract` 的任一业务字段则必须生成新契约 revision，并使旧证据按现有 fingerprint 规则失效。
+
+### 5.2 语义契约族
+
+统一索引使用共同 envelope：`schemaVersion + semanticKey + intent + domain + businessObject`，再按资产类型使用不同 profile。不同 profile 之间可以参与候选召回，但不能互相判为 EXACT。
+
+| 资产类型 | 语义 profile | 决定 EXACT 的主要字段 |
+|---|---|---|
+| Feature | `BusinessFactSemanticContract` | requiredContext、resultDomain、asOf、unknownPolicy、acquisitionOwner、authoritySource、freshness |
+| Scenario | `BusinessScenarioSemanticContract` | inputFactKeys、decisionPolicy、outletSemanticKeys、otherwisePolicy |
+| Instruction | `BusinessInstructionSemanticContract` | requiredFactKeys、resultDomain、reasoningPolicy、effect、failurePolicy、writeGovernanceClass |
+| Solution | `BusinessSolutionSemanticContract` | problemClass、requiredFactKeys、scenarioSemanticKey、dispositionSemanticKeys、runtimeUse |
+| Operator/Tool | 对应 Feature 或 Instruction profile | 端口映射到业务 fact key；无法映射时最多 PARTIAL |
+
+Scenario、Instruction 和 Solution 的现有契约字段继续是运行时权威；semantic profile 是它们用于发现和比较的规范化业务投影。两者计算一个联合 contract fingerprint，任一业务关键字段变化都使旧召回上下文和相关证据失效。
+
+### 5.3 Feature 字段约束
+
+| 字段 | 必填 | 召回作用 | 缺失处理 |
+|---|---|---|---|
+| `semanticKey` | 是 | 绑定经治理的业务概念身份 | 查询未提供时可召回，但不能仅凭文本判为 EXACT |
+| `intent` | 是 | 说明事实解决的问题 | 拒绝保存 |
+| `domain` | 是 | 限制跨领域误召回 | 缺失时只能 PARTIAL |
+| `businessObject` | 是 | 区分订单、账户、司机等对象 | 不一致为 CONFLICT |
+| `requiredContext` | 是 | 比较所需业务上下文 | 缺少必填项为 PARTIAL；类型冲突为 CONFLICT |
+| `resultDomain` | 是 | 比较结果类型和值域 | 不一致为 CONFLICT |
+| `asOf` | 是 | 区分当前状态、事件时点和历史口径 | 缺失或不同为 CONFLICT |
+| `unknownPolicy` | 是 | 规定无法判断时的业务处理 | 不一致为 CONFLICT |
+| `acquisitionOwner` | 是 | 区分用户提供、Agent 采集、平台求值 | 不一致为 CONFLICT |
+| `authoritySource` | 条件必填 | 指定平台求值的权威来源类别 | PLATFORM 且缺失时不能 EXACT |
+| `freshness` | 条件必填 | 判断值是否仍可用于当前决策 | 需要实时或事件时点时必须填写 |
+| `effect` | 是 | 排除读写效应不一致的能力 | 不一致为 CONFLICT |
+
+`semanticKey` 不是技术实现引用。它由业务能力治理者维护，用于识别“同一业务概念”；aliases 和自然语言只帮助找到该概念。Codex 首次通过别名命中候选后，必须读取候选的业务定义并让后续查询携带该 `semanticKey`。没有 semanticKey，或别名同时映射到多个 semanticKey 时，服务器不得返回 EXACT。
+
+显示信息另行约束：`businessName`、`description` 必填；aliases、tags、whenToUse 和 whenNotToUse 可选。显示信息不得包含 URL、binding、凭据或业务样本。
+
+### 5.4 Feature 契约演进
+
+`FeatureContract` 新增 `businessDefinition: BusinessFactSemanticContract`。现有 `businessSemantics` 在一个兼容期内保留为展示摘要，内容由 `businessDefinition` 生成；新写入不得只提供自由文本。
+
+契约身份必须包含完整 `businessDefinition`，继续排除 `evaluationRef`、`componentRef` 和其他实现绑定。工程履约只能改变实现引用，不能改变业务定义。
+
+旧 Feature 读取时执行兼容投影：
+
+- 可从旧字段确定的内容写入临时投影。
+- 无法确定的维度标记 `UNKNOWN`，不得自动填充。
+- 存在 UNKNOWN 的旧 Feature 最多判为 PARTIAL，直到业务负责人补充并生成新 revision。
+- 兼容适配不得修改旧记录或伪造新的契约指纹。
+
+### 5.5 Semantic key 生命周期
+
+- semantic key 在 tenant/project/domain 内唯一，创建后不可改名；修正概念使用新 key 和 `supersedes` 关系。
+- 新 draft 首次提出的 key 状态为 `PROPOSED`，只允许在同一 journey 内关联，不能作为其他 journey 的全局 EXACT 候选。
+- 当包含该语义的 Feature 通过业务 GOLDEN 和发布签署后，key 状态变为 `ACTIVE`，可用于跨 journey 精确复用。
+- 被替代的 key 进入 `DEPRECATED`，搜索仍可返回，但 `reuseAllowed=false` 并指向 successor。
+- aliases 和显示信息使用独立 revision；同一 alias 指向多个 ACTIVE key 时，搜索必须返回 AMBIGUOUS。
+- Agent 可以提议新 key 和显示信息，不能把 `PROPOSED` 自行提升为 `ACTIVE`。
+
+## 6. 统一能力索引
+
+### 6.1 `BusinessCapabilityCard`
+
+```jsonc
+{
+  "assetRef": "feature:responsibility.party",
+  "assetKind": "FEATURE",
+  "display": { "...": "BusinessCapabilityDisplay" },
+  "business": { "...": "BusinessSemanticContract profile" },
+  "lifecycle": "DRAFT|READY|PUBLISHED|DEPRECATED",
+  "speccing": false,
+  "runtimeState": "READY",
+  "owner": "ride-policy-team",
+  "contractFingerprint": "sha256:...",
+  "revision": 7,
+  "source": {
+    "registry": "SOLUTION_ENTITY",
+    "implementationVisible": false
+  }
+}
+```
+
+### 6.2 索引来源
+
+| 来源 | 投影资产 | 业务卡片语义来源 |
+|---|---|---|
+| `SolutionEntityRegistry` | Feature、Scenario、Instruction、Solution | 四实体契约中的结构化业务定义 |
+| `OperatorLibraryRegistry` | 库算子和函数 | display、端口语义、effect、library owner |
+| `VisualOperatorCatalog` | 资源背书的运行时算子 | descriptor、display、端口语义、runtime readiness |
+| `GraphDraftRepository` | 旧 Feature/Tool 草稿 | Agent instruction 和资产摘要；无业务定义时只标 PARTIAL |
+| publication store | 已发布 Tool/Solution | 冻结契约、publication id 和当前状态 |
+
+### 6.3 快照一致性
+
+一次搜索必须先物化 `BusinessCapabilitySnapshot`：
+
+```jsonc
+{
+  "scopeFingerprint": "sha256:...",
+  "catalogRevisionVector": {
+    "solutionEntities": 18,
+    "operatorLibraries": 5,
+    "runtimeCatalog": 31,
+    "publications": 9
+  },
+  "snapshotFingerprint": "sha256:...",
+  "createdAt": "server-time",
+  "capabilities": []
+}
+```
+
+搜索、匹配和返回候选必须使用同一快照。后续复用、compose 或 evaluate 时，调用方回传 `snapshotFingerprint + contractFingerprint`；当前值变化则返回 `CAPABILITY_CONTEXT_STALE`，要求重新搜索，不允许悄悄使用新能力执行旧决定。
+
+现有 registry 和内存 catalog 没有共同数据库事务，不能假设一次顺序读取天然一致。每个索引来源必须提供不可变 snapshot 和单调 generation。`BusinessCapabilityIndex` 按固定顺序读取各来源，随后再次读取 generation vector：
+
+1. 前后 vector 一致，接受本次快照。
+2. 任一来源变化，丢弃全部候选并重新物化。
+3. 最多重试 3 次；仍不稳定时返回 `CAPABILITY_INDEX_UNSTABLE`，不得拼接不同时间点的候选。
+
+`snapshotFingerprint` 根据 scope、generation vector，以及按 asset kind 和 asset ref 排序后的 `contractFingerprint + revision + lifecycle` 计算。generation 只用于一致性判断，不作为业务契约身份。
+
+### 6.4 搜索和匹配算法
+
+```text
+freeze current scoped capability snapshot
+normalize query aliases and closed-set fields
+filter lifecycle, domain, assetKind, effect and runtime state
+recall candidates by exact name, aliases, tags and tokenized intent
+optionally rank remaining candidates through SemanticCandidateRanker
+compare each candidate through BusinessContractMatcher
+classify each candidate as EXACT, PARTIAL or CONFLICT
+return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
+```
+
+`NONE` 是搜索整体结果，不构造虚假候选。
+
+首次搜索可以只带业务自然语言和已确认字段，用于扩大候选集。候选返回后，Codex 读取 `rg.entity.get` 的业务定义，以业务语言向负责人复述差异；确认后再使用候选 `semanticKey` 和完整字段执行第二次搜索。只有第二次搜索可以得到 EXACT。业务负责人确认的是业务定义，不是 semantic key 字面量或技术资产引用。
+
+稳定判定规则：
+
+- `semanticKey` 精确一致，才继续比较其余业务字段；查询缺失 semanticKey 时最多为 PARTIAL。
+- 同一别名映射到多个 semanticKey：整体状态 AMBIGUOUS。
+- 名称相似但 `businessObject` 不同：CONFLICT。
+- 输入字段多一个可选上下文：PARTIAL；多一个必填上下文：PARTIAL，不可直接复用。
+- 输出 enum 少值、多值或含义不同：CONFLICT。
+- `unknownPolicy` 不同：CONFLICT。
+- `asOf`、权威来源或取值责任不同：CONFLICT。
+- 只有 aliases 或文案不同，所有契约字段一致：EXACT。
+- 同时出现多个 EXACT：整体状态 `AMBIGUOUS`，不得自动选第一个。
+
+## 7. MCP 契约增量
+
+### 7.1 `rg.library.overview.get`
+
+| 属性 | 定义 |
+|---|---|
+| 影响级 | READ |
+| 输入 | `{ includeSamples?: boolean }`，默认 false |
+| 输出 | `{ buildingBlocks[], worldModel, samples[], snapshotFingerprint }` |
+| 边界 | 复用现有业务看板投影；不返回 fixture payload、URL、binding 或异常文本 |
+
+### 7.2 `rg.capability.search`
+
+影响级为 READ。首次搜索允许缺少 `semanticKey`，但结果不能为 EXACT。
+
+```jsonc
+{
+  "query": {
+    "intent": "判断订单取消责任主体",
+    "semanticKey": "ride-cancellation.responsibility-party",
+    "domain": "ride-cancellation",
+    "businessObject": "ride-order",
+    "requiredContext": [{ "semanticKey": "ride-order.id", "name": "orderId", "type": "string" }],
+    "expectedResult": {
+      "type": "enum",
+      "values": ["PASSENGER", "DRIVER", "PLATFORM", "UNKNOWN"]
+    },
+    "asOf": "CANCELLATION_OCCURRED_AT",
+    "unknownPolicy": "REQUIRE_HUMAN_REVIEW",
+    "acquisitionOwner": "PLATFORM",
+    "effect": "READ"
+  },
+  "assetKinds": ["FEATURE"],
+  "limit": 10
+}
+```
+
+```jsonc
+{
+  "status": "EXACT|AMBIGUOUS|INCOMPLETE|NONE",
+  "snapshotFingerprint": "sha256:...",
+  "candidates": [
+    {
+      "assetRef": "feature:responsibility.party",
+      "assetKind": "FEATURE",
+      "businessName": "取消责任方",
+      "matchType": "EXACT|PARTIAL|CONFLICT",
+      "matchedFacets": ["businessObject", "resultDomain", "unknownPolicy"],
+      "missingFacets": [],
+      "conflicts": [],
+      "reuseAllowed": true,
+      "contractFingerprint": "sha256:...",
+      "lifecycle": "READY"
+    }
+  ],
+  "clarification": {
+    "required": false,
+    "dimension": "",
+    "question": ""
+  }
+}
+```
+
+输入中的 `intent` 是业务摘要，不是授权依据。服务器不得仅凭该字段返回 EXACT。
+
+### 7.3 `rg.entity.list`
+
+| 属性 | 定义 |
+|---|---|
+| 影响级 | READ |
+| 输入 | `{ entityKinds[], lifecycle?, cursor?, limit? }` |
+| 输出 | `{ entities: BusinessCapabilityCard[], nextCursor, snapshotFingerprint }` |
+| 用途 | 跨会话发现当前 scope 已有四实体和发布物 |
+
+`limit` 最大 100，cursor 绑定 scope、查询条件和 snapshot fingerprint。条件变化或快照失效返回 `CAPABILITY_CONTEXT_STALE`。
+
+### 7.4 `rg.entity.get`
+
+| 属性 | 定义 |
+|---|---|
+| 影响级 | READ |
+| 输入 | `{ assetRef }` |
+| 输出 | `{ card, businessContract, dependencies[], readiness, contractFingerprint, revision }` |
+| 边界 | 只返回业务契约和治理状态，不返回实现 binding、DSL source 或持久化内部字段 |
+
+### 7.5 `rg.journey.start`
+
+影响级为 DRAFT_WRITE；创建 journey 不授予后续创作、执行或治理权限。
+
+```jsonc
+{
+  "intentKind": "CREATE_SOLUTION|REVISE_SOLUTION|RUN_SOLUTION|REVIEW|PUBLISH|INSPECT_OPERATIONS|MAINTAIN_PLATFORM_CAPABILITY",
+  "businessGoal": "处理取消费争议",
+  "targetRef": "",
+  "idempotencyKey": "cancel-dispute-start-1"
+}
+```
+
+```jsonc
+{
+  "journeyRef": "journey:...",
+  "revision": 1,
+  "surface": "BUSINESS_SOLUTION",
+  "stage": "DISCOVERING",
+  "requiredBusinessDimensions": ["decisionFacts", "rules", "otherwise", "dispositions", "goldenExamples"],
+  "allowedNextTools": ["rg.library.overview.get", "rg.capability.search"],
+  "businessQuestion": "这项政策需要依据哪些业务事实作判断？"
+}
+```
+
+`businessGoal` 用于本次业务显示，不参与鉴权，也不写入遥测标签。默认只持久化摘要指纹；只有部署显式配置受管加密存储时才保存 ciphertext，并只通过 HUMAN no-store 看板读取。Codex 在后续调用需要展示原文时从自身会话重传，RG 不把重传文本写入日志。
+
+### 7.6 `rg.journey.next`
+
+影响级为 READ；它只派生状态，不推进任何资产生命周期。
+
+```jsonc
+{
+  "journeyRef": "journey:...",
+  "expectedRevision": 6
+}
+```
+
+```jsonc
+{
+  "journeyRef": "journey:...",
+  "revision": 6,
+  "stage": "WAITING_FEATURE_ENGINEERING",
+  "stageStatus": "BLOCKED",
+  "facts": [
+    { "name": "取消责任方", "contractState": "CONFIRMED", "implementationState": "WAITING_ENGINEERING" }
+  ],
+  "blockingReasons": ["FEATURE_BINDING_REQUIRED"],
+  "allowedNextTools": ["rg.entity.get", "rg.journey.next"],
+  "forbiddenUntilResolved": ["rg.scenario.define", "rg.solution.compose"],
+  "solutionContextFingerprint": "sha256:...",
+  "responsibleRole": "FEATURE_ENGINEER",
+  "businessQuestion": "",
+  "nextAction": "等待特征工程完成，不需要业务负责人补充技术信息。"
+}
+```
+
+`allowedNextTools` 是工作流事实。Codex 可以选择读取其中任意工具，但不能调用 `forbiddenUntilResolved` 中的工具继续该 journey。
+
+`solutionContextFingerprint` 由 `SolutionAuthoringContextService` 根据当前 journey 关联的 Feature、Scenario、Instruction revision、业务契约指纹、lowering 版本和 compiler profile 计算。只有进入 `COMPOSING` 后该字段才非空。业务 surface 调用 `rg.solution.compose` 时必须回传它；服务端用同一批冻结实体重新计算，不一致返回 `SOLUTION_CONTEXT_STALE`。
+
+现有 `authoringContextFingerprint` 继续用于 `PLATFORM_AUTHORING` 的 DSL/Graph 流程。两个指纹不能互相替代，也不能根据客户端字段猜测来源。
+
+### 7.7 Solution GOLDEN 业务入口
+
+业务 surface 不直接暴露面向底层 Tool 的 `rg.scenario.upsertCases` 和 `rg.oracle.propose`。新增：
+
+| 工具 | 影响级 | 输入 | 输出 |
+|---|---|---|---|
+| `rg.solution.golden.propose` | PROPOSE | `{ journeyRef, expectedJourneyRevision, solutionRef, cases[], idempotencyKey }` | `{ caseSetRef, revision, cases[], proposalStatus, awaiting }` |
+| `rg.solution.golden.list` | READ | `{ journeyRef, solutionRef, lifecycle? }` | `{ caseSetRef, revision, cases[], approvalState }` |
+
+`cases[]` 使用业务字段 `givenFacts`、`expectedResult`、`expectedReasoning` 和 `businessIntent`。服务端内部适配到现有 case-set 与 Oracle 提议写模型；响应不向业务 surface 暴露 `toolRef`、node、stub 或底层图信息。人工批准仍通过现有 HUMAN reviewer 边界完成。
+
+### 7.8 Journey action envelope
+
+`BUSINESS_SOLUTION` 下所有产生业务资产的工具必须接受并校验：
+
+```jsonc
+{
+  "journeyRef": "journey:...",
+  "expectedJourneyRevision": 6,
+  "idempotencyKey": "business-readable-key"
+}
+```
+
+业务写入通过 `BusinessJourneyService.executeAction(...)` 完成：
+
+1. 锁定当前 journey revision。
+2. 重新派生 stage 和 `allowedNextTools`。
+3. 确认当前工具被允许。
+4. 在同一 `AgentTddStateRepository.executeAtomically` 事务中保存四实体和 journey association。
+5. 增加 journey revision，但不直接写入 stage。
+
+journey association 存在业务资产外层元数据，不进入四实体业务契约身份。旧客户端未声明 `BUSINESS_SOLUTION` 时继续使用现有输入 Schema；业务 surface 开启 `enforce-journey-actions` 后缺少 envelope 返回 `JOURNEY_REQUIRED`。
+
+## 8. Journey 状态机
+
+### 8.1 状态
+
+| 阶段 | 进入条件 | 允许的主要动作 | 完成条件 |
+|---|---|---|---|
+| `DISCOVERING` | journey 已创建 | overview、search、entity read | 所需业务事实均有 EXACT 或确认新建 |
+| `DEFINING_FEATURES` | 存在未定义事实 | `rg.feature.define` | 每项事实契约完整且业务确认 |
+| `WAITING_FEATURE_ENGINEERING` | 存在设计态平台 Feature | `rg.feature.handoff` 后只读等待 | handoff VERIFIED，Feature 契约未漂移 |
+| `DEFINING_RULES` | Feature 可用 | `rg.scenario.define` | 规则唯一命中、含 otherwise |
+| `DEFINING_ACTIONS` | 规则出口明确 | `rg.instruction.define` | 所有出口有结果和 reasoning；WRITE 有治理声明 |
+| `COMPOSING` | 四实体引用完整 | `rg.solution.compose` | 纯函数投影编译通过 |
+| `WAITING_GOLDEN_APPROVAL` | Solution 已组合 | 提议案例、读取看板 | HUMAN/USER 批准当前 revision 的 GOLDEN |
+| `TESTING` | ACTIVE GOLDEN 完整 | scenario test、solution baseline | 当前 revision GREEN 且零外呼逻辑证据有效 |
+| `WAITING_WRITE_ENGINEERING` | WRITE Instruction 未实现或未对账 | engineering handoff 后只读等待 | 实现绑定且受控写对账完成 |
+| `WAITING_SIGNOFF` | 技术和业务门已通过 | commit、readiness | 独立签署绑定当前证据和 revision |
+| `PUBLISHABLE` | readiness 全部通过 | publish | immutable publication 创建 |
+| `PUBLISHED` | 发布完成 | invoke、performance | 运行和运营观察持续进行 |
+| `BLOCKED` | 存在冲突、漂移或平台问题 | 只允许恢复动作 | 阻塞事实消失后回到派生阶段 |
+| `CANCELLED` | 业务负责人取消 | 只读 | 终态 |
+
+### 8.2 阶段派生优先级
+
+阶段不是简单向前累加。每次 `rg.journey.next` 按以下优先级重新计算：
+
+1. scope、journey revision 或契约快照漂移。
+2. 业务契约冲突或未确认。
+3. Feature 工程状态。
+4. Scenario 和 Instruction 完整性。
+5. Solution compose 及其 authoring receipt。
+6. GOLDEN 当前性和批准状态。
+7. RED/GREEN evidence 当前性。
+8. WRITE 实现和对账。
+9. signoff 当前性。
+10. publication 状态。
+
+后置证据不能掩盖前置事实失效。例如 Feature 业务定义变化后，即使旧 GREEN 和 signoff 仍存在，stage 也必须退回 `DEFINING_FEATURES` 或 `WAITING_GOLDEN_APPROVAL`，旧证据由既有 fingerprint 规则失效。
+
+### 8.3 并发和幂等
+
+- `rg.journey.start` 必须使用 `idempotencyKey`，同 key 同请求返回 exact replay，不同请求返回 `IDEMPOTENCY_CONFLICT`。
+- journey 更新使用 revision CAS；客户端旧 revision 返回 `JOURNEY_REVISION_STALE`。
+- `rg.journey.next` 是只读派生，但返回的 revision vector 必须与一次事务或冻结快照一致。
+- 业务资产写入成功、journey 投影刷新失败时，不回滚权威资产；下次 `next` 必须从资产事实自愈。
+- 不允许依赖“先写 journey stage，再写业务资产”的双写顺序推进状态。
+
+### 8.4 `BusinessJourney` 持久化
+
+复用 `agent_tdd_assets`，使用 `asset_kind=BUSINESS_JOURNEY`、`ref=journeyRef`。不新增业务主表。
+
+```jsonc
+{
+  "schemaVersion": "rg.businessJourney.v1",
+  "journeyRef": "journey:...",
+  "intentKind": "CREATE_SOLUTION",
+  "surface": "BUSINESS_SOLUTION",
+  "businessGoalCiphertext": null,
+  "businessGoalFingerprint": "sha256:...",
+  "targetSolutionRef": "sol:cancel-dispute",
+  "associations": [
+    { "assetKind": "FEATURE", "assetRef": "feature:responsibility.party", "revision": 7 }
+  ],
+  "createdBy": "actor-id",
+  "revision": 6,
+  "status": "ACTIVE|CANCELLED"
+}
+```
+
+`stage`、`blockingReasons`、readiness 和 allowed tools 不持久化，每次从 association 指向的当前资产重新派生。association revision 只记录最近一次确认坐标；资产当前 revision 变化时触发重新读取和阶段回退。
+
+## 9. Surface 与工具可见性
+
+### 9.1 `BUSINESS_SOLUTION`
+
+默认面向业务负责人的 Codex 会话只显示：
+
+- 前门：`rg.journey.start`、`rg.journey.next`、`rg.library.overview.get`、`rg.capability.search`、`rg.entity.list/get`。
+- 四实体：`rg.feature.define/handoff/evaluate`、`rg.scenario.define/test`、`rg.instruction.define`、`rg.solution.compose/getContract/baseline/commit/readiness/performance/publish/invoke`、`rg.engineering.handoff`。
+- 业务案例：`rg.solution.golden.propose/list`；不得暴露底层图引用。
+
+默认不显示 `rg.library.upsert`、`rg.resource.declare`、`rg.feature.compose`、`rg.tool.compose`、`rg.dsl.*`、`rg.gate.check`、`rg.tool.*`、`rg.simulate` 和 fixture 管理工具。
+
+如果 Solution lowering 内部需要 DSL，平台内部完成；只有进入 `PLATFORM_AUTHORING` 时，Codex 才直接使用 DSL 参考和修正工具。业务 compose 使用 `solutionContextFingerprint`，不伪装成 DSL authoring context。
+
+### 9.2 `PLATFORM_AUTHORING`
+
+面向能力平台维护人员，显示：
+
+- library、resource、contract 和 capability 工具。
+- DSL reference、preview 和 gate。
+- Feature/Tool Graph compose。
+- instruction、cases、stubs、fixture、simulate、baseline、spec 和 Tool publish。
+
+该 surface 不自动授予工程履约、平台实景证明、Oracle 批准或发布签署权限。
+
+### 9.3 `OPERATIONS`
+
+只显示：
+
+- entity、contract、journey、readiness、verdict、evidence 和 performance 读取。
+- 不显示任何创作、执行或发布工具。
+
+### 9.4 兼容策略
+
+- 第一阶段保留缺少 `X-RG-Surface` 的旧行为，并记录 `LEGACY_SURFACE_USED` 指标。
+- 推荐 Codex 配置立即改为显式 surface。
+- 一个小版本后，非 local/test 环境缺少 surface 时返回 `SURFACE_REQUIRED`。
+- `LEGACY_ALL` 只允许显式配置开启，不作为默认值。
+
+## 10. 初始化说明和工具描述
+
+### 10.1 说明生成
+
+新增 `McpAgentInstructionRenderer`，输入：
+
+- 当前 surface。
+- 当前目录的工具定义。
+- `BusinessJourneyPolicy` 的稳定阶段表。
+- 当前协议版本。
+
+输出初始化 instructions。工具名只能从 `McpToolDefinition.name()` 注入，禁止在字符串中手写 `rg.*` 名称。
+
+### 10.2 工具描述模板
+
+每个业务工具描述必须回答：
+
+1. 哪类业务意图应调用。
+2. 哪些前置事实必须存在。
+3. 该工具证明什么。
+4. 该工具不证明什么。
+5. 成功后通常进入哪个阶段。
+6. 哪些情况下应该先调用 `rg.journey.next`，而不是直接调用本工具。
+
+例如 `rg.feature.define` 的描述不再只写“保存类型化 Feature 契约”，而是：
+
+> 当业务负责人已确认一个原子事实的含义、业务对象、所需上下文、结果范围、判断时点、不可判断处理和取值责任，且能力库中没有 EXACT 可复用项时，创建业务事实契约。它只证明契约完整，不证明事实实现可调用或业务结果正确。
+
+### 10.3 目录一致性测试
+
+构建期必须证明：
+
+- instructions 中的所有工具名存在于目录。
+- `.codex/config.toml` 和认证脚本的所有 `enabled_tools` 存在于目录。
+- 每个工具都有 invoker case、输入 Schema、输出 Schema、影响级和 surface。
+- 每个 surface 至少有一个安全的只读入口。
+- `BUSINESS_SOLUTION` 不含底层 Graph/Tool 创作工具。
+- `PLATFORM_AUTHORING` 不含 FEATURE_ENG、INSTRUCTION_ENG、ATTEST 或 WRITE_EXEC 内部能力。
+
+## 11. 错误和恢复语义
+
+| 错误码 | 条件 | retryable | Codex 行为 |
+|---|---|---:|---|
+| `SURFACE_REQUIRED` | 生产环境未声明 surface | false | 修复连接配置，不猜工具 |
+| `TOOL_NOT_VISIBLE_IN_SURFACE` | 工具存在，但当前 surface 不可见 | false | 调 `rg.journey.next` 或切换由负责人批准的会话类型 |
+| `CAPABILITY_CONTEXT_STALE` | 索引或契约指纹变化 | true | 重新 search/get，比较业务差异 |
+| `CAPABILITY_QUERY_INCOMPLETE` | 缺少决定 EXACT 所需的字段 | false | 只问返回的一个业务问题 |
+| `CAPABILITY_AMBIGUOUS` | 多个 EXACT 或无法排除候选 | false | 向业务负责人说明差异并请求选择 |
+| `CAPABILITY_CONFLICT` | 关键业务字段冲突 | false | 不复用；确认修改既有能力还是新建 |
+| `FEATURE_DEFINITION_INCOMPLETE` | Feature 业务定义缺字段 | false | 按缺失维度继续业务对话 |
+| `JOURNEY_REVISION_STALE` | journey CAS revision 过期 | true | 重新读取 next，不重复写操作 |
+| `JOURNEY_ACTION_NOT_ALLOWED` | 当前阶段不允许该工具 | false | 报告阻塞原因和责任角色 |
+| `JOURNEY_BLOCKED` | 工程、Oracle、证据或签署等待 | false | 停在当前人工或工程边界 |
+| `JOURNEY_REQUIRED` | 业务 surface 写操作缺 journey envelope | false | 先调用 journey.start/next |
+| `SOLUTION_CONTEXT_STALE` | 四实体或编译上下文在 compose 前变化 | true | 重新读取 journey.next 和相关业务契约 |
+| `CAPABILITY_INDEX_UNSTABLE` | 多次读取都无法取得稳定 generation vector | true | 稍后重试，不使用部分候选 |
+
+错误 `details` 只返回闭集字段、候选安全摘要和稳定引用，不包含原始业务 payload、DSL source、binding、URL、token 或异常消息。
+
+## 12. 权限、数据和隐私边界
+
+### 12.1 权限矩阵
+
+| 操作 | READ | AUTHORING | EXECUTION | GOVERNANCE | 内部工程/平台 |
+|---|---:|---:|---:|---:|---:|
+| overview/search/entity/journey.next | 是 | 是 | 是 | 是 | 按现有策略 |
+| journey.start | 否 | 是 | 否 | 否 | 否 |
+| 四实体草稿 | 否 | 是 | 否 | 否 | 否 |
+| 测试与运行 | 否 | 否 | 是 | 否 | 平台内部另门 |
+| Oracle 批准与发布 | 否 | 否 | 否 | 是 | 否 |
+| Feature/Instruction 履约 | 否 | 否 | 否 | 否 | FEATURE_ENG/INSTRUCTION_ENG |
+
+surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续是最终授权依据。
+
+### 12.2 存储边界
+
+- `BusinessCapabilityIndex` 默认按请求重建冻结快照；当资产量达到性能阈值后可增加物化索引，但权威来源不变。
+- `BusinessJourney` 只保存协调元数据、引用、revision vector 和默认的业务目标指纹；原文加密存储必须显式启用。
+- 原始业务对话仍保留在 Codex 会话，不复制到 RG。
+- 搜索遥测只记录闭集 intentKind、assetKind、matchType、候选数量、是否澄清和最终动作，不记录原始 query 文本或 assetRef。
+
+### 12.3 降级策略
+
+- `SemanticCandidateRanker` 不可用：退化为别名、标签和结构化字段召回，不能降低 EXACT 判定标准。
+- 索引物化不可用：回退到权威 registry 的请求内快照；超过时限返回 `CAPABILITY_INDEX_UNAVAILABLE`，不返回不完整候选。
+- journey store 不可用：禁止新建和推进 journey；现有只读契约仍可查询，但不得假装流程可继续。
+- 业务 overview 不可用：返回稳定错误并停止；不能跳过发现步骤直接创作。
+
+### 12.4 输入和资源限制
+
+- `businessGoal`、`intent` 和单个语义说明最大 2 KiB；超过限制返回 Schema 错误。
+- aliases、上下文字段、结果 enum 和候选列表分别设置闭集数量上限，默认不超过 64 项。
+- `rg.capability.search.limit` 默认 10、最大 100；服务器可按部署配置降低，不能由请求提高上限。
+- semantic ranker 设独立超时和并发舱壁；超时立即退化为确定性召回，不阻塞 matcher。
+- index snapshot 超过响应大小限制时只返回稳定分页，不截断单个契约制造 PARTIAL。
+
+## 13. 可观测性
+
+### 13.1 指标
+
+| 指标 | 标签 | 用途 |
+|---|---|---|
+| `rg.mcp.catalog.consistency` | result | 构建和启动目录一致性 |
+| `rg.mcp.surface.calls` | surface、tool、result | 发现错误 surface 和越界尝试 |
+| `rg.capability.search.requests` | status、assetKind | 搜索结果分布 |
+| `rg.capability.search.candidates` | matchType、bucket | 候选数量和歧义趋势 |
+| `rg.capability.search.clarification` | dimension | 业务定义最常缺失的维度 |
+| `rg.capability.context.stale` | sourceKind | 目录或契约漂移频率 |
+| `rg.journey.stage` | stage、status | 各阶段停留和阻塞分布 |
+| `rg.journey.action.rejected` | stage、reason | Codex 工具误召回趋势 |
+| `rg.agent.recall.certification` | suite、result | 真实 Codex 召回验收结果 |
+
+标签不得包含 tenant、project、actor、原始业务文本、assetRef、contract fingerprint 或业务 payload。
+
+### 13.2 运营判断
+
+- `CAPABILITY_AMBIGUOUS` 持续上升：补充 aliases 或拆分重叠能力，不放宽契约比较。
+- `CAPABILITY_QUERY_INCOMPLETE` 集中在某个字段：改进 Codex 业务提问和工作台引导。
+- `JOURNEY_ACTION_NOT_ALLOWED` 集中在近义工具：调整 surface 或工具描述，不让提示词继续变长。
+- `CAPABILITY_CONTEXT_STALE` 集中在某类 registry：检查发布和索引 revision 传播。
+- 真实认证 Top-1 下降：阻止发布新的 MCP 描述或模型配置，直到回归通过。
+
+### 13.3 容量和性能目标
+
+以下是实施验收目标，不是当前生产能力声明：
+
+- 在单 scope 10,000 张能力卡片、返回 10 个候选的基准中，纯确定性搜索 p95 不高于 500 ms。
+- semantic ranker 总预算不高于 300 ms；超时不影响确定性 matcher 完成。
+- snapshot 物化超过 2 s 或连续 3 次 generation 变化时失败关闭。
+- journey.next 在不重建物化索引时 p95 不高于 200 ms。
+- 单 identity 的并发和速率继续受现有 `McpRequestLimiter` 控制；索引构建另设 scope 级 single-flight，防止并发重复重建。
+
+若实际部署规模和延迟目标不同，必须在环境配置和验收报告中写明新基线；不能删除失败关闭和一致性要求来换取延迟。
+
+## 14. 测试与认证
+
+### 14.1 单元和契约测试
+
+| 范围 | 必测内容 |
+|---|---|
+| 目录一致性 | instructions、config、runbook、认证脚本中的工具名全部存在 |
+| surface | list/call 双重过滤；surface 不能扩大 purpose 权限 |
+| CapabilityIndex | 五类来源统一投影、scope 隔离、稳定排序、快照一致 |
+| matcher | EXACT、PARTIAL、CONFLICT、多个 EXACT、NONE；每个字段的正反例 |
+| Feature v2 | 必填字段、旧版兼容、contract identity、工程履约不改业务定义 |
+| journey | 每个状态的进入、回退、阻塞、责任角色和 allowed tools |
+| 并发 | snapshot 漂移、journey stale revision、资产写入后投影自愈 |
+| compose context | business solution context 与 DSL authoring context 不可混用；四实体 revision 漂移失败关闭 |
+| 零载荷 | search、entity、journey、错误和指标不含业务 payload 或实现详情 |
+
+### 14.2 集成测试
+
+1. 同一 scope 中同时存在四实体、库算子、资源算子和发布物，搜索返回统一结果。
+2. 不同 project 中使用相同 assetRef，不得跨 scope 发现。
+3. search 后能力 revision 改变，旧 snapshot 不能继续 compose/evaluate。
+4. `BUSINESS_SOLUTION` 无法列出或直接调用 `rg.tool.compose`。
+5. `PLATFORM_AUTHORING` 可以使用 DSL 工具，但不能调用内部工程或平台证明能力。
+6. Feature 工程完成后，journey 重新读取当前契约；业务语义漂移则退回确认阶段。
+7. GOLDEN、GREEN、signoff 任一失效，journey 从 PUBLISHABLE 回退到正确阶段。
+8. 四实体写入与 journey association 原子提交；任一失败不留下虚假阶段进度。
+9. 业务 Solution compose 全程不调用或暴露 DSL reference，仍使用冻结 `solutionContextFingerprint`。
+
+### 14.3 真实 Codex 业务召回集
+
+至少建设以下测试族：
+
+| 测试族 | 示例 | 期望 |
+|---|---|---|
+| 同义改写 | “取消归责”“谁造成取消”“责任主体” | 召回同一 Feature |
+| 近义干扰 | 同时存在“取消责任”和“事故责任” | 只选业务对象匹配项 |
+| 边界缺失 | “两分钟内免费”但未说明等于 120 秒 | 必须澄清，不能定义规则 |
+| UNKNOWN 策略 | 未说明无法判断时怎么办 | 必须澄清 |
+| 来源责任 | 未说明用户提供还是平台查询 | 必须澄清或进入 Feature 定义 |
+| 多个 EXACT | 两个版本业务字段完全相同 | 报 AMBIGUOUS，不按排序自动选 |
+| 旧 Feature | 自由文本旧契约缺 asOf | 最多 PARTIAL |
+| surface 干扰 | 同时有 feature.define 和 feature.compose | 业务会话只看到前者 |
+| 跨会话 | 新 Codex 会话继续已存在 journey | 能重新发现四实体和当前阶段 |
+| 语义漂移 | 工程完成后 Feature 结果范围变化 | 旧确认失效，返回业务复核 |
+
+### 14.4 验收指标
+
+| 指标 | 通过标准 |
+|---|---:|
+| 明确意图的正确工作流工具命中率 | 100% |
+| 正确业务能力 Recall@3 | 100% |
+| 唯一正确能力 Top-1 | 不低于 95% |
+| 歧义和缺字段场景主动澄清率 | 100% |
+| PARTIAL 被当作 EXACT | 0 |
+| 错误 surface 工具调用成功 | 0 |
+| 未完成前置阶段仍推进 journey | 0 |
+| 未批准或未签署发布 | 0 |
+| 当前 HEAD 真实 Codex 认证 | 必须通过 |
+
+Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单次 PARTIAL、CONFLICT 或多 EXACT 仍必须失败关闭。
+
+### 14.5 认证证书增量
+
+新证书只保存安全证明：
+
+```jsonc
+{
+  "schemaVersion": "rg.businessRecallCertification.v1",
+  "repositoryCommit": "<current-head>",
+  "runtimeIdentity": { "...": "existing proof" },
+  "suite": "business-solution-recall-v1",
+  "cases": [
+    {
+      "caseFingerprint": "hmac-sha256:...",
+      "expectedIntentKind": "CREATE_SOLUTION",
+      "observedSurface": "BUSINESS_SOLUTION",
+      "capabilityOutcome": "EXACT|CLARIFIED|NONE",
+      "selectedContractFingerprint": "hmac-sha256:...",
+      "toolSequenceClass": "VALID",
+      "humanBoundaryRespected": true
+    }
+  ],
+  "metrics": {
+    "recallAt3": 1.0,
+    "top1": 0.97,
+    "clarificationRate": 1.0,
+    "unsafeEscapeCount": 0
+  }
+}
+```
+
+证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。
+
+## 15. 实施计划
+
+### P0：目录真相统一
+
+范围：
+
+- 将 `rg.library.overview.get` 接入 catalog、invoker 和严格 Schema。
+- 增加 `McpAgentInstructionRenderer`。
+- 建立 config、说明、脚本和目录的一致性测试。
+- 修正现有 Codex 配置和操作手册。
+
+完成标准：不存在任何被说明或启用、但目录不可调用的工具；真实 Codex 能从 overview 开始。
+
+建议独立提交：`fix(resource-gateway): unify MCP catalog and business overview`。
+
+### P1：业务与平台 surface 隔离
+
+范围：
+
+- 实现 `McpSurfacePolicy` 和 `X-RG-Surface`。
+- `tools/list` 和 `tools/call` 使用同一可见性判定。
+- 拆分推荐 Codex 配置。
+- 增加兼容指标和弃用开关。
+
+完成标准：业务会话看不到底层 Graph/Tool 工具；直接调用也被拒绝；旧客户端在明确兼容期开关下仍可工作。
+
+建议独立提交：`feat(resource-gateway): isolate business and platform MCP surfaces`。
+
+### P2：统一能力索引和读取面
+
+范围：
+
+- 实现 `BusinessCapabilityIndex` 和冻结 snapshot。
+- 增加 `rg.capability.search`、`rg.entity.list`、`rg.entity.get`。
+- 纳入四实体、算子库、资源、GraphDraft 和发布物。
+- 实现 cursor、limit、scope 和 context stale 约束。
+
+完成标准：新会话可以发现既有四实体；不同 registry 的能力在同一查询中可比较；快照漂移失败关闭。
+
+建议独立提交：`feat(resource-gateway): add scoped business capability index`。
+
+### P3：Feature 业务语义契约 v2
+
+范围：
+
+- 增加 `BusinessSemanticContract` 和字段校验。
+- Feature contract identity 纳入完整业务定义。
+- 建立旧版只读兼容投影和 PARTIAL 限制。
+- 更新工作台、工程交接和看板投影。
+- 实现 `BusinessContractMatcher`。
+
+完成标准：服务器可以逐字段解释为什么 EXACT、PARTIAL 或 CONFLICT；工程 binding 变化不改变业务契约，业务定义变化必然使旧证据失效。
+
+建议独立提交：`feat(resource-gateway): structure feature business semantics`。
+
+### P4：服务端 journey 导航
+
+范围：
+
+- 增加 `BusinessJourney`、`rg.journey.start` 和 `rg.journey.next`。
+- 派生完整状态机、阻塞原因、责任角色和 allowed tools。
+- 通过 revision CAS、资产事实重建和回退优先级处理并发和漂移。
+- 为业务写工具增加 journey action envelope，并原子保存四实体和 association。
+- 增加 `SolutionAuthoringContextService` 和 `rg.solution.golden.propose/list`。
+- 初始化说明要求业务会话先 start/next，不再记忆整条技术步骤。
+
+完成标准：Codex 在每一幕都能读取唯一允许的下一步；工程、人工或平台边界未完成时不能继续；已有后置证据不能掩盖前置契约失效。
+
+建议独立提交：`feat(resource-gateway): add deterministic business journey navigation`。
+
+### P5：真实召回认证与演示同步
+
+范围：
+
+- 建立业务话语、同义改写、干扰能力、歧义和跨会话测试集。
+- 扩展真实 Codex trace reducer 和证书 Schema。
+- 当前 HEAD 重新认证，旧证书只保留历史用途或归档。
+- 更新业务演示剧本：业务专家只说业务意图，Codex 通过新前门完成发现和导航。
+- 更新启动、Codex 配置、故障排查和停服手册。
+
+完成标准：§14.4 全部指标通过；证书绑定当前 HEAD；演示不再预置工具名、资产引用、DSL 或契约字段。
+
+建议独立提交：`test(resource-gateway): certify business semantic recall journey` 和 `docs(resource-gateway): update business recall runbook`。
+
+## 16. 发布、灰度和回滚
+
+### 16.1 发布顺序
+
+1. 先发布 P0 目录一致性，不改变现有工具权限。
+2. 发布 surface，但旧客户端暂时走 `LEGACY_ALL` 并记录使用量。
+3. 发布 capability index 和只读工具，不改变写路径。
+4. 发布 Feature v2；旧版只读兼容，新写入使用 v2。
+5. 发布 journey；先作为建议导航，再在真实认证通过后强制阶段限制。
+6. 最后切换默认 Codex 配置和演示剧本。
+
+### 16.2 灰度开关
+
+```yaml
+resource-gateway:
+  agent-tdd:
+    semantic-recall:
+      enabled: false
+      require-surface: false
+      enforce-journey-actions: false
+      allow-legacy-feature-contract: true
+      semantic-ranker-enabled: false
+```
+
+灰度顺序：READ 投影 → surface 过滤 → Feature v2 写入 → journey 建议 → journey 强制。每一步都可单独回退。
+
+### 16.3 回滚边界
+
+- 关闭 semantic recall 后，现有 42 个工具继续工作。
+- 关闭 surface 强制后，回到旧目录可见性，但 purpose 权限不变。
+- 关闭 journey 强制后，journey 仍可只读，不删除状态。
+- Feature v2 不回写为 v1；旧服务不认识 v2 时禁止回滚到旧二进制，必须通过兼容 reader 或数据库备份恢复。
+- 已发布 Tool/Solution、GOLDEN、evidence 和 signoff 不因本方案回滚而删除。
+
+## 17. 风险与反例
+
+| 风险 | 影响 | 控制 |
+|---|---|---|
+| 业务语义字段过多，创作变成填表 | 业务体验下降 | Codex 多轮收集，每轮只解决一个主要歧义；业务看板显示自然语言摘要 |
+| aliases 被滥用，多个能力互相抢召回 | 候选噪声增加 | aliases 只用于召回，不参与 EXACT；冲突指标触发能力治理 |
+| 统一索引被误当权威仓储 | 数据和事务边界混乱 | 所有卡片携带 source、revision 和 contractFingerprint；索引可重建 |
+| journey 变成第二套业务状态机 | 与资产事实漂移 | stage 只派生，不接受客户端直接推进；资产事实优先 |
+| surface 只在客户端过滤 | 可直接 call 绕过 | 服务端 list/call 共用 `McpSurfacePolicy` |
+| embedding 对中文同义词排序不稳定 | 选错能力 | ranker 只排序，结构化 matcher 决定能否复用 |
+| 旧 Feature 永久停留 PARTIAL | 复用率下降 | 看板形成补全待办；不为提高复用率伪造缺失语义 |
+| 真实 Codex 认证随模型波动 | 发布不稳定 | 固定测试集、最大调用数和停止条件；记录模型版本；失败阻止目录或提示变更发布 |
+
+## 18. 被拒绝的方案
+
+### 18.1 只改初始化提示词
+
+拒绝。提示词不能统一分散 registry，不能证明业务契约一致，不能阻止同名工具竞争，也不能处理跨会话和服务端状态漂移。提示词应说明责任边界，不应承担工作流状态机。
+
+### 18.2 只增加向量数据库
+
+拒绝。向量检索能扩大候选集，但不能证明结果范围、时点、UNKNOWN 策略和权威来源相同。将相似度分数作为复用依据会把不可审计的概率变成业务事实。
+
+### 18.3 合并所有资产仓储
+
+拒绝。写模型的生命周期、权限和事务责任不同，合并会制造大而浅的中心仓储。统一只读投影足以解决发现问题。
+
+### 18.4 让业务负责人从候选列表选择技术资产
+
+拒绝。业务负责人应判断业务定义差异，不负责理解资产引用、binding 或运行时类型。产品面只呈现业务名称、语义差异、状态和下一责任方。
+
+### 18.5 动态修改模型工具列表作为唯一导航
+
+拒绝作为唯一机制。不同 MCP 客户端对动态 `tools/list` 支持不一致，而且直接 `tools/call` 仍需服务端验证。采用“稳定 surface + journey allowed tools + 服务端分发拒绝”的组合。
+
+## 19. 文档与演示同步范围
+
+实现阶段必须同步：
+
+- `.codex/config.toml`：显式 surface，业务和平台会话分开。
+- `docs/resource-gateway-agent-tdd-mcp.md`：启动、配置、工具前门、错误恢复和认证命令。
+- `docs/resource-gateway-agent-tdd-demo-script.md`：业务专家只表达业务事实；增加候选差异、Feature 多轮定义、工程等待和跨会话恢复。
+- `resource-gateway-examples/README.md`：默认业务 surface 和兼容期说明。
+- MCP Schema、证书 Schema、认证脚本及证书样例。
+
+文档中不得要求业务专家提供：
+
+- MCP 工具名。
+- `featureRef`、`toolRef`、`caseSetRef` 或其他内部引用。
+- Schema、DSL、节点、端口或 binding。
+- 接口 URL、鉴权方式或工程实现引用。
+
+## 20. 实施追踪
+
+本节在代码实施时逐项更新。只有代码、测试、文档和当前 HEAD 真实认证同时成立，状态才能改为“已完成”。
+
+| 阶段 | 当前状态 | 完成证据 |
+|---|---|---|
+| P0 目录真相统一 | 待实施 | catalog/invoker/config/instructions 一致性测试；真实 overview MCP 调用 |
+| P1 surface 隔离 | 待实施 | list/call 双重过滤；业务会话近义工具不可见 |
+| P2 统一能力索引 | 待实施 | 五类资产统一发现；scope、snapshot、cursor 测试 |
+| P3 Feature 语义契约 v2 | 待实施 | 字段级 matcher；旧版 PARTIAL；工程履约不改业务定义 |
+| P4 journey 导航 | 待实施 | 完整状态机、回退、CAS、allowed tools、业务 compose context、GOLDEN 业务入口和阻塞责任测试 |
+| P5 真实召回认证 | 待实施 | §14.4 指标全部通过；当前 HEAD 证书；演示与手册同步 |
+
+## 21. 审阅决策点
+
+本文给出明确推荐，但实施前需要确认以下架构决策：
+
+1. 是否接受“Codex 负责理解，RG 负责结构化匹配和失败关闭”的边界，不在 RG 内引入通用 NLU。
+2. 是否接受新增 `X-RG-Surface` 并让业务 Solution 会话默认看不到底层 Tool/Graph 工具。
+3. 是否接受 Feature v2 将业务对象、结果范围、判断时点、UNKNOWN 策略、取值责任和权威来源设为必填语义。
+4. 是否接受旧 Feature 在补全语义前最多为 PARTIAL，宁可降低自动复用率，也不把缺失信息推断成 EXACT。
+5. 是否接受 journey stage 由资产事实派生，客户端不能直接推进状态。
+6. 是否接受真实 Codex 召回指标成为 MCP 描述、surface 和默认模型配置发布门。
+
+这些决策一旦通过，P0—P5 可以按顺序实施并逐步提交；如果第 1、2 或 3 项被否决，需要重新打开总体架构，而不是局部修改字段。
