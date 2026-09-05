@@ -48,7 +48,7 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(46);
+        assertThat(response.path("result").path("tools")).hasSize(50);
         assertThat(response.path("result").path("tools").toString()).contains("rg.library.overview.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
@@ -74,7 +74,7 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(46);
+        assertThat(response.getBody().path("result").path("tools")).hasSize(50);
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 
@@ -119,6 +119,27 @@ class McpProtocolControllerTest {
         assertThat(response.path("error").path("code").asInt()).isEqualTo(-32031);
         assertThat(response.path("error").path("message").asText())
                 .isEqualTo("TOOL_NOT_VISIBLE_IN_SURFACE");
+        assertThat(invoker.called).isFalse();
+    }
+
+    @Test
+    void businessSurfaceRequiresJourneyEnvelopeBeforeAnyAuthoringDispatch() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))
+                .thenReturn(identity("AGENT_TDD_AUTHORING"));
+        McpToolControllerProbe invoker = new McpToolControllerProbe();
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, invoker);
+        HttpHeaders headers = modernHeaders("tools/call", "rg.feature.define");
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode response = controller.exchange(request(83, "tools/call", Map.of(
+                "name", "rg.feature.define", "arguments", Map.of(
+                        "featureYaml", "fact: {output: {type: string}}",
+                        "idempotencyKey", "missing-journey"))), headers).getBody();
+
+        assertThat(response.path("error").path("code").asInt()).isEqualTo(-32602);
+        assertThat(response.path("error").path("message").asText()).isEqualTo("JOURNEY_REQUIRED");
         assertThat(invoker.called).isFalse();
     }
 

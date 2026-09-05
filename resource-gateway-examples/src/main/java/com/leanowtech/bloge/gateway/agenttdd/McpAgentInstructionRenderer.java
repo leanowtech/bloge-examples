@@ -80,12 +80,18 @@ public final class McpAgentInstructionRenderer {
         return "Converse only in business language. Elicit the goal, decision facts, complete rules, "
                 + "otherwise outcome, possible dispositions, and representative expected examples. Never ask "
                 + "the business user for YAML, DSL, schemas, bindings, operator references, or implementation "
-                + "details. Start with " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and reuse only governed "
+                + "details. Start each change with " + name(McpToolCatalog.JOURNEY_START)
+                + " and follow only the allowedNextTools returned by " + name(McpToolCatalog.JOURNEY_NEXT)
+                + ". Use " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and "
+                + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse only governed "
                 + "business capabilities whose meaning is current. Define a missing Feature as design-only, "
                 + "then call " + name(McpToolCatalog.FEATURE_HANDOFF) + "; never invent or fulfil an evaluator. "
                 + "For an unimplemented WRITE result, call " + name(McpToolCatalog.ENGINEERING_HANDOFF)
-                + " and stop at the accountable engineering boundary. Propose complete GOLDEN examples but "
-                + "never approve them. Never invent runtime bindings, approval, GREEN, attestation, or signoff "
+                + " and stop at the accountable engineering boundary. Propose complete business examples with "
+                + name(McpToolCatalog.GOLDEN_PROPOSE) + " including the assumed fact values, dependency outcomes, "
+                + "expected result, explanation class, and accountable Oracle owner; never approve them. Do not "
+                + "expose internal fixture, stub, node, graph, or binding fields. Never invent runtime bindings, "
+                + "approval, GREEN, attestation, or signoff "
                 + "evidence. Call " + name(McpToolCatalog.READINESS)
                 + " before publish and publish only when publishable=true.";
     }

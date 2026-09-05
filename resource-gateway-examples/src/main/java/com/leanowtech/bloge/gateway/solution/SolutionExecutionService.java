@@ -52,6 +52,15 @@ public final class SolutionExecutionService {
     }
 
     /**
+     * Runs one approved business case through a case-scoped, in-process dependency channel.
+     * WRITE instructions reach that channel so it can enforce the declared no-effect outcome;
+     * this method never installs the governed runtime channel.
+     */
+    public ExecutionResult simulateControlled(String scopeKey, String solutionRef, JsonNode featureValues) {
+        return execute(scopeKey, solutionRef, featureValues, SolutionExecutionAuthority.Mode.CONTROLLED_TEST);
+    }
+
+    /**
      * Runs a trusted runtime invocation. READ instructions may use the governed dispatch channel;
      * WRITE instructions remain unavailable until the independent WRITE_EXEC boundary authorizes
      * execution and reconciliation.

@@ -192,7 +192,13 @@ public final class McpProtocolController {
         requireSchemaMatch(definition.inputSchema(), arguments, -32602,
                 "Tool arguments do not match the declared input schema");
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
-        surfaces.requireVisible(definition, surface(headers), identity);
+        McpSurfacePolicy.Surface requestedSurface = surface(headers);
+        surfaces.requireVisible(definition, requestedSurface, identity);
+        if (requestedSurface == McpSurfacePolicy.Surface.BUSINESS_SOLUTION
+                && isJourneyAction(name)
+                && !arguments.path("journeyRef").isTextual()) {
+            throw new McpProtocolException(-32602, "JOURNEY_REQUIRED");
+        }
         JsonNode structured;
         try (McpRequestLimiter.Permit ignored = limiter.acquire(identity, name)) {
             structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
@@ -209,6 +215,14 @@ public final class McpProtocolController {
                 "structuredContent", structured,
                 "isError", isError
         );
+    }
+
+    private static boolean isJourneyAction(String name) {
+        return java.util.Set.of(
+                "rg.feature.define", "rg.feature.handoff", "rg.scenario.define",
+                "rg.instruction.define", "rg.solution.compose", "rg.solution.golden.propose",
+                "rg.solution.baseline", "rg.solution.commit", "rg.engineering.handoff",
+                "rg.solution.publish").contains(name);
     }
 
     private Map<String, Object> listTools(IntegrationRequestContext identity, HttpHeaders headers) {

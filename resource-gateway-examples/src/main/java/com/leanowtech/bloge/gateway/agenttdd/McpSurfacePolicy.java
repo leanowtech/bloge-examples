@@ -17,6 +17,8 @@ public final class McpSurfacePolicy {
     private static final Set<String> BUSINESS_SOLUTION = Set.of(
             "rg.library.overview.get",
             "rg.capability.search", "rg.entity.list", "rg.entity.get",
+            "rg.journey.start", "rg.journey.next",
+            "rg.solution.golden.propose", "rg.solution.golden.list",
             "rg.feature.define", "rg.feature.handoff", "rg.feature.evaluate",
             "rg.scenario.define", "rg.instruction.define", "rg.engineering.handoff",
             "rg.solution.compose", "rg.solution.getContract", "rg.solution.invoke",

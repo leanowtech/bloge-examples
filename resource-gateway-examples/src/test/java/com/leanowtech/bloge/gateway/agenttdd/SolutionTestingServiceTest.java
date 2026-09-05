@@ -85,6 +85,29 @@ class SolutionTestingServiceTest {
     }
 
     @Test
+    void compilesWriteAssumptionsIntoACaseScopedNoEffectChannel() {
+        storeControlledCases(Map.of("ins:refund", Map.of("outcome", "SUCCEEDS_WITHOUT_EFFECT")));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void failsClosedWhenAnApprovedCaseForbidsTheSelectedDependency() {
+        storeControlledCases(Map.of("ins:refund", Map.of("outcome", "MUST_NOT_BE_USED")));
+
+        assertThatThrownBy(() -> testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN"))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("CONTROLLED_DEPENDENCY_FORBIDDEN"));
+        assertThat(writes).hasValue(0);
+        assertThat(states.find(SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel")).isEmpty();
+    }
+
+    @Test
     void reportsBusinessBacklogAndRefusesUnapprovedOracleRows() {
         storeCases("ACTIVE", Map.of("result", Map.of("decision", "UPHELD")));
         Map<String, Object> failed = testing.baseline(
@@ -127,6 +150,20 @@ class SolutionTestingServiceTest {
                 "qualityState", "DESIGNED_NOT_RUN", "oracleOwner", "cx-ops",
                 "given", Map.of("party", "none", "orderId", "O-1"),
                 "stubs", Map.of(), "expect", expect))));
+        states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", data);
+    }
+
+    private void storeControlledCases(Map<String, Object> assumptions) {
+        ObjectNode data = mapper.createObjectNode();
+        data.put("caseSetRef", "caseSet:cancel");
+        data.put("toolRef", "sol:cancel");
+        data.set("rows", mapper.valueToTree(List.of(Map.ofEntries(
+                Map.entry("caseId", "g-controlled"), Map.entry("category", "GOLDEN"),
+                Map.entry("lifecycle", "ACTIVE"), Map.entry("qualityState", "DESIGNED_NOT_RUN"),
+                Map.entry("oracleOwner", "cx-ops"),
+                Map.entry("given", Map.of("party", "none", "orderId", "O-1")),
+                Map.entry("stubs", Map.of()), Map.entry("controlledAssumptions", assumptions),
+                Map.entry("expect", Map.of("result", Map.of("decision", "WAIVED")))))));
         states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", data);
     }
 

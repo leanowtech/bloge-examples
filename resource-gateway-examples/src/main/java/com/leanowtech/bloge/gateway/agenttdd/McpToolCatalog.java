@@ -19,6 +19,10 @@ public final class McpToolCatalog {
     public static final String CAPABILITY_SEARCH = "rg.capability.search";
     public static final String ENTITY_LIST = "rg.entity.list";
     public static final String ENTITY_GET = "rg.entity.get";
+    public static final String JOURNEY_START = "rg.journey.start";
+    public static final String JOURNEY_NEXT = "rg.journey.next";
+    public static final String GOLDEN_PROPOSE = "rg.solution.golden.propose";
+    public static final String GOLDEN_LIST = "rg.solution.golden.list";
     public static final String FEATURE_HANDOFF = "rg.feature.handoff";
     public static final String ENGINEERING_HANDOFF = "rg.engineering.handoff";
     public static final String DSL_REFERENCE = "rg.dsl.reference.get";
@@ -50,6 +54,30 @@ public final class McpToolCatalog {
         values.add(tool(ENTITY_GET, "Get business entity",
                 "Read one business contract and readiness projection without implementation details.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
+        values.add(tool(JOURNEY_START, "Start business journey",
+                "Start a server-navigated business workflow without granting later actions.",
+                McpToolImpact.DRAFT_WRITE,
+                props("intentKind", enumString("CREATE_SOLUTION", "REVISE_SOLUTION", "RUN_SOLUTION",
+                                "REVIEW", "PUBLISH", "INSPECT_OPERATIONS", "MAINTAIN_PLATFORM_CAPABILITY"),
+                        "businessGoal", string(), "targetRef", string(), "idempotencyKey", string()),
+                List.of("intentKind", "businessGoal", "idempotencyKey")));
+        values.add(tool(JOURNEY_NEXT, "Get next business step",
+                "Derive current blockers and allowed next tools from authoritative business assets.",
+                McpToolImpact.READ,
+                props("journeyRef", string(), "expectedRevision", integer()),
+                List.of("journeyRef", "expectedRevision")));
+        values.add(tool(GOLDEN_PROPOSE, "Propose business examples",
+                "Propose complete business examples and controlled assumptions for independent approval.",
+                McpToolImpact.PROPOSE,
+                props("journeyRef", string(), "expectedJourneyRevision", integer(),
+                        "solutionRef", string(), "cases", arrayOf(businessGoldenCase()),
+                        "idempotencyKey", string()),
+                List.of("journeyRef", "expectedJourneyRevision", "solutionRef", "cases", "idempotencyKey")));
+        values.add(tool(GOLDEN_LIST, "List business examples",
+                "List payload-free business example summaries and approval state.",
+                McpToolImpact.READ,
+                props("journeyRef", string(), "solutionRef", string(), "lifecycle", string()),
+                List.of("journeyRef", "solutionRef")));
         values.add(tool("rg.contract.get", "Get business contract", "Read the business contract for an asset.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool("rg.tool.getInstruction", "Get tool instruction", "Read the Agent-facing tool contract.",
@@ -70,42 +98,43 @@ public final class McpToolCatalog {
         values.add(tool("rg.feature.define", "Define feature",
                 "Validate and store one atomic fact with a complete structured business definition.",
                 McpToolImpact.DRAFT_WRITE,
-                props("featureYaml", string(), "idempotencyKey", string()),
+                journeyProps("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));
         values.add(tool(FEATURE_HANDOFF, "Handoff feature design",
                 "Create an engineering ticket for one unbound platform Feature contract.",
                 McpToolImpact.PROPOSE,
-                props("featureRef", string(), "idempotencyKey", string()),
+                journeyProps("featureRef", string(), "idempotencyKey", string()),
                 List.of("featureRef", "idempotencyKey")));
         values.add(tool("rg.feature.evaluate", "Evaluate feature",
                 "Evaluate one platform-owned Feature and issue a short-lived bound proof.",
                 McpToolImpact.EXECUTE,
-                props("featureRef", string(), "inputs", businessObject()),
+                journeyProps("featureRef", string(), "inputs", businessObject()),
                 List.of("featureRef", "inputs")));
         values.add(tool("rg.scenario.define", "Define scenario",
                 "Validate and store one complete unique-hit business decision contract.",
                 McpToolImpact.DRAFT_WRITE,
-                props("scenarioYaml", string(), "libraryRefs", stringArray(),
+                journeyProps("scenarioYaml", string(), "libraryRefs", stringArray(),
                         "idempotencyKey", string()),
                 List.of("scenarioYaml", "libraryRefs", "idempotencyKey")));
         values.add(tool("rg.instruction.define", "Define instruction",
                 "Validate and store one result-plus-reasoning business action contract.",
                 McpToolImpact.DRAFT_WRITE,
-                props("instructionYaml", string(), "idempotencyKey", string()),
+                journeyProps("instructionYaml", string(), "idempotencyKey", string()),
                 List.of("instructionYaml", "idempotencyKey")));
         values.add(tool("rg.solution.compose", "Compose solution",
                 "Compose a pure solution from scoped Feature, Scenario and Instruction contracts.",
                 McpToolImpact.DRAFT_WRITE,
-                props("solutionYaml", string(), "authoringContextFingerprint", string(),
+                journeyProps("solutionYaml", string(), "authoringContextFingerprint", string(),
+                        "solutionContextFingerprint", string(),
                         "idempotencyKey", string()),
-                List.of("solutionYaml", "authoringContextFingerprint", "idempotencyKey")));
+                List.of("solutionYaml", "idempotencyKey")));
         values.add(tool("rg.solution.getContract", "Get solution contract",
                 "Read the Feature collection plan for one pure Solution.",
                 McpToolImpact.READ, props("solutionRef", string()), List.of("solutionRef")));
         values.add(tool("rg.solution.invoke", "Invoke solution",
                 "Invoke one current published Solution through exact-replay governed execution.",
                 McpToolImpact.RUNTIME_EXECUTE,
-                props("solutionRef", string(), "inputs", businessObject(),
+                journeyProps("solutionRef", string(), "inputs", businessObject(),
                         "idempotencyKey", string()),
                 List.of("solutionRef", "inputs", "idempotencyKey")));
         values.add(tool("rg.scenario.test", "Test scenario",
@@ -116,19 +145,19 @@ public final class McpToolCatalog {
         values.add(tool("rg.solution.baseline", "Baseline solution",
                 "Run approved Solution GOLDEN cases with WRITE effects stubbed.",
                 McpToolImpact.EXECUTE,
-                props("solutionRef", string(), "caseSetRef", string(),
+                journeyProps("solutionRef", string(), "caseSetRef", string(),
                         "side", enumString("RED", "GREEN")),
-                List.of("solutionRef", "caseSetRef", "side")));
+                List.of("solutionRef", "side")));
         values.add(tool("rg.solution.commit", "Commit solution",
                 "Submit one exact Solution authoring receipt for independent review.",
                 McpToolImpact.PROPOSE,
-                props("solutionRef", string(), "authoringReceiptFingerprint", string(),
+                journeyProps("solutionRef", string(), "authoringReceiptFingerprint", string(),
                         "idempotencyKey", string()),
                 List.of("solutionRef", "authoringReceiptFingerprint", "idempotencyKey")));
         values.add(tool(ENGINEERING_HANDOFF, "Handoff write design",
                 "Create an engineering handoff for unbound WRITE Instruction contracts.",
                 McpToolImpact.PROPOSE,
-                props("solutionRef", string(), "idempotencyKey", string()),
+                journeyProps("solutionRef", string(), "idempotencyKey", string()),
                 List.of("solutionRef", "idempotencyKey")));
         values.add(tool("rg.solution.readiness", "Get solution readiness",
                 "Read current logic, binding, reconciliation and owner-signoff gates.",
@@ -139,7 +168,7 @@ public final class McpToolCatalog {
         values.add(tool("rg.solution.publish", "Publish solution",
                 "Publish one immutable Solution after every exact governance gate passes.",
                 McpToolImpact.GOVERNED_WRITE,
-                props("solutionRef", string(), "signoffRef", string(), "idempotencyKey", string()),
+                journeyProps("solutionRef", string(), "signoffRef", string(), "idempotencyKey", string()),
                 List.of("solutionRef", "signoffRef", "idempotencyKey")));
 
         values.add(tool("rg.library.upsert", "Upsert library", "Compile and save a library authoring YAML document.",
@@ -298,6 +327,15 @@ public final class McpToolCatalog {
         for (int index = 0; index < entries.length; index += 2) {
             values.put((String) entries[index], entries[index + 1]);
         }
+        return Map.copyOf(values);
+    }
+
+    /** Adds the optional business-journey concurrency envelope to a legacy authoring schema. */
+    private static Map<String, Object> journeyProps(Object... entries) {
+        LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+        values.put("journeyRef", string());
+        values.put("expectedJourneyRevision", integer());
+        values.putAll(props(entries));
         return Map.copyOf(values);
     }
 
@@ -588,6 +626,17 @@ public final class McpToolCatalog {
                     "contractFingerprint", string(), "revision", integer()),
                     List.of("card", "businessContract", "dependencies", "readiness",
                             "contractFingerprint", "revision"));
+            case JOURNEY_START, JOURNEY_NEXT -> journeyProjection();
+            case GOLDEN_PROPOSE -> structuredObject(props(
+                    "caseSetRef", string(), "revision", integer(),
+                    "caseSummaries", arrayOf(businessGoldenSummary()),
+                    "proposalStatus", enumString("PENDING"), "awaiting", string()),
+                    List.of("caseSetRef", "revision", "caseSummaries", "proposalStatus", "awaiting"));
+            case GOLDEN_LIST -> structuredObject(props(
+                    "caseSetRef", string(), "revision", integer(),
+                    "caseSummaries", arrayOf(businessGoldenSummary()),
+                    "approvalState", enumString("PENDING", "APPROVED")),
+                    List.of("caseSetRef", "revision", "caseSummaries", "approvalState"));
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
                     "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
@@ -776,6 +825,46 @@ public final class McpToolCatalog {
                 "snapshotFingerprint", string(), "candidates", arrayOf(candidate),
                 "clarification", clarification),
                 List.of("status", "snapshotFingerprint", "candidates", "clarification"));
+    }
+
+    private static Map<String, Object> businessGoldenCase() {
+        Map<String, Object> fact = structuredObject(props(
+                "factName", string(), "value", anyJson()), List.of("factName", "value"));
+        Map<String, Object> assumption = structuredObject(props(
+                "capabilityName", string(), "outcome", enumString("RETURNS", "UNAVAILABLE",
+                        "SUCCEEDS_WITHOUT_EFFECT", "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED"),
+                "value", anyJson()), List.of("capabilityName", "outcome"));
+        Map<String, Object> expected = structuredObject(props(
+                "result", anyJson(), "reasoningClass", string()), List.of("result", "reasoningClass"));
+        return structuredObject(props(
+                "caseId", string(), "businessIntent", string(), "givenFacts", arrayOf(fact),
+                "dependencyAssumptions", arrayOf(assumption), "expectedOutcome", expected,
+                "oracleOwner", string()),
+                List.of("caseId", "businessIntent", "givenFacts", "dependencyAssumptions",
+                        "expectedOutcome", "oracleOwner"));
+    }
+
+    private static Map<String, Object> businessGoldenSummary() {
+        return structuredObject(props(
+                "caseId", string(), "lifecycle", string(), "approvalState", string(),
+                "goldenCaseFingerprint", string(), "factCount", integer(),
+                "assumptionCount", integer(), "expectedShapeFingerprint", string()),
+                List.of("caseId", "lifecycle", "approvalState", "goldenCaseFingerprint",
+                        "factCount", "assumptionCount", "expectedShapeFingerprint"));
+    }
+
+    private static Map<String, Object> journeyProjection() {
+        return structuredObject(props(
+                "journeyRef", string(), "revision", integer(), "surface", enumString("BUSINESS_SOLUTION"),
+                "stage", string(), "stageStatus", enumString("READY", "BLOCKED"),
+                "requiredBusinessDimensions", stringArray(), "facts", arrayOf(businessObject()),
+                "blockingReasons", stringArray(), "allowedNextTools", stringArray(),
+                "forbiddenUntilResolved", stringArray(), "solutionContextFingerprint", string(),
+                "responsibleRole", string(), "businessQuestion", string(), "nextAction", string()),
+                List.of("journeyRef", "revision", "surface", "stage", "stageStatus",
+                        "requiredBusinessDimensions", "facts", "blockingReasons", "allowedNextTools",
+                        "forbiddenUntilResolved", "solutionContextFingerprint", "responsibleRole",
+                        "businessQuestion", "nextAction"));
     }
 
     private static Map<String, Object> scenarioDefinitionOutput() {

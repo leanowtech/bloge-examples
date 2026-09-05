@@ -83,7 +83,8 @@ public final class InstructionCallOperator implements Operator<Map<String, Objec
             return InstructionStubFactory.from(instruction);
         }
         if (instruction.effect() == InstructionContract.Effect.WRITE
-                && authority.mode() != SolutionExecutionAuthority.Mode.WRITE_EXEC) {
+                && authority.mode() != SolutionExecutionAuthority.Mode.WRITE_EXEC
+                && authority.mode() != SolutionExecutionAuthority.Mode.CONTROLLED_TEST) {
             throw new SolutionContractException(
                     "WRITE_EFFECT_NOT_ALLOWED", "WRITE instruction requires controlled execution.");
         }

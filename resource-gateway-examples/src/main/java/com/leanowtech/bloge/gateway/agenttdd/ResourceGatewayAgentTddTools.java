@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.solution.FeatureEvaluationBackend;
 import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.capability.BusinessCapabilityIndex;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -49,6 +51,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final SolutionAgentTools solutionTools;
     private final AgentTddLibraryOverviewService libraryOverview;
     private final BusinessCapabilityIndex capabilityIndex;
+    private final BusinessJourneyService journeys;
+    private final BusinessGoldenService businessGolden;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -183,11 +187,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         ObjectProvider<FeatureTokenKeyProvider> tokenKeys,
                                         ObjectProvider<SolutionWriteExecutionRunner> writeRunners,
                                         AgentTddLibraryOverviewService libraryOverview,
-                                        BusinessCapabilityIndex capabilityIndex) {
+                                        BusinessCapabilityIndex capabilityIndex,
+                                        BusinessJourneyService journeys,
+                                        BusinessGoldenService businessGolden) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
-                writeRunners.getIfUnique(), libraryOverview, capabilityIndex);
+                writeRunners.getIfUnique(), libraryOverview, capabilityIndex, journeys, businessGolden);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -208,7 +214,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          SolutionWriteExecutionRunner writeRunner) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
-                tokenKeys, writeRunner, null, null);
+                tokenKeys, writeRunner, null, null, null, null);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -228,7 +234,9 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          FeatureTokenKeyProvider tokenKeys,
                                          SolutionWriteExecutionRunner writeRunner,
                                          AgentTddLibraryOverviewService libraryOverview,
-                                         BusinessCapabilityIndex capabilityIndex) {
+                                         BusinessCapabilityIndex capabilityIndex,
+                                         BusinessJourneyService journeys,
+                                         BusinessGoldenService businessGolden) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -250,6 +258,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                 ? libraryOverview
                 : catalog == null ? null : new AgentTddLibraryOverviewService(catalog);
         this.capabilityIndex = capabilityIndex;
+        this.journeys = journeys;
+        this.businessGolden = businessGolden;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
                 states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner);
     }
@@ -276,6 +286,11 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.capability.search" -> success(capabilityIndex().search(safeArguments, identity));
             case "rg.entity.list" -> success(capabilityIndex().list(safeArguments, identity));
             case "rg.entity.get" -> success(capabilityIndex().get(safeArguments, identity));
+            case "rg.journey.start" -> success(journeys().start(safeArguments, identity));
+            case "rg.journey.next" -> success(journeys().next(safeArguments, identity));
+            case "rg.solution.golden.propose" -> executionSuccess(journeyAction(name, safeArguments, identity,
+                    () -> businessGolden().propose(safeArguments, identity)));
+            case "rg.solution.golden.list" -> success(businessGolden().list(safeArguments, identity));
             case "rg.contract.get" -> contract(safeArguments, identity);
             case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
             case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
@@ -291,14 +306,19 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                             optionalStringList(safeArguments, "topics"),
                             optionalStringList(safeArguments, "operatorRefs"),
                             safeArguments.path("includeExamples").asBoolean(false)), identity));
-            case "rg.feature.define" -> executionSuccess(solutionTools().defineFeature(safeArguments, identity));
-            case "rg.feature.handoff" -> executionSuccess(solutionTools().handoffFeature(safeArguments, identity));
+            case "rg.feature.define" -> executionSuccess(journeyAction(name, safeArguments, identity,
+                    () -> solutionTools().defineFeature(safeArguments, identity)));
+            case "rg.feature.handoff" -> executionSuccess(journeyAction(name, safeArguments, identity,
+                    () -> solutionTools().handoffFeature(safeArguments, identity)));
             case "rg.feature.evaluate" -> executionSuccess(solutionTools().evaluateFeature(safeArguments, identity));
-            case "rg.scenario.define" -> executionSuccess(solutionTools().defineScenario(safeArguments, identity));
+            case "rg.scenario.define" -> executionSuccess(journeyAction(name, safeArguments, identity,
+                    () -> solutionTools().defineScenario(safeArguments, identity)));
             case "rg.instruction.define" -> executionSuccess(
-                    solutionTools().defineInstruction(safeArguments, identity));
+                    journeyAction(name, safeArguments, identity,
+                            () -> solutionTools().defineInstruction(safeArguments, identity)));
             case "rg.solution.compose" -> executionSuccess(
-                    solutionTools().composeSolution(safeArguments, identity));
+                    journeyAction(name, safeArguments, identity,
+                            () -> solutionTools().composeSolution(safeArguments, identity)));
             case "rg.solution.getContract" -> executionSuccess(
                     solutionTools().getSolutionContract(safeArguments, identity));
             case "rg.solution.invoke" -> executionSuccess(
@@ -306,17 +326,20 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.scenario.test" -> executionSuccess(
                     solutionTools().testScenario(safeArguments, identity));
             case "rg.solution.baseline" -> executionSuccess(
-                    solutionTools().baselineSolution(safeArguments, identity));
+                    journeyBaseline(safeArguments, identity));
             case "rg.solution.commit" -> executionSuccess(
-                    solutionTools().commitSolution(safeArguments, identity));
+                    journeyAction(name, safeArguments, identity,
+                            () -> solutionTools().commitSolution(safeArguments, identity)));
             case "rg.engineering.handoff" -> executionSuccess(
-                    solutionTools().handoffSolution(safeArguments, identity));
+                    journeyAction(name, safeArguments, identity,
+                            () -> solutionTools().handoffSolution(safeArguments, identity)));
             case "rg.solution.readiness" -> executionSuccess(
                     solutionTools().readinessSolution(safeArguments, identity));
             case "rg.solution.performance" -> executionSuccess(
                     solutionTools().performanceSolution(safeArguments, identity));
             case "rg.solution.publish" -> executionSuccess(
-                    solutionTools().publishSolution(safeArguments, identity));
+                    journeyAction(name, safeArguments, identity,
+                            () -> solutionTools().publishSolution(safeArguments, identity)));
             case "rg.readiness.get" -> workflow == null
                     ? readiness(safeArguments, identity)
                     : executionSuccess(workflow.readiness(safeArguments, identity));
@@ -375,6 +398,34 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     "GATE_REJECTED", "The business capability index is unavailable.");
         }
         return capabilityIndex;
+    }
+
+    private BusinessJourneyService journeys() {
+        if (journeys == null) throw new AgentTddToolException(
+                "GATE_REJECTED", "Business journey navigation is unavailable.");
+        return journeys;
+    }
+
+    private BusinessGoldenService businessGolden() {
+        if (businessGolden == null) throw new AgentTddToolException(
+                "GATE_REJECTED", "Business GOLDEN authoring is unavailable.");
+        return businessGolden;
+    }
+
+    private Map<String, Object> journeyAction(String name, JsonNode arguments,
+                                              IntegrationRequestContext identity,
+                                              java.util.function.Supplier<Map<String, Object>> action) {
+        return arguments.path("journeyRef").isTextual()
+                ? journeys().executeAction(name, arguments, identity, action) : action.get();
+    }
+
+    private Map<String, Object> journeyBaseline(JsonNode arguments, IntegrationRequestContext identity) {
+        if (!arguments.path("journeyRef").isTextual()) return solutionTools().baselineSolution(arguments, identity);
+        com.fasterxml.jackson.databind.node.ObjectNode resolved = (com.fasterxml.jackson.databind.node.ObjectNode)
+                arguments.deepCopy();
+        resolved.put("caseSetRef", journeys().associatedCaseSet(arguments, identity));
+        return journeys().executeAction("rg.solution.baseline", arguments, identity,
+                () -> solutionTools().baselineSolution(resolved, identity));
     }
 
     private Map<String, Object> capabilities(JsonNode arguments, IntegrationRequestContext identity) {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
+import com.leanowtech.bloge.gateway.solution.InstructionStubFactory;
 import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
@@ -25,7 +26,7 @@ public final class SolutionTestingService {
     private final AgentTddStateRepository states;
     private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
-    private final SolutionExecutionService execution;
+    private final InstructionDispatchChannel fallbackChannel;
 
     /** Creates a testing pyramid over the canonical entities and shared approved-case repository. */
     public SolutionTestingService(
@@ -36,8 +37,7 @@ public final class SolutionTestingService {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
-        this.execution = new SolutionExecutionService(registry, mapper,
-                Objects.requireNonNull(instructionChannel, "instructionChannel"));
+        this.fallbackChannel = Objects.requireNonNull(instructionChannel, "instructionChannel");
     }
 
     /** Evaluates explicit Feature values against expected Scenario outlet subsets. */
@@ -120,7 +120,10 @@ public final class SolutionTestingService {
             String caseId = requiredText(row, "caseId");
             SolutionExecutionService.ExecutionResult result;
             try {
-                result = execution.simulate(scopeKey, solutionRef, row.path("given"));
+                SolutionExecutionService execution = controlledExecution(row);
+                result = row.path("controlledAssumptions").isObject()
+                        ? execution.simulateControlled(scopeKey, solutionRef, row.path("given"))
+                        : execution.simulate(scopeKey, solutionRef, row.path("given"));
             } catch (SolutionContractException failure) {
                 throw new AgentTddToolException(failure.code(), failure.getMessage());
             }
@@ -184,6 +187,38 @@ public final class SolutionTestingService {
         response.put("realExternalCalls", 0);
         response.put("status", backlog.isEmpty() ? "GO" : "NO_GO");
         return Map.copyOf(response);
+    }
+
+    /**
+     * Builds a case-scoped IoC channel. Business GOLDEN rows fail closed when an external READ
+     * instruction has no explicit assumption; legacy rows retain their existing test channel.
+     */
+    private SolutionExecutionService controlledExecution(JsonNode row) {
+        JsonNode assumptions = row.path("controlledAssumptions");
+        if (!assumptions.isObject()) return new SolutionExecutionService(registry, mapper, fallbackChannel);
+        InstructionDispatchChannel controlled = (instruction, values, context) -> {
+            JsonNode assumption = assumptions.path(instruction.instructionRef());
+            if (!assumption.isObject()) throw new SolutionContractException(
+                    "CONTROLLED_ASSUMPTION_REQUIRED", "A controlled dependency assumption is required.");
+            return switch (assumption.path("outcome").asText()) {
+                case "RETURNS" -> {
+                    JsonNode value = assumption.path("value");
+                    if (!value.isObject() || !value.has("result") || !value.has("reasoning")) {
+                        throw new SolutionContractException(
+                                "CONTROLLED_ASSUMPTION_REQUIRED", "A contract-shaped return is required.");
+                    }
+                    yield mapper.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() { });
+                }
+                case "SUCCEEDS_WITHOUT_EFFECT" -> InstructionStubFactory.from(instruction);
+                case "UNAVAILABLE", "FAILS_WITHOUT_EFFECT" -> throw new SolutionContractException(
+                        "CONTROLLED_DEPENDENCY_FAILED", "The controlled dependency is unavailable.");
+                case "MUST_NOT_BE_USED" -> throw new SolutionContractException(
+                        "CONTROLLED_DEPENDENCY_FORBIDDEN", "A forbidden dependency path was selected.");
+                default -> throw new SolutionContractException(
+                        "CONTROLLED_ASSUMPTION_REQUIRED", "A controlled dependency assumption is required.");
+            };
+        };
+        return new SolutionExecutionService(registry, mapper, controlled);
     }
 
     private static boolean contains(JsonNode actual, JsonNode expected) {

@@ -15,7 +15,7 @@ public final class SolutionExecutionAuthority {
     public static final String CONTEXT_KEY = "__rgSolutionExecutionAuthority";
 
     /** Execution mode visible to effect-aware Instruction dispatch. */
-    public enum Mode { SIMULATE, RUNTIME, WRITE_EXEC }
+    public enum Mode { SIMULATE, CONTROLLED_TEST, RUNTIME, WRITE_EXEC }
 
     private final String scopeKey;
     private final Mode mode;

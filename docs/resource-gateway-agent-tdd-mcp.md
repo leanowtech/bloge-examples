@@ -102,6 +102,7 @@ bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
   "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
+  "rg.journey.next", "rg.solution.golden.list",
   "rg.solution.getContract",
   "rg.solution.readiness", "rg.solution.performance"
 ]
@@ -114,6 +115,7 @@ url = "http://localhost:8081/mcp"
 bearer_token_env_var = "RG_MCP_TOKEN"
 http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING", "X-RG-Surface" = "BUSINESS_SOLUTION" }
 enabled_tools = [
+  "rg.journey.start", "rg.solution.golden.propose",
   "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
   "rg.solution.commit", "rg.feature.handoff", "rg.engineering.handoff"
 ]
@@ -169,7 +171,23 @@ Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_
 
 **绝对不要把 reviewer、feature-engineer 或 instruction-engineer token 传给 Codex、写进 `.codex/config.toml`、Shell 历史或粘进对话。** 人工 reviewer 只在浏览器看板的密码框中输入 reviewer token；该值只保存在当前页面内存。两类工程 token 只由演示保障人员在独立终端调用履约端点。Codex 的 governance server 只暴露 Fixture 治理和门禁后的发布工具；Oracle 批准和 signoff 根本不是 MCP 工具，并且 `WORKLOAD` 身份直接请求 HTTP 审批或工程履约也会被拒绝。
 
-### 3.1 两类工程交接怎么完成
+### 3.1 业务 journey 怎么推进
+
+业务 Solution 会话先调用 `rg.journey.start`。后续每次写入都带上返回的
+`journeyRef` 和当前 `revision`（字段名为 `expectedJourneyRevision`），并且只调用
+`rg.journey.next.allowedNextTools` 中列出的工具。组合 Solution 时，把 `next` 返回的
+`solutionContextFingerprint` 原样交给 `rg.solution.compose`。服务端会在同一 revision
+锁内重新计算上下文；Feature、Scenario 或 Instruction 已变化时返回
+`SOLUTION_CONTEXT_STALE`，Codex 必须重新读取当前业务契约，不能沿用旧组合结果。
+
+完整业务案例通过 `rg.solution.golden.propose` 提出。案例包含业务意图、已知事实值、
+依赖在该案例中的预期结果、最终处置、解释类别和 Oracle 负责人。MCP 响应只返回案例
+编号、数量、生命周期和指纹，不返回事实值或预期结果。独立业务负责人必须在 reviewer
+看板打开完整内容并批准后，journey 才允许 `rg.solution.baseline`。受控测试把每个案例的
+依赖假设装配成独立进程内通道；未声明的依赖、禁止调用的依赖和失败假设均失败关闭，
+不会改用真实后端补齐结果。
+
+### 3.2 两类工程交接怎么完成
 
 Codex 遇到缺少求值实现的业务事实时，应创建特征交接单并停在“等待特征工程”，不能向业务负责人索要接口或自行填写 evaluator。保障人员在独立终端使用 feature-engineer token 调用：
 

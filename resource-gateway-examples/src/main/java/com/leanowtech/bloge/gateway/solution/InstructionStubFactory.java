@@ -6,11 +6,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Synthesizes deterministic contract-shaped WRITE results without touching a downstream system. */
-final class InstructionStubFactory {
+public final class InstructionStubFactory {
     private InstructionStubFactory() { }
 
     /** Returns mandatory result plus a stable simulation explanation. */
-    static Map<String, Object> from(InstructionContract instruction) {
+    public static Map<String, Object> from(InstructionContract instruction) {
         return Map.of("result", value(instruction.output().path("result")),
                 "reasoning", "SIMULATED_WRITE_STUB");
     }

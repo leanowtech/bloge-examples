@@ -25,7 +25,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(46);
+        assertThat(catalog.all()).hasSize(50);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.overview.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.capability.search").impact()).isEqualTo(McpToolImpact.READ);
@@ -276,10 +276,12 @@ class McpToolCatalogTest {
 
         assertThat(stringKeys((Map<?, ?>) catalog.require("rg.feature.define")
                 .inputSchema().get("properties")))
-                .containsExactlyInAnyOrder("featureYaml", "idempotencyKey");
+                .containsExactlyInAnyOrder("journeyRef", "expectedJourneyRevision",
+                        "featureYaml", "idempotencyKey");
         assertThat(stringKeys((Map<?, ?>) catalog.require("rg.scenario.define")
                 .inputSchema().get("properties")))
-                .containsExactlyInAnyOrder("scenarioYaml", "libraryRefs", "idempotencyKey");
+                .containsExactlyInAnyOrder("journeyRef", "expectedJourneyRevision",
+                        "scenarioYaml", "libraryRefs", "idempotencyKey");
         assertThat(stringKeys(dataProperties(catalog.require("rg.instruction.define"))))
                 .contains("instructionId", "effect", "reasoningRequired", "writeGovernance",
                         "speccing", "contractFingerprint", "honestVerdict");
