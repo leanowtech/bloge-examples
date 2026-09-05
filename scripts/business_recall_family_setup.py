@@ -311,7 +311,7 @@ def seed_drift(api: HttpApi, spec: dict[str, Any], patterns: str) -> list[dict[s
 
 def candidates_for(api: HttpApi, query: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Search one business query and return only structurally valid candidates."""
-    data = api.mcp("rg.capability.search", {"query": query, "limit": 20},
+    data = api.mcp("rg.capability.search", {"query": query, "limit": 100},
                    purpose="AGENT_TDD_READ", surface="BUSINESS_SOLUTION")
     candidates = [item for item in data.get("candidates", []) if isinstance(item, dict)]
     return data, candidates
@@ -354,7 +354,15 @@ def preflight_near(api: HttpApi, by_role: dict[str, dict[str, Any]],
             or exact[0].get("matchType") != "EXACT" \
             or exact[0].get("contractFingerprint") != target_fingerprint \
             or seeded_candidate is None or seeded_candidate.get("matchType") == "EXACT":
-        raise SetupFailure("near preflight is not ranked by semantic match class")
+        target = next((item for item in exact if item.get("assetRef") == target_ref), {})
+        raise SetupFailure(
+            "near preflight is not ranked by semantic match class: "
+            f"status={data.get('status', 'NONE')},"
+            f"targetRank={next((index + 1 for index, item in enumerate(exact) if item.get('assetRef') == target_ref), 0)},"
+            f"targetMatch={target.get('matchType', 'NONE')},"
+            f"distractorSeen={seeded_candidate is not None},"
+            f"distractorMatch={(seeded_candidate or {}).get('matchType', 'NONE')}"
+        )
     return {
         "familyId": "near-meaning-distractor", "status": data.get("status"),
         "observedRoles": ["nearMeaningDistractor"], "outcome": "SEMANTIC_TOP1",
