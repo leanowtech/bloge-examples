@@ -350,6 +350,8 @@ Feature 创作不是让业务人员一次性填写技术表单。Codex 应先读
 
 `rg.feature.define` 的新写入必须包含结构化 `businessDefinition`：`semanticKey`、`intent`、`domain`、`businessObject`、`requiredContext`、`resultDomain`、`asOf`、`unknownPolicy`、`acquisitionOwner`、`freshness` 和 `effect`；平台取值还必须包含 `authoritySource`。这些字段由 Codex 根据已确认的业务表述生成，业务人员不需要填写字段名。旧 Feature 读取时会生成带 `UNKNOWN` 的兼容投影，只能作为 `PARTIAL` 候选，不能自动复用。实现团队改变 `evaluationRef` 不改变业务契约指纹；改变业务定义必须产生新指纹并使旧证据失效。
 
+Scenario、Instruction 和 Solution 的 journey 新写入也必须包含服务端模板规定的结构化 `businessDefinition`。Scenario 固定决策事实、命中策略、可达处置和兜底策略；Instruction 固定所需事实、结果范围、解释要求、效应和失败策略；Solution 固定问题分类、事实集合、根决策和可达处置。Codex 根据业务对话生成这些字段，业务人员只核对事实、规则、处置和目标。缺少完整 profile 时，服务端分别返回 `SCENARIO_BUSINESS_DEFINITION_REQUIRED`、`INSTRUCTION_BUSINESS_DEFINITION_REQUIRED` 或 `SOLUTION_BUSINESS_DEFINITION_REQUIRED`，并拒绝推进 journey。旧版非 journey 客户端仍可读取兼容投影，但兼容投影不能作为跨 journey 的 EXACT 能力复用依据。
+
 `rg.capability.search` 只有在 semantic key 和各业务维度逐字段一致、语义 key 已进入 `ACTIVE`、实体处于 READY/PUBLISHED 时才返回 `reuseAllowed=true`。缺字段返回 `PARTIAL`，业务对象、结果范围、判断时点、UNKNOWN 策略、取值责任或权威来源冲突返回 `CONFLICT`；多个 EXACT 返回 `AMBIGUOUS`，Codex 必须停下询问一个业务问题，不能选择第一个候选。
 
 特征工程履约后，Codex 必须重新读取 Feature 契约。业务含义、所需上下文、结果范围、取值责任发生变化时，不得沿用履约前的确认。`VERIFIED` 只表示实现可调用且结果符合 Feature 输出契约；它不代替业务 Oracle。事实口径和整条政策的正确性仍由后续 ACTIVE GOLDEN、场景测试和 Solution baseline 证明。

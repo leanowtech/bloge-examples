@@ -22,6 +22,7 @@ import java.util.Map;
  * @param bindingRef executable implementation binding; blank is allowed only as a design state
  * @param writeGovernance downstream reconciliation contract for writes
  * @param businessSemantics human-readable disposition shown on review surfaces
+ * @param businessDefinition structured, implementation-independent disposition identity
  */
 public record InstructionContract(
         String instructionRef,
@@ -30,7 +31,8 @@ public record InstructionContract(
         Effect effect,
         String bindingRef,
         WriteGovernance writeGovernance,
-        String businessSemantics
+        String businessSemantics,
+        BusinessInstructionSemanticContract businessDefinition
 ) {
     /** Effect boundary used by simulation and governed runtime dispatch. */
     public enum Effect { READ, WRITE }
@@ -80,12 +82,23 @@ public record InstructionContract(
         if (effect == Effect.READ && writeGovernance != null) {
             throw new IllegalArgumentException("READ instruction cannot declare write governance");
         }
+        businessDefinition = businessDefinition == null
+                ? BusinessInstructionSemanticContract.legacy(instructionRef, output, effect)
+                : businessDefinition;
+    }
+
+    /** Preserves contracts authored before structured Instruction business semantics. */
+    public InstructionContract(String instructionRef, JsonNode inputs, JsonNode output, Effect effect,
+                               String bindingRef, WriteGovernance writeGovernance,
+                               String businessSemantics) {
+        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance,
+                businessSemantics, null);
     }
 
     /** Compatibility constructor for stored and authored contracts predating business labels. */
     public InstructionContract(String instructionRef, JsonNode inputs, JsonNode output, Effect effect,
                                String bindingRef, WriteGovernance writeGovernance) {
-        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance, instructionRef);
+        this(instructionRef, inputs, output, effect, bindingRef, writeGovernance, instructionRef, null);
     }
 
     @Override
@@ -121,6 +134,7 @@ public record InstructionContract(
         identity.put("output", output);
         identity.put("effect", effect.name());
         identity.put("businessSemantics", businessSemantics);
+        identity.put("businessDefinition", businessDefinition);
         if (writeGovernance != null) identity.put("writeGovernance", writeGovernance);
         return Map.copyOf(identity);
     }

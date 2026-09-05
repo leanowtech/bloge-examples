@@ -20,13 +20,15 @@ import java.util.Set;
  * @param hitPolicy decision-table hit policy; currently only {@code UNIQUE}
  * @param rules ordered explicit rules
  * @param otherwise mandatory fallback outlet
+ * @param businessDefinition structured, implementation-independent decision identity
  */
 public record ScenarioContract(
         String scenarioRef,
         List<String> inputs,
         HitPolicy hitPolicy,
         List<Rule> rules,
-        Outlet otherwise
+        Outlet otherwise,
+        BusinessScenarioSemanticContract businessDefinition
 ) {
     /** Supported deterministic decision-table hit policy. */
     public enum HitPolicy { UNIQUE }
@@ -89,6 +91,14 @@ public record ScenarioContract(
                 .anyMatch(field -> !declaredInputs.contains(field))) {
             throw new IllegalArgumentException("Scenario predicate references an undeclared input");
         }
+        businessDefinition = businessDefinition == null
+                ? BusinessScenarioSemanticContract.legacy(scenarioRef, inputs) : businessDefinition;
+    }
+
+    /** Preserves contracts authored before structured Scenario business semantics. */
+    public ScenarioContract(String scenarioRef, List<String> inputs, HitPolicy hitPolicy,
+                            List<Rule> rules, Outlet otherwise) {
+        this(scenarioRef, inputs, hitPolicy, rules, otherwise, null);
     }
 
     /** @return nested scenario references in first-use order */
@@ -110,7 +120,8 @@ public record ScenarioContract(
                 "inputs", inputs,
                 "hitPolicy", hitPolicy.name(),
                 "rules", rules,
-                "otherwise", otherwise
+                "otherwise", otherwise,
+                "businessDefinition", businessDefinition
         );
     }
 

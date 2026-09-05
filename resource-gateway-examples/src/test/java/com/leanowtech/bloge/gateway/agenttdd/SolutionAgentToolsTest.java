@@ -28,6 +28,61 @@ class SolutionAgentToolsTest {
     private final SolutionAgentTools tools = new SolutionAgentTools(states, mapper);
 
     @Test
+    void rejectsLegacyScenarioInstructionAndSolutionProfilesInBusinessJourneys() {
+        ObjectNode scenario = mapper.createObjectNode()
+                .put("scenarioYaml", """
+                        scn:legacy:
+                          inputs: [party]
+                          hitPolicy: unique
+                          rules:
+                            - ruleId: R1
+                              when: { party: { eq: passenger } }
+                              outlet: { kind: TERMINAL, terminalKind: ESCALATE }
+                          otherwise: { kind: TERMINAL, terminalKind: ESCALATE }
+                        """)
+                .put("journeyRef", "journey:business")
+                .put("idempotencyKey", "legacy-scenario-journey");
+        scenario.putArray("libraryRefs");
+        ObjectNode instruction = mapper.createObjectNode()
+                .put("instructionYaml", """
+                        ins:legacy:
+                          inputs: { orderId: string }
+                          output:
+                            result: { type: { fields: { disposition: string } } }
+                            reasoning: required
+                          effect: READ
+                          businessSemantics: legacy free text
+                        """)
+                .put("journeyRef", "journey:business")
+                .put("idempotencyKey", "legacy-instruction-journey");
+        ObjectNode solution = mapper.createObjectNode()
+                .put("solutionYaml", """
+                        sol:legacy:
+                          problem: legacy free text
+                          inputs: { party: missing.feature }
+                          scenarioTree: { root: 'scn:missing' }
+                          instructions: ['ins:missing']
+                          golden: 'caseSet:legacy'
+                        """)
+                .put("authoringContextFingerprint", "sha256:context")
+                .put("journeyRef", "journey:business")
+                .put("idempotencyKey", "legacy-solution-journey");
+
+        assertThatThrownBy(() -> tools.defineScenario(scenario, identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("SCENARIO_BUSINESS_DEFINITION_REQUIRED"));
+        assertThatThrownBy(() -> tools.defineInstruction(instruction, identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("INSTRUCTION_BUSINESS_DEFINITION_REQUIRED"));
+        assertThatThrownBy(() -> tools.composeSolution(solution, identity("project-a")))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("SOLUTION_BUSINESS_DEFINITION_REQUIRED"));
+    }
+
+    @Test
     void rejectsNewFeatureWritesThatOnlyCarryLegacyFreeTextSemantics() {
         ObjectNode arguments = mapper.createObjectNode()
                 .put("featureYaml", """

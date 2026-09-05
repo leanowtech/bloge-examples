@@ -19,6 +19,7 @@ import java.util.Set;
  * @param rootScenarioRef root of the bounded decision tree
  * @param instructions instructions that the tree may dispatch
  * @param goldenRef approved-case-set reference used for validation
+ * @param businessDefinition structured, implementation-independent solution identity
  */
 public record SolutionContract(
         String solutionRef,
@@ -26,7 +27,8 @@ public record SolutionContract(
         Map<String, String> inputs,
         String rootScenarioRef,
         List<String> instructions,
-        String goldenRef
+        String goldenRef,
+        BusinessSolutionSemanticContract businessDefinition
 ) {
     /** Normalizes references and rejects duplicate or incomplete pure-function declarations. */
     public SolutionContract {
@@ -48,6 +50,15 @@ public record SolutionContract(
         if (distinct.size() != instructions.size()) {
             throw new IllegalArgumentException("Solution instruction references must be unique");
         }
+        businessDefinition = businessDefinition == null
+                ? BusinessSolutionSemanticContract.legacy(solutionRef, inputs.keySet().stream().toList())
+                : businessDefinition;
+    }
+
+    /** Preserves contracts authored before structured Solution business semantics. */
+    public SolutionContract(String solutionRef, String problem, Map<String, String> inputs,
+                            String rootScenarioRef, List<String> instructions, String goldenRef) {
+        this(solutionRef, problem, inputs, rootScenarioRef, instructions, goldenRef, null);
     }
 
     /** @return canonical implementation-independent identity for GOLDEN drift detection */
@@ -58,7 +69,8 @@ public record SolutionContract(
                 "inputs", inputs,
                 "rootScenarioRef", rootScenarioRef,
                 "instructions", instructions,
-                "goldenRef", goldenRef);
+                "goldenRef", goldenRef,
+                "businessDefinition", businessDefinition);
     }
 
     private static Map<String, String> normalizeMap(Map<String, String> values) {

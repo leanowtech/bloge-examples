@@ -613,6 +613,7 @@ class AgentTddMcpOperationalWorkflowTest {
                               when: { party: { eq: passenger } }
                               outlet: { kind: INSTRUCTION, ref: '%s', bind: { party: party } }
                           otherwise: { kind: TERMINAL, terminalKind: ESCALATE }
+                          businessDefinition: { semanticKey: ride.cancel.decision.business, intent: 判定取消费争议处置, domain: ride-cancellation, businessObject: ride-order, inputFactKeys: [ride.cancel.party.business], decisionPolicy: UNIQUE, outletSemanticKeys: [ride.cancel.uphold.business, ride.cancel.manual-review.business], otherwisePolicy: ESCALATE }
                         """.formatted(scenarioRef, instructionRef),
                 "libraryRefs", List.of(),
                 "idempotencyKey", "scenario-business-cancel-ops"), "AGENT_TDD_AUTHORING");
@@ -627,6 +628,7 @@ class AgentTddMcpOperationalWorkflowTest {
                             reasoning: required
                           effect: READ
                           businessSemantics: 维持取消费
+                          businessDefinition: { semanticKey: ride.cancel.uphold.business, intent: 维持乘客取消费并解释原因, domain: ride-cancellation, businessObject: ride-order, requiredFactKeys: [ride.cancel.party.business], resultDomain: { type: object, decision: { enum: [UPHELD] } }, reasoningPolicy: REQUIRED, effect: READ, failurePolicy: ESCALATE, writeGovernanceClass: NONE }
                         """.formatted(instructionRef),
                 "idempotencyKey", "instruction-business-cancel-ops"), "AGENT_TDD_AUTHORING");
         JsonNode composing = invokeBusiness("rg.journey.next", Map.of(
@@ -645,6 +647,7 @@ class AgentTddMcpOperationalWorkflowTest {
                           scenarioTree: { root: '%s' }
                           instructions: ['%s']
                           golden: 'caseSet:business-cancel-ops'
+                          businessDefinition: { semanticKey: ride.cancel.solution.business, intent: 处理乘客超时取消费争议, domain: ride-cancellation, businessObject: ride-order, problemClass: CANCELLATION_FEE_DISPUTE, requiredFactKeys: [ride.cancel.party.business], scenarioSemanticKey: ride.cancel.decision.business, dispositionSemanticKeys: [ride.cancel.uphold.business, ride.cancel.manual-review.business], runtimeUse: GOVERNED_DECISION }
                         """.formatted(solutionRef, scenarioRef, instructionRef),
                 "idempotencyKey", "compose-business-cancel-ops"), "AGENT_TDD_AUTHORING");
         JsonNode proposed = invokeBusiness("rg.solution.golden.propose", Map.of(

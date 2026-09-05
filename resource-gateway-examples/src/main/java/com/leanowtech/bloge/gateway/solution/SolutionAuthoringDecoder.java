@@ -28,15 +28,16 @@ public final class SolutionAuthoringDecoder {
             "output", "evaluationKind", "determinism", "inputs", "evaluationRef",
             "componentRef", "promptRef", "businessSemantics", "businessDefinition");
     private static final Set<String> SCENARIO_FIELDS = Set.of(
-            "inputs", "hitPolicy", "rules", "otherwise");
+            "inputs", "hitPolicy", "rules", "otherwise", "businessDefinition");
     private static final Set<String> RULE_FIELDS = Set.of("ruleId", "when", "outlet");
     private static final Set<String> OUTLET_FIELDS = Set.of("kind", "ref", "bind", "terminalKind");
     private static final Set<String> INSTRUCTION_FIELDS = Set.of(
-            "inputs", "output", "effect", "bindingRef", "writeGovernance", "businessSemantics");
+            "inputs", "output", "effect", "bindingRef", "writeGovernance", "businessSemantics",
+            "businessDefinition");
     private static final Set<String> WRITE_GOVERNANCE_FIELDS = Set.of(
             "downstreamSystem", "reconciliationKey", "reconciliationAdapterRef");
     private static final Set<String> SOLUTION_FIELDS = Set.of(
-            "problem", "inputs", "scenarioTree", "instructions", "golden");
+            "problem", "inputs", "scenarioTree", "instructions", "golden", "businessDefinition");
     private static final Set<String> SCENARIO_TREE_FIELDS = Set.of("root");
     private static final Set<String> DOCUMENT_FIELDS = Set.of(
             "schemaVersion", "features", "scenarios", "instructions", "solutions");
@@ -195,7 +196,10 @@ public final class SolutionAuthoringDecoder {
                     entry.getKey(), stringList(required(body, "inputs")),
                     ScenarioContract.enumValue(ScenarioContract.HitPolicy.class,
                             requiredText(body, "hitPolicy")),
-                    rules, outlet(required(body, "otherwise")));
+                    rules, outlet(required(body, "otherwise")),
+                    body.has("businessDefinition")
+                            ? mapper.treeToValue(body.path("businessDefinition"),
+                                    BusinessScenarioSemanticContract.class) : null);
             return DecodeResult.decoded(contract);
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("SCENARIO_CONTRACT_INVALID");
@@ -233,7 +237,10 @@ public final class SolutionAuthoringDecoder {
                             requiredText(body, "effect")),
                     text(body, "bindingRef"), governance,
                     body.has("businessSemantics")
-                            ? requiredText(body, "businessSemantics") : entry.getKey());
+                            ? requiredText(body, "businessSemantics") : entry.getKey(),
+                    body.has("businessDefinition")
+                            ? mapper.treeToValue(body.path("businessDefinition"),
+                                    BusinessInstructionSemanticContract.class) : null);
             return DecodeResult.decoded(contract);
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("INSTRUCTION_CONTRACT_INVALID");
@@ -262,7 +269,10 @@ public final class SolutionAuthoringDecoder {
                     stringMap(required(body, "inputs")),
                     requiredText(scenarioTree, "root"),
                     stringList(required(body, "instructions")),
-                    requiredText(body, "golden"));
+                    requiredText(body, "golden"),
+                    body.has("businessDefinition")
+                            ? mapper.treeToValue(body.path("businessDefinition"),
+                                    BusinessSolutionSemanticContract.class) : null);
             return DecodeResult.decoded(contract);
         } catch (RuntimeException | java.io.IOException failure) {
             return DecodeResult.failed("SOLUTION_CONTRACT_INVALID");

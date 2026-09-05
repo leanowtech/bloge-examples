@@ -900,6 +900,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "FEATURE_OUTPUT_INVALID" -> "Feature evaluation output does not match the contract.";
             case "FEATURE_BUSINESS_DEFINITION_REQUIRED" ->
                     "Complete the Feature business definition before saving it.";
+            case "SCENARIO_BUSINESS_DEFINITION_REQUIRED" ->
+                    "Complete the Scenario business definition before saving it.";
+            case "INSTRUCTION_BUSINESS_DEFINITION_REQUIRED" ->
+                    "Complete the Instruction business definition before saving it.";
+            case "SOLUTION_BUSINESS_DEFINITION_REQUIRED" ->
+                    "Complete the Solution business definition before saving it.";
             case "CAPABILITY_CONTEXT_STALE" -> "Search the current business capability snapshot again.";
             case "CAPABILITY_INDEX_UNSTABLE" -> "Retry after the business capability catalog stabilizes.";
             case "CAPABILITY_NOT_FOUND" -> "The requested business capability was not found.";

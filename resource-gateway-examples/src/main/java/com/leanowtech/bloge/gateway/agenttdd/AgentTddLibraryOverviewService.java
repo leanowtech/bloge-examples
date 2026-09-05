@@ -150,6 +150,15 @@ public final class AgentTddLibraryOverviewService {
                               when: { fact: { eq: VALUE_A } }
                               outlet: { kind: INSTRUCTION, ref: 'ins:action-a', bind: { fact: fact } }
                           otherwise: { kind: INSTRUCTION, ref: 'ins:manual-review', bind: { fact: fact } }
+                          businessDefinition:
+                            semanticKey: example.decision
+                            intent: Decide the business outcome from the governed facts.
+                            domain: example-domain
+                            businessObject: example-object
+                            inputFactKeys: [example.fact]
+                            decisionPolicy: UNIQUE
+                            outletSemanticKeys: [example.action-a, example.manual-review]
+                            otherwisePolicy: EXPLICIT_FALLBACK
                         """,
                 "instructionYaml", """
                         ins:action-a:
@@ -159,6 +168,17 @@ public final class AgentTddLibraryOverviewService {
                             reasoning: required
                           effect: READ
                           businessSemantics: State the business disposition performed by this action.
+                          businessDefinition:
+                            semanticKey: example.action-a
+                            intent: Apply the selected business disposition.
+                            domain: example-domain
+                            businessObject: example-object
+                            requiredFactKeys: [example.fact]
+                            resultDomain: { type: object, disposition: string }
+                            reasoningPolicy: REQUIRED
+                            effect: READ
+                            failurePolicy: ESCALATE
+                            writeGovernanceClass: NONE
                         """,
                 "solutionYaml", """
                         sol:example:
@@ -167,6 +187,16 @@ public final class AgentTddLibraryOverviewService {
                           scenarioTree: { root: 'scn:example' }
                           instructions: ['ins:action-a', 'ins:manual-review']
                           golden: 'caseSet:example'
+                          businessDefinition:
+                            semanticKey: example.solution
+                            intent: Resolve the example business problem.
+                            domain: example-domain
+                            businessObject: example-object
+                            problemClass: DECISION_AND_DISPOSITION
+                            requiredFactKeys: [example.fact]
+                            scenarioSemanticKey: example.decision
+                            dispositionSemanticKeys: [example.action-a, example.manual-review]
+                            runtimeUse: GOVERNED_DECISION
                         """);
     }
 

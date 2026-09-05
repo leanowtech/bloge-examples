@@ -276,7 +276,8 @@ public final class SolutionAgentTools {
         String fingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, arguments, MAX_BYTES);
         JsonNode response = states.executeOnce(
                 AgentTddMutationService.scopeKey(identity), "rg.scenario.define", idempotencyKey, fingerprint,
-                () -> mapper.valueToTree(defineScenario(source, identity)));
+                () -> mapper.valueToTree(defineScenario(
+                        source, identity, arguments.path("journeyRef").isTextual())));
         return mapper.convertValue(response, OBJECT_MAP);
     }
 
@@ -295,7 +296,8 @@ public final class SolutionAgentTools {
         JsonNode response = states.executeOnce(
                 AgentTddMutationService.scopeKey(identity), "rg.instruction.define",
                 idempotencyKey, fingerprint,
-                () -> mapper.valueToTree(defineInstruction(source, identity)));
+                () -> mapper.valueToTree(defineInstruction(
+                        source, identity, arguments.path("journeyRef").isTextual())));
         return mapper.convertValue(response, OBJECT_MAP);
     }
 
@@ -319,12 +321,14 @@ public final class SolutionAgentTools {
         JsonNode response = states.executeOnce(
                 AgentTddMutationService.scopeKey(identity), "rg.solution.compose",
                 idempotencyKey, fingerprint,
-                () -> mapper.valueToTree(composeSolution(source, contextFingerprint, identity)));
+                () -> mapper.valueToTree(composeSolution(source, contextFingerprint, identity,
+                        arguments.path("journeyRef").isTextual())));
         return mapper.convertValue(response, OBJECT_MAP);
     }
 
     private Map<String, Object> composeSolution(
-            String source, String contextFingerprint, IntegrationRequestContext identity) {
+            String source, String contextFingerprint, IntegrationRequestContext identity,
+            boolean requireBusinessDefinition) {
         SolutionAuthoringDecoder.DecodeResult<SolutionContract> decoded =
                 decoder.decodeSolution(source.getBytes(StandardCharsets.UTF_8));
         if (!decoded.successful()) {
@@ -333,6 +337,10 @@ public final class SolutionAgentTools {
         }
         String scopeKey = AgentTddMutationService.scopeKey(identity);
         SolutionContract contract = decoded.value();
+        if (requireBusinessDefinition && contract.businessDefinition().incompleteLegacyProjection()) {
+            throw new AgentTddToolException("SOLUTION_BUSINESS_DEFINITION_REQUIRED",
+                    "A complete structured Solution business definition is required.");
+        }
         LinkedHashMap<String, Object> inputs = new LinkedHashMap<>();
         boolean speccing = false;
         ScenarioTreeValidator.ValidationResult tree;
@@ -391,7 +399,8 @@ public final class SolutionAgentTools {
         return Map.copyOf(result);
     }
 
-    private Map<String, Object> defineInstruction(String source, IntegrationRequestContext identity) {
+    private Map<String, Object> defineInstruction(
+            String source, IntegrationRequestContext identity, boolean requireBusinessDefinition) {
         SolutionAuthoringDecoder.DecodeResult<InstructionContract> decoded =
                 decoder.decodeInstruction(source.getBytes(StandardCharsets.UTF_8));
         if (!decoded.successful()) {
@@ -399,6 +408,10 @@ public final class SolutionAgentTools {
                     Map.of("diagnosticCode", decoded.diagnosticCode()));
         }
         InstructionContract contract = decoded.value();
+        if (requireBusinessDefinition && contract.businessDefinition().incompleteLegacyProjection()) {
+            throw new AgentTddToolException("INSTRUCTION_BUSINESS_DEFINITION_REQUIRED",
+                    "A complete structured Instruction business definition is required.");
+        }
         SolutionEntityRegistry.RegisteredEntity stored = registry.upsertInstruction(
                 AgentTddMutationService.scopeKey(identity), contract);
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
@@ -416,7 +429,8 @@ public final class SolutionAgentTools {
         return Map.copyOf(result);
     }
 
-    private Map<String, Object> defineScenario(String source, IntegrationRequestContext identity) {
+    private Map<String, Object> defineScenario(
+            String source, IntegrationRequestContext identity, boolean requireBusinessDefinition) {
         SolutionAuthoringDecoder.DecodeResult<ScenarioContract> decoded =
                 decoder.decodeScenario(source.getBytes(StandardCharsets.UTF_8));
         if (!decoded.successful()) {
@@ -424,6 +438,10 @@ public final class SolutionAgentTools {
                     Map.of("diagnosticCode", decoded.diagnosticCode()));
         }
         ScenarioContract contract = decoded.value();
+        if (requireBusinessDefinition && contract.businessDefinition().incompleteLegacyProjection()) {
+            throw new AgentTddToolException("SCENARIO_BUSINESS_DEFINITION_REQUIRED",
+                    "A complete structured Scenario business definition is required.");
+        }
         SolutionEntityRegistry.RegisteredEntity stored = registry.upsertScenario(
                 AgentTddMutationService.scopeKey(identity), contract);
         Map<String, Object> ruleMatrix = Map.of(

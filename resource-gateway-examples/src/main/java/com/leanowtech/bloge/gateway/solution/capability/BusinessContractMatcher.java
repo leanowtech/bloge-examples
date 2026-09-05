@@ -16,33 +16,50 @@ import java.util.Set;
  */
 @Component
 public final class BusinessContractMatcher {
-    private static final List<String> REQUIRED = List.of(
-            "semanticKey", "domain", "businessObject", "requiredContext", "resultDomain",
-            "asOf", "unknownPolicy", "acquisitionOwner", "effect");
-    private static final List<String> CLOSED = List.of(
-            "semanticKey", "domain", "businessObject", "resultDomain", "asOf",
-            "unknownPolicy", "acquisitionOwner", "authoritySource", "freshness", "effect");
+    private static final List<String> COMMON = List.of(
+            "semanticKey", "intent", "domain", "businessObject");
+    private static final List<String> FACT = List.of(
+            "requiredContext", "resultDomain", "asOf", "unknownPolicy", "acquisitionOwner",
+            "authoritySource", "freshness", "effect");
+    private static final List<String> SCENARIO = List.of(
+            "inputFactKeys", "decisionPolicy", "outletSemanticKeys", "otherwisePolicy");
+    private static final List<String> INSTRUCTION = List.of(
+            "requiredFactKeys", "resultDomain", "reasoningPolicy", "effect", "failurePolicy",
+            "writeGovernanceClass");
+    private static final List<String> SOLUTION = List.of(
+            "problemClass", "requiredFactKeys", "scenarioSemanticKey",
+            "dispositionSemanticKeys", "runtimeUse");
 
     /** Compares a normalized search query with one candidate semantic definition. */
     public Match match(JsonNode query, JsonNode candidate) {
         JsonNode definition = candidate.path("businessDefinition").isObject()
                 ? candidate.path("businessDefinition") : candidate;
+        List<String> profileFields = profileFields(definition);
+        List<String> requiredFields = java.util.stream.Stream.concat(
+                COMMON.stream(), profileFields.stream()).distinct().toList();
         List<String> missing = new ArrayList<>();
         List<String> conflicts = new ArrayList<>();
         List<String> matched = new ArrayList<>();
-        for (String field : REQUIRED) {
+        for (String field : requiredFields) {
             JsonNode queryValue = queryValue(query, field);
+            if ("authoritySource".equals(field)
+                    && !"PLATFORM".equalsIgnoreCase(queryValue(query, "acquisitionOwner").asText())) {
+                continue;
+            }
             if (missingRequiredFacet(field, queryValue)) missing.add(field);
         }
-        for (String field : CLOSED) {
+        for (String field : requiredFields) {
+            if ("requiredContext".equals(field)) continue;
             JsonNode queryValue = queryValue(query, field);
             JsonNode candidateValue = definition.path(field);
             if (empty(queryValue) || empty(candidateValue)) continue;
             if (equivalent(queryValue, candidateValue)) matched.add(field);
             else conflicts.add(field);
         }
-        compareRequiredContext(queryValue(query, "requiredContext"), definition.path("requiredContext"),
-                matched, missing, conflicts);
+        if (profileFields.contains("requiredContext")) {
+            compareRequiredContext(queryValue(query, "requiredContext"), definition.path("requiredContext"),
+                    matched, missing, conflicts);
+        }
         MatchType type = !conflicts.isEmpty() ? MatchType.CONFLICT
                 : missing.isEmpty() ? MatchType.EXACT : MatchType.PARTIAL;
         return new Match(type, List.copyOf(new LinkedHashSet<>(matched)),
@@ -52,6 +69,15 @@ public final class BusinessContractMatcher {
     private static JsonNode queryValue(JsonNode query, String field) {
         if ("resultDomain".equals(field) && !query.has(field)) return query.path("expectedResult");
         return query.path(field);
+    }
+
+    /** Selects the closed semantic dimensions owned by the candidate profile schema. */
+    private static List<String> profileFields(JsonNode definition) {
+        String schema = definition.path("schemaVersion").asText();
+        if (schema.contains("Scenario")) return SCENARIO;
+        if (schema.contains("Instruction")) return INSTRUCTION;
+        if (schema.contains("Solution")) return SOLUTION;
+        return FACT;
     }
 
     private static void compareRequiredContext(JsonNode query, JsonNode candidate,
