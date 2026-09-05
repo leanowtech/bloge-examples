@@ -71,7 +71,7 @@ class AuthoringDocumentationExampleTest {
         int confirmFeatures = script.indexOf("### 第四轮：确认三项事实并形成契约");
         int discoverFacts = script.indexOf("建立“责任方”“是否在免费取消时段”“当前选择的争议订单”三项事实契约");
         int defineRules = script.indexOf("建立含四条规则和兜底分支的场景");
-        int approveGolden = script.indexOf("提议四条 GOLDEN 标准案例");
+        int approveGolden = script.indexOf("提议四条完整 GOLDEN 标准案例");
 
         assertThat(inventory).isNotNegative();
         assertThat(defineResponsibility).isGreaterThan(inventory);
