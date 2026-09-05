@@ -154,6 +154,38 @@ class McpProtocolControllerTest {
     }
 
     @Test
+    void toolsListPublishesTheClosedTwoPassRecallContractToBusinessCodex() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_READ)))
+                .thenReturn(identity("AGENT_TDD_READ"));
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of());
+        HttpHeaders headers = modernHeaders("tools/list", null);
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode tools = controller.exchange(request(811, "tools/list", Map.of()), headers)
+                .getBody().at("/result/tools");
+        JsonNode search = null;
+        for (JsonNode tool : tools) {
+            if (McpToolCatalog.CAPABILITY_SEARCH.equals(tool.path("name").asText())) search = tool;
+        }
+
+        assertThat(search).isNotNull();
+        assertThat(search.path("description").asText())
+                .contains("two-pass business recall", McpToolCatalog.ENTITY_GET,
+                        "unique EXACT", "one plain-language question");
+        assertThat(search.at("/inputSchema/properties/query/additionalProperties").asBoolean()).isFalse();
+        assertThat(search.at("/inputSchema/properties/query/required").toString()).contains("intent");
+        assertThat(search.at("/inputSchema/properties/query/properties").fieldNames()).toIterable()
+                .contains("schemaVersion", "semanticKey", "intent", "domain", "businessObject",
+                        "requiredContext", "resultDomain", "inputFactKeys", "requiredFactKeys",
+                        "scenarioSemanticKey", "runtimeUse");
+        assertThat(search.at("/inputSchema/properties/assetKinds/items/enum").toString())
+                .contains("FEATURE", "SCENARIO", "INSTRUCTION", "SOLUTION");
+    }
+
+    @Test
     void businessSurfaceRejectsAHiddenToolBeforeInvocation() {
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))

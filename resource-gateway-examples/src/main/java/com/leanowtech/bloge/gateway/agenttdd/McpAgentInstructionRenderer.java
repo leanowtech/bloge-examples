@@ -33,7 +33,8 @@ public final class McpAgentInstructionRenderer {
                 + "representative expected examples. Never ask the business user for YAML, DSL, schemas, "
                 + "bindings, operator references, or implementation details. Translate the agreed intent "
                 + "yourself into Feature, Scenario, Instruction, Solution, and GOLDEN proposals. Use "
-                + overview + " to reuse governed business building blocks. Define a missing Feature as "
+                + overview + " to reuse governed business building blocks. " + recallInstructions()
+                + "Define a missing Feature as "
                 + "design-only, then call " + featureHandoff + "; never fulfil that handoff or invent an "
                 + "evaluator. Every Instruction must include plain businessSemantics. A WRITE Instruction "
                 + "without an approved implementation remains design-only: compose the Solution, call "
@@ -83,8 +84,8 @@ public final class McpAgentInstructionRenderer {
                 + "details. Start each change with " + name(McpToolCatalog.JOURNEY_START)
                 + " and follow only the allowedNextTools returned by " + name(McpToolCatalog.JOURNEY_NEXT)
                 + ". Use " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and "
-                + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse only governed "
-                + "business capabilities whose meaning is current. Carry the returned "
+                + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse governed business capabilities. "
+                + recallInstructions() + "Carry the returned "
                 + "authoringPatternsFingerprint unchanged in every journey-scoped Feature, Scenario, "
                 + "Instruction, and Solution authoring call; refetch the overview when it is rejected as stale. "
                 + "Define a missing Feature as design-only, "
@@ -97,6 +98,29 @@ public final class McpAgentInstructionRenderer {
                 + "approval, GREEN, attestation, or signoff "
                 + "evidence. Call " + name(McpToolCatalog.READINESS)
                 + " before publish and publish only when publishable=true.";
+    }
+
+    /**
+     * Builds the mandatory business recall sequence from canonical catalog names.
+     *
+     * <p>Business users never see protocol fields. Codex infers the entity family, reads candidate
+     * contracts and constructs the complete second-pass query itself.</p>
+     */
+    private String recallInstructions() {
+        String search = name(McpToolCatalog.CAPABILITY_SEARCH);
+        String get = name(McpToolCatalog.ENTITY_GET);
+        return "For every reuse decision, perform two-pass recall. First infer one business entity family "
+                + "from the user's intent: FEATURE for a fact, SCENARIO for a decision, INSTRUCTION for an "
+                + "outcome or action, or SOLUTION for an end-to-end workflow. When that family is known, call "
+                + search + " with the user's words and that one assetKinds value. Treat its rank as discovery, "
+                + "not proof. Read each relevant candidate with " + get
+                + ", compare its business meaning with the user's stated intent, and call " + search
+                + " again using the candidate's complete business definition. Reuse only when this second "
+                + "call returns one unique EXACT candidate with reuseAllowed=true. If candidates differ on "
+                + "a business dimension the user has not settled, or if multiple EXACT candidates remain, "
+                + "ask exactly one plain-language business question and stop. Construct schemaVersion, "
+                + "semanticKey, assetKinds, and all other protocol fields yourself; never ask the business "
+                + "user to provide or understand them. ";
     }
 
     private String platformInstructions() {

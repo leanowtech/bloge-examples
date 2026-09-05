@@ -524,6 +524,24 @@ return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
 
 输入中的 `intent` 是业务摘要，不是授权依据。服务器不得仅凭该字段返回 EXACT。
 
+`query` 使用封闭 Schema。共同字段和四类 profile 的比较维度均在
+`tools/list` 中显式声明，未知字段被协议层拒绝。首次发现只要求 `intent`；
+`assetKinds` 只接受 `FEATURE`、`SCENARIO`、`INSTRUCTION`、`SOLUTION`，调用方已知实体类型时
+应缩小为一种。`resultDomain` 与 `freshness` 的内部形状由候选业务契约定义，第二次查询必须
+从 `rg.entity.get` 返回的业务定义原样取得，不由业务人员填写。
+
+能力复用采用两阶段召回：
+
+1. Codex 根据业务话语判断是在找事实、决策、处置还是完整解法，用 `intent` 和对应
+   `assetKinds` 搜索。此时排序只用于发现候选，Top-1 不构成复用证明。
+2. Codex 对相关候选调用 `rg.entity.get`，读取完整业务定义。候选在业务对象、结果范围、
+   判断时点、无法判断策略、取值责任等维度存在未决差异时，只问业务负责人一个问题。
+3. 业务含义确定后，Codex 把候选完整业务定义作为 `query` 再次搜索。只有结果包含唯一
+   `EXACT` 且 `reuseAllowed=true` 时才能复用。多个 EXACT、缺少维度或冲突均停止创建和复用。
+
+Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协议字段。业务负责人只
+确认业务含义，不接触这些字段。
+
 ### 7.3 `rg.entity.list`
 
 | 属性 | 定义 |
@@ -880,6 +898,11 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 
 输出初始化 instructions。工具名只能从 `McpToolDefinition.name()` 注入，禁止在字符串中手写 `rg.*` 名称。
 
+业务 surface 的 instructions 必须包含两阶段召回顺序：按业务实体类型搜索、读取候选业务契约、
+用完整定义复搜。说明必须声明 Top-1 只是候选排序，不能代替 EXACT；唯一 EXACT 且
+`reuseAllowed=true` 才能复用；多个 EXACT 或业务维度未确定时只问一个业务问题。工具名从目录
+定义注入，不能复制为另一份常量。说明不得要求业务负责人提供查询 Schema 或协议字段。
+
 ### 10.2 工具描述模板
 
 每个业务工具描述必须回答：
@@ -1022,6 +1045,7 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | 范围 | 必测内容 |
 |---|---|
 | 目录一致性 | instructions、config、runbook、认证脚本中的工具名全部存在 |
+| 召回工具契约 | `tools/list` 返回封闭语义 query、四实体 `assetKinds` 枚举和两阶段说明；未知字段被拒绝 |
 | surface | list/call 双重过滤；surface 不能扩大 purpose 权限 |
 | CapabilityIndex | 五类来源统一投影、scope 隔离、稳定排序、快照一致 |
 | matcher | EXACT、PARTIAL、CONFLICT、多个 EXACT、NONE；每个字段的正反例 |
@@ -1038,22 +1062,24 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 ### 14.2 集成测试
 
 1. 同一 scope 中同时存在四实体、库算子、资源算子和发布物，搜索返回统一结果。
-2. 不同 project 中使用相同 assetRef，不得跨 scope 发现。
-3. search 后能力 revision 改变，旧 snapshot 不能继续 compose/evaluate。
-4. `BUSINESS_SOLUTION` 无法列出或直接调用 `rg.tool.compose`。
-5. `PLATFORM_AUTHORING` 可以使用 DSL 工具，但不能调用内部工程或平台证明能力。
-6. Feature 工程完成后，journey 重新读取当前契约；业务语义漂移则退回确认阶段。
-7. GOLDEN、GREEN、signoff 任一失效，journey 从 PUBLISHABLE 回退到正确阶段。
-8. 四实体写入与 journey association 原子提交；任一失败不留下虚假阶段进度。
-9. 业务 Solution compose 全程不调用或暴露 DSL reference，仍使用冻结 `solutionContextFingerprint`。
-10. GOLDEN 提议中的一个业务名称匹配多个能力时，整批案例不保存，并返回一个澄清问题。
-11. 修改 `givenFacts`、依赖假设、预期结果或所引用业务契约后，旧批准和旧证据全部失效；只修改 Solution 实现时保留业务批准，但旧证据失效。
-12. Feature 值由案例钉定后，不调用真实 `FeatureEvaluationBackend`。
-13. READ 和 WRITE Instruction 都不能进入真实 `InstructionDispatchChannel`；未定义依赖假设时失败关闭。
-14. 受控测试进程尝试外呼时返回 `CONTROLLED_TEST_EGRESS_DENIED`，不保存 GREEN 证据。
-15. 其他 journey 的搜索和能力列表不返回 `BusinessGoldenCase` 或 `ControlledAssumptionPlan`。
-16. material 写入、case-set 保存或 journey CAS 任一步失败时，数据库中不留下孤立 material 或虚假案例元数据。
-17. 旧 expect-level 批准不能自动转换为完整案例批准；重新发布前必须形成新的 `goldenCaseFingerprint`。
+2. 真实 `tools/list` 中的 `rg.capability.search` 明确表达“意图初搜—候选契约读取—完整定义复搜”；
+   初搜只带业务意图可通过 Schema，完整四类 profile 可复搜，未知 query 字段失败关闭。
+3. 不同 project 中使用相同 assetRef，不得跨 scope 发现。
+4. search 后能力 revision 改变，旧 snapshot 不能继续 compose/evaluate。
+5. `BUSINESS_SOLUTION` 无法列出或直接调用 `rg.tool.compose`。
+6. `PLATFORM_AUTHORING` 可以使用 DSL 工具，但不能调用内部工程或平台证明能力。
+7. Feature 工程完成后，journey 重新读取当前契约；业务语义漂移则退回确认阶段。
+8. GOLDEN、GREEN、signoff 任一失效，journey 从 PUBLISHABLE 回退到正确阶段。
+9. 四实体写入与 journey association 原子提交；任一失败不留下虚假阶段进度。
+10. 业务 Solution compose 全程不调用或暴露 DSL reference，仍使用冻结 `solutionContextFingerprint`。
+11. GOLDEN 提议中的一个业务名称匹配多个能力时，整批案例不保存，并返回一个澄清问题。
+12. 修改 `givenFacts`、依赖假设、预期结果或所引用业务契约后，旧批准和旧证据全部失效；只修改 Solution 实现时保留业务批准，但旧证据失效。
+13. Feature 值由案例钉定后，不调用真实 `FeatureEvaluationBackend`。
+14. READ 和 WRITE Instruction 都不能进入真实 `InstructionDispatchChannel`；未定义依赖假设时失败关闭。
+15. 受控测试进程尝试外呼时返回 `CONTROLLED_TEST_EGRESS_DENIED`，不保存 GREEN 证据。
+16. 其他 journey 的搜索和能力列表不返回 `BusinessGoldenCase` 或 `ControlledAssumptionPlan`。
+17. material 写入、case-set 保存或 journey CAS 任一步失败时，数据库中不留下孤立 material 或虚假案例元数据。
+18. 旧 expect-level 批准不能自动转换为完整案例批准；重新发布前必须形成新的 `goldenCaseFingerprint`。
 
 ### 14.3 真实 Codex 业务召回集
 

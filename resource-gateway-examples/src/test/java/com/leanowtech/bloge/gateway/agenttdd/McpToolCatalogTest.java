@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -116,6 +117,64 @@ class McpToolCatalogTest {
     }
 
     @Test
+    void publishesClosedTwoPassBusinessRecallInputInsteadOfAnUnboundedQuery() {
+        McpToolDefinition search = new McpToolCatalog().require(McpToolCatalog.CAPABILITY_SEARCH);
+        Map<?, ?> querySchema = schemaProperty(search.inputSchema(), "query");
+        Map<?, ?> queryProperties = (Map<?, ?>) querySchema.get("properties");
+        Map<?, ?> kinds = schemaProperty(search.inputSchema(), "assetKinds");
+
+        assertThat(search.description())
+                .contains("two-pass business recall", McpToolCatalog.CAPABILITY_SEARCH,
+                        McpToolCatalog.ENTITY_GET, "unique EXACT", "reuseAllowed=true")
+                .contains("Never ask the business user for schemaVersion, semanticKey, assetKinds");
+        assertThat(querySchema.get("additionalProperties")).isEqualTo(false);
+        assertThat(querySchema.get("description").toString())
+                .contains("First pass", "Second pass", McpToolCatalog.ENTITY_GET);
+        assertThat(((List<?>) querySchema.get("required")).stream().map(Object::toString).toList())
+                .containsExactly("intent");
+        assertThat(stringKeys(queryProperties)).containsExactlyInAnyOrder(
+                "schemaVersion", "semanticKey", "intent", "domain", "businessObject",
+                "requiredContext", "resultDomain", "expectedResult", "asOf", "unknownPolicy",
+                "acquisitionOwner", "authoritySource", "freshness", "effect", "inputFactKeys",
+                "decisionPolicy", "outletSemanticKeys", "otherwisePolicy", "requiredFactKeys",
+                "reasoningPolicy", "failurePolicy", "writeGovernanceClass", "problemClass",
+                "scenarioSemanticKey", "dispositionSemanticKeys", "runtimeUse", "lifecycle");
+        assertThat(kinds.get("minItems")).isEqualTo(1);
+        assertThat(kinds.get("maxItems")).isEqualTo(4);
+        assertThat(kinds.get("uniqueItems")).isEqualTo(true);
+        assertThat(((List<?>) ((Map<?, ?>) kinds.get("items")).get("enum"))
+                .stream().map(Object::toString).toList())
+                .containsExactly("FEATURE", "SCENARIO", "INSTRUCTION", "SOLUTION");
+
+        SchemaEnvelope searchInput = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA, "2020-12", search.inputSchema());
+        assertThat(VisualSchemaValidator.validateValue(searchInput, Map.of(
+                "query", Map.of("intent", "判断取消责任"),
+                "assetKinds", List.of("FEATURE")), "/search")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(searchInput, Map.of(
+                "query", Map.ofEntries(
+                        Map.entry("schemaVersion", "rg.businessFactSemanticContract.v1"),
+                        Map.entry("semanticKey", "ride.cancel.party"),
+                        Map.entry("intent", "判断取消责任"),
+                        Map.entry("domain", "ride-cancellation"),
+                        Map.entry("businessObject", "ride-order"),
+                        Map.entry("requiredContext", List.of()),
+                        Map.entry("resultDomain", Map.of("type", "enum",
+                                "values", List.of("PASSENGER", "DRIVER", "UNKNOWN"))),
+                        Map.entry("asOf", "CANCELLATION_OCCURRED_AT"),
+                        Map.entry("unknownPolicy", "REQUIRE_HUMAN_REVIEW"),
+                        Map.entry("acquisitionOwner", "PLATFORM"),
+                        Map.entry("authoritySource", "responsibility-center"),
+                        Map.entry("freshness", Map.of("mode", "AS_OF_EVENT")),
+                        Map.entry("effect", "READ"),
+                        Map.entry("lifecycle", "ACTIVE")),
+                "assetKinds", List.of("FEATURE")), "/search")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(searchInput, Map.of(
+                "query", Map.of("intent", "判断取消责任", "assetRef", "feature:guessed")),
+                "/search")).isNotEmpty();
+    }
+
+    @Test
     void schemasDescribeStrictAuthoringAndEveryExecutionEnvelopeField() {
         McpToolCatalog catalog = new McpToolCatalog();
 
@@ -198,7 +257,8 @@ class McpToolCatalogTest {
         assertThat(names).containsAll(configured);
         assertThat(dispatched).containsAll(names);
         assertThat(scripted).allSatisfy(value -> assertThat(value)
-                .matches("rg\\.agentTddCertificationInstance\\.v1|" +
+                .matches("rg\\.(?:agentTddCertificationInstance|businessRecallFamilyTraceSet|"
+                                + "businessRecallFamilySuite)\\.v1|" +
                         names.stream().map(Pattern::quote).collect(Collectors.joining("|"))));
         assertThat(Files.readString(root.resolve("docs/resource-gateway-agent-tdd-mcp.md")))
                 .contains("\"rg.library.overview.get\"");

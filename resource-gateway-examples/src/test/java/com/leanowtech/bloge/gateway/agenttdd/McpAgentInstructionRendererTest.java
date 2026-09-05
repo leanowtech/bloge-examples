@@ -42,7 +42,10 @@ class McpAgentInstructionRendererTest {
         String operations = renderer.render(McpSurfacePolicy.Surface.OPERATIONS);
 
         assertThat(business).contains("rg.library.overview.get", "rg.feature.handoff",
-                        "authoringPatternsFingerprint")
+                        "authoringPatternsFingerprint", "two-pass recall", "rg.capability.search",
+                        "rg.entity.get", "one unique EXACT", "reuseAllowed=true",
+                        "ask exactly one plain-language business question",
+                        "never ask the business user to provide or understand them")
                 .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
         assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
                 .doesNotContain("rg.feature.handoff", "rg.solution.compose");

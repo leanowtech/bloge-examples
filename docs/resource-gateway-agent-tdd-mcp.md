@@ -150,7 +150,15 @@ tool_timeout_sec = 120
 
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
 
-跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。首次自然语言召回只返回 `PARTIAL` 和业务澄清问题，不会仅凭名称相似声称可直接复用。确认候选前使用 `rg.entity.get` 阅读业务契约；该响应不包含 binding、DSL、URL 或持久化内部字段。
+跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。
+
+能力召回分两次搜索。Codex 先判断当前是在找事实、决策、处置还是完整解法；已知类型时，
+第一次搜索只传业务意图和对应的一种 `assetKinds`。第一次结果只用于发现候选，不能根据 Top-1
+直接复用。Codex 对相关候选调用 `rg.entity.get`，读取候选业务契约；该响应不包含 binding、DSL、
+URL 或持久化内部字段。候选含义与业务话语一致后，Codex 用候选的完整业务定义第二次搜索。
+只有唯一 `EXACT` 且 `reuseAllowed=true` 时才能复用。多个 EXACT、缺少定义维度或候选存在业务
+差异时，Codex 只问一个业务问题并停止本轮写操作。`schemaVersion`、`semanticKey`、
+`assetKinds` 等字段由 Codex 从平台响应生成，业务人员不需要知道或填写。
 
 兼容期内，缺少 `X-RG-Surface` 的旧客户端仍能看到原目录，服务端记录 `rg.mcp.surface.requests{surface="legacy_all"}`。显式传入未知 surface 会返回 JSON-RPC `-32602`；直接调用当前 surface 不可见的工具返回 `-32031 / TOOL_NOT_VISIBLE_IN_SURFACE`。兼容模式不应出现在新的 Codex 配置中。
 
@@ -356,7 +364,12 @@ Feature 创作不是让业务人员一次性填写技术表单。Codex 应先读
 
 Scenario、Instruction 和 Solution 的 journey 新写入也必须包含服务端模板规定的结构化 `businessDefinition`。Scenario 固定决策事实、命中策略、可达处置和兜底策略；Instruction 固定所需事实、结果范围、解释要求、效应和失败策略；Solution 固定问题分类、事实集合、根决策和可达处置。Codex 根据业务对话生成这些字段，业务人员只核对事实、规则、处置和目标。缺少完整 profile 时，服务端分别返回 `SCENARIO_BUSINESS_DEFINITION_REQUIRED`、`INSTRUCTION_BUSINESS_DEFINITION_REQUIRED` 或 `SOLUTION_BUSINESS_DEFINITION_REQUIRED`，并拒绝推进 journey。旧版非 journey 客户端仍可读取兼容投影，但兼容投影不能作为跨 journey 的 EXACT 能力复用依据。
 
-`rg.capability.search` 只有在 semantic key 和各业务维度逐字段一致、语义 key 已进入 `ACTIVE`、实体处于 READY/PUBLISHED 时才返回 `reuseAllowed=true`。缺字段返回 `PARTIAL`，业务对象、结果范围、判断时点、UNKNOWN 策略、取值责任或权威来源冲突返回 `CONFLICT`；多个 EXACT 返回 `AMBIGUOUS`，Codex 必须停下询问一个业务问题，不能选择第一个候选。
+`rg.capability.search` 的 `query` 是封闭 Schema，显式列出四类业务实体的语义维度。首次查询只
+要求业务 `intent`；`assetKinds` 只接受 `FEATURE`、`SCENARIO`、`INSTRUCTION`、`SOLUTION`。
+它只有在 semantic key 和各业务维度逐字段一致、语义 key 已进入 `ACTIVE`、实体处于
+READY/PUBLISHED 时才返回 `reuseAllowed=true`。缺字段返回 `PARTIAL`，业务对象、结果范围、
+判断时点、UNKNOWN 策略、取值责任或权威来源冲突返回 `CONFLICT`；多个 EXACT 返回
+`AMBIGUOUS`，Codex 必须停下询问一个业务问题，不能选择第一个候选。
 
 特征工程履约后，Codex 必须重新读取 Feature 契约。业务含义、所需上下文、结果范围、取值责任发生变化时，不得沿用履约前的确认。`VERIFIED` 只表示实现可调用且结果符合 Feature 输出契约；它不代替业务 Oracle。事实口径和整条政策的正确性仍由后续 ACTIVE GOLDEN、场景测试和 Solution baseline 证明。
 

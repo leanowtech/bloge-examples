@@ -42,9 +42,11 @@ public final class McpToolCatalog {
                 "Read payload-free business building blocks, world types, operations and sample descriptors.",
                 McpToolImpact.READ, props("includeSamples", bool()), List.of()));
         values.add(tool(CAPABILITY_SEARCH, "Search business capabilities",
-                "Recall scoped business capabilities and explain whether more business context is required.",
+                capabilitySearchDescription(),
                 McpToolImpact.READ,
-                props("query", businessObject(), "assetKinds", stringArray(), "limit", integer()),
+                props("query", semanticCapabilityQuery(),
+                        "assetKinds", enumStringArray("FEATURE", "SCENARIO", "INSTRUCTION", "SOLUTION"),
+                        "limit", integer()),
                 List.of("query")));
         values.add(tool(ENTITY_LIST, "List business entities",
                 "List reusable business entities and publications from one stable scoped snapshot.",
@@ -373,8 +375,87 @@ public final class McpToolCatalog {
         return Map.of("type", "array", "items", string(), "uniqueItems", true);
     }
 
+    private static Map<String, Object> enumStringArray(String... values) {
+        return Map.of("type", "array", "items", enumString(values), "uniqueItems", true,
+                "minItems", 1, "maxItems", values.length);
+    }
+
     private static Map<String, Object> enumString(String... values) {
         return Map.of("type", "string", "enum", List.of(values));
+    }
+
+    /**
+     * Returns the model-facing two-pass recall contract without accepting undeclared semantic
+     * dimensions. The outer object is closed so Codex can discover every comparison facet from
+     * {@code tools/list}; nested result and freshness shapes remain business-contract-owned JSON
+     * because they must round-trip the exact value returned by {@link #ENTITY_GET}.
+     */
+    private static Map<String, Object> semanticCapabilityQuery() {
+        Map<String, Object> context = structuredObject(props(
+                "semanticKey", describedString("Governed business identity of the required context."),
+                "name", describedString("Business name used when no governed key exists."),
+                "type", describedString("Business value type."),
+                "required", bool()), List.of("type"));
+        return described(structuredObject(props(
+                "schemaVersion", describedString("Semantic profile returned by the candidate business contract."),
+                "semanticKey", describedString("Governed concept identity copied from the candidate contract."),
+                "intent", describedString("Business-language question or outcome being sought."),
+                "domain", describedString("Bounded business domain."),
+                "businessObject", describedString("Business subject being evaluated or changed."),
+                "requiredContext", arrayOf(context),
+                "resultDomain", semanticOwnedObject("Closed business result shape and meanings."),
+                "expectedResult", semanticOwnedObject("Compatibility alias for resultDomain."),
+                "asOf", describedString("Business time at which a fact must be true."),
+                "unknownPolicy", describedString("Business handling when a fact cannot be determined."),
+                "acquisitionOwner", describedString("Party responsible for obtaining a fact."),
+                "authoritySource", describedString("Authoritative source class for platform-owned facts."),
+                "freshness", semanticOwnedObject("Business validity-window contract."),
+                "effect", enumString("PURE", "READ", "WRITE"),
+                "inputFactKeys", stringArray(),
+                "decisionPolicy", describedString("Scenario hit policy."),
+                "outletSemanticKeys", stringArray(),
+                "otherwisePolicy", describedString("Scenario outcome when no explicit rule matches."),
+                "requiredFactKeys", stringArray(),
+                "reasoningPolicy", describedString("Instruction explanation requirement."),
+                "failurePolicy", describedString("Instruction behavior when its outcome cannot complete."),
+                "writeGovernanceClass", describedString("Governance class for a write outcome."),
+                "problemClass", describedString("Normalized Solution problem class."),
+                "scenarioSemanticKey", describedString("Governed root-decision identity."),
+                "dispositionSemanticKeys", stringArray(),
+                "runtimeUse", describedString("Allowed business runtime use."),
+                "lifecycle", enumString("PROPOSED", "ACTIVE", "DEPRECATED")),
+                List.of("intent")),
+                "First pass: provide the user's business intent only. Second pass: copy the complete "
+                        + "business definition read through " + ENTITY_GET + ".");
+    }
+
+    private static Map<String, Object> semanticOwnedObject(String description) {
+        return Map.of("type", "object", "additionalProperties", true, "description", description);
+    }
+
+    private static Map<String, Object> describedString(String description) {
+        return described(string(), description);
+    }
+
+    private static Map<String, Object> described(Map<String, Object> schema, String description) {
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>(schema);
+        value.put("description", description);
+        return Map.copyOf(value);
+    }
+
+    /** Describes the mandatory discovery, contract-read and exact-rematch sequence. */
+    private static String capabilitySearchDescription() {
+        return "Use a two-pass business recall before creating an entity. First call "
+                + CAPABILITY_SEARCH + " with the user's business intent and narrow assetKinds to the relevant "
+                + "business entity family when known: "
+                + "FEATURE for a fact, SCENARIO for a decision, INSTRUCTION for an outcome or action, or "
+                + "SOLUTION for an end-to-end workflow. Treat this first result only as candidates. Read "
+                + "each relevant candidate through " + ENTITY_GET + ", then call " + CAPABILITY_SEARCH
+                + " again with that candidate's complete business definition. Reuse only one unique EXACT "
+                + "candidate with reuseAllowed=true. If a business dimension is missing or multiple EXACT "
+                + "candidates remain, ask the business user one plain-language question and do not create or "
+                + "reuse an entity. Never ask the business user for schemaVersion, semanticKey, assetKinds, "
+                + "or other protocol fields.";
     }
 
     private static Map<String, Object> graphSource() {
