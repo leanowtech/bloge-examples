@@ -139,8 +139,26 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
     journey_ref = required_text(start["data"].get("journeyRef"), "journey")
     if start["data"].get("stage") != "DISCOVERING" or start["data"].get("surface") != "BUSINESS_SOLUTION":
         raise CertificationFailure("journey did not start on the business discovery stage")
-    if not successful(calls, "rg.library.overview.get") or not successful(calls, "rg.capability.search"):
+    overviews = successful(calls, "rg.library.overview.get")
+    if not overviews or not successful(calls, "rg.capability.search"):
         raise CertificationFailure("business library overview and capability recall are both required")
+    overview = overviews[0]
+    overview_position = calls.index(overview)
+    authored_positions = [index for index, call in enumerate(calls)
+                          if call["successful"] and call["tool"] in AUTHORING_TOOLS
+                          and call["tool"] != "rg.journey.start"]
+    if not authored_positions:
+        raise CertificationFailure("business entity creation is missing")
+    first_authored_position = min(authored_positions)
+    if overview_position >= first_authored_position:
+        raise CertificationFailure("authoring templates were not observed before entity creation")
+    library_snapshot = required_text(
+        overview["data"].get("snapshotFingerprint"), "library snapshot fingerprint")
+    authoring_patterns = required_text(
+        overview["data"].get("authoringPatternsFingerprint"), "authoring patterns fingerprint")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", library_snapshot) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", authoring_patterns):
+        raise CertificationFailure("library or authoring template fingerprint is malformed")
 
     authored = [call for call in calls if call["successful"] and call["tool"] in AUTHORING_TOOLS
                 and call["tool"] != "rg.journey.start"]
@@ -208,6 +226,8 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
         "caseSetRef": case_set_ref,
         "caseIds": requested_ids,
         "requiredPositions": [position + 1 for position in positions],
+        "librarySnapshotFingerprint": library_snapshot,
+        "authoringPatternsFingerprint": authoring_patterns,
     }, proposal
 
 
@@ -288,6 +308,8 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "solution": opaque("solution", chain["solutionRef"]),
             "caseSet": opaque("case-set", chain["caseSetRef"]),
             "cases": [opaque("case", case_id) for case_id in chain["caseIds"]],
+            "librarySnapshot": opaque("library-snapshot", chain["librarySnapshotFingerprint"]),
+            "authoringPatterns": opaque("authoring-patterns", chain["authoringPatternsFingerprint"]),
         },
         "metrics": {
             "toolRecallRate": 1.0, "recallAt3": None, "clarificationRate": None,
@@ -299,6 +321,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "onlyBusinessSurfaceMcpActionsObserved": True,
             "journeyRevisionLineCurrent": True,
             "libraryAndCapabilityDiscoveryObserved": True,
+            "compilerValidatedAuthoringPatternsObservedBeforeCreation": True,
             "solutionContextCurrent": True,
             "completeGoldenCasesProposed": True,
             "sameJourneySolutionAndCaseSet": True,

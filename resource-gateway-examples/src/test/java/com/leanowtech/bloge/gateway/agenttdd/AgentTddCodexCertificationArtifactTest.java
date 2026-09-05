@@ -137,6 +137,13 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/metrics/recallAt3").isNull()).isTrue();
         assertThat(certificate.at("/metrics/clarificationRate").isNull()).isTrue();
         assertThat(certificate.at("/correlation/cases")).hasSize(2);
+        assertThat(certificate.at("/correlation/librarySnapshot").asText())
+                .matches("hmac-sha256:[0-9a-f]{64}");
+        assertThat(certificate.at("/correlation/authoringPatterns").asText())
+                .matches("hmac-sha256:[0-9a-f]{64}");
+        assertThat(certificate.at(
+                "/assertions/compilerValidatedAuthoringPatternsObservedBeforeCreation").asBoolean())
+                .isTrue();
 
         String serialized = mapper.writeValueAsString(certificate);
         assertThat(serialized).doesNotContain(
@@ -210,7 +217,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 26 tests", "OK");
+        assertThat(output).contains("Ran 28 tests", "OK");
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

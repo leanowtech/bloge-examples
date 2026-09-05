@@ -793,9 +793,10 @@ public final class McpToolCatalog {
                         "featureYaml", string(), "scenarioYaml", string(),
                         "instructionYaml", string(), "solutionYaml", string()),
                         List.of("featureYaml", "scenarioYaml", "instructionYaml", "solutionYaml")),
-                "samples", arrayOf(sample), "snapshotFingerprint", string()),
+                "samples", arrayOf(sample), "snapshotFingerprint", string(),
+                "authoringPatternsFingerprint", string()),
                 List.of("buildingBlocks", "worldModel", "authoringPatterns",
-                        "samples", "snapshotFingerprint"));
+                        "authoringPatternsFingerprint", "samples", "snapshotFingerprint"));
     }
 
     /** Strict business-only card shared by list, get and search output schemas. */

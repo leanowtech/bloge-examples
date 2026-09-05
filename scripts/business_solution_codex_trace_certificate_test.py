@@ -35,7 +35,8 @@ def valid_events() -> list[dict]:
               "surface": "BUSINESS_SOLUTION"}),
         call("rg_read", "rg.library.overview.get", {"includeSamples": False},
              {"buildingBlocks": [], "worldModel": {}, "authoringPatterns": {}, "samples": [],
-              "snapshotFingerprint": context}),
+              "snapshotFingerprint": context,
+              "authoringPatternsFingerprint": "sha256:" + "b" * 64}),
         call("rg_read", "rg.capability.search", {"query": {"intent": "private"}},
              {"status": "NONE", "snapshotFingerprint": context, "candidates": [],
               "clarification": {"required": False, "dimension": "", "question": ""}}),
@@ -111,6 +112,9 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertEqual("CERTIFIED", certificate["result"])
         self.assertEqual("rg.businessRecallCertification.v1", certificate["schemaVersion"])
         self.assertEqual(2, len(certificate["correlation"]["cases"]))
+        self.assertRegex(certificate["correlation"]["authoringPatterns"], r"^hmac-sha256:")
+        self.assertTrue(certificate["assertions"]
+                        ["compilerValidatedAuthoringPatternsObservedBeforeCreation"])
         self.assertNotIn("private", json.dumps(certificate))
         self.assertIsNone(certificate["metrics"]["recallAt3"])
 
@@ -118,6 +122,20 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         events = valid_events()
         events[5]["item"]["arguments"]["expectedJourneyRevision"] = 1
         with self.assertRaisesRegex(MODULE.CertificationFailure, "monotonic"):
+            self.certify(events)
+
+    def test_rejects_missing_authoring_template_fingerprint(self) -> None:
+        events = valid_events()
+        events[1]["item"]["result"]["structuredContent"]["data"].pop(
+            "authoringPatternsFingerprint")
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "authoring patterns"):
+            self.certify(events)
+
+    def test_rejects_templates_observed_after_entity_creation(self) -> None:
+        events = valid_events()
+        overview = events.pop(1)
+        events.insert(4, overview)
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "before entity creation"):
             self.certify(events)
 
     def test_rejects_cross_journey_asset(self) -> None:

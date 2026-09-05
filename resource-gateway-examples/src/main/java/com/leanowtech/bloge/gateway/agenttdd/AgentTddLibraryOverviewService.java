@@ -99,13 +99,16 @@ public final class AgentTddLibraryOverviewService {
         Map<String, Object> worldModel = Map.of(
                 "types", List.copyOf(types.values()),
                 "operations", List.copyOf(operations));
+        Map<String, Object> patterns = Map.copyOf(authoringPatterns());
         Map<String, Object> fingerprintMaterial = Map.of(
                 "scope", List.of(identity.tenantId(), identity.projectId(), identity.environmentId()),
                 "buildingBlocks", frozenBlocks,
+                "authoringPatterns", patterns,
                 "worldModel", worldModel);
         return Map.of(
                 "buildingBlocks", frozenBlocks,
-                "authoringPatterns", authoringPatterns(),
+                "authoringPatterns", patterns,
+                "authoringPatternsFingerprint", VisualBundleFingerprint.fromMaterial(patterns),
                 "samples", includeSamples ? samples(identity) : List.of(),
                 "worldModel", worldModel,
                 "snapshotFingerprint", VisualBundleFingerprint.fromMaterial(fingerprintMaterial));

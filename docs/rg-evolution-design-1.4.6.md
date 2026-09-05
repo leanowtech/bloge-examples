@@ -1133,7 +1133,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 }
 ```
 
-证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。服务端返回给 Coding Agent 的四实体创作模板必须由生产解码器逐份验证；字段说明或未经编译的示意文本不能作为创作参考。Codex 自动发起的 MCP resource 探测只作为被动协议动作记录，不计入召回成功，也不允许扩展业务 surface。
+证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。服务端返回给 Coding Agent 的四实体创作模板必须由生产解码器逐份验证；字段说明或未经编译的示意文本不能作为创作参考。overview 必须返回覆盖四份模板的 `authoringPatternsFingerprint`，并将模板纳入 `snapshotFingerprint`。真实 Codex 证书必须证明 overview 先于首个实体写入，并以不可逆关联指纹保存当次模板与库快照身份。Codex 自动发起的 MCP resource 探测只作为被动协议动作记录，不计入召回成功，也不允许扩展业务 surface。
 创作认证停在人工批准之前，不生成受控执行计划，因此不声明 `executionPlanCurrent`。受控执行当前性和零外呼由真实 HTTP 主线与服务级并发测试证明。单次清晰话语没有能力复用或歧义样本时，`recallAt3` 和 `clarificationRate` 必须为 `null`，不能写成 `1.0`。
 
 ## 15. 实施计划
@@ -1351,7 +1351,7 @@ resource-gateway:
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
 | P3 Feature 语义契约 v2 | 已完成 | `BusinessFactSemanticContract` 完整字段校验；新写入拒绝自由文本语义；旧版 UNKNOWN/PARTIAL 兼容投影；字段级 EXACT/PARTIAL/CONFLICT matcher；多 EXACT 歧义停止；实现 binding 排除于业务身份；业务定义纳入指纹 |
 | P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门、case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效、零外呼测试及真实 HTTP MCP 主线认证 |
-| P5 真实召回认证 | 核心完成 | 当前提交真实 Codex 已完成“业务意图→发现→两项 Feature→Scenario→三项 Instruction→Solution→两条 GOLDEN→人工队列读回”；机器证书绑定 clean commit、独立 JAR、前后运行身份与同一资产链，严格 Schema、26 个证书正反例、可视化过程报告和截图已留存；`recallAt3` 与 `clarificationRate` 的多话语集量化仍为后续增强，不在单一清晰创作话语上伪造数值 |
+| P5 真实召回认证 | 核心完成 | 当前提交真实 Codex 已完成“业务意图→发现→两项 Feature→Scenario→三项 Instruction→Solution→两条 GOLDEN→人工队列读回”；机器证书绑定 clean commit、独立 JAR、前后运行身份、服务端模板/库快照前置读取和同一资产链，严格 Schema、28 个证书正反例、可视化过程报告和截图已留存；`recallAt3` 与 `clarificationRate` 的多话语集量化仍为后续增强，不在单一清晰创作话语上伪造数值 |
 
 ## 21. 审阅决策点
 

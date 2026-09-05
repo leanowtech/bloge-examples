@@ -100,7 +100,7 @@ class McpToolCatalogTest {
         assertThat(stringKeys(dataProperties(overview)))
                 .containsExactlyInAnyOrder(
                         "buildingBlocks", "worldModel", "authoringPatterns",
-                        "samples", "snapshotFingerprint");
+                        "authoringPatternsFingerprint", "samples", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.list"))))
                 .containsExactlyInAnyOrder("entities", "nextCursor", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.get"))))
