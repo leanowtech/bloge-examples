@@ -33,7 +33,7 @@ def valid_events() -> list[dict]:
     events = [
         call("rg_author", "rg.journey.start",
              {"intentKind": "CREATE_SOLUTION", "businessGoal": "private", "idempotencyKey": "start"},
-             {"journeyRef": journey, "revision": 1, "stage": "DISCOVERING",
+            {"journeyRef": journey, "revision": 1, "stage": "DEFINING_FEATURES",
               "surface": "BUSINESS_SOLUTION"}),
         call("rg_read", "rg.library.overview.get", {"includeSamples": False},
              {"buildingBlocks": [], "worldModel": {}, "authoringPatterns": {}, "samples": [],

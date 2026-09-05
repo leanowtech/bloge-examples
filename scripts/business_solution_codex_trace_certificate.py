@@ -176,8 +176,9 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
         raise CertificationFailure("exactly one successful business journey is required")
     start = starts[0]
     journey_ref = required_text(start["data"].get("journeyRef"), "journey")
-    if start["data"].get("stage") != "DISCOVERING" or start["data"].get("surface") != "BUSINESS_SOLUTION":
-        raise CertificationFailure("journey did not start on the business discovery stage")
+    if start["data"].get("stage") != "DEFINING_FEATURES" \
+            or start["data"].get("surface") != "BUSINESS_SOLUTION":
+        raise CertificationFailure("journey did not start on the business feature-definition stage")
     overviews = successful(calls, "rg.library.overview.get")
     if not overviews or not successful(calls, "rg.capability.search"):
         raise CertificationFailure("business library overview and capability recall are both required")

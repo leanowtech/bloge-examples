@@ -562,7 +562,7 @@ return stable order: EXACT, PARTIAL, CONFLICT; then assetRef
   "journeyRef": "journey:...",
   "revision": 1,
   "surface": "BUSINESS_SOLUTION",
-  "stage": "DISCOVERING",
+  "stage": "DEFINING_FEATURES",
   "requiredBusinessDimensions": ["decisionFacts", "rules", "otherwise", "dispositions", "goldenExamples"],
   "allowedNextTools": ["rg.library.overview.get", "rg.capability.search"],
   "businessQuestion": "这项政策需要依据哪些业务事实作判断？"
@@ -733,8 +733,7 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 
 | 阶段 | 进入条件 | 允许的主要动作 | 完成条件 |
 |---|---|---|---|
-| `DISCOVERING` | journey 已创建 | overview、search、entity read | 所需业务事实均有 EXACT 或确认新建 |
-| `DEFINING_FEATURES` | 存在未定义事实 | `rg.feature.define` | 每项事实契约完整且业务确认 |
+| `DEFINING_FEATURES` | journey 已创建，需发现、复用或定义业务事实 | overview、search、entity read、`rg.feature.define` | 每项事实契约完整且业务确认 |
 | `WAITING_FEATURE_ENGINEERING` | 存在设计态平台 Feature | `rg.feature.handoff` 后只读等待 | handoff VERIFIED，Feature 契约未漂移 |
 | `DEFINING_RULES` | Feature 可用 | `rg.scenario.define` | 规则唯一命中、含 otherwise |
 | `DEFINING_ACTIONS` | 规则出口明确 | `rg.instruction.define` | 所有出口有结果和 reasoning；WRITE 有治理声明 |

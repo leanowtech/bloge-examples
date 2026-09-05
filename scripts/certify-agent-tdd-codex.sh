@@ -389,6 +389,22 @@ if ! verify_runtime_identity; then
     echo "The owned Resource Gateway identity changed or disappeared during the authoring turn." >&2
     exit 1
 fi
+python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${CODEX_EXIT}" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1]) / "scripts/business_solution_codex_trace_certificate.py"
+spec = importlib.util.spec_from_file_location("business_solution_certificate", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+calls, final_message, completed, _thread_id = module.load_trace(pathlib.Path(sys.argv[2]))
+if int(sys.argv[3]) != 0 or not completed:
+    raise SystemExit("Primary Codex authoring turn did not complete.")
+module.require_business_sequence(calls)
+if not final_message.strip() or module.TECHNICAL_FINAL_PATTERN.search(final_message):
+    raise SystemExit("Primary Codex authoring summary is missing or exposes technical vocabulary.")
+PY
 
 # Seed recall-only distractors after the clean authoring turn so certification fixtures cannot
 # influence whether Codex creates the primary four-entity business solution.
