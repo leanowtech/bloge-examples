@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.ReconciliationAdapter;
 import com.leanowtech.bloge.gateway.solution.ReconciliationAdapterRegistry;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
@@ -19,6 +21,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +38,8 @@ class SolutionWriteGovernanceTest {
 
     @BeforeEach
     void defineBoundWriteSolutionAndGolden() {
+        registry.upsertFeature(SCOPE, feature("responsibility.party"));
+        registry.upsertFeature(SCOPE, feature("dispute.orderSelected"));
         registry.upsertInstruction(SCOPE, new InstructionContract(
                 "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
                 mapper.valueToTree(Map.of(
@@ -92,6 +97,45 @@ class SolutionWriteGovernanceTest {
         assertThat(gates.get("implementationBound")).isEqualTo(true);
         assertThat(gates.get("writeReconciled")).isEqualTo(true);
         assertThat(gates.get("ownerSignoff")).isEqualTo(false);
+    }
+
+    @Test
+    void controlledWriteDispatchesTheFrozenClosureWhenAuthoringChangesAfterReservation() {
+        AtomicReference<String> dispatchedBinding = new AtomicReference<>();
+        InstructionDispatchChannel concurrentAuthoringChannel = (instruction, values, context) -> {
+            dispatchedBinding.set(instruction.bindingRef());
+            registry.upsertScenario(SCOPE, new ScenarioContract(
+                    "scn:root", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
+                    List.of(new ScenarioContract.Rule("R1-amended",
+                            mapper.valueToTree(Map.of("party", Map.of("eq", "none"))),
+                            new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
+                                    "ins:refund", Map.of("orderId", "orderId"), ""))),
+                    new ScenarioContract.Outlet(
+                            ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "REVIEW")));
+            registry.upsertInstruction(SCOPE, new InstructionContract(
+                    "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                    mapper.valueToTree(Map.of(
+                            "result", Map.of("type", Map.of("fields", Map.of(
+                                    "decision", Map.of("enum", List.of("WAIVED"))))),
+                            "reasoning", "required")),
+                    InstructionContract.Effect.WRITE, "operator:refund-v2",
+                    new InstructionContract.WriteGovernance(
+                            "refund-service", "orderId", "recon:refund-v1")));
+            writes.incrementAndGet();
+            return Map.of("result", Map.of("decision", "WAIVED"), "reasoning", "frozen rule R1");
+        };
+
+        Map<String, Object> result = runner(
+                adapter(Map.of("decision", "WAIVED")), null, concurrentAuthoringChannel)
+                .execute("sol:cancel", writeIdentity("test"));
+
+        assertThat(result).containsEntry("status", "RECONCILED").containsEntry("writeCount", 1);
+        assertThat(writes).hasValue(1);
+        assertThat(dispatchedBinding).hasValue("operator:refund");
+        assertThat(registry.requireInstruction(SCOPE, "ins:refund").bindingRef())
+                .isEqualTo("operator:refund-v2");
+        assertThat(registry.requireScenario(SCOPE, "scn:root").rules().getFirst().ruleId())
+                .isEqualTo("R1-amended");
     }
 
     @Test
@@ -369,15 +413,28 @@ class SolutionWriteGovernanceTest {
 
     private SolutionWriteExecutionRunner runner(
             ReconciliationAdapter adapter, BusinessGoldenMaterialStore materials) {
+        return runner(adapter, materials, (instruction, values, context) -> {
+            writes.incrementAndGet();
+            return Map.of("result", Map.of("decision", "WAIVED"), "reasoning", "rule R1");
+        });
+    }
+
+    private SolutionWriteExecutionRunner runner(
+            ReconciliationAdapter adapter,
+            BusinessGoldenMaterialStore materials,
+            InstructionDispatchChannel channel) {
         StaticListableBeanFactory beans = new StaticListableBeanFactory();
         beans.addBean("adapter", adapter);
         ReconciliationAdapterRegistry adapters = new ReconciliationAdapterRegistry(
                 beans.getBeanProvider(ReconciliationAdapter.class));
-        return new SolutionWriteExecutionRunner(states, registry, adapters, mapper,
-                (instruction, values, context) -> {
-                    writes.incrementAndGet();
-                    return Map.of("result", Map.of("decision", "WAIVED"), "reasoning", "rule R1");
-                }, new EngineeringHandoffService(states, registry, mapper), materials);
+        return new SolutionWriteExecutionRunner(states, registry, adapters, mapper, channel,
+                new EngineeringHandoffService(states, registry, mapper), materials);
+    }
+
+    private FeatureContract feature(String ref) {
+        return new FeatureContract(ref, mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.createObjectNode(), "operator:" + ref, "", "");
     }
 
     private static final class TestMaterialStore extends BusinessGoldenMaterialStore {

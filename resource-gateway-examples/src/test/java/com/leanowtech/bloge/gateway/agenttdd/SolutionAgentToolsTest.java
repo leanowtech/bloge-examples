@@ -6,7 +6,6 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InMemoryFeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
-import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
@@ -540,12 +539,8 @@ class SolutionAgentToolsTest {
         publication.put("solutionRevision", registered.revision());
         publication.put("solutionContractFingerprint", registered.contractFingerprint());
         publication.put("implementationFingerprint", implementationFingerprint);
-        SolutionContract solution = registry.requireSolution(scope, solutionRef);
-        ScenarioContract scenario = registry.requireScenario(scope, solution.rootScenarioRef());
-        publication.set("runtimeSnapshot", mapper.valueToTree(new PublishedSolutionSnapshot(
-                solution, Map.of(scenario.scenarioRef(), scenario),
-                solution.instructions().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
-                        ref -> ref, ref -> registry.requireInstruction(scope, ref))))));
+        publication.set("runtimeSnapshot", mapper.valueToTree(SolutionImplementationIdentity.snapshot(
+                registry, scope, registry.requireSolution(scope, solutionRef))));
         states.save(scope, SolutionGovernanceService.PUBLICATION,
                 publication.path("publicationId").asText(), publication);
     }

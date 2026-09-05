@@ -7,7 +7,12 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.TreeSet;
 
 /**
  * Canonical persistence boundary for the four solution entity contracts.
@@ -158,6 +163,85 @@ public final class SolutionEntityRegistry {
     /** Resolves the current Instruction revision and contract fingerprint for handoff fencing. */
     public RegisteredEntity requireRegisteredInstruction(String scopeKey, String instructionRef) {
         return requireRegistered(scopeKey, INSTRUCTION, "INSTRUCTION", instructionRef);
+    }
+
+    /**
+     * Loads one complete executable closure and the revision fence captured with each contract.
+     *
+     * <p>Each entity is read once. The caller must verify {@link
+     * SolutionExecutableSnapshot#isCurrent(AgentTddStateRepository, String)} before reserving an
+     * external effect, after which the returned contracts are safe from authoring-store races.</p>
+     */
+    public SolutionExecutableSnapshot freezeExecutable(String scopeKey, String solutionRef) {
+        ArrayList<SolutionExecutableSnapshot.EntityCoordinate> coordinates = new ArrayList<>();
+        AgentTddStoredAsset solutionAsset = requireAsset(scopeKey, SOLUTION, solutionRef);
+        RegisteredEntity solutionIdentity = registered("SOLUTION", solutionRef, solutionAsset);
+        SolutionContract solution = decode(solutionAsset, SolutionContract.class);
+        coordinates.add(coordinate(SOLUTION, solutionRef, solutionAsset));
+
+        LinkedHashMap<String, FeatureContract> features = new LinkedHashMap<>();
+        for (String ref : new TreeSet<>(solution.inputs().values())) {
+            AgentTddStoredAsset asset = requireAsset(scopeKey, FEATURE, ref);
+            features.put(ref, decode(asset, FeatureContract.class));
+            coordinates.add(coordinate(FEATURE, ref, asset));
+        }
+
+        LinkedHashMap<String, ScenarioContract> scenarios = new LinkedHashMap<>();
+        freezeScenarios(scopeKey, solution.rootScenarioRef(), scenarios, coordinates);
+        TreeSet<String> instructionRefs = new TreeSet<>(solution.instructions());
+        scenarios.values().forEach(value -> instructionRefs.addAll(value.referencedInstructions()));
+        LinkedHashMap<String, InstructionContract> instructions = new LinkedHashMap<>();
+        for (String ref : instructionRefs) {
+            AgentTddStoredAsset asset = requireAsset(scopeKey, INSTRUCTION, ref);
+            instructions.put(ref, decode(asset, InstructionContract.class));
+            coordinates.add(coordinate(INSTRUCTION, ref, asset));
+        }
+        return new SolutionExecutableSnapshot(solutionIdentity,
+                new PublishedSolutionSnapshot(solution, features, scenarios, instructions), coordinates);
+    }
+
+    private void freezeScenarios(
+            String scopeKey,
+            String ref,
+            Map<String, ScenarioContract> scenarios,
+            List<SolutionExecutableSnapshot.EntityCoordinate> coordinates) {
+        if (scenarios.containsKey(ref)) return;
+        AgentTddStoredAsset asset = requireAsset(scopeKey, SCENARIO, ref);
+        ScenarioContract scenario = decode(asset, ScenarioContract.class);
+        scenarios.put(ref, scenario);
+        coordinates.add(coordinate(SCENARIO, ref, asset));
+        for (String child : new TreeSet<>(scenario.referencedScenarios())) {
+            freezeScenarios(scopeKey, child, scenarios, coordinates);
+        }
+    }
+
+    private AgentTddStoredAsset requireAsset(String scopeKey, String kind, String ref) {
+        return states.find(scopeKey, kind, ref).orElseThrow(EntityUnavailableException::new);
+    }
+
+    private RegisteredEntity registered(
+            String entityKind, String ref, AgentTddStoredAsset asset) {
+        JsonNode data = asset.data();
+        if (!data.path("contract").isObject() || data.path("contractFingerprint").asText().isBlank()) {
+            throw new EntityUnavailableException();
+        }
+        return new RegisteredEntity(entityKind, ref, asset.revision(),
+                data.path("contractFingerprint").asText(), data.path("speccing").asBoolean(),
+                data.path("contract"));
+    }
+
+    private static SolutionExecutableSnapshot.EntityCoordinate coordinate(
+            String kind, String ref, AgentTddStoredAsset asset) {
+        return new SolutionExecutableSnapshot.EntityCoordinate(kind, ref, asset.revision(),
+                asset.data().path("contractFingerprint").asText());
+    }
+
+    private <T> T decode(AgentTddStoredAsset asset, Class<T> type) {
+        try {
+            return mapper.treeToValue(asset.data().path("contract"), type);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new EntityUnavailableException();
+        }
     }
 
     private RegisteredEntity requireRegistered(

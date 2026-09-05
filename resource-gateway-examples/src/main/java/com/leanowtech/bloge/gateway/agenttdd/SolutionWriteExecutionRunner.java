@@ -10,6 +10,8 @@ import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.ReconciliationAdapter;
 import com.leanowtech.bloge.gateway.solution.ReconciliationAdapterRegistry;
+import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
+import com.leanowtech.bloge.gateway.solution.SolutionExecutableSnapshot;
 import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
@@ -120,21 +122,23 @@ public final class SolutionWriteExecutionRunner {
                 .filter(asset -> asset.data().path("businessBacklog").isEmpty())
                 .orElseThrow(() -> new AgentTddToolException(
                         "GREEN_BASELINE_ABSENT", "A current GREEN Solution baseline is required."));
-        SolutionEntityRegistry.RegisteredEntity solution = registered(scope, solutionRef);
+        SolutionExecutableSnapshot frozen;
+        try {
+            frozen = registry.freezeExecutable(scope, solutionRef);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
+        }
+        SolutionEntityRegistry.RegisteredEntity solution = frozen.solutionIdentity();
         AgentTddStoredAsset caseSet = states.find(scope, AgentTddMutationService.CASE_SET,
                         evidence.data().path("caseSetRef").asText())
                 .orElseThrow(() -> new AgentTddToolException(
                         "GATE_REJECTED", "The GREEN case set is stale."));
-        SolutionContract contract;
-        try {
-            contract = registry.requireSolution(scope, solutionRef);
-        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
-            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
-        }
+        PublishedSolutionSnapshot executable = frozen.contracts();
         String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
-                registry, mapper, scope, contract);
+                mapper, executable);
         if (!SolutionEvidenceCurrentness.isCurrent(
-                states, registry, mapper, scope, solutionRef, evidence)) {
+                states, mapper, scope, solutionRef, evidence, solution, executable)
+                || !frozen.isCurrent(states, scope)) {
             throw new AgentTddToolException("GATE_REJECTED", "The GREEN Solution line is stale.");
         }
         String requestFingerprint = VisualBundleFingerprint.fromCanonicalValue(mapper, Map.of(
@@ -155,7 +159,7 @@ public final class SolutionWriteExecutionRunner {
         }
         JsonNode completed = states.completeExternalExecution(scope, OPERATION,
                 requestFingerprint, requestFingerprint,
-                run(scope, solutionRef, caseSet, evidence, solution,
+                run(scope, solutionRef, caseSet, evidence, solution, executable,
                         implementationFingerprint, platformIdentity));
         return persistAndConvert(scope, solutionRef, completed);
     }
@@ -166,33 +170,27 @@ public final class SolutionWriteExecutionRunner {
             AgentTddStoredAsset caseSet,
             AgentTddStoredAsset evidence,
             SolutionEntityRegistry.RegisteredEntity registered,
+            PublishedSolutionSnapshot executable,
             String implementationFingerprint,
             IntegrationRequestContext identity) {
-        SolutionContract solution;
-        try {
-            solution = registry.requireSolution(scope, solutionRef);
-        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
-            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
-        }
+        SolutionContract solution = executable.solution();
         List<Map<String, Object>> results = new ArrayList<>();
         int writeCount = 0;
         for (JsonNode metadata : iterable(caseSet.data().path("rows"))) {
             if (!"GOLDEN".equals(metadata.path("category").asText())
                     || !"ACTIVE".equals(metadata.path("lifecycle").asText())) continue;
             JsonNode row = approvedMaterial(scope, metadata, identity);
-            ScenarioTreeEvaluator.Outcome outcome = new ScenarioTreeEvaluator(registry, 8)
+            ScenarioTreeEvaluator.Outcome outcome = new ScenarioTreeEvaluator(executable.scenarios(), 8)
                     .evaluate(scope, solution.rootScenarioRef(), row.path("given"));
             if (!"INSTRUCTION".equals(outcome.outletKind())) continue;
-            InstructionContract instruction;
-            try {
-                instruction = registry.requireInstruction(scope, outcome.ref());
-            } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            InstructionContract instruction = executable.instructions().get(outcome.ref());
+            if (instruction == null) {
                 throw new AgentTddToolException("REFERENCE_UNRESOLVED", "An Instruction is unavailable.");
             }
             if (instruction.effect() != InstructionContract.Effect.WRITE) continue;
             if (instruction.speccing()) throw new AgentTddToolException(
                     "SPECCING_NOT_EXECUTABLE", "A WRITE Instruction still lacks a binding.");
-            execution.executeControlledWrite(scope, solutionRef, row.path("given"), identity);
+            execution.executePublished(scope, executable, row.path("given"), identity);
             String keyName = instruction.writeGovernance().reconciliationKey();
             String keyValue = row.path("given").path(keyName).asText();
             if (keyValue.isBlank()) throw new AgentTddToolException(

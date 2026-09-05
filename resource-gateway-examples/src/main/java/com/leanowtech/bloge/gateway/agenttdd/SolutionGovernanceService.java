@@ -291,13 +291,17 @@ public final class SolutionGovernanceService {
     }
 
     private PublishedSolutionSnapshot runtimeSnapshot(String scope, SolutionContract solution) {
+        LinkedHashMap<String, com.leanowtech.bloge.gateway.solution.FeatureContract> features =
+                new LinkedHashMap<>();
+        new java.util.TreeSet<>(solution.inputs().values()).forEach(
+                ref -> features.put(ref, registry.requireFeature(scope, ref)));
         LinkedHashMap<String, ScenarioContract> scenarios = new LinkedHashMap<>();
         collectScenarios(scope, solution.rootScenarioRef(), scenarios);
         java.util.TreeSet<String> instructionRefs = new java.util.TreeSet<>(solution.instructions());
         scenarios.values().forEach(scenario -> instructionRefs.addAll(scenario.referencedInstructions()));
         LinkedHashMap<String, InstructionContract> instructions = new LinkedHashMap<>();
         instructionRefs.forEach(ref -> instructions.put(ref, registry.requireInstruction(scope, ref)));
-        return new PublishedSolutionSnapshot(solution, scenarios, instructions);
+        return new PublishedSolutionSnapshot(solution, features, scenarios, instructions);
     }
 
     private void collectScenarios(

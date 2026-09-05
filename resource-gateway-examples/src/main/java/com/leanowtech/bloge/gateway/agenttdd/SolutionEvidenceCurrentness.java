@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.agenttdd;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
@@ -50,10 +51,46 @@ public final class SolutionEvidenceCurrentness {
         } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
             return false;
         }
+        PublishedSolutionSnapshot snapshot;
+        try {
+            snapshot = SolutionImplementationIdentity.snapshot(registry, scope, solution);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            return false;
+        }
+        return isCurrent(states, mapper, scope, solutionRef, evidence, registered, snapshot);
+    }
+
+    /**
+     * Returns whether evidence names the supplied immutable executable closure.
+     *
+     * <p>This overload is used by governed effect boundaries that must validate, reserve and
+     * execute one identical set of contracts. It deliberately performs no Solution, Scenario or
+     * Instruction registry lookup; mutable-store coordinates unrelated to execution remain
+     * checked through the state repository.</p>
+     */
+    public static boolean isCurrent(
+            AgentTddStateRepository states,
+            ObjectMapper mapper,
+            String scope,
+            String solutionRef,
+            AgentTddStoredAsset evidence,
+            SolutionEntityRegistry.RegisteredEntity registered,
+            PublishedSolutionSnapshot snapshot) {
+        if (evidence == null || registered == null || snapshot == null
+                || !solutionRef.equals(snapshot.solution().solutionRef())
+                || !"GREEN".equals(evidence.data().path("side").asText())
+                || !evidence.data().path("businessBacklog").isArray()
+                || !evidence.data().path("businessBacklog").isEmpty()
+                || !SolutionTestingService.COMPILER_VERSION.equals(
+                evidence.data().path("compilerVersion").asText())
+                || !SolutionTestingService.EGRESS_POLICY.equals(
+                evidence.data().path("egressPolicy").asText())
+                || !scopeFingerprint(mapper, scope).equals(
+                evidence.data().path("scopeFingerprint").asText())) return false;
         if (registered.revision() != evidence.data().path("solutionRevision").asLong(-1)
                 || !registered.contractFingerprint().equals(
                         evidence.data().path("solutionContractFingerprint").asText())) return false;
-        String implementation = SolutionImplementationIdentity.fingerprint(registry, mapper, scope, solution);
+        String implementation = SolutionImplementationIdentity.fingerprint(mapper, snapshot);
         if (!implementation.equals(evidence.data().path("implementationFingerprint").asText())) return false;
         if (!currentCaseSet(states, scope, evidence) || !currentContractVector(
                 states, scope, evidence.data().path("frozenFeatureContracts"),
