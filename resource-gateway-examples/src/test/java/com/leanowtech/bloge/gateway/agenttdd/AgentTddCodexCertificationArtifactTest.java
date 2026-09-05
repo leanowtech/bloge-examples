@@ -227,8 +227,8 @@ class AgentTddCodexCertificationArtifactTest {
                 "${PRIVATE_DIR}/recall-certification.mv.db",
                 "did not open the required private persistent state store",
                 "--production-tree-fingerprint", "PRODUCTION_TREE_FINGERPRINT",
-                "--recall-trace", "--clarification-trace", "--recall-exit-code",
-                "--clarification-exit-code", "RECALL_PROMPT_FILE", "CLARIFICATION_PROMPT_FILE",
+                "--family-manifest", "FAMILY_SUITE_FILE", "FAMILY_RUN_INDEX",
+                "near-meaning-distractor", "boundary-unspecified",
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
                 "X-RG-Surface\"=\"BUSINESS_SOLUTION",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
@@ -261,7 +261,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 37 tests", "OK");
+        assertThat(output).contains("Ran 52 tests", "OK");
     }
 
     private String productionTreeFingerprint(String commit) throws Exception {
