@@ -507,8 +507,9 @@ HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证
 在临时只读工作目录启动，不读用户配置与规则，只提供带 `BUSINESS_SOLUTION` surface 的 READ、AUTHORING 两个 HTTP MCP 连接和一段业务提示词。需要避开本机端口时只设置 `RG_CERT_PORT`，不能改为远程 endpoint。认证检查业务语义和服务端 journey，不要求 Agent 记忆固定工具仪式。最终必须证明以下事实：
 
 - Codex 创建一条新业务旅程，读取库概览和创作说明，并对“取消责任方”执行结构化能力搜索；
-- 库概览先于首个实体写入；证书关联当次 `snapshotFingerprint` 和由生产解码器验证过的
-  `authoringPatternsFingerprint`，因此截图所示四实体属于同一次服务端创作上下文；
+- 库概览先于首个实体写入；Feature、Scenario、Instruction、Solution 四次写入必须携带当次
+  `authoringPatternsFingerprint`，服务端在落库前与当前生产模板校验一致；证书关联该指纹和
+  `snapshotFingerprint`，因此截图所示四实体属于同一次服务端创作上下文；
 - Feature、Scenario、Instruction、Solution 和完整 GOLDEN 提议都绑定同一 journey，写入 revision 单调连续；
 - Solution compose 使用 `rg.journey.next` 返回的当前 `solutionContextFingerprint`；
 - GOLDEN 提议与同一 Solution、case-set 和至少两条业务分支案例关联，随后通过业务读取面回读为 `PENDING`；
@@ -517,7 +518,7 @@ HEAD 产出的 JAR，因此 Git 忽略的旧 `target/classes` 不能混入认证
   未识别的 action item 时，认证失败关闭；
 - 最终回复只使用业务语言，不出现 YAML、Schema、MCP、内部引用或指纹等实现词汇。
 
-认证提示词以“取消费争议”为业务任务，要求先盘点业务积木并精确查找“取消责任方”，再表达乘客与司机两条规则、两种处置及两条完整标准案例。案例提交后必须重新查看待确认清单，确认同一两条案例仍处于人工确认状态，不能把写入响应当作审核队列证据。提示词不提供 YAML、DSL、MCP 参数、内部引用或技术字段；Coding Agent 只能从服务端库概览中的 `authoringPatterns` 自行获得四实体创作约束。四份模板本身必须通过生产 `SolutionAuthoringDecoder`，避免 Agent 根据自然语言字段清单猜测根节点、枚举值或对象形状。概览同时返回 `authoringPatternsFingerprint`；认证器必须证明该指纹与库快照在首个实体写入前已由 Codex 读取，并以不可逆 HMAC 写入证书。Codex 的标准 `resources/list` 与 `resources/templates/list` 探测可被记录为被动协议动作，但不能计入业务工具召回，也不能放宽业务 surface。
+认证提示词以“取消费争议”为业务任务，要求先盘点业务积木并精确查找“取消责任方”，再表达乘客与司机两条规则、两种处置及两条完整标准案例。案例提交后必须重新查看待确认清单，确认同一两条案例仍处于人工确认状态，不能把写入响应当作审核队列证据。提示词不提供 YAML、DSL、MCP 参数、内部引用或技术字段；Coding Agent 只能从服务端库概览中的 `authoringPatterns` 自行获得四实体创作约束。四份模板本身必须通过生产 `SolutionAuthoringDecoder`，避免 Agent 根据自然语言字段清单猜测根节点、枚举值或对象形状。概览同时返回 `authoringPatternsFingerprint`。Coding Agent 必须把它原样带入四实体的每次 journey 写入；缺失或过期时，服务端以 `CAPABILITY_CONTEXT_STALE` 在写入前拒绝，并要求重新读取概览。认证器必须证明该指纹与库快照在首个实体写入前已由 Codex 读取、四次实体写入使用同一指纹，再以不可逆 HMAC 写入证书。Codex 的标准 `resources/list` 与 `resources/templates/list` 探测可被记录为被动协议动作，但不能计入业务工具召回，也不能放宽业务 surface。
 
 默认输出为 `resource-gateway-examples/target/business-solution-codex-certification.json`。原始 Codex trace
 可能包含提示词和业务返回，脚本只在权限为 `0600` 的临时目录处理；外层 sandbox

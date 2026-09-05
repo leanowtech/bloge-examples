@@ -311,18 +311,18 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                             optionalStringList(safeArguments, "topics"),
                             optionalStringList(safeArguments, "operatorRefs"),
                             safeArguments.path("includeExamples").asBoolean(false)), identity));
-            case "rg.feature.define" -> executionSuccess(journeyAction(name, safeArguments, identity,
+            case "rg.feature.define" -> executionSuccess(businessAuthoringAction(name, safeArguments, identity,
                     () -> solutionTools().defineFeature(safeArguments, identity)));
             case "rg.feature.handoff" -> executionSuccess(journeyAction(name, safeArguments, identity,
                     () -> solutionTools().handoffFeature(safeArguments, identity)));
             case "rg.feature.evaluate" -> executionSuccess(solutionTools().evaluateFeature(safeArguments, identity));
-            case "rg.scenario.define" -> executionSuccess(journeyAction(name, safeArguments, identity,
+            case "rg.scenario.define" -> executionSuccess(businessAuthoringAction(name, safeArguments, identity,
                     () -> solutionTools().defineScenario(safeArguments, identity)));
             case "rg.instruction.define" -> executionSuccess(
-                    journeyAction(name, safeArguments, identity,
+                    businessAuthoringAction(name, safeArguments, identity,
                             () -> solutionTools().defineInstruction(safeArguments, identity)));
             case "rg.solution.compose" -> executionSuccess(
-                    journeyAction(name, safeArguments, identity,
+                    businessAuthoringAction(name, safeArguments, identity,
                             () -> solutionTools().composeSolution(safeArguments, identity)));
             case "rg.solution.getContract" -> executionSuccess(
                     solutionTools().getSolutionContract(safeArguments, identity));
@@ -422,6 +422,27 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                               java.util.function.Supplier<Map<String, Object>> action) {
         return arguments.path("journeyRef").isTextual()
                 ? journeys().executeAction(name, arguments, identity, action) : action.get();
+    }
+
+    /**
+     * Executes one four-entity authoring action against the exact server template read by Codex.
+     *
+     * <p>The coordinate is required only inside the new business journey so legacy direct authoring
+     * remains wire compatible. A missing or stale coordinate fails before the entity write and
+     * returns no current fingerprint, forcing the caller to fetch the governed overview again.</p>
+     */
+    private Map<String, Object> businessAuthoringAction(
+            String name, JsonNode arguments, IntegrationRequestContext identity,
+            java.util.function.Supplier<Map<String, Object>> action) {
+        if (!arguments.path("journeyRef").isTextual()) return action.get();
+        String supplied = optionalText(arguments, "authoringPatternsFingerprint");
+        String current = Objects.toString(libraryOverview().overview(identity, false)
+                .get("authoringPatternsFingerprint"), "");
+        if (supplied.isBlank() || !supplied.equals(current)) {
+            throw new AgentTddToolException("CAPABILITY_CONTEXT_STALE",
+                    "The business authoring template context is missing or stale.", Map.of(), true);
+        }
+        return journeys().executeAction(name, arguments, identity, action);
     }
 
     private Map<String, Object> journeyBaseline(JsonNode arguments, IntegrationRequestContext identity) {

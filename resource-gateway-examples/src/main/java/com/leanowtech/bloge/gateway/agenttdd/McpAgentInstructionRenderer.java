@@ -84,7 +84,10 @@ public final class McpAgentInstructionRenderer {
                 + " and follow only the allowedNextTools returned by " + name(McpToolCatalog.JOURNEY_NEXT)
                 + ". Use " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and "
                 + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse only governed "
-                + "business capabilities whose meaning is current. Define a missing Feature as design-only, "
+                + "business capabilities whose meaning is current. Carry the returned "
+                + "authoringPatternsFingerprint unchanged in every journey-scoped Feature, Scenario, "
+                + "Instruction, and Solution authoring call; refetch the overview when it is rejected as stale. "
+                + "Define a missing Feature as design-only, "
                 + "then call " + name(McpToolCatalog.FEATURE_HANDOFF) + "; never invent or fulfil an evaluator. "
                 + "For an unimplemented WRITE result, call " + name(McpToolCatalog.ENGINEERING_HANDOFF)
                 + " and stop at the accountable engineering boundary. Propose complete business examples with "

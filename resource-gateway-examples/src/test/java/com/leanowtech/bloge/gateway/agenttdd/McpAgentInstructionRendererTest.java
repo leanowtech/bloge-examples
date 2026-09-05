@@ -41,7 +41,8 @@ class McpAgentInstructionRendererTest {
         String platform = renderer.render(McpSurfacePolicy.Surface.PLATFORM_AUTHORING);
         String operations = renderer.render(McpSurfacePolicy.Surface.OPERATIONS);
 
-        assertThat(business).contains("rg.library.overview.get", "rg.feature.handoff")
+        assertThat(business).contains("rg.library.overview.get", "rg.feature.handoff",
+                        "authoringPatternsFingerprint")
                 .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
         assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
                 .doesNotContain("rg.feature.handoff", "rg.solution.compose");

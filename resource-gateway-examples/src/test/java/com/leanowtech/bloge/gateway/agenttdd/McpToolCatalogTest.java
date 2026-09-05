@@ -278,11 +278,11 @@ class McpToolCatalogTest {
         assertThat(stringKeys((Map<?, ?>) catalog.require("rg.feature.define")
                 .inputSchema().get("properties")))
                 .containsExactlyInAnyOrder("journeyRef", "expectedJourneyRevision",
-                        "featureYaml", "idempotencyKey");
+                        "authoringPatternsFingerprint", "featureYaml", "idempotencyKey");
         assertThat(stringKeys((Map<?, ?>) catalog.require("rg.scenario.define")
                 .inputSchema().get("properties")))
                 .containsExactlyInAnyOrder("journeyRef", "expectedJourneyRevision",
-                        "scenarioYaml", "libraryRefs", "idempotencyKey");
+                        "authoringPatternsFingerprint", "scenarioYaml", "libraryRefs", "idempotencyKey");
         assertThat(stringKeys(dataProperties(catalog.require("rg.instruction.define"))))
                 .contains("instructionId", "effect", "reasoningRequired", "writeGovernance",
                         "speccing", "contractFingerprint", "honestVerdict");

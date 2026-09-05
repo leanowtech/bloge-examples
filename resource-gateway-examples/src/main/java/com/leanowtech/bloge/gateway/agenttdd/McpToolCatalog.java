@@ -98,7 +98,7 @@ public final class McpToolCatalog {
         values.add(tool("rg.feature.define", "Define feature",
                 "Validate and store one atomic fact with a complete structured business definition.",
                 McpToolImpact.DRAFT_WRITE,
-                journeyProps("featureYaml", string(), "idempotencyKey", string()),
+                businessAuthoringProps("featureYaml", string(), "idempotencyKey", string()),
                 List.of("featureYaml", "idempotencyKey")));
         values.add(tool(FEATURE_HANDOFF, "Handoff feature design",
                 "Create an engineering ticket for one unbound platform Feature contract.",
@@ -113,18 +113,18 @@ public final class McpToolCatalog {
         values.add(tool("rg.scenario.define", "Define scenario",
                 "Validate and store one complete unique-hit business decision contract.",
                 McpToolImpact.DRAFT_WRITE,
-                journeyProps("scenarioYaml", string(), "libraryRefs", stringArray(),
+                businessAuthoringProps("scenarioYaml", string(), "libraryRefs", stringArray(),
                         "idempotencyKey", string()),
                 List.of("scenarioYaml", "libraryRefs", "idempotencyKey")));
         values.add(tool("rg.instruction.define", "Define instruction",
                 "Validate and store one result-plus-reasoning business action contract.",
                 McpToolImpact.DRAFT_WRITE,
-                journeyProps("instructionYaml", string(), "idempotencyKey", string()),
+                businessAuthoringProps("instructionYaml", string(), "idempotencyKey", string()),
                 List.of("instructionYaml", "idempotencyKey")));
         values.add(tool("rg.solution.compose", "Compose solution",
                 "Compose a pure solution from scoped Feature, Scenario and Instruction contracts.",
                 McpToolImpact.DRAFT_WRITE,
-                journeyProps("solutionYaml", string(), "authoringContextFingerprint", string(),
+                businessAuthoringProps("solutionYaml", string(), "authoringContextFingerprint", string(),
                         "solutionContextFingerprint", string(),
                         "idempotencyKey", string()),
                 List.of("solutionYaml", "idempotencyKey")));
@@ -336,6 +336,13 @@ public final class McpToolCatalog {
         values.put("journeyRef", string());
         values.put("expectedJourneyRevision", integer());
         values.putAll(props(entries));
+        return Map.copyOf(values);
+    }
+
+    /** Adds the server-template coordinate required by journey-scoped four-entity authoring. */
+    private static Map<String, Object> businessAuthoringProps(Object... entries) {
+        LinkedHashMap<String, Object> values = new LinkedHashMap<>(journeyProps(entries));
+        values.put("authoringPatternsFingerprint", string());
         return Map.copyOf(values);
     }
 

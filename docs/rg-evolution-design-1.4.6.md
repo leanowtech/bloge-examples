@@ -1133,7 +1133,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 }
 ```
 
-证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。服务端返回给 Coding Agent 的四实体创作模板必须由生产解码器逐份验证；字段说明或未经编译的示意文本不能作为创作参考。overview 必须返回覆盖四份模板的 `authoringPatternsFingerprint`，并将模板纳入 `snapshotFingerprint`。真实 Codex 证书必须证明 overview 先于首个实体写入，并以不可逆关联指纹保存当次模板与库快照身份。Codex 自动发起的 MCP resource 探测只作为被动协议动作记录，不计入召回成功，也不允许扩展业务 surface。
+证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。服务端返回给 Coding Agent 的四实体创作模板必须由生产解码器逐份验证；字段说明或未经编译的示意文本不能作为创作参考。overview 必须返回覆盖四份模板的 `authoringPatternsFingerprint`，并将模板纳入 `snapshotFingerprint`。Feature、Scenario、Instruction、Solution 的 journey 写入必须携带该模板指纹；服务端必须在落库前与当前模板校验，缺失或过期时返回 `CAPABILITY_CONTEXT_STALE`。真实 Codex 证书必须证明 overview 先于首个实体写入、四次写入绑定同一模板指纹，并以不可逆关联指纹保存当次模板与库快照身份。Codex 自动发起的 MCP resource 探测只作为被动协议动作记录，不计入召回成功，也不允许扩展业务 surface。
 创作认证停在人工批准之前，不生成受控执行计划，因此不声明 `executionPlanCurrent`。受控执行当前性和零外呼由真实 HTTP 主线与服务级并发测试证明。单次清晰话语没有能力复用或歧义样本时，`recallAt3` 和 `clarificationRate` 必须为 `null`，不能写成 `1.0`。
 
 ## 15. 实施计划

@@ -28,6 +28,7 @@ def call(server: str, tool: str, arguments: dict, data: dict, status: str = "com
 def valid_events() -> list[dict]:
     journey = "journey:test"
     context = "sha256:" + "a" * 64
+    patterns = "sha256:" + "b" * 64
     events = [
         call("rg_author", "rg.journey.start",
              {"intentKind": "CREATE_SOLUTION", "businessGoal": "private", "idempotencyKey": "start"},
@@ -36,12 +37,13 @@ def valid_events() -> list[dict]:
         call("rg_read", "rg.library.overview.get", {"includeSamples": False},
              {"buildingBlocks": [], "worldModel": {}, "authoringPatterns": {}, "samples": [],
               "snapshotFingerprint": context,
-              "authoringPatternsFingerprint": "sha256:" + "b" * 64}),
+              "authoringPatternsFingerprint": patterns}),
         call("rg_read", "rg.capability.search", {"query": {"intent": "private"}},
              {"status": "NONE", "snapshotFingerprint": context, "candidates": [],
               "clarification": {"required": False, "dimension": "", "question": ""}}),
         call("rg_author", "rg.feature.define",
              {"journeyRef": journey, "expectedJourneyRevision": 1,
+              "authoringPatternsFingerprint": patterns,
               "featureYaml": "private", "idempotencyKey": "feature"},
              {"featureId": "feature:test"}),
         call("rg_read", "rg.journey.next", {"journeyRef": journey, "expectedRevision": 2},
@@ -49,10 +51,12 @@ def valid_events() -> list[dict]:
               "surface": "BUSINESS_SOLUTION", "solutionContextFingerprint": ""}),
         call("rg_author", "rg.scenario.define",
              {"journeyRef": journey, "expectedJourneyRevision": 2,
+              "authoringPatternsFingerprint": patterns,
               "scenarioYaml": "private", "libraryRefs": [], "idempotencyKey": "scenario"},
              {"scenarioId": "scenario:test"}),
         call("rg_author", "rg.instruction.define",
              {"journeyRef": journey, "expectedJourneyRevision": 3,
+              "authoringPatternsFingerprint": patterns,
               "instructionYaml": "private", "idempotencyKey": "instruction"},
              {"instructionId": "instruction:test"}),
         call("rg_read", "rg.journey.next", {"journeyRef": journey, "expectedRevision": 4},
@@ -60,6 +64,7 @@ def valid_events() -> list[dict]:
               "surface": "BUSINESS_SOLUTION", "solutionContextFingerprint": context}),
         call("rg_author", "rg.solution.compose",
              {"journeyRef": journey, "expectedJourneyRevision": 4,
+              "authoringPatternsFingerprint": patterns,
               "solutionContextFingerprint": context, "solutionYaml": "private",
               "idempotencyKey": "solution"},
              {"solutionRef": "solution:test", "contractFingerprint": "sha256:" + "d" * 64}),
@@ -115,6 +120,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertRegex(certificate["correlation"]["authoringPatterns"], r"^hmac-sha256:")
         self.assertTrue(certificate["assertions"]
                         ["compilerValidatedAuthoringPatternsObservedBeforeCreation"])
+        self.assertTrue(certificate["assertions"]["fourEntityWritesBoundToAuthoringPatterns"])
         self.assertNotIn("private", json.dumps(certificate))
         self.assertIsNone(certificate["metrics"]["recallAt3"])
 
@@ -136,6 +142,18 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         overview = events.pop(1)
         events.insert(4, overview)
         with self.assertRaisesRegex(MODULE.CertificationFailure, "before entity creation"):
+            self.certify(events)
+
+    def test_rejects_entity_write_without_the_observed_template_context(self) -> None:
+        events = valid_events()
+        events[5]["item"]["arguments"].pop("authoringPatternsFingerprint")
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "not bound"):
+            self.certify(events)
+
+    def test_rejects_entity_write_with_a_different_template_context(self) -> None:
+        events = valid_events()
+        events[6]["item"]["arguments"]["authoringPatternsFingerprint"] = "sha256:" + "c" * 64
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "not bound"):
             self.certify(events)
 
     def test_rejects_cross_journey_asset(self) -> None:

@@ -162,12 +162,19 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
 
     authored = [call for call in calls if call["successful"] and call["tool"] in AUTHORING_TOOLS
                 and call["tool"] != "rg.journey.start"]
+    four_entity_tools = {
+        "rg.feature.define", "rg.scenario.define", "rg.instruction.define", "rg.solution.compose",
+    }
     revision = 1
     for call in authored:
         if call["arguments"].get("journeyRef") != journey_ref:
             raise CertificationFailure("an authored asset belongs to another journey")
         if call["arguments"].get("expectedJourneyRevision") != revision:
             raise CertificationFailure("journey revisions are not one monotonic authoring line")
+        if call["tool"] in four_entity_tools \
+                and call["arguments"].get("authoringPatternsFingerprint") != authoring_patterns:
+            raise CertificationFailure(
+                "four-entity authoring was not bound to the server-validated template context")
         revision += 1
 
     required_kinds = ["rg.feature.define", "rg.scenario.define", "rg.instruction.define",
@@ -322,6 +329,7 @@ def certify(trace: Path, metadata: dict[str, Any]) -> dict[str, Any]:
             "journeyRevisionLineCurrent": True,
             "libraryAndCapabilityDiscoveryObserved": True,
             "compilerValidatedAuthoringPatternsObservedBeforeCreation": True,
+            "fourEntityWritesBoundToAuthoringPatterns": True,
             "solutionContextCurrent": True,
             "completeGoldenCasesProposed": True,
             "sameJourneySolutionAndCaseSet": True,

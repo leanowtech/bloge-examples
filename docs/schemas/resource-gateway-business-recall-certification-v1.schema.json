@@ -111,12 +111,13 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },
         "libraryAndCapabilityDiscoveryObserved": { "const": true },
         "compilerValidatedAuthoringPatternsObservedBeforeCreation": { "const": true },
+        "fourEntityWritesBoundToAuthoringPatterns": { "const": true },
         "solutionContextCurrent": { "const": true },
         "completeGoldenCasesProposed": { "const": true },
         "sameJourneySolutionAndCaseSet": { "const": true },
