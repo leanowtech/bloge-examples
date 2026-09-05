@@ -51,6 +51,45 @@ class McpSurfacePolicyTest {
     }
 
     @Test
+    void requiredSurfaceRejectsHeaderlessCallersWithoutInventingALegacySurface() {
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setRequireSurface(true);
+        McpSurfacePolicy strict = new McpSurfacePolicy(AgentTddAuthoringTelemetry.noop(), properties);
+
+        assertThatThrownBy(() -> strict.resolve(""))
+                .isInstanceOfSatisfying(McpProtocolException.class,
+                        failure -> assertThat(failure.getMessage()).isEqualTo("SURFACE_REQUIRED"));
+    }
+
+    @Test
+    void disabledSemanticRecallRemovesOnlyTheEightRolloutToolsFromLegacyCatalog() {
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setEnabled(false);
+        McpSurfacePolicy rolledBack = new McpSurfacePolicy(AgentTddAuthoringTelemetry.noop(), properties);
+
+        assertThat(rolledBack.visibleDefinitions(catalog.all(), McpSurfacePolicy.Surface.LEGACY_ALL,
+                identity("AGENT_TDD_READ"))).hasSize(42);
+        assertThat(rolledBack.visible(catalog.require("rg.capability.search"),
+                McpSurfacePolicy.Surface.LEGACY_ALL, identity("AGENT_TDD_READ"))).isFalse();
+        assertThat(rolledBack.visible(catalog.require("rg.contract.get"),
+                McpSurfacePolicy.Surface.LEGACY_ALL, identity("AGENT_TDD_READ"))).isTrue();
+    }
+
+    @Test
+    void disabledControlledTestsHideBusinessBaselineButKeepApprovedCasesReadable() {
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setControlledBusinessTestsEnabled(false);
+        McpSurfacePolicy rolledBack = new McpSurfacePolicy(AgentTddAuthoringTelemetry.noop(), properties);
+
+        assertThat(rolledBack.visible(catalog.require("rg.solution.baseline"),
+                McpSurfacePolicy.Surface.BUSINESS_SOLUTION,
+                identity("AGENT_TDD_EXECUTION"))).isFalse();
+        assertThat(rolledBack.visible(catalog.require("rg.solution.golden.list"),
+                McpSurfacePolicy.Surface.BUSINESS_SOLUTION,
+                identity("AGENT_TDD_READ"))).isTrue();
+    }
+
+    @Test
     void recordsOnlyLowCardinalityExplicitAndLegacySurfaceNames() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         McpSurfacePolicy measured = new McpSurfacePolicy(new AgentTddAuthoringTelemetry(registry));

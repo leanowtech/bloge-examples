@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.SolutionAuthoringDecoder;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -46,6 +48,8 @@ public final class McpProtocolController {
     private final McpRequestLimiter limiter;
     private final McpAgentInstructionRenderer instructions;
     private final McpSurfacePolicy surfaces;
+    private final SemanticRecallProperties semanticRecall;
+    private final SolutionAuthoringDecoder solutionDecoder;
 
     /** Creates the authenticated MCP transport. */
     public McpProtocolController(ObjectMapper mapper,
@@ -53,7 +57,7 @@ public final class McpProtocolController {
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker) {
         this(mapper, catalog, authenticator, invoker, McpRequestLimiter.defaults(),
-                AgentTddAuthoringTelemetry.noop());
+                AgentTddAuthoringTelemetry.noop(), new SemanticRecallProperties());
     }
 
     /** Creates a transport with configured pre-dispatch admission and inert surface telemetry. */
@@ -62,24 +66,39 @@ public final class McpProtocolController {
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker,
                                  McpRequestLimiter limiter) {
-        this(mapper, catalog, authenticator, invoker, limiter, AgentTddAuthoringTelemetry.noop());
+        this(mapper, catalog, authenticator, invoker, limiter, AgentTddAuthoringTelemetry.noop(),
+                new SemanticRecallProperties());
     }
 
-    /** Creates the Spring transport with rate, concurrency and surface observability. */
-    @Autowired
+    /** Creates a transport with configured admission and surface observability. */
     public McpProtocolController(ObjectMapper mapper,
                                  McpToolCatalog catalog,
                                  IntegrationRequestAuthenticator authenticator,
                                  McpToolInvoker invoker,
                                  McpRequestLimiter limiter,
                                  AgentTddAuthoringTelemetry telemetry) {
+        this(mapper, catalog, authenticator, invoker, limiter, telemetry,
+                new SemanticRecallProperties());
+    }
+
+    /** Creates the Spring transport with independently reversible semantic-recall controls. */
+    @Autowired
+    public McpProtocolController(ObjectMapper mapper,
+                                 McpToolCatalog catalog,
+                                 IntegrationRequestAuthenticator authenticator,
+                                 McpToolInvoker invoker,
+                                 McpRequestLimiter limiter,
+                                 AgentTddAuthoringTelemetry telemetry,
+                                 SemanticRecallProperties semanticRecall) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.catalog = Objects.requireNonNull(catalog, "catalog");
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
         this.invoker = Objects.requireNonNull(invoker, "invoker");
         this.limiter = Objects.requireNonNull(limiter, "limiter");
         this.instructions = new McpAgentInstructionRenderer(catalog);
-        this.surfaces = new McpSurfacePolicy(telemetry);
+        this.semanticRecall = Objects.requireNonNull(semanticRecall, "semanticRecall");
+        this.surfaces = new McpSurfacePolicy(telemetry, semanticRecall);
+        this.solutionDecoder = new SolutionAuthoringDecoder();
     }
 
     /**
@@ -194,11 +213,13 @@ public final class McpProtocolController {
         IntegrationRequestContext identity = authenticate(headers, definition.impact());
         McpSurfacePolicy.Surface requestedSurface = surface(headers);
         surfaces.requireVisible(definition, requestedSurface, identity);
-        if (requestedSurface == McpSurfacePolicy.Surface.BUSINESS_SOLUTION
+        if (semanticRecall.isEnforceJourneyActions()
+                && requestedSurface == McpSurfacePolicy.Surface.BUSINESS_SOLUTION
                 && isJourneyAction(name)
                 && !arguments.path("journeyRef").isTextual()) {
             throw new McpProtocolException(-32602, "JOURNEY_REQUIRED");
         }
+        requireSupportedFeatureContract(name, arguments);
         JsonNode structured;
         try (McpRequestLimiter.Permit ignored = limiter.acquire(identity, name)) {
             structured = mapper.valueToTree(invoker.invoke(name, arguments, identity));
@@ -235,8 +256,8 @@ public final class McpProtocolController {
         return Map.of(
                 "protocolVersion", MODERN_PROTOCOL_VERSION,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
-                "capabilities", Map.of("tools", Map.of("listChanged", false)),
-                "instructions", instructions.render(surface)
+                "capabilities", capabilities(),
+                "instructions", renderedInstructions(surface)
         );
     }
 
@@ -250,13 +271,39 @@ public final class McpProtocolController {
         return Map.of(
                 "protocolVersion", requested.isBlank() ? LEGACY_PROTOCOL_VERSION : requested,
                 "serverInfo", Map.of("name", "bloge-resource-gateway", "version", SERVER_VERSION),
-                "capabilities", Map.of("tools", Map.of("listChanged", false)),
-                "instructions", instructions.render(surface(headers))
+                "capabilities", capabilities(),
+                "instructions", renderedInstructions(surface(headers))
         );
     }
 
     private McpSurfacePolicy.Surface surface(HttpHeaders headers) {
         return surfaces.resolve(header(headers, "X-RG-Surface"));
+    }
+
+    private Map<String, Object> capabilities() {
+        return Map.of(
+                "tools", Map.of("listChanged", false),
+                "experimental", Map.of("rg.semanticRecall", semanticRecall.readiness()));
+    }
+
+    private String renderedInstructions(McpSurfacePolicy.Surface surface) {
+        if (!semanticRecall.isEnabled()
+                && (surface == McpSurfacePolicy.Surface.BUSINESS_SOLUTION
+                || surface == McpSurfacePolicy.Surface.LEGACY_ALL)) {
+            return "Business semantic discovery and journey navigation are disabled by server configuration. "
+                    + "Use only the operations returned by tools/list; do not infer hidden business tools.";
+        }
+        return instructions.render(surface);
+    }
+
+    private void requireSupportedFeatureContract(String name, JsonNode arguments) {
+        if (semanticRecall.isAllowLegacyFeatureContract() || !"rg.feature.define".equals(name)) return;
+        String source = text(arguments, "featureYaml");
+        SolutionAuthoringDecoder.DecodeResult<com.leanowtech.bloge.gateway.solution.FeatureContract> decoded =
+                solutionDecoder.decodeFeature(source.getBytes(StandardCharsets.UTF_8));
+        if (decoded.successful() && decoded.value().businessDefinition().incompleteLegacyProjection()) {
+            throw new McpProtocolException(-32602, "LEGACY_FEATURE_CONTRACT_DISABLED");
+        }
     }
 
     private IntegrationRequestContext authenticate(HttpHeaders headers, McpToolImpact impact) {

@@ -14,6 +14,11 @@ import java.util.Set;
  * mode preserves the pre-1.4.6 catalog only when the request omits {@code X-RG-Surface}.</p>
  */
 public final class McpSurfacePolicy {
+    private static final Set<String> SEMANTIC_RECALL_ROLLOUT = Set.of(
+            "rg.library.overview.get",
+            "rg.capability.search", "rg.entity.list", "rg.entity.get",
+            "rg.journey.start", "rg.journey.next",
+            "rg.solution.golden.propose", "rg.solution.golden.list");
     private static final Set<String> BUSINESS_SOLUTION = Set.of(
             "rg.library.overview.get",
             "rg.capability.search", "rg.entity.list", "rg.entity.get",
@@ -29,14 +34,20 @@ public final class McpSurfacePolicy {
             "rg.capability.search", "rg.entity.list", "rg.entity.get",
             "rg.solution.getContract", "rg.solution.readiness", "rg.solution.performance");
     private final AgentTddAuthoringTelemetry telemetry;
+    private final SemanticRecallProperties properties;
 
     /** Creates the compatibility policy with inert telemetry for focused tests. */
     public McpSurfacePolicy() {
-        this(AgentTddAuthoringTelemetry.noop());
+        this(AgentTddAuthoringTelemetry.noop(), new SemanticRecallProperties());
     }
 
     McpSurfacePolicy(AgentTddAuthoringTelemetry telemetry) {
+        this(telemetry, new SemanticRecallProperties());
+    }
+
+    McpSurfacePolicy(AgentTddAuthoringTelemetry telemetry, SemanticRecallProperties properties) {
         this.telemetry = java.util.Objects.requireNonNull(telemetry, "telemetry");
+        this.properties = java.util.Objects.requireNonNull(properties, "properties");
     }
 
     /** Stable product surfaces accepted by the MCP boundary. */
@@ -57,6 +68,9 @@ public final class McpSurfacePolicy {
     public Surface resolve(String headerValue) {
         String value = headerValue == null ? "" : headerValue.trim();
         if (value.isBlank()) {
+            if (properties.isRequireSurface()) {
+                throw new McpProtocolException(-32602, "SURFACE_REQUIRED");
+            }
             telemetry.surfaceUsed(Surface.LEGACY_ALL.name());
             return Surface.LEGACY_ALL;
         }
@@ -84,6 +98,10 @@ public final class McpSurfacePolicy {
                            Surface surface,
                            IntegrationRequestContext identity) {
         if (definition == null || surface == null || identity == null) return false;
+        if (!properties.isEnabled() && SEMANTIC_RECALL_ROLLOUT.contains(definition.name())) return false;
+        if (!properties.isControlledBusinessTestsEnabled()
+                && surface == Surface.BUSINESS_SOLUTION
+                && "rg.solution.baseline".equals(definition.name())) return false;
         if (surface == Surface.LEGACY_ALL) return true;
         if (!definition.impact().operation().accepts(identity.purpose())) return false;
         return switch (surface) {

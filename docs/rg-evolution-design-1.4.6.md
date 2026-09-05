@@ -1248,7 +1248,7 @@ P4a 可以先作为只读建议发布。P4b 和 P4c 未通过验收前，不得�
 ### 16.2 灰度开关
 
 ```yaml
-resource-gateway:
+gateway:
   agent-tdd:
     semantic-recall:
       enabled: false
@@ -1260,6 +1260,10 @@ resource-gateway:
 ```
 
 灰度顺序：READ 投影 → surface 过滤 → Feature v2 写入 → journey 建议 → GOLDEN 业务入口 → 受控测试 → journey 强制。每一步都可单独回退。
+
+上面的配置是首次灰度起点，不是完成态默认值。完成 v1.4.6 认证后，仓库默认使用 `enabled=true`、`enforce-journey-actions=true`、`controlled-business-tests-enabled=true`、`allow-legacy-feature-contract=true`、`semantic-ranker-enabled=false`、`require-surface=false`。前 3 项保持已认证业务主线可用；后 3 项保留 Header 和旧 Feature 兼容，并明确不启用尚未实现的独立语义 ranker。
+
+服务端在 MCP `initialize` 和 `server/discover` 的 `capabilities.experimental["rg.semanticRecall"]` 投影低基数有效状态。关闭 `enabled` 只移除本版新增的 8 个业务发现和 journey 工具，旧 42 项目录保持可用。关闭受控业务测试后，业务 surface 隐藏 `rg.solution.baseline`，但保留已批准案例的只读入口。`semantic-ranker-enabled=true` 只会报告 `NOT_AVAILABLE` 和 `effective=false`；当前确定性契约 matcher 不冒充独立 ranker。
 
 ### 16.3 回滚边界
 
@@ -1347,8 +1351,8 @@ resource-gateway:
 | 阶段 | 当前状态 | 完成证据 |
 |---|---|---|
 | P0 目录真相统一 | 已完成 | 50 项 catalog 与 invoker 对齐；`rg.library.overview.get` 严格输入/输出 Schema；目录生成初始化说明；config、分发器、脚本和手册一致性测试；真实 MCP 边界调用测试 |
-| P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具 |
-| P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL |
+| P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
+| P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；五源集成测试覆盖确定性去重、排序和 scope 隔离；游标绑定与 stale 失败关闭；三个 READ 工具和严格 Schema；自然语言初搜只报 PARTIAL；六项灰度状态经 MCP 初始化投影 |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile；journey 新写入拒绝自由文本兼容投影；旧版 UNKNOWN/PARTIAL 只读兼容；matcher 按 profile 比较封闭业务维度；多 EXACT 歧义停止；实现 binding 排除于业务身份；四实体业务定义纳入契约指纹和服务端创作模板 |
 | P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；独立 `BusinessFixtureCompiler` 将业务事实和五类依赖结果编译为确定性 `ControlledAssumptionPlan`，拒绝歧义、不可达能力和不适用于 WRITE 的返回事实；case-scoped WRITE/READ 受控通道、`MUST_NOT_BE_USED`、契约漂移失效；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 已完成 | 当前干净提交已通过三个独立真实 Codex 会话：“业务创作→新会话同义召回→缺字段时单问题澄清”；三个 thread identity 仅以一次性 HMAC 留存且必须互不相同；召回候选与主链 Feature 按真实引用和契约指纹关联，目标位于 Top-1/Top-3；澄清会话可见业务写面但写调用为零；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板和库快照，Schema 直接编码 §14.4 的非零样本与指标门；37 个证书正反例通过；JSON、可视化过程报告和 1440×1440 截图留存。§14.3 的 15 类语义反例由 matcher、surface、journey、currentness 和受控假设测试逐类失败关闭，真实 Codex 证书保留三类代表性端到端会话 |

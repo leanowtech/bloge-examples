@@ -9,10 +9,18 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -134,6 +142,58 @@ class BusinessCapabilityIndexTest {
                         });
     }
 
+    @Test
+    void freezesFiveScopedSourcesWithDeterministicDedupeAndSort() {
+        IntegrationRequestContext identity = identity("project-a");
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        saveFeature(states, scope(identity), "feature:cancel.party", 0);
+        saveEntity(states, scope(identity), SolutionEntityRegistry.SOLUTION,
+                "solution:cancel", "SOLUTION");
+        saveFeature(states, scope(identity("project-b")), "feature:other-scope", 0);
+
+        OperatorDefinition libraryOperator = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition runtimeOperator = VisualCatalogTestSupport.scoreFactsOperator();
+        OperatorDefinition outOfScope = new OperatorDefinition(
+                runtimeOperator.schemaVersion(), "risk:other-scope", runtimeOperator.operatorVersion(),
+                runtimeOperator.display(), runtimeOperator.source(), runtimeOperator.ports(),
+                runtimeOperator.configSchema(), runtimeOperator.capabilities(),
+                new OperatorDefinition.Policy(List.of("tenant-a"), List.of("project-b"), List.of("test")),
+                runtimeOperator.lowering(), runtimeOperator.diagnostics());
+        OperatorLibrary library = new OperatorLibrary("", "risk-policy", "Risk", "1", "risk-team",
+                "ACTIVE", List.of(libraryOperator, outOfScope));
+        OperatorLibraryRegistry libraries = mock(OperatorLibraryRegistry.class);
+        when(libraries.all()).thenReturn(List.of(library));
+        VisualOperatorCatalog catalog = mock(VisualOperatorCatalog.class);
+        when(catalog.list(any())).thenReturn(List.of(runtimeOperator, libraryOperator, outOfScope));
+
+        GraphDraft draft = draft("draft:cancel", "tenant-a", "project-a", "test");
+        GraphDraft otherDraft = draft("draft:other", "tenant-a", "project-b", "test");
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        when(drafts.all()).thenReturn(List.of(otherDraft, draft));
+        VisualGraphPublication publication = publication("publication:cancel", draft);
+        VisualGraphPublication otherPublication = publication("publication:other", otherDraft);
+        VisualGraphPublicationRepository publications = mock(VisualGraphPublicationRepository.class);
+        when(publications.all()).thenReturn(List.of(otherPublication, publication));
+
+        BusinessCapabilityIndex index = new BusinessCapabilityIndex(
+                states, libraries, catalog, drafts, publications, mapper);
+        BusinessCapabilityIndex.Snapshot first = index.freeze(identity);
+        BusinessCapabilityIndex.Snapshot second = index.freeze(identity);
+
+        assertThat(first.catalogRevisionVector().keySet()).containsExactlyInAnyOrder(
+                "solutionEntities", "operatorLibraries", "runtimeCatalog", "graphDrafts", "publications");
+        assertThat(first.capabilities()).extracting(BusinessCapabilityIndex.Card::assetRef)
+                .containsExactly("feature:cancel.party", "risk:eligibility", "risk:scoreFacts",
+                        "publication:cancel", "solution:cancel", "draft:cancel");
+        BusinessCapabilityIndex.Card deduplicated = first.capabilities().stream()
+                .filter(card -> card.assetRef().equals("risk:eligibility"))
+                .findFirst().orElseThrow();
+        assertThat(deduplicated.source().registry()).isEqualTo("OPERATOR_LIBRARY");
+        assertThat(first.capabilities()).extracting(BusinessCapabilityIndex.Card::assetRef)
+                .doesNotContain("feature:other-scope", "risk:other-scope", "draft:other", "publication:other");
+        assertThat(second.snapshotFingerprint()).isEqualTo(first.snapshotFingerprint());
+    }
+
     private BusinessCapabilityIndex index(AgentTddStateRepository states) {
         OperatorLibraryRegistry libraries = mock(OperatorLibraryRegistry.class);
         VisualOperatorCatalog catalog = mock(VisualOperatorCatalog.class);
@@ -149,6 +209,32 @@ class BusinessCapabilityIndexTest {
     private void saveFeature(InMemoryAgentTddStateRepository states, String scope, String ref, long ignored) {
         AgentTddStoredAsset value = asset(scope, ref, 1);
         states.save(scope, SolutionEntityRegistry.FEATURE, ref, value.data());
+    }
+
+    private void saveEntity(InMemoryAgentTddStateRepository states, String scope, String kind,
+                            String ref, String entityKind) {
+        ObjectNode contract = mapper.createObjectNode();
+        contract.putObject("businessSemantics").put("businessName", ref);
+        ObjectNode data = mapper.createObjectNode();
+        data.put("entityKind", entityKind);
+        data.set("contract", contract);
+        data.put("contractFingerprint", "sha256:" + "b".repeat(64));
+        data.put("speccing", false);
+        states.save(scope, kind, ref, data);
+    }
+
+    private static GraphDraft draft(String draftId, String tenant, String project, String environment) {
+        return new GraphDraft("", draftId, 1, draftId.replace(':', '_'), tenant, project, environment,
+                "DRAFT", SchemaEnvelope.opaque(), List.of(), List.of(), Map.of("assetKind", "TOOL"),
+                GraphDraft.OutputSelection.empty());
+    }
+
+    private static VisualGraphPublication publication(String publicationId, GraphDraft draft) {
+        return new VisualGraphPublication("", publicationId, draft.draftId(), draft.revision(),
+                draft.graphName(), draft.tenantId(), draft.namespace(), draft.environment(), Instant.EPOCH,
+                draft, List.of(), Map.of(), Map.of(), "",
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, "", List.of()));
     }
 
     private void saveSemanticFeature(InMemoryAgentTddStateRepository states, String ref,

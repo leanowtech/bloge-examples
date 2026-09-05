@@ -110,6 +110,12 @@ authenticated purpose. The checked-in Codex configuration uses only `BUSINESS_SO
 conversation cannot discover or bypass into DSL, Graph/Tool, fixture, stub, or low-level scenario-test tools.
 Headerless clients retain the 1.4.5 catalog during the compatibility window and increment the payload-free
 `rg.mcp.surface.requests{surface="legacy_all"}` metric.
+The `gateway.agent-tdd.semantic-recall` controls independently roll back the eight 1.4.6 discovery/journey
+tools, mandatory surface headers, journey envelopes, controlled business baselines, and legacy Feature writes.
+The checked-in defaults keep the completed business workflow active while retaining the headerless and legacy
+Feature compatibility paths. MCP initialization exposes these low-cardinality effective states under
+`capabilities.experimental["rg.semanticRecall"]`. `semantic-ranker-enabled` remains a readiness-only request in
+1.4.6: the server reports `semanticRankerEffective=false` and continues to use deterministic contract matching.
 Sandbox attestation also rejects stable or mixed DNS answers in private and RFC special-purpose ranges, including
 documentation, benchmark, protocol-assignment, discard-only, transition and reserved addresses.
 The board derives each Tool's position and next business action along the five-act journey from

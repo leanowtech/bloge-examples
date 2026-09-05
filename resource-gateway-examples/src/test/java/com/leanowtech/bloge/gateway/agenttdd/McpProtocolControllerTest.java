@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -33,6 +33,61 @@ import static org.mockito.Mockito.when;
 /** Verifies the MCP Streamable HTTP boundary for legacy and stateless Codex clients. */
 class McpProtocolControllerTest {
     private final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void rolloutFlagsControlJourneyAndLegacyFeatureWritesAndAdvertiseEffectiveReadiness() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), any())).thenReturn(identity("AGENT_TDD_AUTHORING"));
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setEnforceJourneyActions(false);
+        properties.setAllowLegacyFeatureContract(false);
+        properties.setSemanticRankerEnabled(true);
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator,
+                (name, arguments, identity) -> Map.of("featureId", "feature:legacy"),
+                McpRequestLimiter.defaults(), AgentTddAuthoringTelemetry.noop(), properties);
+        HttpHeaders business = modernHeaders("tools/call", "rg.feature.define");
+        business.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode rejected = controller.exchange(request(1, "tools/call", Map.of(
+                "name", "rg.feature.define", "arguments", Map.of(
+                        "featureYaml", "feature:legacy:\n  output: {type: string}\n  evaluationKind: API\n  determinism: DETERMINISTIC\n",
+                        "journeyRef", "journey:legacy", "expectedJourneyRevision", 1,
+                        "idempotencyKey", "legacy-feature"))), business).getBody();
+        HttpHeaders initializeHeaders = modernHeaders("initialize", null);
+        initializeHeaders.set("X-RG-Surface", "BUSINESS_SOLUTION");
+        JsonNode initialized = controller.exchange(request(2, "initialize", Map.of(
+                "protocolVersion", McpProtocolController.MODERN_PROTOCOL_VERSION)), initializeHeaders).getBody();
+
+        assertThat(rejected.at("/error/message").asText()).isEqualTo("LEGACY_FEATURE_CONTRACT_DISABLED");
+        assertThat(initialized.at("/result/capabilities/experimental/rg.semanticRecall/enforceJourneyActions")
+                .asBoolean()).isFalse();
+        assertThat(initialized.at("/result/capabilities/experimental/rg.semanticRecall/semanticRankerConfigured")
+                .asBoolean()).isTrue();
+        assertThat(initialized.at("/result/capabilities/experimental/rg.semanticRecall/semanticRankerEffective")
+                .asBoolean()).isFalse();
+        assertThat(initialized.at("/result/capabilities/experimental/rg.semanticRecall/semanticRankerState")
+                .asText()).isEqualTo("NOT_AVAILABLE");
+    }
+
+    @Test
+    void disabledSemanticRecallDoesNotRecommendToolsRemovedFromTheCatalog() {
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setEnabled(false);
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), mock(IntegrationRequestAuthenticator.class),
+                (name, arguments, identity) -> Map.of(), McpRequestLimiter.defaults(),
+                AgentTddAuthoringTelemetry.noop(), properties);
+        HttpHeaders headers = modernHeaders("initialize", null);
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        JsonNode response = controller.exchange(request(3, "initialize", Map.of(
+                "protocolVersion", McpProtocolController.MODERN_PROTOCOL_VERSION)), headers).getBody();
+
+        assertThat(response.at("/result/instructions").asText())
+                .contains("disabled by server configuration", "tools/list")
+                .doesNotContain("rg.capability.search", "rg.journey.start", "rg.solution.golden.propose");
+    }
 
     @Test
     void listsToolsUsingModernStatelessRoutingAndReadPurpose() {
@@ -141,6 +196,28 @@ class McpProtocolControllerTest {
         assertThat(response.path("error").path("code").asInt()).isEqualTo(-32602);
         assertThat(response.path("error").path("message").asText()).isEqualTo("JOURNEY_REQUIRED");
         assertThat(invoker.called).isFalse();
+    }
+
+    @Test
+    void disabledJourneyEnforcementPreservesTheBusinessMutationCompatibilityPath() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.AGENT_TDD_DRAFT_WRITE)))
+                .thenReturn(identity("AGENT_TDD_AUTHORING"));
+        SemanticRecallProperties properties = new SemanticRecallProperties();
+        properties.setEnforceJourneyActions(false);
+        McpToolControllerProbe invoker = new McpToolControllerProbe();
+        McpProtocolController controller = new McpProtocolController(
+                mapper, new McpToolCatalog(), authenticator, invoker,
+                McpRequestLimiter.defaults(), AgentTddAuthoringTelemetry.noop(), properties);
+        HttpHeaders headers = modernHeaders("tools/call", "rg.feature.define");
+        headers.set("X-RG-Surface", "BUSINESS_SOLUTION");
+
+        controller.exchange(request(84, "tools/call", Map.of(
+                "name", "rg.feature.define", "arguments", Map.of(
+                        "featureYaml", "fact: {output: {type: string}}",
+                        "idempotencyKey", "compatibility-feature"))), headers);
+
+        assertThat(invoker.called).isTrue();
     }
 
     @Test

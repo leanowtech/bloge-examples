@@ -59,6 +59,16 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   agent-tdd:
+    semantic-recall:
+      # Completed v1.4.6 defaults keep the business workflow active. Each control remains
+      # independently reversible during a staged rollout or incident rollback.
+      enabled: ${RG_AGENT_TDD_SEMANTIC_RECALL_ENABLED:true}
+      require-surface: ${RG_AGENT_TDD_SEMANTIC_RECALL_REQUIRE_SURFACE:false}
+      enforce-journey-actions: ${RG_AGENT_TDD_SEMANTIC_RECALL_ENFORCE_JOURNEY_ACTIONS:true}
+      controlled-business-tests-enabled: ${RG_AGENT_TDD_CONTROLLED_BUSINESS_TESTS_ENABLED:true}
+      allow-legacy-feature-contract: ${RG_AGENT_TDD_ALLOW_LEGACY_FEATURE_CONTRACT:true}
+      # v1.4.6 advertises this configured value but reports effective=false until a ranker lands.
+      semantic-ranker-enabled: ${RG_AGENT_TDD_SEMANTIC_RANKER_ENABLED:false}
     cancel-dispute-demo:
       # Local-only adapters and ledger for the documented cancellation-dispute journey.
       enabled: ${RG_AGENT_TDD_CANCEL_DISPUTE_DEMO_ENABLED:false}

@@ -183,10 +183,15 @@ public final class BusinessCapabilityIndex {
         List<AgentTddStoredAsset> entities = ENTITY_KINDS.stream().sorted()
                 .flatMap(kind -> states.list(scope, kind).stream()).toList();
         List<OperatorLibrary> libraryValues = libraries.all().stream().filter(Objects::nonNull)
+                .map(library -> scopedLibrary(library, identity))
+                .filter(library -> !library.operators().isEmpty())
                 .sorted(Comparator.comparing(OperatorLibrary::libraryId)).toList();
         List<OperatorDefinition> runtime = catalog.list(new OperatorCatalogQuery(
                 "", List.of(), false, true, identity.tenantId(), identity.projectId(), identity.environmentId()))
-                .stream().filter(Objects::nonNull).sorted(Comparator.comparing(OperatorDefinition::operatorRef)).toList();
+                .stream().filter(Objects::nonNull)
+                .filter(operator -> operator.policy().allows(
+                        identity.tenantId(), identity.projectId(), identity.environmentId()))
+                .sorted(Comparator.comparing(OperatorDefinition::operatorRef)).toList();
         List<GraphDraft> draftValues = drafts.all().stream().filter(identity::matchesDraftScope)
                 .sorted(Comparator.comparing(GraphDraft::draftId)).toList();
         List<VisualGraphPublication> publicationValues = publications.all().stream()
@@ -211,6 +216,17 @@ public final class BusinessCapabilityIndex {
         publicationValues.forEach(publication -> put(cards, publicationCard(publication)));
         return new Capture(Map.copyOf(vector), cards.values().stream()
                 .sorted(Comparator.comparing(Card::assetKind).thenComparing(Card::assetRef)).toList());
+    }
+
+    private static OperatorLibrary scopedLibrary(OperatorLibrary library,
+                                                  IntegrationRequestContext identity) {
+        List<OperatorDefinition> visible = library.operators().stream()
+                .filter(Objects::nonNull)
+                .filter(operator -> operator.policy().allows(
+                        identity.tenantId(), identity.projectId(), identity.environmentId()))
+                .toList();
+        return new OperatorLibrary(library.schemaVersion(), library.libraryId(), library.displayName(),
+                library.version(), library.owner(), library.status(), library.builtInFunctions(), visible);
     }
 
     private Snapshot snapshot(IntegrationRequestContext identity, Capture capture) {
