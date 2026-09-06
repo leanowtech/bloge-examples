@@ -260,6 +260,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         proof = surface_proof()
         proof["purposeProofs"]["authoring"]["visibleToolNames"] = sorted(
             MODULE.AUTHORING_TOOLS | MODULE.READ_TOOLS)
+        proof["purposeProofs"]["read"]["visibleToolNames"] = sorted(MODULE.READ_TOOLS)
         material = {key: proof[key] for key in (
             "runtimeInstanceNonce", "purposeProofs")}
         proof["proofFingerprint"] = "sha256:" + hashlib.sha256(
@@ -271,6 +272,8 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                       accepted["purposeProofs"]["authoring"]["visibleToolNames"])
         self.assertIn("rg.engineering.handoff",
                       accepted["purposeProofs"]["authoring"]["visibleToolNames"])
+        self.assertIn("rg.solution.coverage",
+                      accepted["purposeProofs"]["read"]["visibleToolNames"])
 
     def test_rejects_platform_tool_exposed_to_the_authoring_purpose(self) -> None:
         proof = surface_proof()

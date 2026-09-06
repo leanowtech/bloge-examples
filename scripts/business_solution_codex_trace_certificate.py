@@ -23,7 +23,7 @@ AUTHORING_TOOLS = {
 READ_TOOLS = {
     "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
     "rg.journey.next", "rg.solution.golden.list", "rg.solution.getContract",
-    "rg.solution.readiness", "rg.solution.performance",
+    "rg.solution.readiness", "rg.solution.performance", "rg.solution.coverage",
 }
 FORBIDDEN_PREFIXES = ("rg.dsl.", "rg.tool.", "rg.simulate", "rg.fixture.")
 PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list", "error"}

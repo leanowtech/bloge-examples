@@ -11,21 +11,14 @@ from typing import Any, Callable
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from business_solution_codex_trace_certificate import AUTHORING_TOOLS, READ_TOOLS
+
 
 class SurfaceProbeFailure(RuntimeError):
     """Raised when the server does not enforce both list and call visibility."""
 
 
-BUSINESS_SURFACE_TOOLS = {
-    "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
-    "rg.journey.start", "rg.journey.next", "rg.solution.golden.propose",
-    "rg.solution.golden.list", "rg.feature.define", "rg.feature.handoff",
-    "rg.feature.evaluate", "rg.scenario.define", "rg.instruction.define",
-    "rg.engineering.handoff", "rg.solution.compose", "rg.solution.getContract",
-    "rg.solution.invoke", "rg.solution.baseline", "rg.solution.commit",
-    "rg.solution.readiness", "rg.solution.performance", "rg.solution.coverage",
-    "rg.solution.publish",
-}
+BUSINESS_SURFACE_TOOLS = AUTHORING_TOOLS | READ_TOOLS
 
 
 def _exchange(endpoint: str, token: str, purpose: str, request_id: str, method: str,
