@@ -40,4 +40,29 @@ class BusinessFixtureIndexControllerTest {
         verify(index).listForSolution("sol:cancel", reviewer);
         verify(authenticator).authenticate(headers, IntegrationOperation.SOLUTION_GOLDEN_REVIEW);
     }
+
+    @Test
+    void loadsOneProtectedFixtureThroughTheSameHumanReviewerBoundary() {
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        BusinessFixtureIndexService index = mock(BusinessFixtureIndexService.class);
+        HttpHeaders headers = new HttpHeaders();
+        IntegrationRequestContext reviewer = new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "sg", "HUMAN", "reviewer",
+                "", "SOLUTION_GOLDEN_REVIEW", "corr-1",
+                java.util.Set.of("solution-golden-reviewers"), "RESTRICTED", "");
+        when(authenticator.authenticate(headers, IntegrationOperation.SOLUTION_GOLDEN_REVIEW))
+                .thenReturn(reviewer);
+        var material = new BusinessFixtureIndexService.FixtureMaterialView(
+                "fixture:party", "责任方样本", "passenger", "RESTRICTED",
+                java.util.Map.of("party", "passenger"));
+        when(index.readMaterialForSolution("sol:cancel", "fixture:party", reviewer))
+                .thenReturn(material);
+
+        var response = new BusinessFixtureIndexController(authenticator, index)
+                .material("sol:cancel", "fixture:party", headers);
+
+        assertThat(response.getHeaders().getCacheControl()).contains("no-store", "private");
+        assertThat(response.getBody()).isEqualTo(material);
+        verify(index).readMaterialForSolution("sol:cancel", "fixture:party", reviewer);
+    }
 }

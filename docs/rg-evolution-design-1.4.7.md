@@ -461,7 +461,7 @@ flowchart TD
 | A1 只读投影 + 授权查看 | 已完成 | `BusinessGoldenReviewService` + `BusinessGoldenReviewController`;`SOLUTION_GOLDEN_REVIEW`;独立人类审计表和 migration | A0 |
 | A2 业务 fixture 归集 | 已完成 | `BusinessFixtureIndexService.listForSolution` 以冻结 Solution 闭包对 source/usage 做至多 10,000 项的有界连接 | 无 |
 | A3 红绿板修正 | 已完成 | `BoardProjectionService.redGreen` 只投影计数、状态和指纹;受保护材料只从 A1 人类边界读取 | A1 |
-| A4 前端 | 已完成 | Correctness Studio 增业务/遗留世界切换、Business Golden、Business Fixtures、Solution Coverage 和内存态复核凭据 | A1、A2 |
+| A4 前端 | 已完成 | Correctness Studio 增业务/遗留世界切换、Business Golden、可解密 Business Fixtures、Feature Controlled Suites、Solution Coverage 和内存态复核凭据 | A1、A2、B1 |
 
 ### 阶段 B · 特征级受控测试统一
 
@@ -529,7 +529,7 @@ flowchart TD
 2. 同一 profile 用受保护业务案例建立 Feature controlled suite。明文只进入加密 vault，运行结果只返回案例数、通过数、覆盖率、零外呼和指纹。
 3. 独立特征工程身份用当前 suite evidence 履行 Feature；业务 Agent 的 WORKLOAD token 调同一 HTTP 入口得到 403。
 4. 业务 Codex 使用 `BUSINESS_SOLUTION` profile 读取服务端四实体模板，按 journey revision 写 Feature、Scenario、Instruction 和 Solution，并提出标准案例。
-5. 业务负责人使用独立 HUMAN 凭据在 Correctness Studio 查看标准案例明文、样例资产和覆盖义务；批准过程写入人类审计。凭据只保存在页面组件内存，更换凭据或离开页面时清除，不进入 URL、DOM 文本或浏览器存储。
+5. 业务负责人使用独立 HUMAN 凭据在 Correctness Studio 查看标准案例、Solution 关联 fixture、Feature 受控套件和覆盖义务；受保护正文按需解密并写入人类或 vault 访问审计。凭据只保存在页面组件内存，更换凭据或离开页面时清除，不进入 URL、DOM 文本或浏览器存储。
 6. Agent 只能读取案例计数、生命周期、覆盖摘要和指纹。ACTIVE 案例再由冻结 Solution 闭包执行零外呼 baseline，后续仍沿用既有签署、发布和运营门禁。
 
 ### 8.2 关键不变量
@@ -549,7 +549,7 @@ flowchart TD
 - A2 没有复制一套 fixture 目录。实现读取冻结 Solution 闭包，并把现有 fixture source/usage 索引做有界连接；这保持单一资产真相。
 - B1 对外提供 `upsert/run/get` 三个工具，而不是把套件塞进 `rg.feature.rehearse` 的参数。这样 DRAFT、运行证据和只读摘要拥有独立 schema 与 purpose。
 - C1 不复用面向决策表枚举的旧分析器。实现直接读取冻结的 Feature/Scenario/Instruction/Solution 结构，避免把 Solution 冒充 Graph，也能明确产生 WRITE 失败义务。
-- A3 不在红绿板按需解密。板面保持零载荷；受保护正文只从 A1 HUMAN endpoint 读取，避免同一 DTO 混合两条信任边界。
+- A3 不在红绿板按需解密。板面保持零载荷；GOLDEN、fixture 和 Feature suite 正文只从 HUMAN no-store endpoint 读取，避免同一 DTO 混合两条信任边界。
 
 ### 8.4 可审阅的 Codex 创作证据
 

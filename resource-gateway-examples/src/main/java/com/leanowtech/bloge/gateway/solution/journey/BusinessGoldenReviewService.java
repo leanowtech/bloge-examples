@@ -49,9 +49,10 @@ public final class BusinessGoldenReviewService {
                                     String journeyRef,
                                     IntegrationRequestContext identity) {
         requireComplete(identity);
-        AgentTddStoredAsset caseSet = caseSet(solutionRef, journeyRef, identity);
+        AgentTddStoredAsset caseSet = null;
         try {
             requireHumanPurpose(identity);
+            caseSet = caseSet(solutionRef, journeyRef, identity);
             boolean reviewer = isReviewer(identity);
             List<Map<String, Object>> rows = new ArrayList<>();
             for (JsonNode row : caseSet.data().path("rows")) {
@@ -77,7 +78,7 @@ public final class BusinessGoldenReviewService {
             audit(identity, caseSet.assetRef(), "*", "GOLDEN_SET_LIST", "ACCEPTED");
             return result;
         } catch (AgentTddToolException failure) {
-            auditDeniedUnlessAuditFailure(identity, caseSet.assetRef(), "*", "GOLDEN_SET_LIST", failure);
+            auditDeniedUnlessAuditFailure(identity, auditRef(caseSet), "*", "GOLDEN_SET_LIST", failure);
             throw failure;
         }
     }
@@ -88,10 +89,12 @@ public final class BusinessGoldenReviewService {
                                             String caseId,
                                             IntegrationRequestContext identity) {
         requireComplete(identity);
-        AgentTddStoredAsset caseSet = caseSet(solutionRef, journeyRef, identity);
-        String normalizedCase = required(caseId, "caseId");
+        AgentTddStoredAsset caseSet = null;
+        String normalizedCase = "*";
         try {
             requireHumanPurpose(identity);
+            normalizedCase = required(caseId, "caseId");
+            caseSet = caseSet(solutionRef, journeyRef, identity);
             JsonNode row = row(caseSet, normalizedCase);
             requireOwnerOrReviewer(row, identity);
             requireClearance(row, identity);
@@ -110,10 +113,14 @@ public final class BusinessGoldenReviewService {
                     "GOLDEN_MATERIAL_REVIEW", "ACCEPTED");
             return result;
         } catch (AgentTddToolException failure) {
-            auditDeniedUnlessAuditFailure(identity, caseSet.assetRef(), normalizedCase,
+            auditDeniedUnlessAuditFailure(identity, auditRef(caseSet), normalizedCase,
                     "GOLDEN_MATERIAL_REVIEW", failure);
             throw failure;
         }
+    }
+
+    private static String auditRef(AgentTddStoredAsset caseSet) {
+        return caseSet == null ? "unresolved" : caseSet.assetRef();
     }
 
     private AgentTddStoredAsset caseSet(String solutionRef,

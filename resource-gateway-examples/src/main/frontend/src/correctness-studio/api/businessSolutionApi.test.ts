@@ -19,6 +19,9 @@ describe('businessSolutionAssetsApi', () => {
     await api.golden('sol:cancel fee', 'journey:review');
     await api.goldenMaterial('sol:cancel fee', 'journey:review', 'G 1');
     await api.fixtures('sol:cancel fee');
+    await api.fixtureMaterial('sol:cancel fee', 'fixture:party');
+    await api.featureSuites('sol:cancel fee');
+    await api.featureSuiteMaterial('sol:cancel fee', 'feature:party');
     await api.coverage('sol:cancel fee');
 
     expect(requests[0]?.input).toBe('/api/solution/golden-review/sol%3Acancel%20fee?journeyRef=journey%3Areview');
@@ -28,7 +31,10 @@ describe('businessSolutionAssetsApi', () => {
     expect(new Headers(requests[1]?.init?.headers).get('X-Purpose')).toBe('SOLUTION_GOLDEN_REVIEW');
     expect(requests[2]?.input).toBe('/api/agent-tdd/solutions/sol%3Acancel%20fee/fixtures');
     expect(new Headers(requests[2]?.init?.headers).get('X-Purpose')).toBe('SOLUTION_GOLDEN_REVIEW');
-    expect(requests[3]?.input).toBe('/api/solution/coverage/sol%3Acancel%20fee');
+    expect(requests[3]?.input).toContain('/fixtures/fixture%3Aparty/material');
+    expect(requests[4]?.input).toBe('/api/solution/feature-suite-review?solutionRef=sol%3Acancel+fee');
+    expect(requests[5]?.input).toContain('/feature%3Aparty/material?solutionRef=sol%3Acancel+fee');
+    expect(requests[6]?.input).toBe('/api/solution/coverage/sol%3Acancel%20fee');
     requests.forEach((request) => {
       expect(request.init?.headers).toMatchObject({
         Authorization: 'Bearer reviewer-token',

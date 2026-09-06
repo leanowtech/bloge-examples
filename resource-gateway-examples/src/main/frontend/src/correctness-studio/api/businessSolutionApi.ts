@@ -46,6 +46,37 @@ export interface BusinessFixtureGroup {
   fixtures: BusinessFixtureSummary[];
 }
 
+export interface BusinessFixtureMaterial {
+  fixtureAssetId: string;
+  name: string;
+  variantKey: string;
+  classification: string;
+  payload: unknown;
+}
+
+export interface FeatureSuiteSummary {
+  featureRef: string;
+  revision: number;
+  status: string;
+  caseCount: number;
+  coverageTargetCount: number;
+  evidenceFingerprint: string;
+  materialViewable: boolean;
+}
+
+export interface FeatureSuiteMaterial {
+  featureRef: string;
+  evaluationRef: string;
+  cases: Array<{
+    caseId: string;
+    intent: string;
+    givenInputs: Record<string, unknown>;
+    nodeBehaviors: Array<Record<string, unknown>>;
+    expectedOutput: unknown;
+    coverageTargets: string[];
+  }>;
+}
+
 export interface BusinessCoverageObligation {
   id: string;
   obligationFingerprint: string;
@@ -73,6 +104,9 @@ export interface BusinessSolutionAssetsApi {
   golden(solutionRef: string, journeyRef: string): Promise<BusinessGoldenCatalog>;
   goldenMaterial(solutionRef: string, journeyRef: string, caseId: string): Promise<BusinessGoldenMaterial>;
   fixtures(solutionRef: string): Promise<BusinessFixtureGroup[]>;
+  fixtureMaterial(solutionRef: string, fixtureAssetId: string): Promise<BusinessFixtureMaterial>;
+  featureSuites(solutionRef: string): Promise<FeatureSuiteSummary[]>;
+  featureSuiteMaterial(solutionRef: string, featureRef: string): Promise<FeatureSuiteMaterial>;
   coverage(solutionRef: string): Promise<BusinessSolutionCoverage>;
 }
 
@@ -109,6 +143,22 @@ export function createBusinessSolutionAssetsApi(
     fixtures(solutionRef) {
       return exchange<BusinessFixtureGroup[]>(
         `/api/agent-tdd/solutions/${encodeURIComponent(solutionRef)}/fixtures`,
+      );
+    },
+    fixtureMaterial(solutionRef, fixtureAssetId) {
+      return exchange<BusinessFixtureMaterial>(
+        `/api/agent-tdd/solutions/${encodeURIComponent(solutionRef)}`
+          + `/fixtures/${encodeURIComponent(fixtureAssetId)}/material`,
+      );
+    },
+    featureSuites(solutionRef) {
+      const query = new URLSearchParams({ solutionRef });
+      return exchange<FeatureSuiteSummary[]>(`/api/solution/feature-suite-review?${query}`);
+    },
+    featureSuiteMaterial(solutionRef, featureRef) {
+      const query = new URLSearchParams({ solutionRef });
+      return exchange<FeatureSuiteMaterial>(
+        `/api/solution/feature-suite-review/${encodeURIComponent(featureRef)}/material?${query}`,
       );
     },
     coverage(solutionRef) {

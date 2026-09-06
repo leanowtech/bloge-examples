@@ -141,6 +141,21 @@ class BusinessGoldenReviewServiceTest {
         assertThat(materials.reads).isOne();
     }
 
+    @Test
+    void auditsARejectedLookupEvenWhenTheCaseSetCannotBeResolved() {
+        assertThatThrownBy(() -> service.readMaterial(
+                "sol:missing", "journey:missing", "g1", reviewer()))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("DRAFT_NOT_FOUND"));
+
+        assertThat(audits.events).singleElement().satisfies(event -> {
+            assertThat(event.caseSetRef()).isEqualTo("unresolved");
+            assertThat(event.caseId()).isEqualTo("g1");
+            assertThat(event.action()).isEqualTo("GOLDEN_MATERIAL_REVIEW");
+            assertThat(event.outcome()).isEqualTo("DRAFT_NOT_FOUND");
+        });
+    }
+
     private static IntegrationRequestContext owner() {
         return identity("HUMAN", "cx-owner", "SOLUTION_GOLDEN_REVIEW", Set.of(), "INTERNAL");
     }

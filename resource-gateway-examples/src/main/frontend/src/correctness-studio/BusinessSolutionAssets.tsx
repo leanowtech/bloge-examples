@@ -19,7 +19,10 @@ import {
   type BusinessSolutionCoverage,
   type BusinessSolutionAssetsApi,
   type BusinessFixtureGroup,
+  type BusinessFixtureMaterial,
   type BusinessCoverageObligation,
+  type FeatureSuiteMaterial,
+  type FeatureSuiteSummary,
 } from './api/businessSolutionApi';
 
 /** Human review surface for protected business GOLDEN material and related Fixture metadata. */
@@ -39,6 +42,9 @@ export default function BusinessSolutionAssets({
   const [fixtures, setFixtures] = useState<BusinessFixtureGroup[]>([]);
   const [coverage, setCoverage] = useState<BusinessSolutionCoverage | null>(null);
   const [material, setMaterial] = useState<BusinessGoldenMaterial | null>(null);
+  const [fixtureMaterial, setFixtureMaterial] = useState<BusinessFixtureMaterial | null>(null);
+  const [featureSuites, setFeatureSuites] = useState<FeatureSuiteSummary[]>([]);
+  const [featureSuiteMaterial, setFeatureSuiteMaterial] = useState<FeatureSuiteMaterial | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const resolvedApi = useMemo(() => api ?? (activeCredential
@@ -51,6 +57,7 @@ export default function BusinessSolutionAssets({
       setGolden(null);
       setFixtures([]);
       setCoverage(null);
+      setFeatureSuites([]);
       return undefined;
     }
     let active = true;
@@ -61,12 +68,14 @@ export default function BusinessSolutionAssets({
       resolvedApi.golden(solutionRef, journeyRef),
       resolvedApi.fixtures(solutionRef),
       resolvedApi.coverage(solutionRef),
+      resolvedApi.featureSuites(solutionRef),
     ])
-      .then(([catalog, fixtureGroups, coverageStatus]) => {
+      .then(([catalog, fixtureGroups, coverageStatus, suites]) => {
         if (!active) return;
         setGolden(catalog);
         setFixtures(fixtureGroups);
         setCoverage(coverageStatus);
+        setFeatureSuites(suites);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -82,6 +91,26 @@ export default function BusinessSolutionAssets({
     setError('');
     try {
       setMaterial(await resolvedApi.goldenMaterial(solutionRef, journeyRef, caseId));
+    } catch (cause) {
+      setError(message(cause));
+    }
+  };
+
+  const openFixtureMaterial = async (fixtureAssetId: string) => {
+    if (!resolvedApi) return;
+    setError('');
+    try {
+      setFixtureMaterial(await resolvedApi.fixtureMaterial(solutionRef, fixtureAssetId));
+    } catch (cause) {
+      setError(message(cause));
+    }
+  };
+
+  const openFeatureSuiteMaterial = async (featureRef: string) => {
+    if (!resolvedApi) return;
+    setError('');
+    try {
+      setFeatureSuiteMaterial(await resolvedApi.featureSuiteMaterial(solutionRef, featureRef));
     } catch (cause) {
       setError(message(cause));
     }
@@ -158,9 +187,48 @@ export default function BusinessSolutionAssets({
             : <ul>{group.fixtures.map((fixture) => <li key={fixture.fixtureAssetId}>
               <strong>{fixture.name}</strong><span>{fixture.variantKey} · {t(fixture.lifecycle)}</span>
               <small>{t(fixture.classification)} · {t('{count} uses', { count: fixture.usageCount })}</small>
+              <button type="button" onClick={() => openFixtureMaterial(fixture.fixtureAssetId)}>
+                <Eye size={16} />{t('Load protected data')}
+              </button>
             </li>)}</ul>}
         </article>)}
       </div>
+      {fixtureMaterial && <section className="correctness-protected-business-material"
+        aria-label={t('Protected Fixture material')}>
+        <header><ShieldCheck size={18} /><div><strong>{fixtureMaterial.name}</strong>
+          <small>{fixtureMaterial.variantKey} · {t(fixtureMaterial.classification)}</small></div></header>
+        <ReadOnlyValues title={t('Protected Fixture material')} value={fixtureMaterial.payload} />
+      </section>}
+    </section>
+
+    <section className="correctness-authoring-panel" data-testid="feature-controlled-suites">
+      <header className="correctness-authoring-heading"><div><ShieldCheck size={18} />
+        <strong>{t('Feature controlled suites')}</strong>
+        <span>{t('Branch cases prove Feature implementations without external calls.')}</span></div></header>
+      <div className="correctness-business-asset-list">
+        {featureSuites.map((suite) => <article key={suite.featureRef}>
+          <div><strong>{suite.featureRef}</strong><span>{t(suite.status)} · r{suite.revision}</span></div>
+          <p>{t('{cases} cases · {targets} coverage targets', {
+            cases: suite.caseCount, targets: suite.coverageTargetCount,
+          })}</p>
+          <code>{shortFingerprint(suite.evidenceFingerprint)}</code>
+          <button type="button" disabled={!suite.materialViewable}
+            onClick={() => openFeatureSuiteMaterial(suite.featureRef)}>
+            <Eye size={16} />{t('Load protected data')}
+          </button>
+        </article>)}
+      </div>
+      {featureSuiteMaterial && <section className="correctness-protected-business-material"
+        aria-label={t('Protected Feature suite material')}>
+        <header><ShieldCheck size={18} /><div><strong>{featureSuiteMaterial.featureRef}</strong>
+          <small>{featureSuiteMaterial.evaluationRef}</small></div></header>
+        {featureSuiteMaterial.cases.map((testCase) => <div key={testCase.caseId}>
+          <strong>{testCase.caseId} · {testCase.intent}</strong>
+          <ReadOnlyValues title={t('Given business facts')} value={testCase.givenInputs} />
+          <ReadOnlyValues title={t('Dependency assumptions')} value={testCase.nodeBehaviors} />
+          <ReadOnlyValues title={t('Expected business outcome')} value={testCase.expectedOutput} />
+        </div>)}
+      </section>}
     </section>
   </div>;
 }

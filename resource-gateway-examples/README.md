@@ -104,9 +104,10 @@ Instruction bindings.
 Correctness Studio now also has a Business Solution world at
 `/correctness/?correctnessWorld=business&solutionRef=...&journeyRef=...`. A reviewer enters the
 separate HUMAN credential in a password field held only in component memory. The no-store APIs expose
-Business Golden material, governed Fixture descriptors, and grouped Solution coverage; the token is
-cleared after submission and is never copied to the URL, browser storage, or visible DOM. The Agent MCP
-surface remains payload-free.
+Business Golden material, Solution-linked Fixture material, Feature controlled-suite cases, and grouped
+Solution coverage through HUMAN-only no-store endpoints. The token remains only in component memory until
+the reviewer changes it or leaves the page; it is never copied to the URL, browser storage, or visible DOM.
+The Agent MCP surface remains payload-free.
 The `/workbench/?create=business-solution` entry is the business-first Solution surface. It starts
 in guided mode, asks only for decision facts, rules, and dispositions, preserves answers when the
 owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is

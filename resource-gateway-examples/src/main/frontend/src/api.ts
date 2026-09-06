@@ -1309,6 +1309,7 @@ const CORRECTNESS_API_PATHS = [
   '/api/visual/fixture-materials',
   '/api/solution/golden-review/',
   '/api/solution/coverage/',
+  '/api/solution/feature-suite-review',
   '/api/agent-tdd/solutions/',
 ] as const;
 

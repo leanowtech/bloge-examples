@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddBoardController;
 import com.leanowtech.bloge.gateway.agenttdd.EngineeringHandoffController;
 import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffController;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureControlledSuiteReviewController;
 import com.leanowtech.bloge.gateway.solution.board.BoardProjectionController;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureIndexController;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenReviewController;
@@ -88,6 +89,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         AgentTddBoardController.class,
         EngineeringHandoffController.class,
         FeatureHandoffController.class,
+        FeatureControlledSuiteReviewController.class,
         BoardProjectionController.class,
         BusinessFixtureIndexController.class,
         BusinessGoldenReviewController.class

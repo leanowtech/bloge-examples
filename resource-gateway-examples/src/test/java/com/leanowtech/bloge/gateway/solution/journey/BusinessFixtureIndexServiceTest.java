@@ -18,6 +18,9 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescr
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Material;
 
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 /** Verifies the payload-free Solution-to-Fixture catalog projection. */
 class BusinessFixtureIndexServiceTest {
@@ -74,6 +79,35 @@ class BusinessFixtureIndexServiceTest {
         verify(fixtures).usages(SCOPE, instructionFixture.exactRef(), 1_000);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void resolvesProtectedFixtureOnlyThroughExactSolutionMembershipAndHumanAttribution() {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        SolutionEntityRegistry registry = new SolutionEntityRegistry(states, mapper);
+        storeClosure(registry);
+        FixtureAssetRepository fixtures = mock(FixtureAssetRepository.class);
+        StoredFixtureAsset stored = fixture("fixture-party", "责任方样本", "graph:party", 'a');
+        when(fixtures.listHeads(SCOPE, false, 100, 0)).thenReturn(List.of(stored));
+        when(fixtures.usages(SCOPE, stored.exactRef(), 1_000)).thenReturn(List.of());
+        FixtureMaterialService materials = mock(FixtureMaterialService.class);
+        ObjectProvider<FixtureMaterialService> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(materials);
+        Material resolved = mock(Material.class);
+        when(resolved.payload()).thenReturn(Map.of("party", "passenger"));
+        when(materials.read(eq("material-fixture-party"), eq(1L), eq(fp('a')), any()))
+                .thenReturn(resolved);
+
+        var result = new BusinessFixtureIndexService(registry, fixtures, provider)
+                .readMaterialForSolution("sol:cancel", "fixture-party", reviewer());
+
+        assertThat(result.payload()).isEqualTo(Map.of("party", "passenger"));
+        verify(materials).read(eq("material-fixture-party"), eq(1L), eq(fp('a')),
+                org.mockito.ArgumentMatchers.argThat(identity ->
+                        "PLATFORM".equals(identity.actorType())
+                                && "reviewer".equals(identity.actorId())
+                                && FixtureMaterialService.RESOLVE_PURPOSE.equals(identity.purpose())));
+    }
+
     private void storeClosure(SolutionEntityRegistry registry) {
         registry.upsertFeature(SCOPE_KEY, new FeatureContract(
                 "responsibility.party", mapper.valueToTree(Map.of("type", "string")),
@@ -118,6 +152,12 @@ class BusinessFixtureIndexServiceTest {
     private static IntegrationRequestContext identity() {
         return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "sg",
                 "USER", "reviewer", "", "AGENT_TDD_READ", "corr-1");
+    }
+
+    private static IntegrationRequestContext reviewer() {
+        return new IntegrationRequestContext("tenant-a", "org-a", "project-a", "test", "sg",
+                "HUMAN", "reviewer", "", "SOLUTION_GOLDEN_REVIEW", "corr-1",
+                java.util.Set.of("solution-golden-reviewers"), "RESTRICTED", "");
     }
 
     private static String fp(char value) {

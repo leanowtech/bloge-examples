@@ -27,6 +27,9 @@ describe('CorrectnessStudio', () => {
   const golden = vi.fn();
   const goldenMaterial = vi.fn();
   const fixtures = vi.fn();
+  const fixtureMaterial = vi.fn();
+  const featureSuites = vi.fn();
+  const featureSuiteMaterial = vi.fn();
   const coverage = vi.fn();
 
   beforeEach(() => {
@@ -43,6 +46,9 @@ describe('CorrectnessStudio', () => {
     golden.mockReset();
     goldenMaterial.mockReset();
     fixtures.mockReset();
+    fixtureMaterial.mockReset();
+    featureSuites.mockReset();
+    featureSuiteMaterial.mockReset();
     coverage.mockReset();
     const preferences = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
@@ -58,7 +64,10 @@ describe('CorrectnessStudio', () => {
     });
     window.localStorage.clear();
     api = { capabilities, workspace, targets, definitions };
-    businessApi = { golden, goldenMaterial, fixtures, coverage };
+    businessApi = {
+      golden, goldenMaterial, fixtures, fixtureMaterial,
+      featureSuites, featureSuiteMaterial, coverage,
+    };
   });
 
   afterEach(async () => {
@@ -187,6 +196,14 @@ describe('CorrectnessStudio', () => {
       businessLabel: '取消责任方', fixtures: [{ fixtureAssetId: 'fixture:party', revision: 2,
         name: '乘客责任样本', variantKey: 'passenger', lifecycle: 'ACTIVE',
         classification: 'INTERNAL', schemaFingerprint: `sha256:${'b'.repeat(64)}`, usageCount: 3 }] }]);
+    fixtureMaterial.mockResolvedValue({ fixtureAssetId: 'fixture:party', name: '乘客责任样本',
+      variantKey: 'passenger', classification: 'INTERNAL', payload: { party: 'passenger' } });
+    featureSuites.mockResolvedValue([{ featureRef: 'feature:party', revision: 3, status: 'PASSED',
+      caseCount: 2, coverageTargetCount: 2, evidenceFingerprint: `sha256:${'9'.repeat(64)}`,
+      materialViewable: true }]);
+    featureSuiteMaterial.mockResolvedValue({ featureRef: 'feature:party', evaluationRef: 'graph:party',
+      cases: [{ caseId: 'F1', intent: '责任方来自乘客', givenInputs: { orderId: 'O-1' },
+        nodeBehaviors: [], expectedOutput: { party: 'passenger' }, coverageTargets: ['node:policy'] }] });
     goldenMaterial.mockResolvedValue({ caseId: 'G1', businessIntent: '乘客超时取消由乘客承担',
       givenFacts: { 取消责任方: '乘客' }, dependencyAssumptions: [{ capability: '退款执行', behavior: 'STUB' }],
       expectedOutcome: { disposition: '维持' }, oracleOwner: '业务负责人' });
@@ -209,6 +226,8 @@ describe('CorrectnessStudio', () => {
     expect(capabilities).not.toHaveBeenCalled();
     expect(host.textContent).toContain('Business Golden');
     expect(host.textContent).toContain('Business Fixtures');
+    expect(host.textContent).toContain('Feature controlled suites');
+    expect(host.textContent).toContain('2 cases · 2 coverage targets');
     expect(host.textContent).toContain('取消责任方');
     expect(coverage).toHaveBeenCalledWith('sol:cancel');
     const coveragePanel = host.querySelector('[data-testid="business-solution-coverage"]');
@@ -245,6 +264,7 @@ describe('CorrectnessStudio', () => {
         revision: 4, approvalState: 'APPROVED', cases: [],
       });
       if (input.includes('/fixtures')) return jsonResponse([]);
+      if (input.includes('/feature-suite-review')) return jsonResponse([]);
       return jsonResponse({
         solutionRef: 'sol:cancel', inventoryId: 'solution-coverage:sol:cancel', inventoryRevision: 3,
         solutionFingerprint: `sha256:${'a'.repeat(64)}`, obligations: [],
@@ -255,12 +275,12 @@ describe('CorrectnessStudio', () => {
 
     await change(input('Reviewer credential'), 'reviewer-secret-token');
     await click(button('Open protected business assets'));
-    await vi.waitFor(() => expect(requests).toHaveLength(3));
+    await vi.waitFor(() => expect(requests).toHaveLength(4));
 
     expect(requests.map((request) => request.headers.get('Authorization')))
-      .toEqual(['Bearer reviewer-secret-token', 'Bearer reviewer-secret-token', 'Bearer reviewer-secret-token']);
+      .toEqual(Array(4).fill('Bearer reviewer-secret-token'));
     expect(requests.map((request) => request.headers.get('X-Purpose')))
-      .toEqual(['SOLUTION_GOLDEN_REVIEW', 'SOLUTION_GOLDEN_REVIEW', 'SOLUTION_GOLDEN_REVIEW']);
+      .toEqual(Array(4).fill('SOLUTION_GOLDEN_REVIEW'));
     expect(window.location.href).not.toContain('reviewer-secret-token');
     expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index))
       .some((key) => window.localStorage.getItem(key ?? '')?.includes('reviewer-secret-token'))).toBe(false);

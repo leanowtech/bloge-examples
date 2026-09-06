@@ -354,7 +354,7 @@ tail -80 target/example-logs/resource-gateway.log
 http://localhost:8081/correctness/?correctnessWorld=business&solutionRef=<solutionRef>&journeyRef=<journeyRef>
 ```
 
-输入 reviewer token 后，页面加载 Business Golden、Business Fixtures 和 Solution Coverage。reviewer token 只保存在当前 React 组件内存，请求完成后清空，不进入 URL、`localStorage`、`sessionStorage` 或可见 DOM。业务 Agent 不能调用这些 HUMAN 端点；其 MCP 只得到案例计数、生命周期、覆盖状态和不可逆指纹。
+输入 reviewer token 后，页面加载 Business Golden、Business Fixtures、Feature Controlled Suites 和 Solution Coverage。目录只含元数据；点击“加载受保护数据”后，服务端先核对 HUMAN reviewer、Solution 归属与密级，再按需解密正文，响应使用 `no-store, private`。reviewer token 只保存在当前 React 组件内存，更换凭据或离开页面时清除，不进入 URL、`localStorage`、`sessionStorage` 或可见 DOM。业务 Agent 不能调用这些 HUMAN 端点；其 MCP 只得到案例计数、生命周期、覆盖状态和不可逆指纹。
 
 ### 4.3 第二段：RED、GREEN 和发布前检查
 
