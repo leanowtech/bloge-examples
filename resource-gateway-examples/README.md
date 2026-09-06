@@ -98,8 +98,8 @@ in guided mode, asks only for decision facts, rules, and dispositions, preserves
 owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is
 delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
 is rejected before a result can become `READY_FOR_TEST`.
-The final v1.4.5 repository gate is `mvn -f resource-gateway-examples/pom.xml clean verify` with
-`Tests run: 8,610; failures: 0; errors: 0; skipped: 39`. The cancellation-dispute operational
+The final v1.4.6 repository gate is `mvn -f resource-gateway-examples/pom.xml clean verify` with
+`Tests run: 8,723; failures: 0; errors: 0; skipped: 39`. The cancellation-dispute operational
 journey itself is `1/1` with no skip and covers real HTTP MCP lifecycle calls, isolated engineering
 identities, four approved GOLDEN cases, zero-egress GREEN, platform write reconciliation, real Chrome
 five-panel signoff, publication, live invocation, operations aggregation, and Feature-token tamper rejection.
