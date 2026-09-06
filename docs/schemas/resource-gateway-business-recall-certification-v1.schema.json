@@ -15,9 +15,11 @@
     "runtimeIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "instanceNonceFingerprints", "codexPhaseCount", "repositoryCommit", "jarSha256", "processOwnershipVerified", "verifiedBeforeAndAfterTurn"],
+      "required": ["schemaVersion", "codexExecutableSha256", "codexCodeDirectoryHash", "instanceNonceFingerprints", "codexPhaseCount", "repositoryCommit", "jarSha256", "processOwnershipVerified", "verifiedBeforeAndAfterTurn"],
       "properties": {
         "schemaVersion": { "const": "rg.agentTddCertificationInstance.v1" },
+        "codexExecutableSha256": { "$ref": "#/$defs/sha256" },
+        "codexCodeDirectoryHash": { "$ref": "#/$defs/sha256" },
         "instanceNonceFingerprints": {
           "type": "array",
           "minItems": 4,
@@ -35,13 +37,13 @@
     "setupIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["setupFingerprint", "seedManifestFingerprint", "relationshipCount", "actorSeparationVerified", "actorSeparationFingerprint"],
+      "required": ["setupFingerprint", "seedManifestFingerprint", "relationshipCount", "credentialSeparationVerified", "credentialSeparationFingerprint"],
       "properties": {
         "setupFingerprint": { "$ref": "#/$defs/sha256" },
         "seedManifestFingerprint": { "$ref": "#/$defs/hmac" },
         "relationshipCount": { "const": 5 },
-        "actorSeparationVerified": { "const": true },
-        "actorSeparationFingerprint": { "$ref": "#/$defs/hmac" }
+        "credentialSeparationVerified": { "const": true },
+        "credentialSeparationFingerprint": { "$ref": "#/$defs/hmac" }
       }
     },
     "suite": { "const": "business-solution-recall-v1" },
@@ -202,7 +204,7 @@
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "fourEntityBusinessDisplaysDeclared", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "serverSurfaceListFiltered", "serverSurfaceDirectCallRejected", "setupActorSeparated", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved", "allRequiredRecallFamiliesObserved"],
+      "required": ["onlyBusinessSurfaceMcpActionsObserved", "journeyRevisionLineCurrent", "libraryAndCapabilityDiscoveryObserved", "compilerValidatedAuthoringPatternsObservedBeforeCreation", "fourEntityWritesBoundToAuthoringPatterns", "fourEntityBusinessDisplaysDeclared", "solutionContextCurrent", "completeGoldenCasesProposed", "sameJourneySolutionAndCaseSet", "pendingCasesVisibleForHumanReview", "stoppedBeforeApprovalExecutionAndPublication", "finalSummaryBusinessOnly", "rawArgumentsResultsAndMessagesOmitted", "spawnedRuntimeIdentityVerified", "independentCodexSessionsObserved", "serverSurfaceListFiltered", "serverSurfaceDirectCallRejected", "setupCredentialSeparated", "crossSessionFeatureRecallCorrelated", "clarificationStoppedBeforeAuthoring", "singleBusinessQuestionObserved", "allRequiredRecallFamiliesObserved"],
       "properties": {
         "onlyBusinessSurfaceMcpActionsObserved": { "const": true },
         "journeyRevisionLineCurrent": { "const": true },
@@ -221,7 +223,7 @@
         "independentCodexSessionsObserved": { "const": true },
         "serverSurfaceListFiltered": { "const": true },
         "serverSurfaceDirectCallRejected": { "const": true },
-        "setupActorSeparated": { "const": true },
+        "setupCredentialSeparated": { "const": true },
         "crossSessionFeatureRecallCorrelated": { "const": true },
         "clarificationStoppedBeforeAuthoring": { "const": true },
         "singleBusinessQuestionObserved": { "const": true },

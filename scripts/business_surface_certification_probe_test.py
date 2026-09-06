@@ -24,18 +24,22 @@ class SurfaceProbeTest(unittest.TestCase):
             Response({"result": {"tools": [
                 {"name": "rg.library.overview.get"}, {"name": "rg.capability.search"}]}}),
             Response({"error": {"code": -32031, "message": "TOOL_NOT_VISIBLE_IN_SURFACE"}}),
+            Response({"result": {"tools": [
+                {"name": "rg.journey.start"}, {"name": "rg.feature.define"}]}}),
+            Response({"error": {"code": -32031, "message": "TOOL_NOT_VISIBLE_IN_SURFACE"}}),
         ])
 
         result = probe.certify_surface("http://127.0.0.1/mcp", "secret", "a" * 64,
                                        lambda *_args, **_kwargs: next(responses))
 
         self.assertEqual("rg.businessSurfaceProof.v1", result["schemaVersion"])
+        self.assertEqual({"read", "authoring"}, set(result["purposeProofs"]))
         self.assertRegex(result["proofFingerprint"], r"^sha256:[0-9a-f]{64}$")
 
     def test_rejects_client_or_server_catalog_leak(self):
         responses = iter([Response({"result": {"tools": [
             {"name": "rg.library.overview.get"}, {"name": "rg.capability.search"},
-            {"name": "rg.dsl.reference.get"}]}})])
+            {"name": "rg.contract.get"}]}})])
 
         with self.assertRaisesRegex(probe.SurfaceProbeFailure, "exposed"):
             probe.certify_surface("http://127.0.0.1/mcp", "secret", "a" * 64,

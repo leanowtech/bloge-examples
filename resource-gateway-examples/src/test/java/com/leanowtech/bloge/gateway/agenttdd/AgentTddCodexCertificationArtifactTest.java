@@ -117,12 +117,22 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.path("schemaVersion").asText())
                 .isEqualTo("rg.businessRecallCertification.v1");
         assertThat(certificate.path("result").asText()).isEqualTo("CERTIFIED");
-        assertThat(certificate.path("repositoryCommit").asText())
+        String certifiedCommit = certificate.path("repositoryCommit").asText();
+        assertThat(certifiedCommit)
                 .isEqualTo(certificate.at("/runtimeIdentity/repositoryCommit").asText());
+        assertCommitExists(certifiedCommit);
         assertThat(certificate.path("productionTreeFingerprint").asText())
-                .isEqualTo(productionTreeFingerprint());
+                .isEqualTo(productionTreeFingerprint(certifiedCommit));
         assertThat(certificate.path("certificationInputsFingerprint").asText())
-                .isEqualTo(certificationInputsFingerprint());
+                .isEqualTo(certificationInputsFingerprint(certifiedCommit));
+        assertThat(gitObject(certifiedCommit + ":resource-gateway-examples/src/main"))
+                .isEqualTo(gitObject("HEAD:resource-gateway-examples/src/main"));
+        assertThat(gitObject(certifiedCommit + ":scripts"))
+                .isEqualTo(gitObject("HEAD:scripts"));
+        assertThat(gitObject(certifiedCommit
+                + ":docs/schemas/resource-gateway-business-recall-certification-v1.schema.json"))
+                .isEqualTo(gitObject(
+                        "HEAD:docs/schemas/resource-gateway-business-recall-certification-v1.schema.json"));
         assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
                 "rg.feature.define", "rg.scenario.define", "rg.instruction.define",
                 "rg.solution.compose", "rg.solution.golden.propose");
@@ -177,7 +187,11 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(textValues(certificate.at("/runtimeIdentity/instanceNonceFingerprints")))
                 .hasSize(4).doesNotHaveDuplicates()
                 .allMatch(value -> value.matches("sha256:[0-9a-f]{64}"));
-        assertThat(certificate.at("/setupIdentity/actorSeparationVerified").asBoolean()).isTrue();
+        assertThat(certificate.at("/setupIdentity/credentialSeparationVerified").asBoolean()).isTrue();
+        assertThat(certificate.at("/runtimeIdentity/codexExecutableSha256").asText())
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(certificate.at("/runtimeIdentity/codexCodeDirectoryHash").asText())
+                .matches("sha256:[0-9a-f]{64}");
         assertThat(certificate.at("/transport/serverListFiltered").asBoolean()).isTrue();
         assertThat(certificate.at("/transport/directHiddenCallRejected").asBoolean()).isTrue();
         assertThat(certificate.at(
@@ -232,6 +246,8 @@ class AgentTddCodexCertificationArtifactTest {
                 "(deny process-exec)", "codex-code-mode-host", "(deny file-write*)",
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
+                "codesign --verify --strict", "TeamIdentifier=2DC432GLL2",
+                "OpenAI OpCo, LLC (2DC432GLL2)", "CODEX_EXECUTABLE_SHA256",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
                 "business_surface_certification_probe.py", "--surface-proof",
                 "--spring.datasource.url=jdbc:h2:file:${PRIVATE_DIR}/recall-certification",
@@ -279,15 +295,22 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(output).contains("Ran 62 tests", "OK");
     }
 
-    private String productionTreeFingerprint() throws Exception {
-        return gitObjectFingerprint("HEAD:resource-gateway-examples/src/main");
+    private String productionTreeFingerprint(String commit) throws Exception {
+        return gitObjectFingerprint(commit + ":resource-gateway-examples/src/main");
     }
 
-    private String certificationInputsFingerprint() throws Exception {
-        String scripts = gitObject("HEAD:scripts");
+    private String certificationInputsFingerprint(String commit) throws Exception {
+        String scripts = gitObject(commit + ":scripts");
         String schema = gitObject(
-                "HEAD:docs/schemas/resource-gateway-business-recall-certification-v1.schema.json");
+                commit + ":docs/schemas/resource-gateway-business-recall-certification-v1.schema.json");
         return sha256(scripts + "\\n" + schema);
+    }
+
+    private void assertCommitExists(String commit) throws Exception {
+        Process process = new ProcessBuilder("git", "cat-file", "-e", commit + "^{commit}")
+                .directory(REPOSITORY.toFile()).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor()).as(output).isZero();
     }
 
     private String gitObjectFingerprint(String revisionPath) throws Exception {

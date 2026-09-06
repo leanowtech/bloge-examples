@@ -25,10 +25,16 @@ AMBIGUITY_RUNTIME_NONCE = "4" * 64
 def surface_proof() -> dict:
     material = {
         "runtimeInstanceNonce": MAIN_RUNTIME_NONCE,
-        "visibleToolNames": ["rg.library.overview.get", "rg.capability.search"],
-        "hiddenTool": "rg.dsl.reference.get",
-        "rejectionCode": -32031,
-        "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE",
+        "purposeProofs": {
+            "read": {"purpose": "AGENT_TDD_READ",
+                     "visibleToolNames": ["rg.library.overview.get", "rg.capability.search"],
+                     "hiddenTool": "rg.dsl.reference.get", "rejectionCode": -32031,
+                     "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE"},
+            "authoring": {"purpose": "AGENT_TDD_AUTHORING",
+                          "visibleToolNames": ["rg.journey.start", "rg.feature.define"],
+                          "hiddenTool": "rg.tool.compose", "rejectionCode": -32031,
+                          "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE"},
+        },
     }
     return {"schemaVersion": "rg.businessSurfaceProof.v1", **material,
             "proofFingerprint": "sha256:" + hashlib.sha256(
@@ -116,6 +122,8 @@ def metadata() -> dict:
     return {
         "repositoryCommit": "a" * 40,
         "codexVersion": "codex 1.0",
+        "codexExecutableSha256": "sha256:" + "1" * 64,
+        "codexCodeDirectoryHash": "sha256:" + "2" * 64,
         "certifiedAt": "2026-09-05T00:00:00Z",
         "exitCode": 0,
         "runtimeInstanceNonce": MAIN_RUNTIME_NONCE,
@@ -207,22 +215,25 @@ def family_events(family_id: str) -> list[dict]:
                 call("rg_read", "rg.journey.next", {"journeyRef": "journey:test"},
                      {"journeyRef": "journey:test", "stage": "TESTING"}), summary]
     elif family_id == "semantic-drift":
-        body = [call("rg_read", "rg.journey.next", {"journeyRef": "journey:drift"}, {
+        body = [call("rg_read", "rg.entity.list", {"kind": "SOLUTION"}, {"items": []}),
+                call("rg_read", "rg.journey.next", {"journeyRef": "journey:drift"}, {
             "journeyRef": "journey:drift",
-            "blockingReasons": ["GOLDEN_CASE_STALE"],
+        "blockingReasons": ["GOLDEN_CASE_STALE"],
         }), question]
     elif family_id == "fact-assumption":
-        body = [call("rg_author", "rg.solution.golden.propose", {}, {
+        body = [call("rg_read", "rg.entity.list", {"kind": "SOLUTION"}, {"items": []}),
+                call("rg_author", "rg.solution.golden.propose", {}, {
             "caseSetRef": "case-set:fact", "proposalStatus": "PENDING",
         }), summary]
-        body[0]["item"]["arguments"] = {"cases": [{"givenFacts": {"责任方": "乘客"}}]}
+        body[1]["item"]["arguments"] = {"cases": [{"givenFacts": {"责任方": "乘客"}}]}
     elif family_id in {"dependency-unavailable", "action-stubbing", "forbidden-dependency"}:
         outcome = {
             "dependency-unavailable": "UNAVAILABLE",
             "action-stubbing": "SUCCEEDS_WITHOUT_EFFECT",
             "forbidden-dependency": "MUST_NOT_BE_USED",
         }[family_id]
-        body = [call("rg_author", "rg.solution.golden.propose", {
+        body = [call("rg_read", "rg.entity.list", {"kind": "SOLUTION"}, {"items": []}),
+                call("rg_author", "rg.solution.golden.propose", {
             "cases": [{"dependencyAssumptions": [{"outcome": outcome}]}],
         }, {"caseSetRef": f"case-set:{family_id}", "proposalStatus": "PENDING"}), summary]
     elif family_id == "assumption-ambiguity":
@@ -344,8 +355,8 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
             setup_path.write_text(json.dumps(setup), encoding="utf-8")
             manifest = {"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
                         "setupManifestFile": setup_path.name,
-                        "setupActorFingerprint": "sha256:" + "a" * 64,
-                        "workloadActorFingerprint": "sha256:" + "b" * 64,
+                        "setupCredentialFingerprint": "sha256:" + "a" * 64,
+                        "workloadCredentialFingerprint": "sha256:" + "b" * 64,
                         "families": families}
             if manifest_mutator is not None:
                 manifest_mutator(manifest)
@@ -369,7 +380,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertRegex(certificate["setupIdentity"]["setupFingerprint"], r"^sha256:")
         self.assertEqual(4, certificate["runtimeIdentity"]["codexPhaseCount"])
         self.assertEqual(4, len(certificate["runtimeIdentity"]["instanceNonceFingerprints"]))
-        self.assertTrue(certificate["setupIdentity"]["actorSeparationVerified"])
+        self.assertTrue(certificate["setupIdentity"]["credentialSeparationVerified"])
         self.assertTrue(certificate["transport"]["serverListFiltered"])
         self.assertTrue(certificate["transport"]["directHiddenCallRejected"])
         self.assertEqual(1.0, certificate["metrics"]["toolRecallRate"])
@@ -524,12 +535,12 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "four isolated"):
             self.certify_aux(manifest_mutator=reuse_runtime)
 
-    def test_rejects_setup_identity_reused_by_workload(self) -> None:
-        def reuse_actor(manifest: dict) -> None:
-            manifest["workloadActorFingerprint"] = manifest["setupActorFingerprint"]
+    def test_rejects_setup_credential_reused_by_workload(self) -> None:
+        def reuse_credential(manifest: dict) -> None:
+            manifest["workloadCredentialFingerprint"] = manifest["setupCredentialFingerprint"]
 
         with self.assertRaisesRegex(MODULE.CertificationFailure, "independently bound"):
-            self.certify_aux(manifest_mutator=reuse_actor)
+            self.certify_aux(manifest_mutator=reuse_credential)
 
     def test_rejects_successful_family_with_wrong_first_workflow_tool(self) -> None:
         events = family_events("synonym-rewrite")
@@ -562,8 +573,8 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
 
     def test_rejects_semantic_drift_from_an_unseeded_journey(self) -> None:
         events = family_events("semantic-drift")
-        events[0]["item"]["arguments"]["journeyRef"] = "journey:other"
-        events[0]["item"]["result"]["structuredContent"]["data"]["journeyRef"] = "journey:other"
+        events[1]["item"]["arguments"]["journeyRef"] = "journey:other"
+        events[1]["item"]["result"]["structuredContent"]["data"]["journeyRef"] = "journey:other"
         with self.assertRaisesRegex(MODULE.CertificationFailure, "re-confirmation"):
             self.certify_aux(family_overrides={"semantic-drift": events})
 

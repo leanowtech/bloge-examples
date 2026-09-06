@@ -47,17 +47,35 @@ if ! repository_is_clean; then
     echo "Certification requires a clean committed worktree." >&2
     exit 1
 fi
-for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk chflags curl git lsof python3 openssl sandbox-exec tr; do
+for command in "${CODEX_BIN}" "${MVN_BIN}" "${JAVA_BIN}" awk chflags codesign curl git lsof python3 openssl sandbox-exec tr; do
     if ! command -v "${command}" >/dev/null 2>&1; then
         echo "Required command is unavailable: ${command}" >&2
         exit 1
     fi
 done
 CODEX_EXECUTABLE="$(command -v "${CODEX_BIN}")"
-if [[ "${CODEX_EXECUTABLE}" != /* ]]; then
-    echo "Codex executable must resolve to an absolute path." >&2
+if [[ "${CODEX_EXECUTABLE}" != /* ]] || [ -L "${CODEX_EXECUTABLE}" ]; then
+    echo "Codex executable must resolve to an absolute regular file." >&2
     exit 1
 fi
+if ! codesign --verify --strict "${CODEX_EXECUTABLE}" >/dev/null 2>&1; then
+    echo "Codex executable does not have a valid macOS code signature." >&2
+    exit 1
+fi
+CODEX_SIGNATURE="$(codesign -dv --verbose=4 "${CODEX_EXECUTABLE}" 2>&1)"
+if ! grep -Fq 'TeamIdentifier=2DC432GLL2' <<< "${CODEX_SIGNATURE}" \
+        || ! grep -Fq 'Authority=Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)' \
+        <<< "${CODEX_SIGNATURE}"; then
+    echo "Certification requires the OpenAI-signed Codex executable." >&2
+    exit 1
+fi
+CODEX_CODE_DIRECTORY_HASH="sha256:$(sed -n 's/^CandidateCDHashFull sha256=//p' \
+    <<< "${CODEX_SIGNATURE}" | head -1)"
+if ! [[ "${CODEX_CODE_DIRECTORY_HASH}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "Codex code-directory identity is unavailable." >&2
+    exit 1
+fi
+CODEX_EXECUTABLE_SHA256="sha256:$(openssl dgst -sha256 "${CODEX_EXECUTABLE}" | awk '{print $2}')"
 CODE_MODE_EXECUTABLE="$(dirname "${CODEX_EXECUTABLE}")/codex-code-mode-host"
 if [ ! -x "${CODE_MODE_EXECUTABLE}" ] || [ -L "${CODE_MODE_EXECUTABLE}" ]; then
     echo "Codex MCP orchestration host must be a regular executable beside Codex." >&2
@@ -175,8 +193,8 @@ if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ] || [ "${SETUP_TOKEN}" = "${REVIEW_TO
     echo "Generated demo identities unexpectedly collided." >&2
     exit 1
 fi
-AGENT_ACTOR_FINGERPRINT="sha256:$(printf '%s' "${AGENT_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
-SETUP_ACTOR_FINGERPRINT="sha256:$(printf '%s' "${SETUP_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
+AGENT_CREDENTIAL_FINGERPRINT="sha256:$(printf '%s' "${AGENT_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
+SETUP_CREDENTIAL_FINGERPRINT="sha256:$(printf '%s' "${SETUP_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
 
 COMMON_GIT_DIR="$(git -C "${ROOT_DIR}" rev-parse --path-format=absolute --git-common-dir)"
 COMMON_REPOSITORY="$(dirname "${COMMON_GIT_DIR}")"
@@ -611,7 +629,7 @@ PY
 )
 
 python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" "${SETUP_MANIFEST_FILE}" \
-    "${SETUP_ACTOR_FINGERPRINT}" "${AGENT_ACTOR_FINGERPRINT}" <<'PY'
+    "${SETUP_CREDENTIAL_FINGERPRINT}" "${AGENT_CREDENTIAL_FINGERPRINT}" <<'PY'
 import json
 import sys
 
@@ -629,8 +647,8 @@ with open(sys.argv[1], encoding="utf-8") as source:
 with open(sys.argv[2], "w", encoding="utf-8") as target:
     json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
                "setupManifestFile": sys.argv[3],
-               "setupActorFingerprint": sys.argv[4],
-               "workloadActorFingerprint": sys.argv[5],
+               "setupCredentialFingerprint": sys.argv[4],
+               "workloadCredentialFingerprint": sys.argv[5],
                "families": families},
               target, ensure_ascii=False, indent=2)
     target.write("\n")
@@ -649,6 +667,8 @@ python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TR
     --surface-proof "${SURFACE_PROOF_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
+    --codex-executable-sha256 "${CODEX_EXECUTABLE_SHA256}" \
+    --codex-code-directory-hash "${CODEX_CODE_DIRECTORY_HASH}" \
     --certified-at "${CERTIFIED_AT}" \
     --runtime-instance-nonce "${AUTHORING_RUNTIME_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \

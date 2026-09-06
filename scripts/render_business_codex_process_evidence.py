@@ -63,7 +63,7 @@ def render(trace: Path, certificate_path: Path, output_dir: Path, browser: Path)
         temporary = Path(directory)
         for number, title, tool, description in STAGES:
             matches = [(index + 1, call) for index, call in enumerate(calls)
-                       if call["tool"] == tool and call["status"] == "completed"]
+                       if call["tool"] == tool and call["successful"]]
             if not matches:
                 raise RuntimeError(f"required real Codex event is absent: {tool}")
             ordinal = matches[0][0]

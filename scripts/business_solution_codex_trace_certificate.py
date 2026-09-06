@@ -63,20 +63,17 @@ FAMILY_FIRST_TOOL_ALLOWLIST = {
     "surface-interference": frozenset({"rg.library.overview.get"}),
     "cross-session-rediscovery": frozenset({"rg.entity.list", "rg.capability.search"}),
     "fact-assumption": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
-                                   "rg.journey.next", "rg.solution.golden.list",
-                                   "rg.solution.golden.propose"}),
+                                   "rg.library.overview.get"}),
     "dependency-unavailable": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
-                                          "rg.journey.next", "rg.solution.golden.list",
-                                          "rg.solution.golden.propose"}),
+                                          "rg.library.overview.get"}),
     "action-stubbing": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
-                                   "rg.journey.next", "rg.solution.golden.list",
-                                   "rg.solution.golden.propose"}),
+                                   "rg.library.overview.get"}),
     "forbidden-dependency": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
-                                        "rg.journey.next", "rg.solution.golden.list",
-                                        "rg.solution.golden.propose"}),
+                                        "rg.library.overview.get"}),
     "multiple-exact": frozenset({"rg.capability.search", "rg.library.overview.get"}),
     "legacy-feature-partial": frozenset({"rg.capability.search", "rg.library.overview.get"}),
-    "semantic-drift": frozenset({"rg.entity.list", "rg.capability.search", "rg.journey.next"}),
+    "semantic-drift": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
+                                  "rg.library.overview.get"}),
     "assumption-ambiguity": frozenset({"rg.capability.search", "rg.library.overview.get"}),
 }
 CLARIFICATION_FAMILIES = {
@@ -494,23 +491,36 @@ def load_setup_manifest(path: Path) -> dict[str, Any]:
 
 def load_surface_proof(value: dict[str, Any], runtime_nonce: str) -> dict[str, Any]:
     """Validate server-side list and call surface evidence from the owned runtime."""
-    required = {"schemaVersion", "runtimeInstanceNonce", "visibleToolNames", "hiddenTool",
-                "rejectionCode", "rejectionReason", "proofFingerprint"}
+    required = {"schemaVersion", "runtimeInstanceNonce", "purposeProofs", "proofFingerprint"}
     if not isinstance(value, dict) or set(value) != required \
             or value.get("schemaVersion") != "rg.businessSurfaceProof.v1":
         raise CertificationFailure("business surface proof has an unsupported shape")
     if value.get("runtimeInstanceNonce") != runtime_nonce:
         raise CertificationFailure("business surface proof belongs to another runtime")
-    names = value.get("visibleToolNames")
-    if not isinstance(names, list) or "rg.library.overview.get" not in names \
-            or "rg.capability.search" not in names:
-        raise CertificationFailure("business surface proof has no required read tools")
-    if any(not isinstance(name, str) or name.startswith(FORBIDDEN_PREFIXES) for name in names):
-        raise CertificationFailure("business surface proof exposes a platform tool")
-    if value.get("hiddenTool") != "rg.dsl.reference.get" \
-            or value.get("rejectionCode") != -32031 \
-            or value.get("rejectionReason") != "TOOL_NOT_VISIBLE_IN_SURFACE":
-        raise CertificationFailure("business surface direct-call guard was not observed")
+    purpose_proofs = value.get("purposeProofs")
+    expected = {
+        "read": ("AGENT_TDD_READ", {"rg.library.overview.get", "rg.capability.search"},
+                 "rg.dsl.reference.get"),
+        "authoring": ("AGENT_TDD_AUTHORING", {"rg.journey.start", "rg.feature.define"},
+                      "rg.tool.compose"),
+    }
+    if not isinstance(purpose_proofs, dict) or set(purpose_proofs) != set(expected):
+        raise CertificationFailure("business surface proof does not cover both MCP purposes")
+    for label, (purpose, required_tools, hidden_tool) in expected.items():
+        proof = purpose_proofs.get(label)
+        if not isinstance(proof, dict) or set(proof) != {
+                "purpose", "visibleToolNames", "hiddenTool", "rejectionCode", "rejectionReason"}:
+            raise CertificationFailure(f"business {label} surface proof has an unsupported shape")
+        names = proof.get("visibleToolNames")
+        if proof.get("purpose") != purpose or not isinstance(names, list) \
+                or not required_tools.issubset(set(names)):
+            raise CertificationFailure(f"business {label} surface proof has no required tools")
+        if any(not isinstance(name, str) or name not in AUTHORING_TOOLS | READ_TOOLS
+               for name in names):
+            raise CertificationFailure(f"business {label} surface proof exposes a platform tool")
+        if proof.get("hiddenTool") != hidden_tool or proof.get("rejectionCode") != -32031 \
+                or proof.get("rejectionReason") != "TOOL_NOT_VISIBLE_IN_SURFACE":
+            raise CertificationFailure(f"business {label} direct-call guard was not observed")
     material = {key: value[key] for key in required if key not in {"schemaVersion", "proofFingerprint"}}
     actual = "sha256:" + hashlib.sha256(canonical_bytes(material)).hexdigest()
     if not hmac.compare_digest(actual, str(value.get("proofFingerprint"))):
@@ -523,16 +533,17 @@ def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, An
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict) \
             or manifest.get("schemaVersion") != "rg.businessRecallFamilyTraceSet.v1" \
-            or set(manifest) != {"schemaVersion", "setupManifestFile", "setupActorFingerprint",
-                                 "workloadActorFingerprint", "families"}:
+            or set(manifest) != {"schemaVersion", "setupManifestFile", "setupCredentialFingerprint",
+                                 "workloadCredentialFingerprint", "families"}:
         raise CertificationFailure("family trace manifest has an unsupported shape")
-    setup_actor = required_text(manifest.get("setupActorFingerprint"), "setup actor fingerprint")
-    workload_actor = required_text(manifest.get("workloadActorFingerprint"),
-                                   "workload actor fingerprint")
-    if not re.fullmatch(r"sha256:[0-9a-f]{64}", setup_actor) \
-            or not re.fullmatch(r"sha256:[0-9a-f]{64}", workload_actor) \
-            or hmac.compare_digest(setup_actor, workload_actor):
-        raise CertificationFailure("setup and workload actors are not independently bound")
+    setup_credential = required_text(
+        manifest.get("setupCredentialFingerprint"), "setup credential fingerprint")
+    workload_credential = required_text(
+        manifest.get("workloadCredentialFingerprint"), "workload credential fingerprint")
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", setup_credential) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", workload_credential) \
+            or hmac.compare_digest(setup_credential, workload_credential):
+        raise CertificationFailure("setup and workload credentials are not independently bound")
     setup_name = required_text(manifest.get("setupManifestFile"), "setup manifest file")
     setup_path = Path(setup_name)
     if not setup_path.is_absolute():
@@ -580,8 +591,8 @@ def load_family_manifest(path: Path) -> tuple[list[dict[str, Any]], dict[str, An
         raise CertificationFailure(
             f"family trace manifest must cover all 15 families; missing={missing}, extra={extra}")
     ordered = sorted(normalized, key=lambda item: list(FAMILY_EXPECTATIONS).index(item["familyId"]))
-    return ordered, {**setup, "setupActorFingerprint": setup_actor,
-                     "workloadActorFingerprint": workload_actor}
+    return ordered, {**setup, "setupCredentialFingerprint": setup_credential,
+                     "workloadCredentialFingerprint": workload_credential}
 
 
 def require_family_surface(calls: list[dict[str, Any]], family_id: str) -> None:
@@ -830,10 +841,16 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
                                     "production tree fingerprint")
     certification_inputs = required_text(metadata.get("certificationInputsFingerprint"),
                                          "certification inputs fingerprint")
+    codex_executable = required_text(metadata.get("codexExecutableSha256"),
+                                     "Codex executable fingerprint")
+    codex_code_directory = required_text(metadata.get("codexCodeDirectoryHash"),
+                                         "Codex code-directory fingerprint")
     if not re.fullmatch(r"[0-9a-f]{32,128}", runtime_nonce) \
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", runtime_jar) \
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", production_tree) \
-            or not re.fullmatch(r"sha256:[0-9a-f]{64}", certification_inputs):
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", certification_inputs) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", codex_executable) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", codex_code_directory):
         raise CertificationFailure("runtime identity is malformed")
     surface_proof = load_surface_proof(metadata.get("surfaceProof"), runtime_nonce)
     family_nonces = {proof["familyId"]: proof["runtimeInstanceNonce"] for proof in family_proofs}
@@ -865,6 +882,8 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
         "codexVersion": metadata["codexVersion"],
         "runtimeIdentity": {
             "schemaVersion": "rg.agentTddCertificationInstance.v1",
+            "codexExecutableSha256": metadata["codexExecutableSha256"],
+            "codexCodeDirectoryHash": metadata["codexCodeDirectoryHash"],
             "instanceNonceFingerprints": [
                 "sha256:" + hashlib.sha256(value.encode()).hexdigest() for value in runtime_nonces],
             "codexPhaseCount": 4,
@@ -879,10 +898,10 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
                 "seed-manifest", canonical_bytes({key: value for key, value in setup.items()
                                                   if key not in {"path", "byRole", "byPreflight"}}).decode("utf-8")),
             "relationshipCount": len(SETUP_RELATIONSHIPS),
-            "actorSeparationVerified": True,
-            "actorSeparationFingerprint": opaque(
-                "setup-workload-actors", setup["setupActorFingerprint"] + "\0"
-                + setup["workloadActorFingerprint"]),
+            "credentialSeparationVerified": True,
+            "credentialSeparationFingerprint": opaque(
+                "setup-workload-credentials", setup["setupCredentialFingerprint"] + "\0"
+                + setup["workloadCredentialFingerprint"]),
         },
         "suite": "business-solution-recall-v1",
         "transport": {
@@ -945,7 +964,7 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             "independentCodexSessionsObserved": True,
             "serverSurfaceListFiltered": True,
             "serverSurfaceDirectCallRejected": True,
-            "setupActorSeparated": True,
+            "setupCredentialSeparated": True,
         },
         "result": "CERTIFIED",
     }
@@ -1027,6 +1046,8 @@ def main() -> int:
     parser.add_argument("trace", type=Path)
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--codex-version", required=True)
+    parser.add_argument("--codex-executable-sha256", required=True)
+    parser.add_argument("--codex-code-directory-hash", required=True)
     parser.add_argument("--certified-at", default=datetime.now(timezone.utc).isoformat())
     parser.add_argument("--exit-code", required=True, type=int)
     parser.add_argument("--runtime-instance-nonce", required=True)
@@ -1042,6 +1063,8 @@ def main() -> int:
         surface_proof = json.loads(args.surface_proof.read_text(encoding="utf-8"))
         result = certify(args.trace, {
             "repositoryCommit": args.repository_commit, "codexVersion": args.codex_version,
+            "codexExecutableSha256": args.codex_executable_sha256,
+            "codexCodeDirectoryHash": args.codex_code_directory_hash,
             "certifiedAt": args.certified_at, "exitCode": args.exit_code,
             "runtimeInstanceNonce": args.runtime_instance_nonce,
             "runtimeJarSha256": args.runtime_jar_sha256,

@@ -15,14 +15,25 @@ class SurfaceProbeFailure(RuntimeError):
     """Raised when the server does not enforce both list and call visibility."""
 
 
-def _exchange(endpoint: str, token: str, request_id: str, method: str,
+BUSINESS_SURFACE_TOOLS = {
+    "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
+    "rg.journey.start", "rg.journey.next", "rg.solution.golden.propose",
+    "rg.solution.golden.list", "rg.feature.define", "rg.feature.handoff",
+    "rg.feature.evaluate", "rg.scenario.define", "rg.instruction.define",
+    "rg.engineering.handoff", "rg.solution.compose", "rg.solution.getContract",
+    "rg.solution.invoke", "rg.solution.baseline", "rg.solution.commit",
+    "rg.solution.readiness", "rg.solution.performance", "rg.solution.publish",
+}
+
+
+def _exchange(endpoint: str, token: str, purpose: str, request_id: str, method: str,
               params: dict[str, Any], opener: Callable[..., Any]) -> dict[str, Any]:
     body = json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method,
                        "params": params}, separators=(",", ":")).encode()
     request = Request(endpoint, data=body, method="POST", headers={
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        "X-Purpose": "AGENT_TDD_READ",
+        "X-Purpose": purpose,
         "X-RG-Surface": "BUSINESS_SOLUTION",
     })
     with opener(request, timeout=15) as response:
@@ -34,30 +45,35 @@ def _exchange(endpoint: str, token: str, request_id: str, method: str,
 
 def certify_surface(endpoint: str, token: str, runtime_nonce: str,
                     opener: Callable[..., Any] = urlopen) -> dict[str, Any]:
-    """Verify server list filtering and direct-call rejection on one owned runtime."""
-    listed = _exchange(endpoint, token, "surface-list", "tools/list", {}, opener)
-    tools = listed.get("result", {}).get("tools", [])
-    names = [item.get("name") for item in tools if isinstance(item, dict)]
-    if "rg.library.overview.get" not in names or "rg.capability.search" not in names:
-        raise SurfaceProbeFailure("business read tools are absent from tools/list")
-    forbidden = [name for name in names if isinstance(name, str) and (
-        name.startswith(("rg.dsl.", "rg.tool.", "rg.fixture."))
-        or name in {"rg.feature.compose", "rg.scenario.upsertCases", "rg.simulate"})]
-    if forbidden:
-        raise SurfaceProbeFailure("tools/list exposed a platform-authoring tool")
-
-    rejected = _exchange(endpoint, token, "surface-call", "tools/call", {
-        "name": "rg.dsl.reference.get", "arguments": {"libraryRefs": []}}, opener)
-    error = rejected.get("error", {})
-    if error.get("code") != -32031 or error.get("message") != "TOOL_NOT_VISIBLE_IN_SURFACE":
-        raise SurfaceProbeFailure("direct call did not fail with TOOL_NOT_VISIBLE_IN_SURFACE")
+    """Verify READ and AUTHORING list/call filtering on one owned runtime."""
+    proofs: dict[str, dict[str, Any]] = {}
+    configurations = (
+        ("read", "AGENT_TDD_READ", {"rg.library.overview.get", "rg.capability.search"},
+         "rg.dsl.reference.get", {"libraryRefs": []}),
+        ("authoring", "AGENT_TDD_AUTHORING", {"rg.journey.start", "rg.feature.define"},
+         "rg.tool.compose", {}),
+    )
+    for label, purpose, required, hidden_tool, arguments in configurations:
+        listed = _exchange(endpoint, token, purpose, f"surface-{label}-list", "tools/list", {}, opener)
+        tools = listed.get("result", {}).get("tools", [])
+        names = [item.get("name") for item in tools if isinstance(item, dict)]
+        if not required.issubset(set(names)):
+            raise SurfaceProbeFailure(f"business {label} tools are absent from tools/list")
+        if any(not isinstance(name, str) or name not in BUSINESS_SURFACE_TOOLS for name in names):
+            raise SurfaceProbeFailure(f"{label} tools/list exposed a non-business tool")
+        rejected = _exchange(endpoint, token, purpose, f"surface-{label}-call", "tools/call", {
+            "name": hidden_tool, "arguments": arguments}, opener)
+        error = rejected.get("error", {})
+        if error.get("code") != -32031 or error.get("message") != "TOOL_NOT_VISIBLE_IN_SURFACE":
+            raise SurfaceProbeFailure(
+                f"{label} direct call did not fail with TOOL_NOT_VISIBLE_IN_SURFACE")
+        proofs[label] = {"purpose": purpose, "visibleToolNames": names,
+                         "hiddenTool": hidden_tool, "rejectionCode": -32031,
+                         "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE"}
 
     material = {
         "runtimeInstanceNonce": runtime_nonce,
-        "visibleToolNames": names,
-        "hiddenTool": "rg.dsl.reference.get",
-        "rejectionCode": -32031,
-        "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE",
+        "purposeProofs": proofs,
     }
     digest = hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return {"schemaVersion": "rg.businessSurfaceProof.v1", **material,
