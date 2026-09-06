@@ -152,13 +152,12 @@ public final class BoardProjectionService {
             boolean passing = result.path("verdict").asText().endsWith("PASS");
             if (passing) pass++; else fail++;
             JsonNode golden = goldenById.get(result.path("caseId").asText());
-            Map<String, Object> given = golden == null ? Map.of()
-                    : objectMap(golden.path("given"));
-            JsonNode expectedResult = golden == null ? mapper.createObjectNode()
-                    : golden.path("expect").path("result");
-            rows.add(new CaseRow(result.path("caseId").asText(), given,
-                    objectMap(expectedResult), displayName(result.path("instructionRef").asText()),
-                    passing ? "绿" : "红"));
+            rows.add(new CaseRow(result.path("caseId").asText(),
+                    golden == null ? 0 : golden.path("factCount").asInt(),
+                    golden == null ? 0 : golden.path("assumptionCount").asInt(),
+                    golden == null ? "" : golden.path("expectedShapeFingerprint").asText(),
+                    golden != null && golden.path("materialReceipt").isObject(),
+                    displayName(result.path("instructionRef").asText()), passing ? "绿" : "红"));
         }
         List<BacklogItem> backlog = new ArrayList<>();
         evidence.data().path("businessBacklog").forEach(item -> backlog.add(new BacklogItem(
@@ -176,12 +175,6 @@ public final class BoardProjectionService {
                 Boolean.TRUE.equals(gates.get("writeReconciled")),
                 Boolean.TRUE.equals(gates.get("ownerSignoff"))),
                 Boolean.TRUE.equals(readiness.get("publishable")));
-    }
-
-    private Map<String, Object> objectMap(JsonNode value) {
-        return value != null && value.isObject()
-                ? mapper.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<>() { })
-                : Map.of();
     }
 
     private static String predicate(JsonNode value) {
@@ -262,9 +255,16 @@ public final class BoardProjectionService {
                                List<CaseRow> cases, List<BacklogItem> backlog) { }
     /** Passing and failing counts for the current integrated business line. */
     public record LayerCount(int pass, int fail) { }
-    /** One human-review case joined from GOLDEN and payload-free evidence. */
-    public record CaseRow(String caseId, Map<String, Object> givenFacts,
-                          Map<String, Object> expected, String actual, String verdict) { }
+    /**
+     * One payload-free case summary joined from GOLDEN metadata and execution evidence.
+     *
+     * <p>Business facts, dependency assumptions, and expected values remain in the protected
+     * material vault. An authorized human retrieves them through the dedicated no-store review
+     * endpoint instead of receiving them in this board projection.</p>
+     */
+    public record CaseRow(String caseId, int factCount, int assumptionCount,
+                          String expectedShapeFingerprint, boolean protectedMaterialAvailable,
+                          String actual, String verdict) { }
     /** One business-owned correction item. */
     public record BacklogItem(String caseId, String reason, String owner) { }
     /** One Feature card with no implementation reference or token. */

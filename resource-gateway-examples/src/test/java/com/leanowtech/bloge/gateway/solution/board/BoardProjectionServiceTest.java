@@ -61,7 +61,12 @@ class BoardProjectionServiceTest {
         ObjectNode cases = mapper.createObjectNode().put("toolRef", "sol:cancel-dispute");
         cases.putArray("rows").addObject().put("caseId", "G1")
                 .put("category", "GOLDEN").put("lifecycle", "ACTIVE")
+                .put("factCount", 2).put("assumptionCount", 1)
+                .put("expectedShapeFingerprint", "sha256:expected-shape")
                 .set("given", mapper.valueToTree(Map.of("party", "none", "orderId", "O-1")));
+        cases.withArray("rows").get(0).withObject("materialReceipt")
+                .put("fixtureAssetId", "golden-material").put("revision", 7)
+                .put("fingerprint", "sha256:material");
         cases.withArray("rows").get(0).withObject("expect")
                 .set("result", mapper.valueToTree(Map.of("decision", "WAIVED")));
         states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", cases);
@@ -106,13 +111,17 @@ class BoardProjectionServiceTest {
         });
         assertThat(view.redGreen().cases()).singleElement().satisfies(row -> {
             assertThat(row.caseId()).isEqualTo("G1");
-            assertThat(row.expected()).containsEntry("decision", "WAIVED");
+            assertThat(row.factCount()).isEqualTo(2);
+            assertThat(row.assumptionCount()).isEqualTo(1);
+            assertThat(row.expectedShapeFingerprint()).isEqualTo("sha256:expected-shape");
+            assertThat(row.protectedMaterialAvailable()).isTrue();
             assertThat(row.actual()).isEqualTo("refund waive full");
             assertThat(row.verdict()).isEqualTo("红");
         });
         assertThat(view.publishCard().publishable()).isFalse();
         String json = mapper.writeValueAsString(view).toLowerCase();
-        assertThat(json).doesNotContain("dsl", "yaml", "graphdraft", "lowereddraft");
+        assertThat(json).doesNotContain("dsl", "yaml", "graphdraft", "lowereddraft",
+                "o-1", "waived", "\"party\":\"none\"");
     }
 
     private static IntegrationRequestContext reviewer() {
