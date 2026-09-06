@@ -17,6 +17,8 @@ from typing import Any, Callable
 SCHEMA_VERSION = "rg.businessRecallFamilySetup.v1"
 PHASE_NEAR = "near-meaning"
 PHASE_REMAINING = "remaining"
+PHASE_AMBIGUITY = "ambiguity"
+AMBIGUITY_ROLES = {"assumptionAmbiguityA", "assumptionAmbiguityB"}
 REQUIRED_ROLES = {
     "nearMeaningDistractor",
     "multipleExactA",
@@ -28,6 +30,7 @@ REQUIRED_ROLES = {
     "semanticDriftJourney",
     "semanticDriftCaseSet",
 }
+REMAINING_ROLES = REQUIRED_ROLES - AMBIGUITY_ROLES
 
 
 class SetupFailure(RuntimeError):
@@ -378,7 +381,7 @@ def preflight_near(api: HttpApi, by_role: dict[str, dict[str, Any]],
 
 def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
                         by_role: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """Prove every remaining adversarial seed is visible with its intended server outcome."""
+    """Prove non-ambiguity adversarial seeds before controlled business tests run."""
     exact_a = by_role["multipleExactA"]
     exact_b = by_role["multipleExactB"]
     exact_data, exact_candidates = candidates_for(
@@ -396,16 +399,6 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
                        for candidate in legacy_candidates):
         raise SetupFailure("legacy preflight did not observe its PARTIAL seed")
 
-    assumption_seeds = [by_role["assumptionAmbiguityA"], by_role["assumptionAmbiguityB"]]
-    assumption_data, assumption_candidates = candidates_for(
-        api, fixture["preflightQueries"]["assumption-ambiguity"], ["INSTRUCTION"])
-    observed_assumptions = [candidate for candidate in assumption_candidates
-                            if any(matches_asset(candidate, seed) for seed in assumption_seeds)]
-    if assumption_data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \
-            or len(observed_assumptions) != 2 \
-            or len({candidate.get("businessName") for candidate in observed_assumptions}) != 1:
-        raise SetupFailure("assumption preflight did not observe two same-name seeded actions")
-
     drift_journey = by_role["semanticDriftJourney"]
     drift_data = api.mcp("rg.journey.next", {
         "journeyRef": drift_journey["assetRef"], "expectedRevision": drift_journey["revision"],
@@ -419,14 +412,28 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
          "outcome": "AMBIGUOUS_EXACT", "target": None},
         {"familyId": "legacy-feature-partial", "status": legacy_data.get("status"),
          "observedRoles": ["legacyPartial"], "outcome": "PARTIAL_VISIBLE", "target": None},
-        {"familyId": "assumption-ambiguity", "status": assumption_data.get("status"),
-         "observedRoles": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
-         "outcome": "SAME_NAME_VISIBLE", "target": None},
         {"familyId": "semantic-drift", "status": "STALE",
          "observedRoles": ["semanticDriftFeature", "semanticDriftJourney",
                            "semanticDriftCaseSet"],
          "outcome": "GOLDEN_CASE_STALE", "target": None},
     ]
+
+
+def preflight_ambiguity(api: HttpApi, fixture: dict[str, Any],
+                        by_role: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Prove the same-name action ambiguity immediately before its Codex turn."""
+    seeds = [by_role["assumptionAmbiguityA"], by_role["assumptionAmbiguityB"]]
+    data, candidates = candidates_for(
+        api, fixture["preflightQueries"]["assumption-ambiguity"], ["INSTRUCTION"])
+    observed = [candidate for candidate in candidates
+                if any(matches_asset(candidate, seed) for seed in seeds)]
+    if data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \
+            or len(observed) != 2 \
+            or len({candidate.get("businessName") for candidate in observed}) != 1:
+        raise SetupFailure("assumption preflight did not observe two same-name seeded actions")
+    return {"familyId": "assumption-ambiguity", "status": data.get("status"),
+            "observedRoles": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
+            "outcome": "SAME_NAME_VISIBLE", "target": None}
 
 
 def validate_near_manifest(existing: dict[str, Any], fixture_fingerprint: str) -> None:
@@ -455,27 +462,64 @@ def validate_near_manifest(existing: dict[str, Any], fixture_fingerprint: str) -
         raise SetupFailure("existing near setup fingerprint is invalid")
 
 
+def validate_remaining_manifest(existing: dict[str, Any], fixture_fingerprint: str) -> None:
+    """Reject a changed intermediate manifest before ambiguity-only seeds are added."""
+    required = {"schemaVersion", "fixtureFingerprint", "authoringPatternsFingerprint",
+                "completedPhases", "assets", "relationships", "preflights", "setupFingerprint"}
+    expected_relationships = {
+        family: roles for family, roles in {
+            "near-meaning-distractor": ["nearMeaningDistractor"],
+            "multiple-exact": ["multipleExactA", "multipleExactB"],
+            "legacy-feature-partial": ["legacyPartial"],
+            "semantic-drift": ["semanticDriftFeature", "semanticDriftJourney",
+                               "semanticDriftCaseSet"],
+        }.items()
+    }
+    if not isinstance(existing, dict) or set(existing) != required \
+            or existing.get("schemaVersion") != SCHEMA_VERSION \
+            or existing.get("fixtureFingerprint") != fixture_fingerprint \
+            or existing.get("completedPhases") != [PHASE_NEAR, PHASE_REMAINING] \
+            or existing.get("relationships") != expected_relationships:
+        raise SetupFailure("ambiguity setup requires the completed remaining manifest")
+    assets = existing.get("assets")
+    preflights = existing.get("preflights")
+    if not isinstance(assets, list) or {item.get("role") for item in assets} != REMAINING_ROLES \
+            or not isinstance(preflights, list) \
+            or {item.get("familyId") for item in preflights} != set(expected_relationships):
+        raise SetupFailure("existing remaining setup has unexpected seeds or preflights")
+    material = {key: existing[key] for key in (
+        "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+        "relationships", "preflights")}
+    if existing.get("setupFingerprint") != sha256(material):
+        raise SetupFailure("existing remaining setup fingerprint is invalid")
+
+
 def manifest(api: HttpApi, fixture: dict[str, Any], phase: str,
              existing: dict[str, Any] | None = None,
              primary: dict[str, Any] | None = None) -> dict[str, Any]:
     """Seed one isolated phase and bind the accumulated actual asset relationships."""
     if fixture.get("schemaVersion") != "rg.businessRecallPlatformFixture.v1":
         raise SetupFailure("setup fixture has an unsupported schemaVersion")
-    if phase not in {PHASE_NEAR, PHASE_REMAINING}:
+    if phase not in {PHASE_NEAR, PHASE_REMAINING, PHASE_AMBIGUITY}:
         raise SetupFailure("setup phase is unsupported")
     fixture_fingerprint = sha256(fixture)
     existing_assets: list[dict[str, Any]] = []
     existing_preflights: list[dict[str, Any]] = []
     completed: list[str] = []
     if existing is not None:
-        validate_near_manifest(existing, fixture_fingerprint)
+        if phase == PHASE_REMAINING:
+            validate_near_manifest(existing, fixture_fingerprint)
+        elif phase == PHASE_AMBIGUITY:
+            validate_remaining_manifest(existing, fixture_fingerprint)
+        else:
+            raise SetupFailure("near setup cannot merge an existing manifest")
         existing_assets = list(existing.get("assets", []))
         existing_preflights = list(existing.get("preflights", []))
         completed = list(existing.get("completedPhases", []))
-    if phase == PHASE_NEAR and existing is not None:
-        raise SetupFailure("near setup cannot merge an existing manifest")
     if phase == PHASE_REMAINING and completed != [PHASE_NEAR]:
         raise SetupFailure("remaining setup requires exactly one completed near phase")
+    if phase == PHASE_AMBIGUITY and completed != [PHASE_NEAR, PHASE_REMAINING]:
+        raise SetupFailure("ambiguity setup requires the completed remaining manifest")
     overview = api.mcp("rg.library.overview.get", {"includeSamples": False},
                        purpose="AGENT_TDD_READ", surface="BUSINESS_SOLUTION")
     patterns = required_text(overview.get("authoringPatternsFingerprint"), "authoring patterns")
@@ -483,23 +527,34 @@ def manifest(api: HttpApi, fixture: dict[str, Any], phase: str,
         raise SetupFailure("authoring patterns changed between setup phases")
     assets = list(existing_assets)
     selected_features = [spec for spec in fixture.get("features", [])
-                         if (phase == PHASE_NEAR) == (spec.get("role") == "nearMeaningDistractor")]
+                         if (phase == PHASE_NEAR and spec.get("role") == "nearMeaningDistractor")
+                         or (phase == PHASE_REMAINING
+                             and spec.get("role") != "nearMeaningDistractor")]
     for spec in selected_features:
         assets.append(seed_feature(api, spec, patterns))
     if phase == PHASE_REMAINING:
         for spec in fixture.get("instructions", []):
+            if spec.get("role") in AMBIGUITY_ROLES:
+                continue
             assets.append(seed_instruction(api, spec, patterns))
         assets.append(seed_legacy(api, fixture["legacyFeature"]))
         assets.extend(seed_drift(api, fixture["semanticDrift"], patterns))
+    elif phase == PHASE_AMBIGUITY:
+        for spec in fixture.get("instructions", []):
+            if spec.get("role") in AMBIGUITY_ROLES:
+                assets.append(seed_instruction(api, spec, patterns))
     roles = [item["role"] for item in assets]
-    expected_roles = {"nearMeaningDistractor"} if phase == PHASE_NEAR else REQUIRED_ROLES
+    expected_roles = ({"nearMeaningDistractor"} if phase == PHASE_NEAR
+                      else REMAINING_ROLES if phase == PHASE_REMAINING
+                      else REQUIRED_ROLES)
     if len(roles) != len(set(roles)) or set(roles) != expected_roles:
         raise SetupFailure("setup phase did not create the exact required asset roles")
     all_relationships = fixture.get("relationships")
     if not isinstance(all_relationships, dict):
         raise SetupFailure("setup fixture has no family relationships")
-    relationships = ({"near-meaning-distractor": ["nearMeaningDistractor"]}
-                     if phase == PHASE_NEAR else all_relationships)
+    relationships = {family: family_roles for family, family_roles in all_relationships.items()
+                     if isinstance(family_roles, list)
+                     and set(family_roles).issubset(expected_roles)}
     used_roles = {role for family_roles in relationships.values()
                   if isinstance(family_roles, list) for role in family_roles}
     if not used_roles.issubset(expected_roles):
@@ -510,8 +565,10 @@ def manifest(api: HttpApi, fixture: dict[str, Any], phase: str,
         if primary is None:
             raise SetupFailure("near setup requires the primary trace Feature coordinate")
         preflights.append(preflight_near(api, by_role, primary))
-    else:
+    elif phase == PHASE_REMAINING:
         preflights.extend(preflight_remaining(api, fixture, by_role))
+    else:
+        preflights.append(preflight_ambiguity(api, fixture, by_role))
     completed.append(phase)
     material = {
         "fixtureFingerprint": fixture_fingerprint,
@@ -532,7 +589,8 @@ def main() -> int:
     parser.add_argument("--author-token", required=True)
     parser.add_argument("--review-token", required=True)
     parser.add_argument("--fixture", type=Path, required=True)
-    parser.add_argument("--phase", choices=[PHASE_NEAR, PHASE_REMAINING], required=True)
+    parser.add_argument("--phase", choices=[PHASE_NEAR, PHASE_REMAINING, PHASE_AMBIGUITY],
+                        required=True)
     parser.add_argument("--existing-manifest", type=Path)
     parser.add_argument("--primary-context", type=Path)
     parser.add_argument("--output", type=Path, required=True)

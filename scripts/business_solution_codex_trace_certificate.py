@@ -422,8 +422,8 @@ def load_setup_manifest(path: Path) -> dict[str, Any]:
     required_roles = {role for roles in SETUP_RELATIONSHIPS.values() for role in roles}
     if set(by_role) != required_roles:
         raise CertificationFailure("setup manifest does not contain the exact required asset roles")
-    if manifest.get("completedPhases") != ["near-meaning", "remaining"]:
-        raise CertificationFailure("setup manifest does not prove both isolated seed phases")
+    if manifest.get("completedPhases") != ["near-meaning", "remaining", "ambiguity"]:
+        raise CertificationFailure("setup manifest does not prove all ordered seed phases")
     preflights = manifest.get("preflights")
     if not isinstance(preflights, list):
         raise CertificationFailure("setup manifest has no preflight evidence")

@@ -72,6 +72,7 @@ FAMILY_TRACE_DIR=""
 FAMILY_MANIFEST_FILE=""
 SETUP_MANIFEST_FILE=""
 NEAR_SETUP_MANIFEST_FILE=""
+REMAINING_SETUP_MANIFEST_FILE=""
 PRIMARY_CONTEXT_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
@@ -135,6 +136,7 @@ FAMILY_SUITE_FILE="${ROOT_DIR}/scripts/business-solution-recall-family-suite-v1.
 SETUP_FIXTURE_FILE="${ROOT_DIR}/scripts/business-recall-platform-fixture-v1.json"
 SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-manifest.json"
 NEAR_SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-near-manifest.json"
+REMAINING_SETUP_MANIFEST_FILE="${PRIVATE_DIR}/setup-remaining-manifest.json"
 PRIMARY_CONTEXT_FILE="${PRIVATE_DIR}/primary-feature-context.json"
 SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
@@ -531,13 +533,31 @@ PY
             --fixture "${SETUP_FIXTURE_FILE}" \
             --phase remaining \
             --existing-manifest "${NEAR_SETUP_MANIFEST_FILE}" \
-            --output "${SETUP_MANIFEST_FILE}"
-        chmod 600 "${SETUP_MANIFEST_FILE}"
+            --output "${REMAINING_SETUP_MANIFEST_FILE}"
+        chmod 600 "${REMAINING_SETUP_MANIFEST_FILE}"
         stop_owned_service
         start_owned_service "${AGENT_TOKEN}"
         wait_owned_service
         export RG_MCP_TOKEN="${AGENT_TOKEN}"
         curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
+    fi
+    if [ "${FAMILY_ID}" = "assumption-ambiguity" ]; then
+        # Add the same-name actions only after every controlled dependency family has
+        # completed. The setup call uses the already running workload identity, so the
+        # final Codex turn remains bound to the same third runtime instance.
+        python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
+            --endpoint "${RG_MCP_ENDPOINT}" \
+            --author-token "${AGENT_TOKEN}" \
+            --review-token "${REVIEW_TOKEN}" \
+            --fixture "${SETUP_FIXTURE_FILE}" \
+            --phase ambiguity \
+            --existing-manifest "${REMAINING_SETUP_MANIFEST_FILE}" \
+            --output "${SETUP_MANIFEST_FILE}"
+        chmod 600 "${SETUP_MANIFEST_FILE}"
+        if ! verify_runtime_identity; then
+            echo "The owned Resource Gateway identity changed during ambiguity setup." >&2
+            exit 1
+        fi
     fi
     FAMILY_PROMPT_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.prompt.txt"
     FAMILY_TRACE_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.trace.jsonl"

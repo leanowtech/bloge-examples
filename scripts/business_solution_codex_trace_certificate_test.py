@@ -256,7 +256,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         material = {
             "fixtureFingerprint": "sha256:" + "9" * 64,
             "authoringPatternsFingerprint": "sha256:" + "a" * 64,
-            "completedPhases": ["near-meaning", "remaining"],
+            "completedPhases": ["near-meaning", "remaining", "ambiguity"],
             "assets": assets,
             "relationships": MODULE.SETUP_RELATIONSHIPS,
             "preflights": [

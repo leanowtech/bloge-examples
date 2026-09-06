@@ -124,6 +124,11 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.assertNotIn("存在两个", prompt)
         self.assertNotIn("MCP", prompt)
         self.assertNotIn("Instruction", prompt)
+        self.assertEqual("assumption-ambiguity", suite["families"][-1]["familyId"])
+        self.assertLess(
+            next(index for index, item in enumerate(suite["families"])
+                 if item["familyId"] == "forbidden-dependency"),
+            len(suite["families"]) - 1)
 
     def test_certification_authors_primary_solution_before_seeding_distractors(self):
         script = Path(__file__).with_name("certify-agent-tdd-codex.sh").read_text(
@@ -141,8 +146,10 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.assertLess(families, setup)
         self.assertIn('if [ "${FAMILY_ID}" = "near-meaning-distractor" ]', script)
         self.assertIn('if [ "${FAMILY_ID}" = "boundary-unspecified" ]', script)
+        self.assertIn('if [ "${FAMILY_ID}" = "assumption-ambiguity" ]', script)
         self.assertIn('--phase near-meaning', script)
         self.assertIn('--phase remaining', script)
+        self.assertIn('--phase ambiguity', script)
         self.assertIn('--primary-context "${PRIMARY_CONTEXT_FILE}"', script)
         self.assertIn('"runtimeInstanceNonce": runtime_nonce', script)
         self.assertIn('"${FAMILY_EXIT}" "${INSTANCE_NONCE}" >> "${FAMILY_RUN_INDEX}"', script)
@@ -177,7 +184,8 @@ class BusinessRecallSetupTest(unittest.TestCase):
     def test_builds_fingerprint_from_actual_seed_relationships(self) -> None:
         api = FakeApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
-        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        remaining = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_AMBIGUITY, remaining)
 
         self.assertEqual(MODULE.SCHEMA_VERSION, manifest["schemaVersion"])
         self.assertEqual(MODULE.REQUIRED_ROLES, {asset["role"] for asset in manifest["assets"]})
@@ -185,9 +193,26 @@ class BusinessRecallSetupTest(unittest.TestCase):
             "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
             "relationships", "preflights")}
         self.assertEqual(MODULE.sha256(material), manifest["setupFingerprint"])
-        self.assertEqual([MODULE.PHASE_NEAR, MODULE.PHASE_REMAINING],
+        self.assertEqual([MODULE.PHASE_NEAR, MODULE.PHASE_REMAINING,
+                          MODULE.PHASE_AMBIGUITY],
                          manifest["completedPhases"])
         self.assertEqual(5, len(manifest["preflights"]))
+
+    def test_remaining_phase_does_not_seed_assumption_ambiguity_actions(self) -> None:
+        api = FakeApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        remaining = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
+        roles = {item["role"] for item in remaining["assets"]}
+        self.assertNotIn("assumptionAmbiguityA", roles)
+        self.assertNotIn("assumptionAmbiguityB", roles)
+        self.assertNotIn("assumption-ambiguity",
+                         {item["familyId"] for item in remaining["preflights"]})
+        instruction_keys = [arguments["idempotencyKey"]
+                            for tool, arguments, _purpose, _surface in api.calls
+                            if tool == "rg.instruction.define"]
+        self.assertFalse(any(key.startswith("recall-seed-refund-")
+                             for key in instruction_keys))
 
     def test_legacy_preflight_accepts_its_partial_candidate_among_ambiguous_results(self) -> None:
         class AmbiguousLegacyApi(FakeApi):
@@ -231,7 +256,8 @@ class BusinessRecallSetupTest(unittest.TestCase):
 
         api = AmbiguousAssumptionApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
-        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        remaining = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_AMBIGUITY, remaining)
         assumption = next(item for item in manifest["preflights"]
                           if item["familyId"] == "assumption-ambiguity")
 
@@ -252,7 +278,8 @@ class BusinessRecallSetupTest(unittest.TestCase):
     def test_all_business_entity_writes_use_a_server_navigated_journey(self) -> None:
         api = FakeApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
-        MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        remaining = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        MODULE.manifest(api, self.fixture, MODULE.PHASE_AMBIGUITY, remaining)
 
         for tool, arguments, _purpose, surface in api.calls:
             if tool not in {"rg.feature.define", "rg.scenario.define", "rg.instruction.define",
@@ -313,6 +340,13 @@ class BusinessRecallSetupTest(unittest.TestCase):
 
         with self.assertRaisesRegex(MODULE.SetupFailure, "near setup fingerprint"):
             MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
+    def test_ambiguity_phase_requires_the_completed_remaining_manifest(self) -> None:
+        api = FakeApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+
+        with self.assertRaisesRegex(MODULE.SetupFailure, "ambiguity setup requires"):
+            MODULE.manifest(api, self.fixture, MODULE.PHASE_AMBIGUITY, near)
 
     def test_near_phase_rejects_a_primary_coordinate_not_bound_to_main_trace(self) -> None:
         with self.assertRaisesRegex(MODULE.SetupFailure, "changed after the primary"):
