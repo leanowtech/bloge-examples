@@ -2,7 +2,7 @@
 ## 核心资产可见 · 端到端剧本贯通
 
 > **文档性质**:已实施技术设计与验收基线。本文同时保留问题背景、设计决策、落地偏差和可复核证据。
-> **实施状态**:A0–A4、B1–B3、C1–C2、D1–D2 已落码；正在执行最终真实 Codex 复认证和仓库全量门。只有 §8 记录为“已完成”的能力可视为当前实现。
+> **实施状态**:A0–A4、B1–B3、C1–C2、D1–D2 已落码并通过真实 Codex 复认证与仓库全量门。只有 §8 记录为“已完成”的能力可视为当前实现。
 > **范围**:`resource-gateway-examples` 工程的后端 Java(`solution`、`agenttdd`、`testing.correctness` 包)与前端 `src/main/frontend`。不改 BLOGE 图引擎、DSL 编译器内核、四实体语义。
 > **不做**:重写既有加密存储;替换既有 fixture 目录;改动 v1.4.6 的 Agent 面零载荷契约。
 
@@ -529,7 +529,7 @@ flowchart TD
 2. 同一 profile 用受保护业务案例建立 Feature controlled suite。明文只进入加密 vault，运行结果只返回案例数、通过数、覆盖率、零外呼和指纹。
 3. 独立特征工程身份用当前 suite evidence 履行 Feature；业务 Agent 的 WORKLOAD token 调同一 HTTP 入口得到 403。
 4. 业务 Codex 使用 `BUSINESS_SOLUTION` profile 读取服务端四实体模板，按 journey revision 写 Feature、Scenario、Instruction 和 Solution，并提出标准案例。
-5. 业务负责人使用独立 HUMAN 凭据在 Correctness Studio 查看标准案例明文、样例资产和覆盖义务；批准过程写入人类审计。凭据只保存在页面组件内存，请求后清空，不进入 URL、DOM 文本或浏览器存储。
+5. 业务负责人使用独立 HUMAN 凭据在 Correctness Studio 查看标准案例明文、样例资产和覆盖义务；批准过程写入人类审计。凭据只保存在页面组件内存，更换凭据或离开页面时清除，不进入 URL、DOM 文本或浏览器存储。
 6. Agent 只能读取案例计数、生命周期、覆盖摘要和指纹。ACTIVE 案例再由冻结 Solution 闭包执行零外呼 baseline，后续仍沿用既有签署、发布和运营门禁。
 
 ### 8.2 关键不变量
