@@ -45,6 +45,10 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_READ"))).isTrue();
         assertThat(policy.visible(catalog.require(McpToolCatalog.FEATURE_SUITE_GET),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isFalse();
+        assertThat(policy.visible(catalog.require("rg.feature.define"),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_AUTHORING"))).isTrue();
+        assertThat(policy.visible(catalog.require("rg.feature.handoff"),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_AUTHORING"))).isTrue();
     }
 
     @Test

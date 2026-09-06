@@ -37,6 +37,7 @@ public final class McpSurfacePolicy {
             "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
             "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get",
             "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
+            "rg.feature.define", "rg.feature.handoff",
             "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
             "rg.scenario.setDependencyBehavior", "rg.scenario.test", "rg.dsl.preview", "rg.gate.check",
             "rg.feature.rehearse", McpToolCatalog.FEATURE_SUITE_UPSERT,
