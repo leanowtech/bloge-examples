@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -20,6 +21,10 @@ import java.util.Objects;
 /** Authenticated, no-store transport for Solution-scoped Fixture descriptor metadata. */
 @RestController
 @ConditionalOnBean(BusinessFixtureIndexService.class)
+@ConditionalOnProperty(
+        prefix = "gateway.testing.correctness",
+        name = "enabled",
+        havingValue = "true")
 @RequestMapping("/api/agent-tdd/solutions")
 public final class BusinessFixtureIndexController {
     private final IntegrationRequestAuthenticator authenticator;

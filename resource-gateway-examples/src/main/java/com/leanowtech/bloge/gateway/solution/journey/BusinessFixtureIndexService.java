@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionExecutableSnapshot;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -28,6 +29,10 @@ import java.util.Set;
  * dedicated no-store material endpoint to inspect them.</p>
  */
 @Service
+@ConditionalOnProperty(
+        prefix = "gateway.testing.correctness",
+        name = "enabled",
+        havingValue = "true")
 public final class BusinessFixtureIndexService {
     private static final int PAGE_SIZE = 100;
     private static final int MAX_FIXTURES = 10_000;
