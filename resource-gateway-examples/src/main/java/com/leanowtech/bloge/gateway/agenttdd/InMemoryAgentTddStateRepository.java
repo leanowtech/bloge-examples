@@ -31,6 +31,18 @@ public final class InMemoryAgentTddStateRepository implements AgentTddStateRepos
                 .toList();
     }
 
+    /** Returns a stable bounded cross-scope inventory for lifecycle worker tests. */
+    @Override
+    public synchronized List<AgentTddStoredAsset> listByKind(String kind, int limit) {
+        if (limit < 1 || limit > 10_000) throw new IllegalArgumentException("limit must be 1..10000");
+        return assets.values().stream()
+                .filter(value -> value.kind().equals(kind))
+                .sorted(Comparator.comparing(AgentTddStoredAsset::scopeKey)
+                        .thenComparing(AgentTddStoredAsset::assetRef))
+                .limit(limit)
+                .toList();
+    }
+
     /** Captures all selected kinds while the same monitor excludes concurrent local writes. */
     @Override
     public synchronized AssetReadSnapshot readSnapshot(String scopeKey, List<String> kinds) {

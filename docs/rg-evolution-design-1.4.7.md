@@ -102,7 +102,7 @@ RG 现有两套彼此独立的测试/资产体系:
 - `BoardProjectionService.redGreen()` 从 CASE_SET 行内读 `given`/`expect`(见其 `RedGreenView.CaseRow`),而 v1.4.6 已把 given/expect 移入 vault、行内置零载荷 → 看板案例行的 given/期望显示为空。
 
 **G-VIS-3 · golden 载荷保留期与"持久资产"冲突(新暴露)**
-- `FixtureMaterialService` 强制保留期 ≤ 365 天;`BusinessGoldenMaterialStore.write` 现固定 30 天(`RetentionDescriptor("rg.businessGolden.30d", 30, ...)`)。golden 验证集是用户要长期累积、长期可见的**核心资产**,30 天到期销毁载荷与此直接冲突。
+- 设计审计发现 `FixtureMaterialService` 强制保留期 ≤ 365 天，而 golden 验证集是用户要长期累积、长期可见的**核心资产**。当前实现已用 365 天滚动续期和 RETIRED 后 30 天恢复期消除该冲突。
 
 **G1 · 两套测试世界未统一(阻断剧本 1)**
 - `FeatureHandoffService.fulfil()` 只用**单条** `fixtureInputs` 跑一次 `backend.evaluate` + 单断言,即把特征置 VERIFIED,非覆盖式。
@@ -163,7 +163,7 @@ RG 现有两套彼此独立的测试/资产体系:
 | expiresAt | `now + 30d` | golden `DRAFT/PROPOSED` 期取上限 365 天;转 `ACTIVE` 时由治理路径**续期**(重写受保护记录,保留期滚动至下一上限);`RETIRED` 后进入 30 天宽限再到期 |
 | 依据 | `FixtureMaterialService` 硬上限 365 天不变 | 用**续期**而非"一次性长保留"绕过 365 天硬约束,保持既有安全不变 |
 
-续期入口:治理路径(golden 批准/发布签署)调 `BusinessGoldenMaterialStore.renew(receipt, identity)`,内部对同一 `fixtureAssetId` 以 `expectedRevision` 追加一版受保护记录、滚动 `expiresAt`。Agent 无此权限(purpose 门控)。
+续期入口:批准路径先调 `BusinessGoldenMaterialStore.renew(receipt, identity)`。`BusinessGoldenMaterialLifecycleService` 再按固定间隔扫描有界 CASE_SET 页，在 ACTIVE receipt 进入 30 天续期窗口时追加 365 天直接后继；RETIRED receipt 只追加一次 30 天恢复期。每次权威 receipt 切换使用 case-set 精确 revision CAS。Agent 无此权限。
 
 > 该项使 golden 验证集成为"只要 ACTIVE 就不销毁"的持久资产,直击用户"看到积累的 golden 验证集"诉求。
 
@@ -457,7 +457,7 @@ flowchart TD
 
 | 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
-| A0 保留期修正 | 已完成 | `BusinessGoldenMaterialStore` 增加 365 天生命周期续期、直接后继恢复和批准 revision CAS | 无 |
+| A0 保留期修正 | 已完成 | `BusinessGoldenMaterialStore` 增加 365 天/RETIRED 30 天直接后继；`BusinessGoldenMaterialLifecycleService` 执行有界扫描、到期前续期和 case-set revision CAS | 无 |
 | A1 只读投影 + 授权查看 | 已完成 | `BusinessGoldenReviewService` + `BusinessGoldenReviewController`;`SOLUTION_GOLDEN_REVIEW`;独立人类审计表和 migration | A0 |
 | A2 业务 fixture 归集 | 已完成 | `BusinessFixtureIndexService.listForSolution` 以冻结 Solution 闭包对 source/usage 做至多 10,000 项的有界连接 | 无 |
 | A3 红绿板修正 | 已完成 | `BoardProjectionService.redGreen` 只投影计数、状态和指纹;受保护材料只从 A1 人类边界读取 | A1 |

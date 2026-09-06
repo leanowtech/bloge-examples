@@ -114,6 +114,23 @@ public class DatabaseAgentTddStateRepository implements AgentTddStateRepository 
                 scopeKey, kind);
     }
 
+    /** Reads a bounded cross-scope inventory for internal lifecycle reconciliation. */
+    @Override
+    public List<AgentTddStoredAsset> listByKind(String kind, int limit) {
+        if (limit < 1 || limit > 10_000) throw new IllegalArgumentException("limit must be 1..10000");
+        return jdbc.query("""
+                        SELECT scope_key, asset_ref, revision, fingerprint, state_json, updated_at
+                          FROM agent_tdd_assets
+                         WHERE asset_kind = ?
+                         ORDER BY scope_key, asset_ref
+                         LIMIT ?
+                        """, (rs, row) -> new AgentTddStoredAsset(
+                        rs.getString("scope_key"), kind, rs.getString("asset_ref"),
+                        rs.getLong("revision"), rs.getString("fingerprint"),
+                        read(rs.getString("state_json")), Instant.parse(rs.getString("updated_at"))),
+                kind, limit);
+    }
+
     /**
      * Captures the requested kinds with one SQL statement and therefore one database read point.
      */

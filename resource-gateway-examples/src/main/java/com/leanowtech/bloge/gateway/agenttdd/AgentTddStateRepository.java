@@ -109,6 +109,17 @@ public interface AgentTddStateRepository {
     List<AgentTddStoredAsset> list(String scopeKey, String kind);
 
     /**
+     * Lists a bounded page of one asset kind across scopes for internal lifecycle workers.
+     *
+     * <p>Business APIs must continue to use scoped reads. This cross-scope projection carries no
+     * authorization semantics and is intended only for platform maintenance that re-derives each
+     * asset's exact scope before acting.</p>
+     */
+    default List<AgentTddStoredAsset> listByKind(String kind, int limit) {
+        throw new UnsupportedOperationException("Cross-scope asset inventory is unavailable");
+    }
+
+    /**
      * Reads every requested kind from one consistent repository snapshot.
      *
      * <p>The default is safe only when {@link #executeAtomically(Supplier)} also provides stable

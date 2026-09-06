@@ -40,7 +40,9 @@ import java.util.Objects;
 public class BusinessGoldenMaterialStore {
     private static final int MAX_BYTES = 16 * 1024 * 1024;
     private static final int LIFECYCLE_RETENTION_DAYS = 365;
+    private static final int RETIRED_RETENTION_DAYS = 30;
     private static final String LIFECYCLE_RETENTION_POLICY = "rg.businessGolden.lifecycle";
+    private static final String RETIRED_RETENTION_POLICY = "rg.businessGolden.retired";
     private final FixtureMaterialService materials;
     private final ObjectMapper mapper;
     private final Clock clock;
@@ -111,13 +113,24 @@ public class BusinessGoldenMaterialStore {
      * @return exact ACTIVE-lifecycle successor receipt without protected payload
      */
     public JsonNode renew(JsonNode receiptNode, IntegrationRequestContext caller) {
+        return renew(receiptNode, LIFECYCLE_RETENTION_POLICY, LIFECYCLE_RETENTION_DAYS, caller);
+    }
+
+    /** Rewrites one retired case as an immutable successor with a 30-day recovery grace period. */
+    public JsonNode retire(JsonNode receiptNode, IntegrationRequestContext caller) {
+        return renew(receiptNode, RETIRED_RETENTION_POLICY, RETIRED_RETENTION_DAYS, caller);
+    }
+
+    private JsonNode renew(JsonNode receiptNode,
+                           String policy,
+                           int retentionDays,
+                           IntegrationRequestContext caller) {
         FixtureMaterialService service = requireService();
         try {
             Receipt predecessor = mapper.treeToValue(receiptNode, Receipt.class);
             JsonNode payload = read(receiptNode, caller);
             RetentionDescriptor retention = new RetentionDescriptor(
-                    LIFECYCLE_RETENTION_POLICY, LIFECYCLE_RETENTION_DAYS,
-                    clock.instant().plus(LIFECYCLE_RETENTION_DAYS, ChronoUnit.DAYS));
+                    policy, retentionDays, clock.instant().plus(retentionDays, ChronoUnit.DAYS));
             WriteRequest request = new WriteRequest(
                     WriteRequest.SCHEMA_VERSION, predecessor.fixtureAssetId(),
                     predecessor.materialRef().revision(),
@@ -132,7 +145,8 @@ public class BusinessGoldenMaterialStore {
                 if (!"RG.CORRECTNESS.FIXTURE_MATERIAL_REVISION_CONFLICT".equals(conflict.code())) {
                     throw conflict;
                 }
-                return mapper.valueToTree(recoverSuccessor(service, predecessor, caller));
+                return mapper.valueToTree(recoverSuccessor(
+                        service, predecessor, policy, retentionDays, caller));
             }
         } catch (FixtureMaterialCommandException | java.io.IOException | IllegalArgumentException failure) {
             throw unavailable(failure);
@@ -162,6 +176,8 @@ public class BusinessGoldenMaterialStore {
 
     private Receipt recoverSuccessor(FixtureMaterialService service,
                                      Receipt predecessor,
+                                     String policy,
+                                     int retentionDays,
                                      IntegrationRequestContext caller) {
         IntegrationRequestContext platform = platform(caller, FixtureMaterialService.RESOLVE_PURPOSE);
         var expectedRef = new ExactAssetRef(
@@ -177,8 +193,8 @@ public class BusinessGoldenMaterialStore {
                 && successor.schemaRef().equals(predecessor.schemaRef())
                 && successor.classification().equals(predecessor.classification())
                 && successor.redaction().equals(predecessor.redaction())
-                && LIFECYCLE_RETENTION_POLICY.equals(successor.retention().policyVersion())
-                && successor.retention().retentionDays() == LIFECYCLE_RETENTION_DAYS
+                && policy.equals(successor.retention().policyVersion())
+                && successor.retention().retentionDays() == retentionDays
                 && successor.retention().expiresAt().isAfter(clock.instant());
         if (!valid) {
             throw new FixtureMaterialCommandException(409,

@@ -73,6 +73,10 @@ approved entity. Controlled baselines read and freeze the complete recursive Sol
 lock every entity revision and contract fingerprint, and use that same immutable closure for the
 implementation fingerprint, execution, and evidence. Unassumed READ dependencies use a denying
 channel, while WRITE dependencies remain contract-shaped stubs.
+Protected ACTIVE GOLDEN material uses bounded 365-day receipts. A scheduled internal lifecycle pass
+renews receipts during the last 30 days and switches RETIRED cases to one 30-day recovery receipt;
+the authoritative case-set receipt changes only through an exact revision CAS. The worker scans a
+bounded cross-scope metadata page and never emits case payloads or asset coordinates.
 Design-only platform Features follow the same contract-first handoff. An authoring Agent can call
 `rg.feature.handoff` for an unbound Feature, but cannot bind its evaluator. A separately authenticated
 feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil` with purpose

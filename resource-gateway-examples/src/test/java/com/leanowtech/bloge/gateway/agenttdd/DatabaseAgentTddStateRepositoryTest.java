@@ -69,6 +69,21 @@ class DatabaseAgentTddStateRepositoryTest {
     }
 
     @Test
+    void listsABoundedCrossScopeLifecycleInventoryByExactKind() {
+        repository.save("tenant-b|org|project|test|sg", "CASE_SET", "cases-b",
+                mapper.valueToTree(Map.of("status", "ACTIVE")));
+        repository.save("tenant-a|org|project|test|sg", "CASE_SET", "cases-a",
+                mapper.valueToTree(Map.of("status", "ACTIVE")));
+        repository.save("tenant-0|org|project|test|sg", "EVIDENCE", "evidence-a",
+                mapper.valueToTree(Map.of("status", "GREEN")));
+
+        assertThat(repository.listByKind("CASE_SET", 1))
+                .extracting(AgentTddStoredAsset::scopeKey, AgentTddStoredAsset::assetRef)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "tenant-a|org|project|test|sg", "cases-a"));
+    }
+
+    @Test
     void versionedPostgresMigrationProvidesTheRepositoryWireSchema() {
         EmbeddedDatabase migrated = new EmbeddedDatabaseBuilder().generateUniqueName(true)
                 .setType(EmbeddedDatabaseType.H2)
