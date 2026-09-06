@@ -703,7 +703,7 @@ class McpProtocolControllerTest {
         assertThat(modern.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.MODERN_PROTOCOL_VERSION);
         assertThat(modern.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.6");
+                .isEqualTo("1.4.7");
         assertThat(modern.path("result").path("instructions").asText())
                 .startsWith("For a business Solution request");
         assertThat(modern.path("result").path("instructions").asText())
@@ -718,7 +718,7 @@ class McpProtocolControllerTest {
         assertThat(codex.path("result").path("protocolVersion").asText())
                 .isEqualTo(McpProtocolController.CODEX_PROTOCOL_VERSION);
         assertThat(codex.path("result").path("serverInfo").path("version").asText())
-                .isEqualTo("1.4.6");
+                .isEqualTo("1.4.7");
         assertThat(unknown.path("id").asInt()).isEqualTo(12);
         assertThat(unknown.path("error").path("code").asInt()).isEqualTo(-32602);
     }

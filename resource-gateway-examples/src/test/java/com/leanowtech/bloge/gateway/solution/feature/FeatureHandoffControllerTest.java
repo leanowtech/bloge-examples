@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.solution.feature;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddMutationService;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
@@ -10,6 +11,8 @@ import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 
@@ -63,6 +66,26 @@ class FeatureHandoffControllerTest {
                 .containsEntry("state", "READY")
                 .containsEntry("verificationMode", "CONTROLLED_SUITE");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_FEATURE_ENG);
+    }
+
+    @Test
+    void mapsStaleSuiteEvidenceToStableNoStoreConflict() {
+        FeatureHandoffController controller = new FeatureHandoffController(
+                mock(IntegrationRequestAuthenticator.class), mock(FeatureHandoffService.class));
+
+        ResponseEntity<Map<String, Object>> response = controller.fulfilmentFailure(
+                new AgentTddToolException(
+                        "FEATURE_SUITE_EVIDENCE_STALE", "Feature suite evidence is not current."));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getHeaders().getCacheControl()).isEqualTo("no-store");
+        assertThat(response.getHeaders().getPragma()).isEqualTo("no-cache");
+        assertThat(response.getBody()).isEqualTo(Map.of(
+                "ok", false,
+                "error", Map.of(
+                        "code", "FEATURE_SUITE_EVIDENCE_STALE",
+                        "message", "Feature suite evidence is not current.",
+                        "retryable", false)));
     }
 
     private static IntegrationRequestContext identity(String actorType, String purpose) {

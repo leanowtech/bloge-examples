@@ -40,7 +40,7 @@ public final class McpProtocolController {
     public static final String MODERN_PROTOCOL_VERSION = "2026-07-28";
     public static final String LEGACY_PROTOCOL_VERSION = "2025-11-25";
     public static final String CODEX_PROTOCOL_VERSION = "2025-06-18";
-    static final String SERVER_VERSION = "1.4.6";
+    static final String SERVER_VERSION = "1.4.7";
     private final ObjectMapper mapper;
     private final McpToolCatalog catalog;
     private final IntegrationRequestAuthenticator authenticator;

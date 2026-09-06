@@ -1,10 +1,15 @@
 package com.leanowtech.bloge.gateway.solution.feature;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +43,26 @@ public final class FeatureHandoffController {
                 headers, IntegrationOperation.AGENT_TDD_FEATURE_ENG);
         return handoffs.fulfil(featureRef, request.evaluationRef(), request.suiteEvidenceRef(),
                 request.fixtureInputs(), identity);
+    }
+
+    /** Maps governed fulfilment rejections to a stable no-store HTTP problem. */
+    @ExceptionHandler(AgentTddToolException.class)
+    public ResponseEntity<Map<String, Object>> fulfilmentFailure(AgentTddToolException failure) {
+        HttpStatus status = switch (failure.code()) {
+            case "FORBIDDEN_PURPOSE" -> HttpStatus.FORBIDDEN;
+            case "REFERENCE_UNRESOLVED" -> HttpStatus.NOT_FOUND;
+            case "SCHEMA_NONCONFORMANT" -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.CONFLICT;
+        };
+        return ResponseEntity.status(status)
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(Map.of(
+                        "ok", false,
+                        "error", Map.of(
+                                "code", failure.code(),
+                                "message", failure.getMessage(),
+                                "retryable", failure.retryable())));
     }
 
     /** Suite-backed implementation request with an explicitly gated legacy fixture field. */
