@@ -84,8 +84,14 @@ public final class McpAgentInstructionRenderer {
         return "Converse only in business language. Elicit the goal, decision facts, complete rules, "
                 + "otherwise outcome, possible dispositions, and representative expected examples. Never ask "
                 + "the business user for YAML, DSL, schemas, bindings, operator references, or implementation "
-                + "details. Start each change with " + name(McpToolCatalog.JOURNEY_START)
-                + " and follow only the allowedNextTools returned by " + name(McpToolCatalog.JOURNEY_NEXT)
+                + "details. Start a genuinely new business goal with " + name(McpToolCatalog.JOURNEY_START)
+                + ". When the user refers to an existing, previous, or just-created capability, or asks to "
+                + "continue, revise, or add examples, do not start another journey first. Rediscover the "
+                + "current entity and its owning journey, call " + name(McpToolCatalog.JOURNEY_NEXT)
+                + ", and reuse that journey when it allows the requested action. Start a replacement journey "
+                + "only when no applicable active journey exists, and bind its targetRef to the exact entity "
+                + "already read. Follow only the allowedNextTools returned by "
+                + name(McpToolCatalog.JOURNEY_NEXT)
                 + ". Use " + name(McpToolCatalog.LIBRARY_OVERVIEW) + " and "
                 + name(McpToolCatalog.CAPABILITY_SEARCH) + " to reuse governed business capabilities. "
                 + recallInstructions() + "For every new entity, derive its businessName, description, "

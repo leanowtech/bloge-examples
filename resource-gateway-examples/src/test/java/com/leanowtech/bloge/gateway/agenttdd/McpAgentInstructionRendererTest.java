@@ -46,7 +46,10 @@ class McpAgentInstructionRendererTest {
                         "rg.entity.get", "one unique EXACT", "reuseAllowed=true",
                         "ask exactly one plain-language business question",
                         "never ask the business user to provide or understand them",
-                        "primary active journey", "rg.journey.next")
+                        "primary active journey", "rg.journey.next",
+                        "do not start another journey first",
+                        "reuse that journey when it allows the requested action",
+                        "bind its targetRef to the exact entity already read")
                 .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
         assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
                 .doesNotContain("rg.feature.handoff", "rg.solution.compose");
