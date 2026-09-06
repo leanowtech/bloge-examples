@@ -210,7 +210,8 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
                   if call["tool"] not in AUTHORING_TOOLS | READ_TOOLS
                   or call["tool"].startswith(FORBIDDEN_PREFIXES)
                   or (call["tool"] in AUTHORING_TOOLS and call["server"] != "rg_author")
-                  or (call["tool"] in READ_TOOLS and call["server"] != "rg_read")]
+                  or (call["tool"] in READ_TOOLS
+                      and call["server"] not in {"rg_read", "rg_author"})]
     if disallowed:
         raise CertificationFailure("Codex escaped the BUSINESS_SOLUTION authoring surface")
     starts = successful(calls, "rg.journey.start")

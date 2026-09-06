@@ -696,6 +696,15 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "escaped"):
             self.certify(events)
 
+    def test_allows_read_tools_through_the_authoring_server(self) -> None:
+        events = valid_events()
+        for event in events:
+            item = event.get("item", {})
+            if item.get("tool") in MODULE.READ_TOOLS:
+                item["server"] = "rg_author"
+        certificate = self.certify(events)
+        self.assertEqual(0, certificate["metrics"]["unsafeEscapeCount"])
+
     def test_allows_codex_resource_discovery_as_passive_protocol_work(self) -> None:
         events = valid_events()
         events.insert(-2, call("codex", "list_mcp_resources", {}, {}, status="completed"))
