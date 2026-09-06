@@ -67,16 +67,16 @@
       <h1>业务意图驱动的四实体创作与召回</h1>
       <p class="lead">业务人员只描述取消费争议、事实、规则、处置和标准案例。Codex 从服务端发现并绑定创作模板，完成四实体创作；新会话还能召回同一业务事实，并在定义不完整时停下澄清。</p>
     </div>
-    <div class="seal"><strong>认证通过 · CERTIFIED</strong><span>真实 Codex CLI 0.153.4<br>HTTP MCP · Loopback · 3 个隔离运行阶段</span></div>
+    <div class="seal"><strong>认证通过 · CERTIFIED</strong><span>真实 Codex CLI 0.153.4<br>HTTP MCP · Loopback · 4 个隔离运行阶段</span></div>
   </header>
 
   <section class="metrics">
-    <div class="metric"><b>27</b><span>主创作链 MCP 调用</span></div>
+    <div class="metric"><b>31</b><span>主创作链 MCP 调用</span></div>
     <div class="metric"><b>2 + 1 + 3</b><span>业务事实 + 规则场景 + 处置</span></div>
     <div class="metric"><b>2</b><span>等待人工确认的标准案例</span></div>
     <div class="metric"><b>15 / 15</b><span>真实业务话语族通过</span></div>
     <div class="metric"><b>16</b><span>独立 Codex 会话</span></div>
-    <div class="metric"><b>3</b><span>隔离服务实例身份</span></div>
+    <div class="metric"><b>4</b><span>隔离服务实例身份</span></div>
     <div class="metric"><b>100%</b><span>Recall@3 / Top-1 / 澄清率</span></div>
   </section>
 
@@ -95,11 +95,11 @@
     <div class="panel">
       <h3>关键机器证据</h3>
       <div class="events">
-        <div class="event"><em>#03 / read</em>模板与库快照</div>
-        <div class="event"><em>#06 → #09</em>Feature × 2</div>
-        <div class="event"><em>#11 / author</em>Scenario 完成</div>
-        <div class="event"><em>#13 → #17</em>Instruction × 3</div>
-        <div class="event"><em>#19 → #27</em>Solution 与案例读回</div>
+        <div class="event"><em>#02 / read</em>模板与库快照</div>
+        <div class="event"><em>#10 → #14</em>Feature × 2</div>
+        <div class="event"><em>#16 / author</em>Scenario 完成</div>
+        <div class="event"><em>#18 → #22</em>Instruction × 3</div>
+        <div class="event"><em>#24 → #31</em>Solution 与案例读回</div>
       </div>
       <div class="repair">可见自修正：受控依赖话语首次遇到同名能力歧义后，Codex 读取候选业务定义，改用唯一业务名称重新提交；最终记录 UNAVAILABLE 结果，未绕过澄清和外呼门禁。</div>
     </div>
@@ -115,7 +115,7 @@
         <div class="check">证书不含原始业务载荷</div>
         <div class="check">召回与主创作按安全哈希关联</div>
         <div class="check">16 个会话身份互不相同</div>
-        <div class="check">3 个实例身份互不相同</div>
+        <div class="check">4 个实例身份互不相同</div>
       </div>
     </div>
   </section>
@@ -123,12 +123,12 @@
   <section class="families">
     <article class="family"><b>召回与隔离 · 4 类</b><p>同义改写、近义干扰、业务/平台 surface 隔离、跨会话重新发现。目标能力保持 Top-1，错误近义项不升格为 EXACT。</p></article>
     <article class="family"><b>澄清与当前性 · 7 类</b><p>边界、UNKNOWN、权威来源、多 EXACT、旧能力、语义漂移、同名处置歧义。7/7 在缺信息时只问业务问题或报告失效。</p></article>
-    <article class="family"><b>受控业务假设 · 4 类</b><p>事实注入、依赖不可用、写动作桩替、禁止依赖。均由服务端编译假设，真实外部调用为 0。</p></article>
+    <article class="family"><b>受控业务假设 · 4 类</b><p>事实注入、依赖不可用、写动作桩替、禁止依赖。证书证明 Codex 正确提交假设；服务级测试独立证明编译和零外呼。</p></article>
   </section>
 
   <footer>
-    <span>认证时间：2026-09-06 03:14:11 UTC · Commit <code>05b64a696728f72bcb099bb46388d1de6d4c22af</code></span>
-    <span>Certificate <code>sha256:4914297458a44a32…ea4976db</code></span>
+    <span>认证时间：2026-09-06 07:42:29 UTC · Commit <code>e1a3cbecadb946aae83d97ee6ee47285a3395ac3</code></span>
+    <span>Certificate <code>sha256:1555c8cb0a5c5eee…64076afd</code></span>
   </footer>
 </main>
 </body>

@@ -33,6 +33,10 @@ class AgentTddCodexCertificationArtifactTest {
             "docs/acceptance/agent-tdd/business-solution-codex-certification-v1.html");
     private static final Path BUSINESS_SCREENSHOT = REPOSITORY.resolve(
             "docs/acceptance/agent-tdd/business-solution-codex-certification-v1.png");
+    private static final Path BUSINESS_PROCESS_MANIFEST = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd/business-solution-codex-process-v1.json");
+    private static final Path BUSINESS_PROCESS_DIRECTORY = REPOSITORY.resolve(
+            "docs/acceptance/agent-tdd");
     private static final Path SCRIPT = REPOSITORY.resolve("scripts/certify-agent-tdd-codex.sh");
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -216,7 +220,7 @@ class AgentTddCodexCertificationArtifactTest {
 
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
-                certificate.path("repositoryCommit").asText(), "27", "2 + 1 + 3", "15 / 15",
+                certificate.path("repositoryCommit").asText(), "31", "2 + 1 + 3", "15 / 15",
                 "两条完整标准案例", "服务端模板先读", "写入已绑定",
                 "未批准、未执行、未发布", "Recall@3", "Top-1",
                 "16 个会话身份互不相同", "4 个实例身份互不相同", "UNAVAILABLE");
@@ -224,6 +228,42 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(screenshot).isNotNull();
         assertThat(screenshot.getWidth()).isEqualTo(1440);
         assertThat(screenshot.getHeight()).isEqualTo(1440);
+
+        JsonNode processManifest = mapper.readTree(BUSINESS_PROCESS_MANIFEST.toFile());
+        assertThat(toFieldSet(processManifest)).containsExactlyInAnyOrder(
+                "schemaVersion", "evidenceKind", "repositoryCommit",
+                "certificateFingerprint", "images");
+        assertThat(processManifest.path("schemaVersion").asText())
+                .isEqualTo("rg.businessCodexProcessEvidence.v1");
+        assertThat(processManifest.path("evidenceKind").asText())
+                .isEqualTo("REDACTED_REAL_CODEX_TRACE_RENDER");
+        assertThat(processManifest.path("repositoryCommit").asText()).isEqualTo(certifiedCommit);
+        assertThat(processManifest.path("certificateFingerprint").asText())
+                .isEqualTo(certificate.path("certificateFingerprint").asText());
+        assertThat(processManifest.path("images")).hasSize(6);
+        assertThat(textFieldValues(processManifest.path("images"), "stage"))
+                .containsExactly("01", "02", "03", "04", "05", "06");
+        assertThat(textFieldValues(processManifest.path("images"), "tool")).containsExactly(
+                "rg.library.overview.get", "rg.feature.define", "rg.scenario.define",
+                "rg.instruction.define", "rg.solution.compose", "rg.solution.golden.propose");
+        assertThat(textFieldValues(processManifest.path("images"), "title")).containsExactly(
+                "先读业务积木", "定义业务事实", "定义业务规则", "定义业务动作",
+                "组合业务解法", "提交标准案例");
+        processManifest.path("images").forEach(image -> {
+            assertThat(toFieldSet(image)).containsExactlyInAnyOrder(
+                    "stage", "title", "tool", "traceOrdinal", "file", "sha256");
+            assertThat(image.path("traceOrdinal").asInt()).isPositive();
+            Path imageFile = BUSINESS_PROCESS_DIRECTORY.resolve(image.path("file").asText());
+            try {
+                assertThat(sha256(imageFile)).isEqualTo(image.path("sha256").asText());
+                var rendered = ImageIO.read(imageFile.toFile());
+                assertThat(rendered).isNotNull();
+                assertThat(rendered.getWidth()).isEqualTo(1440);
+                assertThat(rendered.getHeight()).isEqualTo(900);
+            } catch (Exception failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
     }
 
     @Test
@@ -292,7 +332,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 63 tests", "OK");
+        assertThat(output).contains("Ran 72 tests", "OK");
     }
 
     private String productionTreeFingerprint(String commit) throws Exception {
@@ -330,6 +370,11 @@ class AgentTddCodexCertificationArtifactTest {
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
+    private static String sha256(Path path) throws Exception {
+        return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(Files.readAllBytes(path)));
+    }
+
     private static Set<String> toFieldSet(JsonNode node) {
         java.util.LinkedHashSet<String> result = new java.util.LinkedHashSet<>();
         node.fieldNames().forEachRemaining(result::add);
@@ -339,6 +384,12 @@ class AgentTddCodexCertificationArtifactTest {
     private static List<String> textValues(JsonNode array) {
         List<String> result = new ArrayList<>();
         array.forEach(value -> result.add(value.asText()));
+        return result;
+    }
+
+    private static List<String> textFieldValues(JsonNode array, String field) {
+        List<String> result = new ArrayList<>();
+        array.forEach(value -> result.add(value.path(field).asText()));
         return result;
     }
 
