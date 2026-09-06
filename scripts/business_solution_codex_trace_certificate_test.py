@@ -268,7 +268,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                 {"familyId": "multiple-exact", "status": "AMBIGUOUS",
                  "observedRoles": ["multipleExactA", "multipleExactB"],
                  "outcome": "AMBIGUOUS_EXACT", "target": None},
-                {"familyId": "legacy-feature-partial", "status": "INCOMPLETE",
+                {"familyId": "legacy-feature-partial", "status": "AMBIGUOUS",
                  "observedRoles": ["legacyPartial"], "outcome": "PARTIAL_VISIBLE",
                  "target": None},
                 {"familyId": "assumption-ambiguity", "status": "INCOMPLETE",
@@ -466,6 +466,20 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
     def test_rejects_a_misclassified_setup_preflight_status(self) -> None:
         def replace_status(setup: dict) -> None:
             setup["preflights"][0]["status"] = "INCOMPLETE"
+            material = {key: setup[key] for key in (
+                "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
+                "relationships", "preflights")}
+            setup["setupFingerprint"] = "sha256:" + hashlib.sha256(
+                MODULE.canonical_bytes(material)).hexdigest()
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "family relationship"):
+            self.certify_aux(setup_mutator=replace_status)
+
+    def test_rejects_legacy_preflight_without_an_incomplete_or_ambiguous_result(self) -> None:
+        def replace_status(setup: dict) -> None:
+            target = next(item for item in setup["preflights"]
+                          if item["familyId"] == "legacy-feature-partial")
+            target["status"] = "EXACT"
             material = {key: setup[key] for key in (
                 "fixtureFingerprint", "authoringPatternsFingerprint", "completedPhases", "assets",
                 "relationships", "preflights")}

@@ -178,6 +178,38 @@ class BusinessRecallSetupTest(unittest.TestCase):
                          manifest["completedPhases"])
         self.assertEqual(5, len(manifest["preflights"]))
 
+    def test_legacy_preflight_accepts_its_partial_candidate_among_ambiguous_results(self) -> None:
+        class AmbiguousLegacyApi(FakeApi):
+            def mcp(self, tool: str, arguments: dict, *, purpose: str, surface: str) -> dict:
+                result = super().mcp(tool, arguments, purpose=purpose, surface=surface)
+                if tool == "rg.capability.search" and arguments["query"].get("intent") == "取消归责":
+                    return {**result, "status": "AMBIGUOUS"}
+                return result
+
+        api = AmbiguousLegacyApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        legacy = next(item for item in manifest["preflights"]
+                      if item["familyId"] == "legacy-feature-partial")
+
+        self.assertEqual("AMBIGUOUS", legacy["status"])
+        self.assertEqual("PARTIAL_VISIBLE", legacy["outcome"])
+
+    def test_legacy_preflight_rejects_a_seed_that_is_not_partial(self) -> None:
+        class ExactLegacyApi(FakeApi):
+            def mcp(self, tool: str, arguments: dict, *, purpose: str, surface: str) -> dict:
+                result = super().mcp(tool, arguments, purpose=purpose, surface=surface)
+                if tool == "rg.capability.search" and arguments["query"].get("intent") == "取消归责":
+                    candidates = [{**candidate, "matchType": "EXACT"}
+                                  for candidate in result["candidates"]]
+                    return {**result, "status": "AMBIGUOUS", "candidates": candidates}
+                return result
+
+        with self.assertRaisesRegex(MODULE.SetupFailure, "did not observe its PARTIAL seed"):
+            api = ExactLegacyApi()
+            near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+            MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+
     def test_near_phase_seeds_only_its_distractor_and_runs_preflight(self) -> None:
         api = FakeApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)

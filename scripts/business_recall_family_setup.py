@@ -387,9 +387,9 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
     legacy = by_role["legacyPartial"]
     legacy_data, legacy_candidates = candidates_for(
         api, fixture["preflightQueries"]["legacy-feature-partial"])
-    if legacy_data.get("status") != "INCOMPLETE" \
+    if legacy_data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \
             or not any(matches_asset(candidate, legacy) and candidate.get("matchType") == "PARTIAL"
-               for candidate in legacy_candidates):
+                       for candidate in legacy_candidates):
         raise SetupFailure("legacy preflight did not observe its PARTIAL seed")
 
     assumption_seeds = [by_role["assumptionAmbiguityA"], by_role["assumptionAmbiguityB"]]

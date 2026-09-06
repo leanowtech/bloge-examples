@@ -67,11 +67,11 @@ SETUP_PREFLIGHT_OUTCOMES = {
     "assumption-ambiguity": "SAME_NAME_VISIBLE",
 }
 SETUP_PREFLIGHT_STATUSES = {
-    "near-meaning-distractor": "EXACT",
-    "multiple-exact": "AMBIGUOUS",
-    "legacy-feature-partial": "INCOMPLETE",
-    "semantic-drift": "STALE",
-    "assumption-ambiguity": "INCOMPLETE",
+    "near-meaning-distractor": frozenset({"EXACT"}),
+    "multiple-exact": frozenset({"AMBIGUOUS"}),
+    "legacy-feature-partial": frozenset({"INCOMPLETE", "AMBIGUOUS"}),
+    "semantic-drift": frozenset({"STALE"}),
+    "assumption-ambiguity": frozenset({"INCOMPLETE"}),
 }
 
 
@@ -435,7 +435,7 @@ def load_setup_manifest(path: Path) -> dict[str, Any]:
         family_id = required_text(preflight.get("familyId"), "setup preflight family")
         if family_id in by_preflight or family_id not in SETUP_PREFLIGHT_OUTCOMES:
             raise CertificationFailure("setup manifest has a duplicate or unknown preflight")
-        if preflight.get("status") != SETUP_PREFLIGHT_STATUSES[family_id] \
+        if preflight.get("status") not in SETUP_PREFLIGHT_STATUSES[family_id] \
                 or preflight.get("outcome") != SETUP_PREFLIGHT_OUTCOMES[family_id] \
                 or preflight.get("observedRoles") != SETUP_RELATIONSHIPS[family_id]:
             raise CertificationFailure("setup preflight does not match its family relationship")
