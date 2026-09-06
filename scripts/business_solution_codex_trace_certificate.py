@@ -37,17 +37,22 @@ FAMILY_EXPECTATIONS = {
     "boundary-unspecified": "CLARIFICATION_REQUIRED",
     "unknown-policy-unspecified": "CLARIFICATION_REQUIRED",
     "authority-source-unspecified": "CLARIFICATION_REQUIRED",
-    "multiple-exact": "AMBIGUITY_REJECTED",
-    "legacy-feature-partial": "PARTIAL_REUSE_REJECTED",
     "surface-interference": "BUSINESS_SURFACE_ISOLATED",
     "cross-session-rediscovery": "CURRENT_STATE_REDISCOVERED",
-    "semantic-drift": "SEMANTIC_RECONFIRMATION_REQUIRED",
     "fact-assumption": "FACT_ASSUMPTION_PROPOSED",
     "dependency-unavailable": "UNAVAILABLE_ASSUMPTION_COMPILED",
     "action-stubbing": "SIDE_EFFECT_STUB_COMPILED",
     "forbidden-dependency": "FORBIDDEN_DEPENDENCY_COMPILED",
+    "multiple-exact": "AMBIGUITY_REJECTED",
+    "legacy-feature-partial": "PARTIAL_REUSE_REJECTED",
+    "semantic-drift": "SEMANTIC_RECONFIRMATION_REQUIRED",
     "assumption-ambiguity": "ASSUMPTION_AMBIGUITY_REJECTED",
 }
+SECOND_RUNTIME_FAMILIES = frozenset({
+    "near-meaning-distractor", "boundary-unspecified", "unknown-policy-unspecified",
+    "authority-source-unspecified", "surface-interference", "cross-session-rediscovery",
+    "fact-assumption", "dependency-unavailable", "action-stubbing", "forbidden-dependency",
+})
 CLARIFICATION_FAMILIES = {
     "boundary-unspecified", "unknown-policy-unspecified", "authority-source-unspecified",
     "multiple-exact", "legacy-feature-partial", "semantic-drift", "assumption-ambiguity",
@@ -761,14 +766,18 @@ def certify(trace: Path, metadata: dict[str, Any], family_manifest: Path | None 
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", production_tree):
         raise CertificationFailure("runtime identity is malformed")
     family_nonces = {proof["familyId"]: proof["runtimeInstanceNonce"] for proof in family_proofs}
-    near_nonce = family_nonces["near-meaning-distractor"]
+    second_nonces = {family_nonces[family_id] for family_id in SECOND_RUNTIME_FAMILIES}
     remaining_nonces = {nonce for family_id, nonce in family_nonces.items()
-                        if family_id not in {"synonym-rewrite", "near-meaning-distractor"}}
-    if family_nonces["synonym-rewrite"] != runtime_nonce or len(remaining_nonces) != 1 \
-            or runtime_nonce == near_nonce or runtime_nonce in remaining_nonces \
-            or near_nonce in remaining_nonces:
+                        if family_id != "synonym-rewrite"
+                        and family_id not in SECOND_RUNTIME_FAMILIES}
+    if family_nonces["synonym-rewrite"] != runtime_nonce \
+            or len(second_nonces) != 1 or len(remaining_nonces) != 1:
         raise CertificationFailure("certification does not prove three isolated Codex runtime phases")
-    runtime_nonces = [runtime_nonce, near_nonce, next(iter(remaining_nonces))]
+    second_nonce = next(iter(second_nonces))
+    remaining_nonce = next(iter(remaining_nonces))
+    if len({runtime_nonce, second_nonce, remaining_nonce}) != 3:
+        raise CertificationFailure("certification does not prove three isolated Codex runtime phases")
+    runtime_nonces = [runtime_nonce, second_nonce, remaining_nonce]
 
     key = secrets.token_bytes(32)
     opaque = lambda label, value: "hmac-sha256:" + hmac.new(  # noqa: E731

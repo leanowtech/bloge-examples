@@ -313,10 +313,11 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                     "expectedBehaviorClass": expected,
                     "traceFile": family_trace.name,
                     "exitCode": 0,
-                    "runtimeInstanceNonce": (MAIN_RUNTIME_NONCE if family_id == "synonym-rewrite"
-                                             else NEAR_RUNTIME_NONCE
-                                             if family_id == "near-meaning-distractor"
-                                             else REMAINING_RUNTIME_NONCE),
+                    "runtimeInstanceNonce": (
+                        MAIN_RUNTIME_NONCE if family_id == "synonym-rewrite"
+                        else NEAR_RUNTIME_NONCE
+                        if family_id in MODULE.SECOND_RUNTIME_FAMILIES
+                        else REMAINING_RUNTIME_NONCE),
                 })
             setup = self.setup_manifest()
             if setup_mutator is not None:

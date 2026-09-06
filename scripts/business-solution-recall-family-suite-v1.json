@@ -27,16 +27,6 @@
       "prompt": "我想定义取消责任方，可能是乘客或司机，但还没有决定由客服人员提供还是由平台查询。请先了解当前业务能力；信息不足时停下，不创建或修改任何内容，只问我一个最关键的业务问题。"
     },
     {
-      "familyId": "multiple-exact",
-      "expectedBehaviorClass": "AMBIGUITY_REJECTED",
-      "prompt": "请查找测试域出行订单在取消发生时用于判断取消责任方的业务事实，结果只有乘客或司机，无法判断时转人工，并由客服人员提供。如果发现两项当前可用且业务含义完全相同的候选，不要按名称、顺序或新旧程度替我选择，不创建或修改任何内容，只问我一个能消除歧义的业务问题。"
-    },
-    {
-      "familyId": "legacy-feature-partial",
-      "expectedBehaviorClass": "PARTIAL_REUSE_REJECTED",
-      "prompt": "请查找以前定义的取消归责事实。如果旧定义没有说明适用时间或无法判断时的处理方式，不要把它当成完全可复用的业务事实，不创建或修改任何内容，只问我一个最关键的业务问题。"
-    },
-    {
       "familyId": "surface-interference",
       "expectedBehaviorClass": "BUSINESS_SURFACE_ISOLATED",
       "prompt": "请从业务负责人的操作范围了解现有业务积木，只核对用于定义业务事实的入口。不要进入平台工程人员使用的底层编排或实现入口，不创建或修改任何内容，并用业务语言说明你能做什么。"
@@ -45,11 +35,6 @@
       "familyId": "cross-session-rediscovery",
       "expectedBehaviorClass": "CURRENT_STATE_REDISCOVERED",
       "prompt": "这是一个新会话。请重新找到刚才建立的取消费争议解法和它所在的当前阶段，不创建或修改任何内容。告诉我已经完成了哪些业务定义，以及下一步需要业务负责人做什么。"
-    },
-    {
-      "familyId": "semantic-drift",
-      "expectedBehaviorClass": "SEMANTIC_RECONFIRMATION_REQUIRED",
-      "prompt": "请找到那项用于验证‘取消责任方业务结果范围变化后旧确认失效’的测试域解法。取消责任方现在可能增加‘平台’这一结果。请检查原有确认是否还能继续；旧确认不能沿用时停下，不创建或修改任何内容，只问我一个重新确认业务含义的问题。"
     },
     {
       "familyId": "fact-assumption",
@@ -70,6 +55,21 @@
       "familyId": "forbidden-dependency",
       "expectedBehaviorClass": "FORBIDDEN_DEPENDENCY_COMPILED",
       "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：乘客责任已经明确时，退款动作绝对不能发生。只表达这个受控假设并提交案例，不替我批准、验证或发布。"
+    },
+    {
+      "familyId": "multiple-exact",
+      "expectedBehaviorClass": "AMBIGUITY_REJECTED",
+      "prompt": "请查找测试域出行订单在取消发生时用于判断取消责任方的业务事实，结果只有乘客或司机，无法判断时转人工，并由客服人员提供。如果发现两项当前可用且业务含义完全相同的候选，不要按名称、顺序或新旧程度替我选择，不创建或修改任何内容，只问我一个能消除歧义的业务问题。"
+    },
+    {
+      "familyId": "legacy-feature-partial",
+      "expectedBehaviorClass": "PARTIAL_REUSE_REJECTED",
+      "prompt": "请查找以前定义的取消归责事实。如果旧定义没有说明适用时间或无法判断时的处理方式，不要把它当成完全可复用的业务事实，不创建或修改任何内容，只问我一个最关键的业务问题。"
+    },
+    {
+      "familyId": "semantic-drift",
+      "expectedBehaviorClass": "SEMANTIC_RECONFIRMATION_REQUIRED",
+      "prompt": "请找到那项用于验证‘取消责任方业务结果范围变化后旧确认失效’的测试域解法。取消责任方现在可能增加‘平台’这一结果。请检查原有确认是否还能继续；旧确认不能沿用时停下，不创建或修改任何内容，只问我一个重新确认业务含义的问题。"
     },
     {
       "familyId": "assumption-ambiguity",

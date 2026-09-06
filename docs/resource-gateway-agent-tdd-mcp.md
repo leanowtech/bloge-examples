@@ -557,7 +557,7 @@ nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。�
 严格 Schema 见
 [`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。认证脚本在主创作之后继续启动两个独立 Codex 会话：同义业务话语只使用 READ 面召回刚创建的 Feature；业务定义缺字段的话语同时可见 READ 和业务创作面，但必须只问一个业务问题且不发起写调用。Reducer 用同一一次性 HMAC 关联主创作和召回候选。三个会话缺失、thread identity 重复、目标 Feature 不在 Top-1/Top-3、澄清会话越过停点、指标低于门槛或样本数为零时，严格 Schema 都拒绝 `CERTIFIED`。当前样例的三个指标均为 `1.0`，召回和澄清各有一个真实独立会话样本；它证明当前固定话语集通过，不代表所有自然语言表达均达到 100%。`productionTreeFingerprint` 绑定证书提交中的 `resource-gateway-examples/src/main`，后续仅文档或测试提交不会冒充生产实现变化。
 
-15 类认证的 fixture 分三次加入。两个同名“退款执行”动作只在依赖不可用、动作桩化和禁止调用会话完成后加入，并在最后一个歧义会话前立即预检；它们不能提前改变这些受控案例的能力绑定。第三次加入使用当前第三个服务实例的受控脚本调用，不重启实例，也不把 fixture 数量、引用或预期状态写进业务提示词。最终 reducer 要求私有 manifest 同时证明三次有序写入和全部资产关系。
+15 类认证的 fixture 分三次加入。同义召回后只加入近义干扰项；缺字段澄清、跨会话恢复、事实假设和三类受控依赖完成后，才加入多个 EXACT、旧 Feature 和语义漂移资产；两个同名“退款执行”动作只在最后一个歧义会话前加入。后置资产不能提前改变主解法的能力绑定。第三次加入使用当前第三个服务实例的受控脚本调用，不重启实例，也不把 fixture 数量、引用或预期状态写进业务提示词。最终 reducer 要求私有 manifest 同时证明三次有序写入和全部资产关系。
 
 仓库留存当前通过证据：[机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)、[可视化过程报告](acceptance/agent-tdd/business-solution-codex-certification-v1.html) 和 [过程截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png)。截图从同一 payload-free 证书渲染，展示服务端模板先读、四实体写入绑定同一模板、能力发现、两项事实、一个规则场景、三项处置、Solution、两条待确认案例、跨会话同义召回和缺字段澄清。截图是可追溯的认证过程投影，不冒充 Codex 界面截图；它便于人工审阅，不替代 JSON Schema、模板指纹、JAR 指纹、生产源码树指纹、进程所有权和前后运行身份校验。
 

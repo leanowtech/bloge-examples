@@ -497,7 +497,7 @@ PY
         export RG_MCP_TOKEN="${AGENT_TOKEN}"
         curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
     fi
-    if [ "${FAMILY_ID}" = "boundary-unspecified" ]; then
+    if [ "${FAMILY_ID}" = "multiple-exact" ]; then
         NEAR_TRACE="${FAMILY_TRACE_DIR}/near-meaning-distractor.trace.jsonl"
         NEAR_EXIT="$(awk -F '\t' '$1 == "near-meaning-distractor" { print $4 }' "${FAMILY_RUN_INDEX}")"
         python3 - "${ROOT_DIR}" "${TRACE_FILE}" "${NEAR_TRACE}" "${NEAR_EXIT}" \

@@ -129,6 +129,11 @@ class BusinessRecallSetupTest(unittest.TestCase):
             next(index for index, item in enumerate(suite["families"])
                  if item["familyId"] == "forbidden-dependency"),
             len(suite["families"]) - 1)
+        self.assertLess(
+            next(index for index, item in enumerate(suite["families"])
+                 if item["familyId"] == "forbidden-dependency"),
+            next(index for index, item in enumerate(suite["families"])
+                 if item["familyId"] == "multiple-exact"))
 
     def test_certification_authors_primary_solution_before_seeding_distractors(self):
         script = Path(__file__).with_name("certify-agent-tdd-codex.sh").read_text(
@@ -145,7 +150,7 @@ class BusinessRecallSetupTest(unittest.TestCase):
         self.assertLess(preflight, families)
         self.assertLess(families, setup)
         self.assertIn('if [ "${FAMILY_ID}" = "near-meaning-distractor" ]', script)
-        self.assertIn('if [ "${FAMILY_ID}" = "boundary-unspecified" ]', script)
+        self.assertIn('if [ "${FAMILY_ID}" = "multiple-exact" ]', script)
         self.assertIn('if [ "${FAMILY_ID}" = "assumption-ambiguity" ]', script)
         self.assertIn('--phase near-meaning', script)
         self.assertIn('--phase remaining', script)
