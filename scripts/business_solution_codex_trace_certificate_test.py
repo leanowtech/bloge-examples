@@ -353,6 +353,41 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertNotIn("feature:traffic-accident", json.dumps(certificate))
         self.assertEqual(1.0, certificate["metrics"]["recallAt3"])
 
+    def test_accepts_read_only_review_bound_to_the_created_solution(self) -> None:
+        events = valid_events()
+        review = call("rg_author", "rg.journey.start", {
+            "intentKind": "REVIEW",
+            "targetRef": "solution:test",
+            "businessGoal": "核对刚创建的业务处置定义",
+            "idempotencyKey": "review",
+        }, {
+            "journeyRef": "journey:review",
+            "revision": 1,
+            "stage": "REVIEWING",
+            "surface": "BUSINESS_SOLUTION",
+        })
+        events.insert(9, review)
+
+        certificate = self.certify(events)
+
+        self.assertEqual("CERTIFIED", certificate["result"])
+
+    def test_rejects_review_bound_to_another_solution(self) -> None:
+        events = valid_events()
+        events.insert(9, call("rg_author", "rg.journey.start", {
+            "intentKind": "REVIEW",
+            "targetRef": "solution:other",
+            "businessGoal": "核对另一项解法",
+            "idempotencyKey": "review-other",
+        }, {
+            "journeyRef": "journey:review",
+            "revision": 1,
+            "stage": "REVIEWING",
+            "surface": "BUSINESS_SOLUTION",
+        }))
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "same composed Solution"):
+            self.certify(events)
+
     def test_certifies_correlated_recall_and_single_business_clarification(self) -> None:
         certificate = self.certify_aux()
         self.assertEqual(3, len(certificate["cases"]))
@@ -508,6 +543,21 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         events.insert(1, call("rg_author", "rg.journey.start", {}, {}))
         with self.assertRaisesRegex(MODULE.CertificationFailure, "mutated state"):
             self.certify_aux(clarification_events=events)
+
+    def test_rejects_a_second_create_solution_journey(self) -> None:
+        events = valid_events()
+        events.insert(1, call("rg_author", "rg.journey.start", {
+            "intentKind": "CREATE_SOLUTION",
+            "businessGoal": "另一项业务解法",
+            "idempotencyKey": "second-create",
+        }, {
+            "journeyRef": "journey:other",
+            "revision": 1,
+            "stage": "DEFINING_FEATURES",
+            "surface": "BUSINESS_SOLUTION",
+        }))
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "exactly one CREATE_SOLUTION"):
+            self.certify(events)
 
     def test_rejects_zero_or_multiple_clarification_questions(self) -> None:
         for text in ("请补充无法判断时的处理方式。", "无法判断时怎么办？由谁提供这个事实？"):

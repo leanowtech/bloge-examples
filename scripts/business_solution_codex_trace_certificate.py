@@ -186,9 +186,14 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
     if disallowed:
         raise CertificationFailure("Codex escaped the BUSINESS_SOLUTION authoring surface")
     starts = successful(calls, "rg.journey.start")
-    if len(starts) != 1:
-        raise CertificationFailure("exactly one successful business journey is required")
-    start = starts[0]
+    create_starts = [call for call in starts
+                     if call["arguments"].get("intentKind") == "CREATE_SOLUTION"]
+    if len(create_starts) != 1:
+        raise CertificationFailure("exactly one CREATE_SOLUTION journey is required")
+    if any(call["arguments"].get("intentKind") not in {"CREATE_SOLUTION", "REVIEW"}
+           for call in starts):
+        raise CertificationFailure("only the primary creation and bound read-only review journeys are allowed")
+    start = create_starts[0]
     journey_ref = required_text(start["data"].get("journeyRef"), "journey")
     if start["data"].get("stage") != "DEFINING_FEATURES" \
             or start["data"].get("surface") != "BUSINESS_SOLUTION":
@@ -269,6 +274,10 @@ def require_business_sequence(calls: list[dict[str, Any]]) -> tuple[dict[str, An
         compose["data"].get("contractFingerprint"), "solution contract fingerprint")
     if proposal["arguments"].get("solutionRef") != solution_ref:
         raise CertificationFailure("GOLDEN proposal is not bound to the composed Solution")
+    for review in (call for call in starts if call is not start):
+        if review["arguments"].get("targetRef") != solution_ref \
+                or calls.index(review) <= calls.index(compose):
+            raise CertificationFailure("read-only review must inspect the same composed Solution")
     composing_contexts = [call["data"].get("solutionContextFingerprint")
                           for call in successful(calls, "rg.journey.next")
                           if call["data"].get("stage") == "COMPOSING"]
