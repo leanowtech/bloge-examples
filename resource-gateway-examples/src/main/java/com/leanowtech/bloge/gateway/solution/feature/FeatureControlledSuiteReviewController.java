@@ -15,14 +15,26 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Human-only, no-store HTTP surface for Feature controlled-suite review. */
+/**
+ * Exposes the protected Feature controlled-suite review surface to authorized human reviewers.
+ *
+ * <p>The controller is created only with the correctness subsystem because its service and
+ * encrypted material store belong to that subsystem. Every response remains request-scoped and
+ * non-cacheable; disabling correctness therefore removes the complete review surface instead of
+ * leaving an unsatisfied web bean behind.</p>
+ */
 @RestController
 @ConditionalOnBean(FeatureControlledSuiteReviewService.class)
+@ConditionalOnProperty(
+        prefix = "gateway.testing.correctness",
+        name = "enabled",
+        havingValue = "true")
 @RequestMapping("/api/solution/feature-suite-review")
 public final class FeatureControlledSuiteReviewController {
     private final IntegrationRequestAuthenticator authenticator;
