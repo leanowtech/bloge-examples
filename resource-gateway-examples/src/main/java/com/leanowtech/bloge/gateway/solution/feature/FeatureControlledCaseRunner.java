@@ -34,7 +34,9 @@ public interface FeatureControlledCaseRunner {
         Objects.requireNonNull(mapper, "mapper");
         return (request, identity) -> {
             ObjectNode arguments = mapper.createObjectNode();
-            arguments.put("featureRef", request.featureRef());
+            // The logical Feature and its implementation graph are separate assets. Execute the
+            // exact graph reference that engineering will later bind.
+            arguments.put("featureRef", request.evaluationRef());
             ArrayNode refs = arguments.putArray("libraryRefs");
             request.libraryRefs().forEach(refs::add);
             ArrayNode rows = arguments.putObject("cases").putArray("rows");
@@ -71,12 +73,18 @@ public interface FeatureControlledCaseRunner {
     /** In-memory request containing material resolved from one exact protected receipt. */
     record RunRequest(
             String featureRef,
+            String evaluationRef,
+            long expectedGraphRevision,
             List<String> libraryRefs,
             List<FeatureControlledSuiteDefinition.Case> cases
     ) {
         /** Freezes the exact suite execution subject. */
         public RunRequest {
             featureRef = required(featureRef, "featureRef");
+            evaluationRef = required(evaluationRef, "evaluationRef");
+            if (expectedGraphRevision < 0) {
+                throw new IllegalArgumentException("expectedGraphRevision must be non-negative");
+            }
             libraryRefs = libraryRefs == null ? List.of() : List.copyOf(libraryRefs);
             cases = cases == null ? List.of() : List.copyOf(cases);
             if (cases.isEmpty()) throw new IllegalArgumentException("cases are required");

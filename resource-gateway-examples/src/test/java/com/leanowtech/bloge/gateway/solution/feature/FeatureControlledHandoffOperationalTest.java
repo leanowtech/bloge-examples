@@ -69,15 +69,18 @@ class FeatureControlledHandoffOperationalTest {
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         GraphDraft projected = projection.preview(new DslImportPreviewRequest(
                 "risk.bloge", eligibilityDsl(), List.of("risk"), List.of(), "test", Map.of())).draft();
+        assertThat(projected.operatorSnapshots().keySet()).containsExactly("eligibility", "response");
         drafts.save(scoped(projected));
         AgentTddExecutionService execution = new AgentTddExecutionService(
                 libraries, drafts, projection, simulation, mapper, states);
 
         FeatureControlledSuiteService suites = new FeatureControlledSuiteService(
                 states, registry, materialStore(), FeatureControlledCaseRunner.using(execution, mapper),
+                new RepositoryFeatureControlledExecutionSubjectResolver(drafts, libraries, mapper),
                 mapper, new FeatureControlledSuiteProperties());
         FeatureControlledSuiteService.SuiteSummary draft = suites.upsert(new FeatureControlledSuiteDefinition(
-                FEATURE_REF, "graph:risk-v1", 0, List.of("risk"), List.of("node:eligibility"),
+                FEATURE_REF, "graph:risk-v1", 0, List.of("risk"),
+                List.of("node:eligibility", "node:response"),
                 List.of(new FeatureControlledSuiteDefinition.Case(
                         "eligible", "Eligible applicant is accepted",
                         mapper.valueToTree(Map.of("score", 720, "amount", 100)),
@@ -85,7 +88,7 @@ class FeatureControlledHandoffOperationalTest {
                                 mapper.valueToTree(Map.of("behavior", "RETURN", "value",
                                         Map.of("eligible", true, "ruleId", "R1"))))),
                         mapper.valueToTree(Map.of("eligible", true, "ruleId", "R1")),
-                        List.of("node:eligibility")))), author());
+                        List.of("node:eligibility", "node:response")))), author());
         FeatureControlledSuiteEvidence evidence = suites.run(FEATURE_REF, draft.revision(), executor());
         AtomicInteger runtimeBackendCalls = new AtomicInteger();
         FeatureHandoffService handoff = new FeatureHandoffService(states, registry,
@@ -136,7 +139,7 @@ class FeatureControlledHandoffOperationalTest {
     }
 
     private static GraphDraft scoped(GraphDraft draft) {
-        return new GraphDraft(draft.schemaVersion(), FEATURE_REF, 0, draft.graphName(),
+        return new GraphDraft(draft.schemaVersion(), "graph:risk-v1", 0, draft.graphName(),
                 executor().tenantId(), executor().projectId(), executor().environmentId(), draft.status(),
                 draft.inputSchema(), draft.outputSchema(), draft.nodes(), draft.edges(), draft.visualLayout(),
                 draft.nodeFixtures(), draft.output(), draft.operatorFingerprints(), draft.operatorSnapshots(),

@@ -108,14 +108,14 @@ class V147McpOperationalJourneyTest {
                 "evaluationRef", evaluationRef,
                 "expectedRevision", 0,
                 "libraryRefs", List.of(),
-                "requiredCoverageTargets", List.of("node:policy"),
+                "requiredCoverageTargets", List.of("node:policy", "node:response"),
                 "cases", List.of(Map.of(
                         "caseId", "eligible-score-720",
                         "intent", "评分达到门槛时符合资格",
                         "givenInputs", Map.of("score", 720),
                         "nodeBehaviors", List.of(),
                         "expectedOutput", Map.of("eligible", true),
-                        "coverageTargets", List.of("node:policy")))), "AGENT_TDD_AUTHORING");
+                        "coverageTargets", List.of("node:policy", "node:response")))), "AGENT_TDD_AUTHORING");
         assertThat(suite.at("/data/status").asText()).isEqualTo("DRAFT");
         assertPayloadFree(suite.at("/data"), "eligible-score-720", "720", "符合资格");
 
@@ -124,7 +124,7 @@ class V147McpOperationalJourneyTest {
                 "expectedRevision", suite.at("/data/revision").asLong()), "AGENT_TDD_EXECUTION");
         assertThat(evidence.at("/data/status").asText()).isEqualTo("PASSED");
         assertThat(evidence.at("/data/realExternalCalls").asInt()).isZero();
-        assertThat(evidence.at("/data/coverage/targetsCovered").asInt()).isEqualTo(1);
+        assertThat(evidence.at("/data/coverage/targetsCovered").asInt()).isEqualTo(2);
         assertPayloadFree(evidence.at("/data"), "eligible-score-720", "720", "符合资格");
 
         ResponseEntity<JsonNode> fulfilled = postAs(

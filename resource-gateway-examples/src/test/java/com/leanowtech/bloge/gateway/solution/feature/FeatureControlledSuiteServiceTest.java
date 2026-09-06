@@ -59,13 +59,14 @@ class FeatureControlledSuiteServiceTest {
     void protectsTheWholeSuiteAndPersistsOnlyPayloadFreeCurrentEvidence() {
         FeatureControlledSuiteService service = service((request, identity) -> {
             assertThat(request.featureRef()).isEqualTo(FEATURE_REF);
+            assertThat(request.evaluationRef()).isEqualTo(EVALUATION_REF);
             assertThat(request.libraryRefs()).containsExactly("lib:time-v1");
             assertThat(request.cases()).singleElement().satisfies(testCase -> {
                 assertThat(testCase.givenInputs().toString()).contains("SECRET-ORDER-17");
                 assertThat(testCase.expectedOutput()).isEqualTo(mapper.valueToTree(true));
             });
             return new FeatureControlledCaseRunner.RunResult(
-                    EXECUTION_FINGERPRINT, 7,
+                    EXECUTION_FINGERPRINT, 0,
                     List.of(new FeatureControlledCaseRunner.CaseResult(
                             "inside-window", "RED_PASS", List.of("node:within-window"))), 0);
         });
@@ -102,7 +103,7 @@ class FeatureControlledSuiteServiceTest {
     void failsClosedWhenTheRunnerReportsAnyExternalCall() {
         FeatureControlledSuiteService service = service((request, identity) ->
                 new FeatureControlledCaseRunner.RunResult(
-                        EXECUTION_FINGERPRINT, 7,
+                        EXECUTION_FINGERPRINT, 0,
                         List.of(new FeatureControlledCaseRunner.CaseResult(
                                 "inside-window", "RED_PASS", List.of("node:within-window"))), 1));
         FeatureControlledSuiteService.SuiteSummary draft = service.upsert(definition(0), author());
@@ -159,7 +160,7 @@ class FeatureControlledSuiteServiceTest {
 
     private FeatureControlledCaseRunner passRunner() {
         return (request, identity) -> new FeatureControlledCaseRunner.RunResult(
-                EXECUTION_FINGERPRINT, 7,
+                EXECUTION_FINGERPRINT, 0,
                 List.of(new FeatureControlledCaseRunner.CaseResult(
                         "inside-window", "RED_PASS", List.of("node:within-window"))), 0);
     }

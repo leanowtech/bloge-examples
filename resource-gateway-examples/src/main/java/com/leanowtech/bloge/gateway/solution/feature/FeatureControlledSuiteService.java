@@ -42,6 +42,7 @@ public final class FeatureControlledSuiteService {
     private final SolutionEntityRegistry registry;
     private final FeatureControlledMaterialStore materials;
     private final FeatureControlledCaseRunner runner;
+    private final FeatureControlledExecutionSubjectResolver subjects;
     private final ObjectMapper mapper;
     private final FeatureControlledSuiteProperties properties;
 
@@ -52,10 +53,11 @@ public final class FeatureControlledSuiteService {
             SolutionEntityRegistry registry,
             FeatureControlledMaterialStore materials,
             ObjectProvider<FeatureControlledCaseRunner> runners,
+            FeatureControlledExecutionSubjectResolver subjects,
             ObjectMapper mapper,
             FeatureControlledSuiteProperties properties) {
         this(states, registry, materials,
-                runners.getIfAvailable(FeatureControlledCaseRunner::unavailable), mapper, properties);
+                runners.getIfAvailable(FeatureControlledCaseRunner::unavailable), subjects, mapper, properties);
     }
 
     /** Creates a focused module with an explicit controlled execution adapter. */
@@ -66,10 +68,24 @@ public final class FeatureControlledSuiteService {
             FeatureControlledCaseRunner runner,
             ObjectMapper mapper,
             FeatureControlledSuiteProperties properties) {
+        this(states, registry, materials, runner,
+                FeatureControlledExecutionSubjectResolver.trusting(mapper), mapper, properties);
+    }
+
+    /** Creates a focused module with explicit execution and subject-resolution seams. */
+    public FeatureControlledSuiteService(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            FeatureControlledMaterialStore materials,
+            FeatureControlledCaseRunner runner,
+            FeatureControlledExecutionSubjectResolver subjects,
+            ObjectMapper mapper,
+            FeatureControlledSuiteProperties properties) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.materials = Objects.requireNonNull(materials, "materials");
         this.runner = Objects.requireNonNull(runner, "runner");
+        this.subjects = Objects.requireNonNull(subjects, "subjects");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.properties = Objects.requireNonNull(properties, "properties");
     }
@@ -89,6 +105,9 @@ public final class FeatureControlledSuiteService {
         FeatureContract feature = requireFeature(scope, definition.featureRef());
         AgentTddStoredAsset featureAsset = featureAsset(scope, definition.featureRef());
         String featureFingerprint = featureContractFingerprint(featureAsset);
+        FeatureControlledExecutionSubjectResolver.Subject subject = subjects.freeze(
+                definition.evaluationRef(), definition.libraryRefs(),
+                definition.requiredCoverageTargets(), identity);
         String definitionFingerprint = fingerprint(
                 mapper.convertValue(definition.protectedMaterial(), Object.class));
         long nextRevision = definition.expectedRevision() + 1;
@@ -101,7 +120,8 @@ public final class FeatureControlledSuiteService {
         state.put("definitionFingerprint", definitionFingerprint);
         state.put("featureContractFingerprint", featureFingerprint);
         state.put("caseCount", definition.cases().size());
-        state.put("coverageTargetCount", definition.requiredCoverageTargets().size());
+        state.put("coverageTargetCount", subject.coverageObligations().size());
+        state.set("executionSubject", subjectState(subject));
         state.put("status", "DRAFT");
         state.put("evidenceFingerprint", "");
         AgentTddStoredAsset stored = states.saveIfRevision(scope, FEATURE_CONTROLLED_SUITE,
@@ -127,10 +147,18 @@ public final class FeatureControlledSuiteService {
         FeatureControlledSuiteDefinition definition = materials.read(
                 current.data().path("materialReceipt"), identity);
         if (!featureRef.equals(definition.featureRef())) throw stale();
+        FeatureControlledExecutionSubjectResolver.Subject subject = subjects.freeze(
+                definition.evaluationRef(), definition.libraryRefs(),
+                definition.requiredCoverageTargets(), identity);
+        requireStoredSubject(current.data().path("executionSubject"), subject);
 
         FeatureControlledCaseRunner.RunResult run = runner.run(
                 new FeatureControlledCaseRunner.RunRequest(
-                        featureRef, definition.libraryRefs(), definition.cases()), identity);
+                        featureRef, definition.evaluationRef(), subject.graphRevision(),
+                        definition.libraryRefs(), definition.cases()), identity);
+        if (run.graphRevision() != subject.graphRevision()) throw stale();
+        subjects.requireCurrent(subject, definition.evaluationRef(), definition.libraryRefs(),
+                definition.requiredCoverageTargets(), identity);
         Map<String, FeatureControlledCaseRunner.CaseResult> results = indexedResults(run, definition);
         int passed = Math.toIntExact(results.values().stream()
                 .filter(FeatureControlledCaseRunner.CaseResult::passed).count());
@@ -142,16 +170,16 @@ public final class FeatureControlledSuiteService {
             LinkedHashSet<String> observed = new LinkedHashSet<>(result.observedCoverageTargets());
             testCase.coverageTargets().stream().filter(observed::contains).forEach(covered::add);
         }
-        int total = definition.requiredCoverageTargets().size();
+        int total = subject.coverageObligations().size();
         int coveragePercent = Math.toIntExact((100L * covered.size()) / total);
         int requiredPercent = properties.getMinimumCoveragePercent();
         boolean accepted = failed == 0 && run.realExternalCalls() == 0
                 && coveragePercent >= requiredPercent
-                && covered.containsAll(definition.requiredCoverageTargets());
+                && covered.containsAll(subject.coverageObligations());
         String status = accepted ? "PASSED" : "FAILED_CLOSED";
         long evidenceRevision = current.revision() + 1;
-        String evaluationFingerprint = fingerprint(definition.evaluationRef());
-        String libraryFingerprint = fingerprint(definition.libraryRefs());
+        String evaluationFingerprint = subject.evaluationRefFingerprint();
+        String libraryFingerprint = subject.libraryFingerprint();
         String evidenceFingerprint = fingerprint(Map.ofEntries(
                 Map.entry("featureContractFingerprint", featureContractFingerprint(featureAsset)),
                 Map.entry("evaluationRefFingerprint", evaluationFingerprint),
@@ -162,6 +190,8 @@ public final class FeatureControlledSuiteService {
                         .path("payloadFingerprint").asText()),
                 Map.entry("executionEvidenceFingerprint", run.executionEvidenceFingerprint()),
                 Map.entry("graphRevision", run.graphRevision()),
+                Map.entry("graphFingerprint", subject.graphFingerprint()),
+                Map.entry("coverageObligationsFingerprint", subject.coverageObligationsFingerprint()),
                 Map.entry("caseCount", definition.cases().size()),
                 Map.entry("passedCount", passed),
                 Map.entry("failedCount", failed),
@@ -180,7 +210,7 @@ public final class FeatureControlledSuiteService {
         ObjectNode next = current.data().deepCopy();
         next.put("status", status);
         next.put("evidenceFingerprint", evidenceFingerprint);
-        next.set("latestEvidence", evidenceState(evidence, libraryFingerprint, run.graphRevision()));
+        next.set("latestEvidence", evidenceState(evidence, subject));
         AgentTddStoredAsset stored = states.saveIfRevision(scope, FEATURE_CONTROLLED_SUITE,
                 featureRef, current.revision(), next);
         if (stored.revision() != evidence.suiteRevision()) {
@@ -228,10 +258,16 @@ public final class FeatureControlledSuiteService {
         }
         AgentTddStoredAsset featureAsset = featureAsset(scope, featureRef);
         requireFeatureFingerprint(suite, featureAsset);
+        FeatureControlledSuiteDefinition definition = materials.read(
+                suite.data().path("materialReceipt"), identity);
         if (!fingerprint(required(evaluationRef, "evaluationRef"))
                 .equals(evidenceNode.path("evaluationRefFingerprint").asText())) {
             throw stale();
         }
+        FeatureControlledExecutionSubjectResolver.Subject subject = subject(
+                evidenceNode, definition.requiredCoverageTargets());
+        subjects.requireCurrent(subject, definition.evaluationRef(), definition.libraryRefs(),
+                definition.requiredCoverageTargets(), identity);
         FeatureControlledSuiteEvidence evidence = evidence(featureRef, evidenceNode);
         if (!"PASSED".equals(evidence.status()) || evidence.realExternalCalls() != 0
                 || evidence.failedCount() != 0
@@ -263,15 +299,18 @@ public final class FeatureControlledSuiteService {
     }
 
     private ObjectNode evidenceState(
-            FeatureControlledSuiteEvidence evidence, String libraryFingerprint, long graphRevision) {
+            FeatureControlledSuiteEvidence evidence,
+            FeatureControlledExecutionSubjectResolver.Subject subject) {
         ObjectNode state = mapper.createObjectNode();
         state.put("suiteRevision", evidence.suiteRevision());
         state.put("status", evidence.status());
         state.put("evidenceFingerprint", evidence.evidenceFingerprint());
         state.put("executionEvidenceFingerprint", evidence.executionEvidenceFingerprint());
         state.put("evaluationRefFingerprint", evidence.evaluationRefFingerprint());
-        state.put("libraryFingerprint", libraryFingerprint);
-        state.put("graphRevision", graphRevision);
+        state.put("libraryFingerprint", subject.libraryFingerprint());
+        state.put("graphRevision", subject.graphRevision());
+        state.put("graphFingerprint", subject.graphFingerprint());
+        state.put("coverageObligationsFingerprint", subject.coverageObligationsFingerprint());
         state.put("caseCount", evidence.caseCount());
         state.put("passedCount", evidence.passedCount());
         state.put("failedCount", evidence.failedCount());
@@ -281,6 +320,43 @@ public final class FeatureControlledSuiteService {
         state.put("coveragePercent", evidence.coverage().percent());
         state.put("requiredCoveragePercent", evidence.coverage().requiredPercent());
         return state;
+    }
+
+    private ObjectNode subjectState(FeatureControlledExecutionSubjectResolver.Subject subject) {
+        ObjectNode state = mapper.createObjectNode();
+        state.put("evaluationRefFingerprint", subject.evaluationRefFingerprint());
+        state.put("graphRevision", subject.graphRevision());
+        state.put("graphFingerprint", subject.graphFingerprint());
+        state.put("libraryFingerprint", subject.libraryFingerprint());
+        state.put("coverageObligationsFingerprint", subject.coverageObligationsFingerprint());
+        return state;
+    }
+
+    private void requireStoredSubject(
+            JsonNode stored, FeatureControlledExecutionSubjectResolver.Subject current) {
+        if (!stored.path("evaluationRefFingerprint").asText().equals(current.evaluationRefFingerprint())
+                || stored.path("graphRevision").asLong(-1) != current.graphRevision()
+                || !stored.path("graphFingerprint").asText().equals(current.graphFingerprint())
+                || !stored.path("libraryFingerprint").asText().equals(current.libraryFingerprint())
+                || !stored.path("coverageObligationsFingerprint").asText()
+                .equals(current.coverageObligationsFingerprint())) {
+            throw stale();
+        }
+    }
+
+    private FeatureControlledExecutionSubjectResolver.Subject subject(
+            JsonNode evidence, List<String> coverageObligations) {
+        try {
+            return new FeatureControlledExecutionSubjectResolver.Subject(
+                    evidence.path("evaluationRefFingerprint").asText(),
+                    evidence.path("graphRevision").asLong(-1),
+                    evidence.path("graphFingerprint").asText(),
+                    evidence.path("libraryFingerprint").asText(),
+                    evidence.path("coverageObligationsFingerprint").asText(),
+                    coverageObligations);
+        } catch (IllegalArgumentException invalid) {
+            throw stale();
+        }
     }
 
     private FeatureControlledSuiteEvidence evidence(String featureRef, JsonNode node) {
