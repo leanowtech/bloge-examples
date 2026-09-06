@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.SolutionValueSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -40,8 +41,29 @@ public final class FeatureHandoffService {
     private final SolutionEntityRegistry registry;
     private final FeatureEvaluationBackend backend;
     private final ObjectMapper mapper;
+    private final FeatureControlledSuiteService controlledSuites;
+    private final FeatureControlledSuiteProperties properties;
 
-    /** Creates the lifecycle boundary over durable state, canonical Features and one evaluator. */
+    /** Creates the production lifecycle with suite-backed verification enabled by default. */
+    @Autowired
+    public FeatureHandoffService(AgentTddStateRepository states,
+                                 SolutionEntityRegistry registry,
+                                 FeatureEvaluationBackend backend,
+                                 ObjectMapper mapper,
+                                 FeatureControlledSuiteService controlledSuites,
+                                 FeatureControlledSuiteProperties properties) {
+        this.states = Objects.requireNonNull(states, "states");
+        this.registry = Objects.requireNonNull(registry, "registry");
+        this.backend = Objects.requireNonNull(backend, "backend");
+        this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.controlledSuites = Objects.requireNonNull(controlledSuites, "controlledSuites");
+        this.properties = Objects.requireNonNull(properties, "properties");
+    }
+
+    /**
+     * Creates a compatibility boundary that can submit tickets but fails suite fulfillment closed.
+     * Callers that need fulfillment must supply the suite module or explicitly enable legacy mode.
+     */
     public FeatureHandoffService(AgentTddStateRepository states,
                                  SolutionEntityRegistry registry,
                                  FeatureEvaluationBackend backend,
@@ -50,6 +72,8 @@ public final class FeatureHandoffService {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.backend = Objects.requireNonNull(backend, "backend");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+        this.controlledSuites = null;
+        this.properties = new FeatureControlledSuiteProperties();
     }
 
     /**
@@ -73,6 +97,7 @@ public final class FeatureHandoffService {
         data.set("requiredInputs", feature.inputs());
         data.put("evaluationKind", feature.evaluationKind().name());
         data.put("businessSemantics", feature.businessSemantics());
+        data.put("featureContractFingerprint", fingerprint(feature.contractIdentity()));
         data.put("status", "OPEN");
         data.put("acceptanceRef", "feature-acceptance:" + feature.featureRef());
         data.put("createdAt", Instant.now().toString());
@@ -86,6 +111,7 @@ public final class FeatureHandoffService {
      */
     public Map<String, Object> fulfil(String featureRef,
                                      String evaluationRef,
+                                     String suiteEvidenceRef,
                                      JsonNode fixtureInputs,
                                      IntegrationRequestContext identity) {
         requirePurpose(identity, IntegrationOperation.AGENT_TDD_FEATURE_ENG,
@@ -94,32 +120,94 @@ public final class FeatureHandoffService {
             throw new AgentTddToolException(
                     "GATE_REJECTED", "Feature fulfillment requires an accountable engineer.");
         }
-        if (evaluationRef == null || evaluationRef.isBlank() || fixtureInputs == null
-                || !fixtureInputs.isObject()) {
-            throw new AgentTddToolException("SCHEMA_NONCONFORMANT",
-                    "Evaluation reference and fixture inputs are required.");
+        if (evaluationRef == null || evaluationRef.isBlank()) {
+            throw new AgentTddToolException("SCHEMA_NONCONFORMANT", "Evaluation reference is required.");
         }
         String scope = AgentTddMutationService.scopeKey(identity);
         AgentTddStoredAsset current = states.find(scope, FEATURE_HANDOFF, featureRef)
                 .orElseThrow(() -> new AgentTddToolException(
                         "REFERENCE_UNRESOLVED", "A Feature handoff is unavailable."));
         FeatureContract original = requireFeature(scope, featureRef);
+        AgentTddStoredAsset featureAsset = states.find(scope, SolutionEntityRegistry.FEATURE, featureRef)
+                .orElseThrow(() -> new AgentTddToolException(
+                        "REFERENCE_UNRESOLVED", "A Feature is unavailable."));
+        if (!current.data().path("featureContractFingerprint").asText()
+                .equals(featureAsset.data().path("contractFingerprint").asText())) {
+            throw new AgentTddToolException("GATE_REJECTED",
+                    "Feature business contract changed after the handoff was opened.");
+        }
         FeatureContract bound = new FeatureContract(original.featureRef(), original.output(),
                 original.evaluationKind(), original.determinism(), original.inputs(), evaluationRef,
                 original.componentRef(), original.promptRef(), original.businessSemantics(),
                 original.businessDefinition(), original.display());
 
-        AgentTddStoredAsset implemented = states.executeAtomically(() -> {
-            states.lockRevision(scope, FEATURE_HANDOFF, featureRef, current.revision());
+        String evidenceRef = suiteEvidenceRef == null ? "" : suiteEvidenceRef.trim();
+        if (!evidenceRef.isBlank()) {
+            if (controlledSuites == null) {
+                throw new AgentTddToolException(
+                        "FEATURE_SUITE_NOT_VERIFIED", "Feature suite verification is unavailable.");
+            }
+            FeatureControlledSuiteEvidence evidence = controlledSuites.requireCurrentEvidence(
+                    featureRef, evaluationRef, evidenceRef, identity);
+            return verifyFromSuite(scope, current, featureAsset, bound, evidence, identity);
+        }
+        if (!properties.isLegacySingleFixtureEnabled()) {
+            throw new AgentTddToolException(
+                    "FEATURE_SUITE_REQUIRED", "A current controlled Feature suite evidence is required.");
+        }
+        if (fixtureInputs == null || !fixtureInputs.isObject()) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "Legacy fixture inputs are required while rollout mode is enabled.");
+        }
+        return verifyLegacyFixture(scope, current, featureAsset, bound, fixtureInputs, identity);
+    }
+
+    /** Backward-compatible call shape; the default rollout still rejects it unless explicitly enabled. */
+    public Map<String, Object> fulfil(String featureRef,
+                                     String evaluationRef,
+                                     JsonNode fixtureInputs,
+                                     IntegrationRequestContext identity) {
+        return fulfil(featureRef, evaluationRef, "", fixtureInputs, identity);
+    }
+
+    private Map<String, Object> verifyFromSuite(
+            String scope,
+            AgentTddStoredAsset current,
+            AgentTddStoredAsset featureAsset,
+            FeatureContract bound,
+            FeatureControlledSuiteEvidence evidence,
+            IntegrationRequestContext identity) {
+        AgentTddStoredAsset stored = states.executeAtomically(() -> {
+            states.lockRevision(scope, FEATURE_HANDOFF, bound.featureRef(), current.revision());
+            states.lockRevision(scope, FeatureControlledSuiteService.FEATURE_CONTROLLED_SUITE,
+                    bound.featureRef(), evidence.suiteRevision());
+            states.lockRevision(scope, SolutionEntityRegistry.FEATURE,
+                    bound.featureRef(), featureAsset.revision());
             registry.upsertFeature(scope, bound);
-            ObjectNode data = current.data().deepCopy();
-            data.put("status", "IMPLEMENTED");
-            data.put("evaluationRef", evaluationRef.trim());
-            data.put("implementedBy", identity.actorId());
-            data.put("implementedAt", Instant.now().toString());
-            return states.saveIfRevision(scope, FEATURE_HANDOFF, featureRef,
-                    current.revision(), data);
+            ObjectNode verified = implementedState(current, bound.evaluationRef(), identity);
+            verified.put("status", "VERIFIED");
+            verified.put("verified", true);
+            verified.put("verificationMode", "CONTROLLED_SUITE");
+            verified.put("suiteEvidenceRef", evidence.evidenceFingerprint());
+            verified.put("suiteRevision", evidence.suiteRevision());
+            verified.put("verifiedAt", Instant.now().toString());
+            return states.saveIfRevision(scope, FEATURE_HANDOFF, bound.featureRef(),
+                    current.revision(), verified);
         });
+        return readyProjection(stored);
+    }
+
+    private Map<String, Object> verifyLegacyFixture(
+            String scope,
+            AgentTddStoredAsset current,
+            AgentTddStoredAsset featureAsset,
+            FeatureContract bound,
+            JsonNode fixtureInputs,
+            IntegrationRequestContext identity) {
+        ObjectNode implementedState = implementedState(current, bound.evaluationRef(), identity);
+        implementedState.put("verificationMode", "LEGACY_SINGLE_FIXTURE");
+        AgentTddStoredAsset implemented = states.saveIfRevision(scope, FEATURE_HANDOFF,
+                bound.featureRef(), current.revision(), implementedState);
 
         JsonNode output;
         try {
@@ -133,12 +221,32 @@ public final class FeatureHandoffService {
             throw new AgentTddToolException("FEATURE_OUTPUT_INVALID",
                     "Feature verification output does not match the contract.");
         }
-        ObjectNode verified = implemented.data().deepCopy();
-        verified.put("status", "VERIFIED");
-        verified.put("verified", true);
-        verified.put("verifiedAt", Instant.now().toString());
-        AgentTddStoredAsset stored = states.saveIfRevision(scope, FEATURE_HANDOFF, featureRef,
-                implemented.revision(), verified);
+        AgentTddStoredAsset stored = states.executeAtomically(() -> {
+            states.lockRevision(scope, FEATURE_HANDOFF, bound.featureRef(), implemented.revision());
+            states.lockRevision(scope, SolutionEntityRegistry.FEATURE,
+                    bound.featureRef(), featureAsset.revision());
+            registry.upsertFeature(scope, bound);
+            ObjectNode verified = implemented.data().deepCopy();
+            verified.put("status", "VERIFIED");
+            verified.put("verified", true);
+            verified.put("verifiedAt", Instant.now().toString());
+            return states.saveIfRevision(scope, FEATURE_HANDOFF, bound.featureRef(),
+                    implemented.revision(), verified);
+        });
+        return readyProjection(stored);
+    }
+
+    private ObjectNode implementedState(
+            AgentTddStoredAsset current, String evaluationRef, IntegrationRequestContext identity) {
+        ObjectNode data = current.data().deepCopy();
+        data.put("status", "IMPLEMENTED");
+        data.put("evaluationRef", evaluationRef.trim());
+        data.put("implementedBy", identity.actorId());
+        data.put("implementedAt", Instant.now().toString());
+        return data;
+    }
+
+    private Map<String, Object> readyProjection(AgentTddStoredAsset stored) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>(ticketProjection(stored));
         result.put("state", "READY");
         result.put("verified", true);
@@ -163,6 +271,12 @@ public final class FeatureHandoffService {
         result.put("evaluationKind", data.path("evaluationKind").asText());
         result.put("businessSemantics", data.path("businessSemantics").asText());
         result.put("status", data.path("status").asText());
+        if (data.path("verificationMode").isTextual()) {
+            result.put("verificationMode", data.path("verificationMode").asText());
+        }
+        if (data.path("suiteEvidenceRef").isTextual()) {
+            result.put("suiteEvidenceRef", data.path("suiteEvidenceRef").asText());
+        }
         result.put("acceptanceRef", data.path("acceptanceRef").asText());
         result.put("revision", stored.revision());
         return Map.copyOf(result);
@@ -180,5 +294,9 @@ public final class FeatureHandoffService {
     private static String shortHash(String fingerprint) {
         String hash = fingerprint.startsWith("sha256:") ? fingerprint.substring(7) : fingerprint;
         return hash.substring(0, Math.min(24, hash.length()));
+    }
+
+    private String fingerprint(Object value) {
+        return VisualBundleFingerprint.fromCanonicalValue(mapper, value, MAX_BYTES);
     }
 }

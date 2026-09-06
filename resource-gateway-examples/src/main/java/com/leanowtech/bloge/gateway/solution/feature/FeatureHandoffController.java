@@ -29,16 +29,22 @@ public final class FeatureHandoffController {
         this.handoffs = Objects.requireNonNull(handoffs, "handoffs");
     }
 
-    /** Binds and fixture-verifies one implementation without exposing this power to Agent tools. */
+    /** Binds one implementation after current suite verification without exposing power to Agent tools. */
     @PostMapping("/{featureRef}/fulfil")
     public Map<String, Object> fulfil(@PathVariable String featureRef,
                                       @RequestBody FulfilRequest request,
                                       @RequestHeader HttpHeaders headers) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers, IntegrationOperation.AGENT_TDD_FEATURE_ENG);
-        return handoffs.fulfil(featureRef, request.evaluationRef(), request.fixtureInputs(), identity);
+        return handoffs.fulfil(featureRef, request.evaluationRef(), request.suiteEvidenceRef(),
+                request.fixtureInputs(), identity);
     }
 
-    /** Controlled implementation reference and non-persisted verification fixture inputs. */
-    public record FulfilRequest(String evaluationRef, JsonNode fixtureInputs) { }
+    /** Suite-backed implementation request with an explicitly gated legacy fixture field. */
+    public record FulfilRequest(String evaluationRef, String suiteEvidenceRef, JsonNode fixtureInputs) {
+        /** Preserves the legacy wire shape for the explicit rollout flag only. */
+        public FulfilRequest(String evaluationRef, JsonNode fixtureInputs) {
+            this(evaluationRef, "", fixtureInputs);
+        }
+    }
 }

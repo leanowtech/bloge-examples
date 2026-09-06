@@ -78,6 +78,11 @@ gateway:
       active-key-id: ${RG_FEATURE_TOKEN_ACTIVE_KEY_ID:}
       # Comma-separated keyId=base64(HMAC-key), minimum 32 decoded bytes.
       key-ring: ${RG_FEATURE_TOKEN_KEY_RING:}
+    feature-controlled-suite:
+      # Suite evidence is the default verification basis. This temporary compatibility path is opt-in.
+      legacy-single-fixture-enabled: ${RG_FEATURE_CONTROLLED_SUITE_LEGACY_SINGLE_FIXTURE_ENABLED:false}
+      # Percentage of runner-observed controlled coverage obligations required for VERIFIED.
+      minimum-coverage-percent: ${RG_FEATURE_CONTROLLED_SUITE_MINIMUM_COVERAGE_PERCENT:100}
     mcp-limits:
       # Per authenticated tenant/project/environment/actor. Preview and gate share one bucket.
       common-per-minute: ${RG_AGENT_TDD_MCP_COMMON_PER_MINUTE:120}

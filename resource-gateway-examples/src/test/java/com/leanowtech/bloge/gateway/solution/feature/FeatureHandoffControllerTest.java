@@ -32,8 +32,21 @@ class FeatureHandoffControllerTest {
                 FeatureContract.EvaluationKind.DAG, FeatureContract.Determinism.DETERMINISTIC,
                 mapper.valueToTree(Map.of("orderId", "string")), "", "", "",
                 "Whether cancellation is within the free window."));
+        String evidenceRef = "sha256:" + "a".repeat(64);
+        FeatureControlledSuiteService suites = mock(FeatureControlledSuiteService.class);
+        states.save(AgentTddMutationService.scopeKey(author),
+                FeatureControlledSuiteService.FEATURE_CONTROLLED_SUITE, "cancel.withinFree",
+                mapper.createObjectNode().put("status", "PASSED"));
+        FeatureControlledSuiteEvidence evidence = new FeatureControlledSuiteEvidence(
+                "cancel.withinFree", 1, "PASSED", evidenceRef,
+                "sha256:" + "b".repeat(64), "sha256:" + "c".repeat(64),
+                1, 1, 0, 0, new FeatureControlledSuiteEvidence.Coverage(1, 1, 100, 100));
+        when(suites.requireCurrentEvidence(
+                "cancel.withinFree", "graph:cancel-window-v1", evidenceRef, engineer))
+                .thenReturn(evidence);
         FeatureHandoffService service = new FeatureHandoffService(states, registry,
-                (feature, inputs, identity) -> mapper.valueToTree(true), mapper);
+                (feature, inputs, identity) -> mapper.valueToTree(true), mapper,
+                suites, new FeatureControlledSuiteProperties());
         service.submit("cancel.withinFree", author);
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         HttpHeaders headers = new HttpHeaders();
@@ -43,11 +56,12 @@ class FeatureHandoffControllerTest {
 
         Map<String, Object> response = controller.fulfil("cancel.withinFree",
                 new FeatureHandoffController.FulfilRequest(
-                        "graph:cancel-window-v1", mapper.valueToTree(Map.of("orderId", "O-1"))),
+                        "graph:cancel-window-v1", evidenceRef, null),
                 headers);
 
         assertThat(response).containsEntry("status", "VERIFIED")
-                .containsEntry("state", "READY");
+                .containsEntry("state", "READY")
+                .containsEntry("verificationMode", "CONTROLLED_SUITE");
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_FEATURE_ENG);
     }
 
