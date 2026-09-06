@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any, Callable
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 
@@ -36,8 +37,15 @@ def _exchange(endpoint: str, token: str, purpose: str, request_id: str, method: 
         "X-Purpose": purpose,
         "X-RG-Surface": "BUSINESS_SOLUTION",
     })
-    with opener(request, timeout=15) as response:
-        value = json.loads(response.read().decode())
+    try:
+        with opener(request, timeout=15) as response:
+            payload = response.read()
+    except HTTPError as failure:
+        try:
+            payload = failure.read()
+        finally:
+            failure.close()
+    value = json.loads(payload.decode())
     if not isinstance(value, dict):
         raise SurfaceProbeFailure("MCP response is not an object")
     return value

@@ -292,7 +292,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 62 tests", "OK");
+        assertThat(output).contains("Ran 63 tests", "OK");
     }
 
     private String productionTreeFingerprint(String commit) throws Exception {
