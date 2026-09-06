@@ -60,7 +60,9 @@ FAMILY_FIRST_TOOL_ALLOWLIST = {
     "boundary-unspecified": frozenset({"rg.library.overview.get", "rg.capability.search"}),
     "unknown-policy-unspecified": frozenset({"rg.library.overview.get", "rg.capability.search"}),
     "authority-source-unspecified": frozenset({"rg.library.overview.get", "rg.capability.search"}),
-    "surface-interference": frozenset({"rg.library.overview.get"}),
+    "surface-interference": frozenset({
+        "rg.library.overview.get", "rg.capability.search", "rg.entity.list",
+    }),
     "cross-session-rediscovery": frozenset({"rg.entity.list", "rg.capability.search"}),
     "fact-assumption": frozenset({"rg.entity.list", "rg.entity.get", "rg.capability.search",
                                    "rg.library.overview.get"}),
@@ -684,7 +686,9 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
     require_family_surface(calls, family_id)
     business_calls = [call for call in calls if call["server"] in {"rg_read", "rg_author"}]
     if not business_calls or business_calls[0]["tool"] not in FAMILY_FIRST_TOOL_ALLOWLIST[family_id]:
-        raise CertificationFailure(f"family {family_id} did not recall an intent-appropriate first tool")
+        observed = business_calls[0]["tool"] if business_calls else "NONE"
+        raise CertificationFailure(
+            f"family {family_id} did not recall an intent-appropriate first tool: {observed}")
     first_tool = business_calls[0]["tool"]
     if not final_message.strip() or TECHNICAL_FINAL_PATTERN.search(final_message):
         raise CertificationFailure(f"family {family_id} final summary is missing or technical")

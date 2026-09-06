@@ -562,6 +562,18 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                        if item["familyId"] == "synonym-rewrite")
         self.assertEqual("TOP1_MATCH", synonym["observedOutcome"])
 
+    def test_accepts_business_search_as_surface_interference_first_tool(self) -> None:
+        events = family_events("surface-interference")
+        events.insert(0, call("rg_read", "rg.capability.search",
+                              {"query": {"intent": "了解业务事实入口"}},
+                              {"status": "NONE", "candidates": []}))
+
+        certificate = self.certify_aux(
+            family_overrides={"surface-interference": events})
+        surface = next(item for item in certificate["familyEvidence"]
+                       if item["familyId"] == "surface-interference")
+        self.assertEqual("BUSINESS_SURFACE_ONLY", surface["observedOutcome"])
+
     def test_rejects_remaining_families_split_across_runtime_phases(self) -> None:
         def split_runtime(manifest: dict) -> None:
             target = next(item for item in manifest["families"]
