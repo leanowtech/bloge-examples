@@ -162,7 +162,9 @@ class SolutionWriteGovernanceTest {
                 Map.entry("materialReceipt", Map.of("materialRef", "protected:g1")),
                 Map.entry("businessContractVector", List.of(Map.of(
                         "assetKind", "INSTRUCTION", "assetRef", "ins:refund",
-                        "contractFingerprint", instructionFingerprint))));
+                        "contractFingerprint", instructionFingerprint,
+                        "semanticKey", registry.requireInstruction(SCOPE, "ins:refund")
+                                .businessDefinition().semanticKey()))));
         protectedSet.set("rows", mapper.valueToTree(List.of(protectedMetadata)));
         states.save(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel", protectedSet);
         new SolutionTestingService(states, registry, mapper,
@@ -368,7 +370,14 @@ class SolutionWriteGovernanceTest {
         registry.upsertInstruction(SCOPE, design);
         EngineeringHandoffService handoffs = new EngineeringHandoffService(states, registry, mapper);
         handoffs.submit("sol:cancel", authorIdentity());
-        registry.upsertInstruction(SCOPE, design);
+        // Only a post-submission business-contract change proves the guard.
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of("result", Map.of("type", "string"),
+                        "reasoning", "required")),
+                InstructionContract.Effect.WRITE, "",
+                new InstructionContract.WriteGovernance(
+                        "refund-service", "orderId", "recon:refund-v1")));
 
         assertThatThrownBy(() -> handoffs.fulfil(
                 "sol:cancel", "ins:refund", "operator:refund-v2", engineerIdentity()))
