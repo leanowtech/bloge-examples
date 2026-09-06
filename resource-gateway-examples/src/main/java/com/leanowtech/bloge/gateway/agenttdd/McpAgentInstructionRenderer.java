@@ -125,7 +125,9 @@ public final class McpAgentInstructionRenderer {
                 + "a business dimension the user has not settled, or if multiple EXACT candidates remain, "
                 + "ask exactly one plain-language business question and stop. Construct schemaVersion, "
                 + "semanticKey, assetKinds, and all other protocol fields yourself; never ask the business "
-                + "user to provide or understand them. ";
+                + "user to provide or understand them. In a new session, use the owning journey coordinates "
+                + "returned by " + get + " and call " + name(McpToolCatalog.JOURNEY_NEXT)
+                + " for the primary active journey before reporting the current workflow stage. ";
     }
 
     private String platformInstructions() {

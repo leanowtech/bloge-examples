@@ -54,7 +54,7 @@ public final class McpToolCatalog {
                 props("entityKinds", stringArray(), "lifecycle", string(), "cursor", string(), "limit", integer()),
                 List.of("entityKinds")));
         values.add(tool(ENTITY_GET, "Get business entity",
-                "Read one business contract and readiness projection without implementation details.",
+                "Read one business contract, readiness and owning journey coordinates without implementation details.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool(JOURNEY_START, "Start business journey",
                 "Start a server-navigated business workflow without granting later actions.",
@@ -708,11 +708,12 @@ public final class McpToolCatalog {
                     List.of("entities", "nextCursor", "snapshotFingerprint"));
             case ENTITY_GET -> structuredObject(props(
                     "card", capabilityCard(), "businessContract", businessObject(),
-                    "dependencies", stringArray(), "readiness", structuredObject(props(
+                    "dependencies", stringArray(), "journeys", arrayOf(journeyLink()),
+                    "readiness", structuredObject(props(
                             "lifecycle", string(), "runtimeState", string(), "speccing", bool()),
                             List.of("lifecycle", "runtimeState", "speccing")),
                     "contractFingerprint", string(), "revision", integer()),
-                    List.of("card", "businessContract", "dependencies", "readiness",
+                    List.of("card", "businessContract", "dependencies", "journeys", "readiness",
                             "contractFingerprint", "revision"));
             case JOURNEY_START, JOURNEY_NEXT -> journeyProjection();
             case GOLDEN_PROPOSE -> structuredObject(props(
@@ -905,6 +906,14 @@ public final class McpToolCatalog {
                 List.of("assetRef", "assetKind", "display", "business", "lifecycle", "speccing",
                         "runtimeState", "owner", "contractFingerprint", "revision",
                         "displayRevision", "displayFingerprint", "legacyDisplayProjection", "source"));
+    }
+
+    /** Strict reverse journey coordinate used for cross-session workflow recovery. */
+    private static Map<String, Object> journeyLink() {
+        return structuredObject(props(
+                "journeyRef", string(), "revision", integer(), "intentKind", string(),
+                "status", enumString("ACTIVE", "CANCELLED"), "primary", bool()),
+                List.of("journeyRef", "revision", "intentKind", "status", "primary"));
     }
 
     /** Strict search projection. Candidate contracts remain payload-free business summaries. */

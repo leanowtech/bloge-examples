@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
 import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -215,6 +216,35 @@ class BusinessCapabilityIndexTest {
     }
 
     @Test
+    void returnsOwningJourneyCoordinatesForCrossSessionRecovery() {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        String scope = scope(identity("project-a"));
+        saveEntity(states, scope, SolutionEntityRegistry.SOLUTION, "sol:cancel", "SOLUTION");
+        ObjectNode journey = mapper.createObjectNode();
+        journey.put("schemaVersion", "rg.businessJourney.v1");
+        journey.put("journeyRef", "journey:create-cancel");
+        journey.put("intentKind", "CREATE_SOLUTION");
+        journey.put("targetSolutionRef", "sol:cancel");
+        journey.put("status", "ACTIVE");
+        journey.putArray("associations").addObject()
+                .put("assetKind", "SOLUTION").put("assetRef", "sol:cancel").put("revision", 1);
+        states.save(scope, BusinessJourneyService.JOURNEY, "journey:create-cancel", journey);
+
+        BusinessCapabilityIndex index = index(states);
+        JsonNode result = mapper.valueToTree(index.get(mapper.valueToTree(
+                Map.of("assetRef", "sol:cancel")), identity("project-a")));
+
+        assertThat(result.path("journeys")).hasSize(1);
+        assertThat(result.at("/journeys/0/journeyRef").asText()).isEqualTo("journey:create-cancel");
+        assertThat(result.at("/journeys/0/revision").asLong()).isEqualTo(1);
+        assertThat(result.at("/journeys/0/intentKind").asText()).isEqualTo("CREATE_SOLUTION");
+        assertThat(result.at("/journeys/0/status").asText()).isEqualTo("ACTIVE");
+        assertThat(result.at("/journeys/0/primary").asBoolean()).isTrue();
+        assertThat(index.freeze(identity("project-a")).catalogRevisionVector())
+                .containsKey("businessJourneys");
+    }
+
+    @Test
     void ranksAllMatchesBeforeApplyingTheResponseLimit() throws Exception {
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         saveFeature(states, scope(identity("project-a")), "feature:a-partial", 0);
@@ -302,8 +332,8 @@ class BusinessCapabilityIndexTest {
         BusinessCapabilityIndex.Snapshot second = index.freeze(identity);
 
         assertThat(first.catalogRevisionVector().keySet()).containsExactlyInAnyOrder(
-                "solutionEntities", "solutionEntityDisplays", "operatorLibraries", "runtimeCatalog",
-                "graphDrafts", "publications");
+                "solutionEntities", "solutionEntityDisplays", "businessJourneys",
+                "operatorLibraries", "runtimeCatalog", "graphDrafts", "publications");
         assertThat(first.capabilities()).extracting(BusinessCapabilityIndex.Card::assetRef)
                 .containsExactly("feature:cancel.party", "risk:eligibility", "risk:scoreFacts",
                         "publication:cancel", "solution:cancel", "draft:cancel");

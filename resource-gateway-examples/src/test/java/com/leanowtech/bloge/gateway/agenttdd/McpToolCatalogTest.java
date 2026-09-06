@@ -105,6 +105,7 @@ class McpToolCatalogTest {
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.list"))))
                 .containsExactlyInAnyOrder("entities", "nextCursor", "snapshotFingerprint");
         assertThat(stringKeys(dataProperties(catalog.require("rg.entity.get"))))
+                .contains("journeys")
                 .doesNotContain("bindingRef", "dsl", "loweredDraft", "urlTemplate");
         assertThat(stringKeys(dataProperties(catalog.require("rg.feature.handoff"))))
                 .containsExactlyInAnyOrder("ticketId", "featureName", "requiredOutput",

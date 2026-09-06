@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -118,12 +119,14 @@ public final class BusinessCapabilityIndex {
     /** Returns one business-only card, semantic contract and dependency projection. */
     public Map<String, Object> get(JsonNode arguments, IntegrationRequestContext identity) {
         String assetRef = requiredText(arguments, "assetRef");
-        Card card = freeze(identity).capabilities().stream()
+        Snapshot snapshot = freeze(identity);
+        Card card = snapshot.capabilities().stream()
                 .filter(candidate -> candidate.assetRef().equals(assetRef))
                 .findFirst().orElseThrow(() -> new AgentTddToolException(
                         "CAPABILITY_NOT_FOUND", "Business capability was not found."));
         return Map.of("card", card, "businessContract", card.business(),
                 "dependencies", dependencies(card),
+                "journeys", snapshot.journeysByAsset().getOrDefault(assetRef, List.of()),
                 "readiness", Map.of("lifecycle", card.lifecycle(), "runtimeState", card.runtimeState(),
                         "speccing", card.speccing()),
                 "contractFingerprint", card.contractFingerprint(), "revision", card.revision());
@@ -196,6 +199,7 @@ public final class BusinessCapabilityIndex {
                 .flatMap(kind -> states.list(scope, kind).stream()).toList();
         List<AgentTddStoredAsset> entityDisplays = states.list(
                 scope, SolutionEntityRegistry.CAPABILITY_DISPLAY);
+        List<AgentTddStoredAsset> journeys = states.list(scope, BusinessJourneyService.JOURNEY);
         Map<String, AgentTddStoredAsset> displaysByEntity = entityDisplays.stream().collect(
                 java.util.stream.Collectors.toUnmodifiableMap(
                         asset -> displayKey(asset.data().path("entityKind").asText(),
@@ -223,6 +227,8 @@ public final class BusinessCapabilityIndex {
         vector.put("solutionEntities", fingerprint(entities.stream().map(this::entityIdentity).toList()));
         vector.put("solutionEntityDisplays", fingerprint(
                 entityDisplays.stream().map(this::entityIdentity).toList()));
+        vector.put("businessJourneys", fingerprint(
+                journeys.stream().map(this::entityIdentity).toList()));
         vector.put("operatorLibraries", fingerprint(libraryValues));
         vector.put("runtimeCatalog", fingerprint(runtime));
         vector.put("graphDrafts", fingerprint(draftValues.stream().map(this::draftIdentity).toList()));
@@ -236,7 +242,8 @@ public final class BusinessCapabilityIndex {
         draftValues.forEach(draft -> put(cards, draftCard(draft)));
         publicationValues.forEach(publication -> put(cards, publicationCard(publication)));
         return new Capture(Map.copyOf(vector), cards.values().stream()
-                .sorted(Comparator.comparing(Card::assetKind).thenComparing(Card::assetRef)).toList());
+                .sorted(Comparator.comparing(Card::assetKind).thenComparing(Card::assetRef)).toList(),
+                journeyLinks(journeys));
     }
 
     private static OperatorLibrary scopedLibrary(OperatorLibrary library,
@@ -257,7 +264,40 @@ public final class BusinessCapabilityIndex {
                         "kind", card.assetKind(), "ref", card.assetRef(),
                         "fingerprint", card.contractFingerprint(), "revision", card.revision(),
                         "lifecycle", card.lifecycle())).toList()));
-        return new Snapshot(scopeFingerprint, capture.vector(), snapshotFingerprint, Instant.now(), capture.cards());
+        return new Snapshot(scopeFingerprint, capture.vector(), snapshotFingerprint, Instant.now(),
+                capture.cards(), capture.journeysByAsset());
+    }
+
+    /** Builds a payload-free reverse association from reusable entities to their current journeys. */
+    private static Map<String, List<JourneyLink>> journeyLinks(List<AgentTddStoredAsset> journeys) {
+        LinkedHashMap<String, List<JourneyLink>> links = new LinkedHashMap<>();
+        journeys.stream().sorted(Comparator.comparing(AgentTddStoredAsset::assetRef)).forEach(asset -> {
+            JsonNode data = asset.data();
+            String journeyRef = data.path("journeyRef").asText(asset.assetRef());
+            String intentKind = data.path("intentKind").asText();
+            String status = data.path("status").asText("ACTIVE");
+            String targetSolutionRef = data.path("targetSolutionRef").asText();
+            LinkedHashMap<String, String> associated = new LinkedHashMap<>();
+            if (!targetSolutionRef.isBlank()) associated.put(targetSolutionRef, "SOLUTION");
+            data.path("associations").forEach(association -> {
+                String ref = association.path("assetRef").asText();
+                if (!ref.isBlank()) {
+                    associated.putIfAbsent(ref, association.path("assetKind").asText());
+                }
+            });
+            String primaryRef = !targetSolutionRef.isBlank() ? targetSolutionRef
+                    : associated.entrySet().stream()
+                            .filter(entry -> "SOLUTION".equals(entry.getValue()))
+                            .map(Map.Entry::getKey).findFirst().orElse("");
+            associated.forEach((ref, ignored) -> links.computeIfAbsent(ref, key -> new ArrayList<>()).add(
+                    new JourneyLink(journeyRef, asset.revision(), intentKind, status,
+                            "CREATE_SOLUTION".equals(intentKind) && ref.equals(primaryRef))));
+        });
+        links.replaceAll((ignored, values) -> values.stream().sorted(
+                Comparator.comparing(JourneyLink::primary).reversed()
+                        .thenComparing(link -> !"ACTIVE".equals(link.status()))
+                        .thenComparing(JourneyLink::journeyRef)).toList());
+        return Map.copyOf(links);
     }
 
     private Card entityCard(
@@ -551,18 +591,34 @@ public final class BusinessCapabilityIndex {
     private record DisplayProjection(
             ObjectNode display, long revision, String fingerprint, boolean legacy) { }
 
-    private record Capture(Map<String, String> vector, List<Card> cards) { }
+    private record Capture(Map<String, String> vector, List<Card> cards,
+                           Map<String, List<JourneyLink>> journeysByAsset) { }
 
     /** Immutable, scope-bound index snapshot used by one list, get or search operation. */
     public record Snapshot(String scopeFingerprint,
                            Map<String, String> catalogRevisionVector,
                            String snapshotFingerprint,
                            Instant createdAt,
-                           List<Card> capabilities) {
+                           List<Card> capabilities,
+                           Map<String, List<JourneyLink>> journeysByAsset) {
         /** Defensively freezes the revision vector and card list. */
         public Snapshot {
             catalogRevisionVector = Map.copyOf(catalogRevisionVector);
             capabilities = List.copyOf(capabilities);
+            journeysByAsset = journeysByAsset.entrySet().stream().collect(
+                    java.util.stream.Collectors.toUnmodifiableMap(
+                            Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
+        }
+    }
+
+    /** Safe coordinate that lets a new session continue the workflow owning an entity. */
+    public record JourneyLink(String journeyRef, long revision, String intentKind,
+                              String status, boolean primary) {
+        /** Normalizes persisted journey metadata before it enters an MCP response. */
+        public JourneyLink {
+            journeyRef = journeyRef == null ? "" : journeyRef;
+            intentKind = intentKind == null ? "" : intentKind;
+            status = status == null ? "" : status;
         }
     }
 

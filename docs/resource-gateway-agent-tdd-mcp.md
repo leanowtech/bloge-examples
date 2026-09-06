@@ -160,6 +160,8 @@ URL 或持久化内部字段。候选含义与业务话语一致后，Codex 用�
 差异时，Codex 只问一个业务问题并停止本轮写操作。`schemaVersion`、`semanticKey`、
 `assetKinds` 等字段由 Codex 从平台响应生成，业务人员不需要知道或填写。
 
+新会话重新找到现有实体后，`rg.entity.get.journeys` 返回关联 journey 的安全坐标。Codex 选择 `primary=true`、`status=ACTIVE` 的 journey，以其 `journeyRef` 和 `revision` 调用 `rg.journey.next`，再向业务人员说明当前阶段和下一步。业务人员不需要保存或提供 journeyRef。
+
 兼容期内，缺少 `X-RG-Surface` 的旧客户端仍能看到原目录，服务端记录 `rg.mcp.surface.requests{surface="legacy_all"}`。显式传入未知 surface 会返回 JSON-RPC `-32602`；直接调用当前 surface 不可见的工具返回 `-32031 / TOOL_NOT_VISIBLE_IN_SURFACE`。兼容模式不应出现在新的 Codex 配置中。
 
 服务端通过 `gateway.agent-tdd.semantic-recall` 提供六个独立回滚开关。仓库默认开启语义召回、journey 动作约束和受控业务测试，保留缺少 surface 与旧 Feature 契约的兼容路径。`initialize` 和 `server/discover` 在 `capabilities.experimental["rg.semanticRecall"]` 返回当前有效状态。关闭 `enabled` 时只移除 v1.4.6 新增的 8 个业务发现和 journey 工具，旧 42 项目录保持可用；开启 `require-surface` 后，缺少 Header 返回 `SURFACE_REQUIRED`；关闭 `controlled-business-tests-enabled` 后，业务 surface 不再列出或执行 `rg.solution.baseline`，已批准案例仍可读取；关闭 `allow-legacy-feature-contract` 后，新建 Feature 缺少完整 `businessDefinition` 时返回 `LEGACY_FEATURE_CONTRACT_DISABLED`。

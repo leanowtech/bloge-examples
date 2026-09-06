@@ -819,6 +819,8 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 
 `stage`、`blockingReasons`、readiness 和 allowed tools 不持久化，每次从 association 指向的当前资产重新派生。association revision 只记录最近一次确认坐标；资产当前 revision 变化时触发重新读取和阶段回退。
 
+跨会话重新发现四实体时，`rg.entity.get` 从同一冻结能力快照返回该实体关联的 payload-free journey 坐标：`journeyRef`、当前 `revision`、`intentKind`、`status` 和 `primary`。Codex 对主 ACTIVE journey 调用 `rg.journey.next` 后才能报告当前阶段。journey 资产 revision 进入能力索引 generation vector；实体详情和 journey 坐标不能来自两个读点。
+
 ### 8.5 业务案例生命周期
 
 `BusinessGoldenCase` 是 journey-scoped 测试资产，不进入 `BusinessCapabilityIndex`。能力索引描述可以跨 journey 复用的 Feature、Scenario、Instruction、Solution 和算子；业务案例描述当前方案在受控假设下必须满足的标准答案。混合两者会让一次测试假设污染后续能力召回。

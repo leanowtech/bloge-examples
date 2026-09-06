@@ -45,7 +45,8 @@ class McpAgentInstructionRendererTest {
                         "authoringPatternsFingerprint", "two-pass recall", "rg.capability.search",
                         "rg.entity.get", "one unique EXACT", "reuseAllowed=true",
                         "ask exactly one plain-language business question",
-                        "never ask the business user to provide or understand them")
+                        "never ask the business user to provide or understand them",
+                        "primary active journey", "rg.journey.next")
                 .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
         assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
                 .doesNotContain("rg.feature.handoff", "rg.solution.compose");
