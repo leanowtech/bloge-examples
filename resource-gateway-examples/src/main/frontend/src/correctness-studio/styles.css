@@ -1916,3 +1916,135 @@
   .correctness-calibration-form .wide,
   .correctness-calibration-boundary { grid-column: 1; }
 }
+.correctness-world-shell {
+  min-height: 100%;
+  background: var(--correctness-bg, #f5f7f9);
+}
+
+.correctness-world-switch {
+  display: flex;
+  gap: 4px;
+  padding: 14px 24px 0;
+}
+
+.correctness-world-switch button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  padding: 7px 14px;
+}
+
+.correctness-world-switch button[aria-pressed='true'] {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #115e59;
+  font-weight: 700;
+}
+
+.correctness-business-coordinate {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 18px 24px;
+  padding: 16px;
+  border: 1px solid #dbe4ea;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.correctness-business-coordinate label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.correctness-business-coordinate input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.correctness-business-assets {
+  display: grid;
+  gap: 18px;
+  padding: 0 24px 28px;
+}
+
+.correctness-business-asset-list,
+.correctness-business-fixture-groups {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.correctness-business-asset-list > article,
+.correctness-business-fixture-groups > article {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 2fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+
+.correctness-business-asset-list article > div,
+.correctness-business-fixture-groups article > header,
+.correctness-business-fixture-groups li {
+  display: grid;
+  gap: 3px;
+}
+
+.correctness-protected-business-material {
+  display: grid;
+  gap: 12px;
+  margin: 0 14px 14px;
+  padding: 16px;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+  background: #f0fdfa;
+}
+
+.correctness-protected-business-material > header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.correctness-protected-business-material > header div {
+  display: grid;
+}
+
+.correctness-readonly-values pre {
+  overflow: auto;
+  margin: 5px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff;
+  white-space: pre-wrap;
+}
+
+.correctness-business-fixture-groups > article {
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
+}
+
+.correctness-business-fixture-groups ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 760px) {
+  .correctness-business-coordinate,
+  .correctness-business-asset-list > article,
+  .correctness-business-fixture-groups > article {
+    grid-template-columns: 1fr;
+  }
+}

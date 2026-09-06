@@ -41,6 +41,8 @@ import FixtureStudio from './authoring/FixtureStudio';
 import PublicationStudio from './authoring/PublicationStudio';
 import CorrectnessI18nProvider from './CorrectnessI18nProvider';
 import CorrectnessWorkspaceLauncher from './launcher/CorrectnessWorkspaceLauncher';
+import BusinessSolutionAssets from './BusinessSolutionAssets';
+import type { BusinessSolutionAssetsApi } from './api/businessSolutionApi';
 import {
   noopGuidedAuthoringTelemetry,
   type GuidedAuthoringTelemetry,
@@ -85,15 +87,71 @@ const VIEWS: Array<{
 
 export interface CorrectnessStudioProps {
   api?: CorrectnessStudioApi;
+  businessApi?: BusinessSolutionAssetsApi;
   telemetry?: GuidedAuthoringTelemetry;
 }
 
 export default function CorrectnessStudio(props: CorrectnessStudioProps) {
   return (
     <CorrectnessI18nProvider>
-      <CorrectnessStudioSurface {...props} />
+      <CorrectnessWorldRouter {...props} />
     </CorrectnessI18nProvider>
   );
+}
+
+function CorrectnessWorldRouter(props: CorrectnessStudioProps) {
+  const { t } = useI18n();
+  const initial = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [world, setWorld] = useState<'business' | 'legacy'>(
+    initial.get('correctnessWorld') === 'business' ? 'business' : 'legacy',
+  );
+  const [solutionRef, setSolutionRef] = useState(initial.get('solutionRef') ?? '');
+  const [journeyRef, setJourneyRef] = useState(initial.get('journeyRef') ?? '');
+
+  const changeWorld = (next: 'business' | 'legacy') => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('correctnessWorld', next);
+    window.history.replaceState({}, '', `${window.location.pathname}?${params}${window.location.hash}`);
+    setWorld(next);
+  };
+  const openBusinessAssets = () => {
+    if (!solutionRef.trim() || !journeyRef.trim()) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('correctnessWorld', 'business');
+    params.set('solutionRef', solutionRef.trim());
+    params.set('journeyRef', journeyRef.trim());
+    window.history.replaceState({}, '', `${window.location.pathname}?${params}${window.location.hash}`);
+    setSolutionRef(solutionRef.trim());
+    setJourneyRef(journeyRef.trim());
+  };
+
+  return <div className="correctness-world-shell">
+    <nav className="correctness-world-switch" aria-label={t('Correctness world')}>
+      <button type="button" aria-pressed={world === 'business'} onClick={() => changeWorld('business')}>
+        {t('Business Solution')}
+      </button>
+      <button type="button" aria-pressed={world === 'legacy'} onClick={() => changeWorld('legacy')}>
+        {t('Legacy graph')}
+      </button>
+    </nav>
+    {world === 'legacy' ? <CorrectnessStudioSurface {...props} /> : <main className="correctness-studio">
+      <header className="correctness-workspace-header">
+        <div className="correctness-workspace-identity"><p className="eyebrow">{t('BUSINESS SOLUTION ASSETS')}</p>
+          <h2>{t('Golden expectations and controlled Fixtures')}</h2>
+          <p>{t('Inspect accumulated business test assets without exposing them to the coding Agent.')}</p></div>
+      </header>
+      <section className="correctness-business-coordinate">
+        <label>{t('Solution reference')}<input value={solutionRef} onChange={(event) => setSolutionRef(event.target.value)} /></label>
+        <label>{t('Journey reference')}<input value={journeyRef} onChange={(event) => setJourneyRef(event.target.value)} /></label>
+        <button type="button" onClick={openBusinessAssets} disabled={!solutionRef.trim() || !journeyRef.trim()}>
+          {t('Open business assets')}
+        </button>
+      </section>
+      {solutionRef.trim() && journeyRef.trim() && <BusinessSolutionAssets
+        solutionRef={solutionRef.trim()} journeyRef={journeyRef.trim()} api={props.businessApi}
+      />}
+    </main>}
+  </div>;
 }
 
 function CorrectnessStudioSurface({

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import I18nProvider from '../i18n/I18nProvider';
 import { createGuidedAuthoringTelemetry } from '../shared/guided-telemetry/guidedTelemetry';
 import CorrectnessStudio, { type CorrectnessStudioApi } from './CorrectnessStudio';
+import type { BusinessSolutionAssetsApi } from './api/businessSolutionApi';
 import {
   deploymentCapabilities,
   envelope,
@@ -16,11 +17,15 @@ describe('CorrectnessStudio', () => {
   let host: HTMLDivElement;
   let root: Root | null;
   let api: CorrectnessStudioApi;
+  let businessApi: BusinessSolutionAssetsApi;
   const capabilities = vi.fn();
   const workspace = vi.fn();
   const targets = vi.fn();
   const definitions = vi.fn();
   const telemetrySink = vi.fn();
+  const golden = vi.fn();
+  const goldenMaterial = vi.fn();
+  const fixtures = vi.fn();
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -33,6 +38,9 @@ describe('CorrectnessStudio', () => {
     targets.mockReset();
     definitions.mockReset();
     telemetrySink.mockReset();
+    golden.mockReset();
+    goldenMaterial.mockReset();
+    fixtures.mockReset();
     const preferences = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -47,6 +55,7 @@ describe('CorrectnessStudio', () => {
     });
     window.localStorage.clear();
     api = { capabilities, workspace, targets, definitions };
+    businessApi = { golden, goldenMaterial, fixtures };
   });
 
   afterEach(async () => {
@@ -159,12 +168,50 @@ describe('CorrectnessStudio', () => {
     expect(host.textContent).not.toContain('APPROVED');
   });
 
+  it('separates business assets from legacy graph correctness and loads protected Golden on demand', async () => {
+    window.history.replaceState({}, '', '/correctness/?correctnessWorld=business'
+      + '&solutionRef=sol%3Acancel&journeyRef=journey%3Acancel');
+    golden.mockResolvedValue({
+      solutionRef: 'sol:cancel', journeyRef: 'journey:cancel', caseSetRef: 'caseSet:cancel',
+      revision: 4, approvalState: 'ACTIVE', cases: [{
+        caseId: 'G1', lifecycle: 'ACTIVE', qualityState: 'GREEN', factCount: 2,
+        assumptionCount: 1, goldenCaseFingerprint: `sha256:${'a'.repeat(64)}`,
+        materialViewable: true,
+      }],
+    });
+    fixtures.mockResolvedValue([{ capabilityKind: 'FEATURE', capabilityRef: 'feature:party',
+      businessLabel: '取消责任方', fixtures: [{ fixtureAssetId: 'fixture:party', revision: 2,
+        name: '乘客责任样本', variantKey: 'passenger', lifecycle: 'ACTIVE',
+        classification: 'INTERNAL', schemaFingerprint: `sha256:${'b'.repeat(64)}`, usageCount: 3 }] }]);
+    goldenMaterial.mockResolvedValue({ caseId: 'G1', businessIntent: '乘客超时取消由乘客承担',
+      givenFacts: { 取消责任方: '乘客' }, dependencyAssumptions: [{ capability: '退款执行', behavior: 'STUB' }],
+      expectedOutcome: { disposition: '维持' }, oracleOwner: '业务负责人' });
+
+    await render();
+
+    expect(capabilities).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('Business Golden');
+    expect(host.textContent).toContain('Business Fixtures');
+    expect(host.textContent).toContain('取消责任方');
+    expect(host.textContent).not.toContain('乘客超时取消由乘客承担');
+    await click(button('Load protected data'));
+    expect(goldenMaterial).toHaveBeenCalledWith('sol:cancel', 'journey:cancel', 'G1');
+    expect(host.textContent).toContain('乘客超时取消由乘客承担');
+    expect(host.textContent).toContain('退款执行');
+
+    capabilities.mockResolvedValue(deploymentCapabilities({ correctnessWorkspaceApi: false }));
+    await click(button('Legacy graph'));
+    expect(capabilities).toHaveBeenCalledOnce();
+    expect(window.location.search).toContain('correctnessWorld=legacy');
+  });
+
   async function render() {
     await act(async () => {
       root = createRoot(host);
       root.render(
         <I18nProvider>
-          <CorrectnessStudio api={api} telemetry={createGuidedAuthoringTelemetry(telemetrySink)} />
+          <CorrectnessStudio api={api} businessApi={businessApi}
+            telemetry={createGuidedAuthoringTelemetry(telemetrySink)} />
         </I18nProvider>,
       );
       await Promise.resolve();

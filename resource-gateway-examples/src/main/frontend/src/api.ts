@@ -1292,6 +1292,8 @@ export type CorrectnessApiPurpose =
   | 'CORRECTNESS_REVIEW'
   | 'CORRECTNESS_FIXTURE_MATERIAL_READ'
   | 'CORRECTNESS_FIXTURE_MATERIAL_WRITE'
+  | 'SOLUTION_GOLDEN_REVIEW'
+  | 'AGENT_TDD_GOVERNED_WRITE'
   | 'TEST_EXECUTION'
   | 'TEST_SUITE_READ'
   | 'TEST_SCENARIO_PUBLISH'
@@ -1305,6 +1307,8 @@ const CORRECTNESS_API_PATHS = [
   '/api/visual/scenario-draft-sets-v2/',
   '/api/visual/fixture-assets/',
   '/api/visual/fixture-materials',
+  '/api/solution/golden-review/',
+  '/api/agent-tdd/solutions/',
 ] as const;
 
 export interface CorrectnessApiExchangeOptions {
