@@ -21,7 +21,8 @@ AUTHORING_TOOLS = {
 }
 READ_TOOLS = {
     "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
-    "rg.journey.next", "rg.solution.golden.list",
+    "rg.journey.next", "rg.solution.golden.list", "rg.solution.getContract",
+    "rg.solution.readiness", "rg.solution.performance",
 }
 FORBIDDEN_PREFIXES = ("rg.dsl.", "rg.tool.", "rg.simulate", "rg.fixture.")
 PASSIVE_TRACE_ITEMS = {"agent_message", "reasoning", "todo_list", "error"}
@@ -651,9 +652,15 @@ def contains_value(value: Any, expected: str) -> bool:
     return value == expected
 
 
-def successful_golden_with(calls: list[dict[str, Any]], predicate: Any) -> bool:
-    """Return whether a successful GOLDEN proposal contains a required private case construct."""
-    return any(predicate(call["arguments"]) for call in successful(calls, "rg.solution.golden.propose"))
+def successful_golden_with(calls: list[dict[str, Any]], chain: dict[str, Any],
+                           predicate: Any) -> bool:
+    """Require successful GOLDEN proposals to target the certified Solution and owning journey."""
+    proposals = successful(calls, "rg.solution.golden.propose")
+    if any(call["arguments"].get("solutionRef") != chain["solutionRef"]
+           or call["arguments"].get("journeyRef") != chain["journeyRef"]
+           for call in proposals):
+        raise CertificationFailure("controlled GOLDEN proposal is not bound to the certified Solution")
+    return any(predicate(call["arguments"]) for call in proposals)
 
 
 def setup_assets(setup: dict[str, Any], family_id: str) -> list[dict[str, Any]]:
@@ -758,7 +765,7 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
         require_business_question(calls, final_message, family_id)
         outcome = "RECONFIRMATION_STOP"
     elif family_id == "fact-assumption":
-        captured = successful_golden_with(calls, lambda arguments:
+        captured = successful_golden_with(calls, chain, lambda arguments:
                                           contains_value(arguments, "givenFacts")
                                           or any(key in arguments for key in ("given", "givenFacts"))
                                           or any(isinstance(case, dict)
@@ -773,7 +780,8 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
             "action-stubbing": "SUCCEEDS_WITHOUT_EFFECT",
             "forbidden-dependency": "MUST_NOT_BE_USED",
         }[family_id]
-        if not successful_golden_with(calls, lambda arguments: contains_value(arguments, expected_value)):
+        if not successful_golden_with(
+                calls, chain, lambda arguments: contains_value(arguments, expected_value)):
             raise CertificationFailure(
                 f"family {family_id} did not capture controlled outcome {expected_value}")
         outcome = {

@@ -225,7 +225,10 @@ def family_events(family_id: str) -> list[dict]:
                 call("rg_author", "rg.solution.golden.propose", {}, {
             "caseSetRef": "case-set:fact", "proposalStatus": "PENDING",
         }), summary]
-        body[1]["item"]["arguments"] = {"cases": [{"givenFacts": {"责任方": "乘客"}}]}
+        body[1]["item"]["arguments"] = {
+            "journeyRef": "journey:test", "solutionRef": "solution:test",
+            "cases": [{"givenFacts": {"责任方": "乘客"}}],
+        }
     elif family_id in {"dependency-unavailable", "action-stubbing", "forbidden-dependency"}:
         outcome = {
             "dependency-unavailable": "UNAVAILABLE",
@@ -234,6 +237,7 @@ def family_events(family_id: str) -> list[dict]:
         }[family_id]
         body = [call("rg_read", "rg.entity.list", {"kind": "SOLUTION"}, {"items": []}),
                 call("rg_author", "rg.solution.golden.propose", {
+            "journeyRef": "journey:test", "solutionRef": "solution:test",
             "cases": [{"dependencyAssumptions": [{"outcome": outcome}]}],
         }, {"caseSetRef": f"case-set:{family_id}", "proposalStatus": "PENDING"}), summary]
     elif family_id == "assumption-ambiguity":
@@ -561,6 +565,26 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         synonym = next(item for item in certificate["familyEvidence"]
                        if item["familyId"] == "synonym-rewrite")
         self.assertEqual("TOP1_MATCH", synonym["observedOutcome"])
+
+    def test_accepts_solution_contract_as_a_business_read(self) -> None:
+        events = family_events("fact-assumption")
+        events.insert(1, call("rg_read", "rg.solution.getContract",
+                              {"solutionRef": "solution:test"},
+                              {"solutionRef": "solution:test"}))
+
+        certificate = self.certify_aux(family_overrides={"fact-assumption": events})
+        fact = next(item for item in certificate["familyEvidence"]
+                    if item["familyId"] == "fact-assumption")
+        self.assertEqual("GIVEN_FACT_CAPTURED", fact["observedOutcome"])
+
+    def test_rejects_controlled_case_proposed_for_another_solution(self) -> None:
+        events = family_events("fact-assumption")
+        proposal = next(event for event in events
+                        if event.get("item", {}).get("tool") == "rg.solution.golden.propose")
+        proposal["item"]["arguments"]["solutionRef"] = "solution:other"
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "certified Solution"):
+            self.certify_aux(family_overrides={"fact-assumption": events})
 
     def test_accepts_business_search_as_surface_interference_first_tool(self) -> None:
         events = family_events("surface-interference")
