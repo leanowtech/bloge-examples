@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetBlogeApiTransport, setBlogeApiTransport } from '../../api';
-import { businessSolutionAssetsApi } from './businessSolutionApi';
+import { createBusinessSolutionAssetsApi } from './businessSolutionApi';
 
 describe('businessSolutionAssetsApi', () => {
   afterEach(() => resetBlogeApiTransport());
@@ -15,15 +15,25 @@ describe('businessSolutionAssetsApi', () => {
       });
     });
 
-    await businessSolutionAssetsApi.golden('sol:cancel fee', 'journey:review');
-    await businessSolutionAssetsApi.goldenMaterial('sol:cancel fee', 'journey:review', 'G 1');
-    await businessSolutionAssetsApi.fixtures('sol:cancel fee');
+    const api = createBusinessSolutionAssetsApi(() => ({ Authorization: 'Bearer reviewer-token' }));
+    await api.golden('sol:cancel fee', 'journey:review');
+    await api.goldenMaterial('sol:cancel fee', 'journey:review', 'G 1');
+    await api.fixtures('sol:cancel fee');
+    await api.coverage('sol:cancel fee');
 
     expect(requests[0]?.input).toBe('/api/solution/golden-review/sol%3Acancel%20fee?journeyRef=journey%3Areview');
     expect(new Headers(requests[0]?.init?.headers).get('X-Purpose')).toBe('SOLUTION_GOLDEN_REVIEW');
+    expect(new Headers(requests[0]?.init?.headers).get('Authorization')).toBe('Bearer reviewer-token');
     expect(requests[1]?.input).toContain('/cases/G%201/material?journeyRef=journey%3Areview');
     expect(new Headers(requests[1]?.init?.headers).get('X-Purpose')).toBe('SOLUTION_GOLDEN_REVIEW');
     expect(requests[2]?.input).toBe('/api/agent-tdd/solutions/sol%3Acancel%20fee/fixtures');
-    expect(new Headers(requests[2]?.init?.headers).get('X-Purpose')).toBe('AGENT_TDD_GOVERNED_WRITE');
+    expect(new Headers(requests[2]?.init?.headers).get('X-Purpose')).toBe('SOLUTION_GOLDEN_REVIEW');
+    expect(requests[3]?.input).toBe('/api/solution/coverage/sol%3Acancel%20fee');
+    requests.forEach((request) => {
+      expect(request.init?.headers).toMatchObject({
+        Authorization: 'Bearer reviewer-token',
+        'X-Purpose': 'SOLUTION_GOLDEN_REVIEW',
+      });
+    });
   });
 });

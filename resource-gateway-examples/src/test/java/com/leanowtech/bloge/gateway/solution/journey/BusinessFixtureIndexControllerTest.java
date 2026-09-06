@@ -21,9 +21,10 @@ class BusinessFixtureIndexControllerTest {
         BusinessFixtureIndexService index = mock(BusinessFixtureIndexService.class);
         HttpHeaders headers = new HttpHeaders();
         IntegrationRequestContext reviewer = new IntegrationRequestContext(
-                "tenant-a", "org-a", "project-a", "test", "sg", "USER", "reviewer",
-                "", "AGENT_TDD_GOVERNANCE", "corr-1");
-        when(authenticator.authenticate(headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE))
+                "tenant-a", "org-a", "project-a", "test", "sg", "HUMAN", "reviewer",
+                "", "SOLUTION_GOLDEN_REVIEW", "corr-1",
+                java.util.Set.of("solution-golden-reviewers"), "INTERNAL", "");
+        when(authenticator.authenticate(headers, IntegrationOperation.SOLUTION_GOLDEN_REVIEW))
                 .thenReturn(reviewer);
         List<BusinessFixtureIndexService.CapabilityFixtures> projection = List.of(
                 new BusinessFixtureIndexService.CapabilityFixtures(
@@ -33,9 +34,10 @@ class BusinessFixtureIndexControllerTest {
         var response = new BusinessFixtureIndexController(authenticator, index)
                 .list("sol:cancel", headers);
 
-        assertThat(response.getHeaders().getCacheControl()).contains("no-store");
+        assertThat(response.getHeaders().getCacheControl()).contains("no-store", "private");
         assertThat(response.getHeaders().getPragma()).isEqualTo("no-cache");
         assertThat(response.getBody()).isEqualTo(projection);
         verify(index).listForSolution("sol:cancel", reviewer);
+        verify(authenticator).authenticate(headers, IntegrationOperation.SOLUTION_GOLDEN_REVIEW);
     }
 }

@@ -1308,6 +1308,7 @@ const CORRECTNESS_API_PATHS = [
   '/api/visual/fixture-assets/',
   '/api/visual/fixture-materials',
   '/api/solution/golden-review/',
+  '/api/solution/coverage/',
   '/api/agent-tdd/solutions/',
 ] as const;
 
@@ -1317,6 +1318,8 @@ export interface CorrectnessApiExchangeOptions {
   ifMatch?: number;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /** Request-local identity headers; an explicit empty object suppresses the workload default. */
+  identityHeaders?: Record<string, string>;
 }
 
 /** Uses the host-aware transport and workload identity for the isolated Correctness API family. */
@@ -1332,7 +1335,8 @@ export async function exchangeCorrectnessApi<T>(
   return readTestingJson<T>(await sendRequest(path, {
     method: options.method ?? 'GET',
     headers: {
-      ...operatorTestHeadersProvider(),
+      ...(options.identityHeaders === undefined
+        ? operatorTestHeadersProvider() : options.identityHeaders),
       'X-Purpose': purpose,
       ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(options.ifMatch === undefined ? {} : { 'If-Match': String(options.ifMatch) }),

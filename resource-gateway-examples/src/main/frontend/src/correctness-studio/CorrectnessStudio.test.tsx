@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetBlogeApiTransport, setBlogeApiTransport } from '../api';
 import I18nProvider from '../i18n/I18nProvider';
 import { createGuidedAuthoringTelemetry } from '../shared/guided-telemetry/guidedTelemetry';
 import CorrectnessStudio, { type CorrectnessStudioApi } from './CorrectnessStudio';
@@ -26,6 +27,7 @@ describe('CorrectnessStudio', () => {
   const golden = vi.fn();
   const goldenMaterial = vi.fn();
   const fixtures = vi.fn();
+  const coverage = vi.fn();
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -41,6 +43,7 @@ describe('CorrectnessStudio', () => {
     golden.mockReset();
     goldenMaterial.mockReset();
     fixtures.mockReset();
+    coverage.mockReset();
     const preferences = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -55,11 +58,12 @@ describe('CorrectnessStudio', () => {
     });
     window.localStorage.clear();
     api = { capabilities, workspace, targets, definitions };
-    businessApi = { golden, goldenMaterial, fixtures };
+    businessApi = { golden, goldenMaterial, fixtures, coverage };
   });
 
   afterEach(async () => {
     if (root) await act(async () => root?.unmount());
+    resetBlogeApiTransport();
     host.remove();
   });
 
@@ -186,6 +190,19 @@ describe('CorrectnessStudio', () => {
     goldenMaterial.mockResolvedValue({ caseId: 'G1', businessIntent: '乘客超时取消由乘客承担',
       givenFacts: { 取消责任方: '乘客' }, dependencyAssumptions: [{ capability: '退款执行', behavior: 'STUB' }],
       expectedOutcome: { disposition: '维持' }, oracleOwner: '业务负责人' });
+    coverage.mockResolvedValue({
+      solutionRef: 'sol:cancel', inventoryId: 'solution-coverage:sol:cancel', inventoryRevision: 3,
+      solutionFingerprint: `sha256:${'c'.repeat(64)}`,
+      summary: { total: 3, covered: 1, uncovered: 2, highRiskUncovered: 1 },
+      obligations: [
+        { id: 'rule:scn:cancel:R1', obligationFingerprint: `sha256:${'d'.repeat(64)}`,
+          dimension: 'RULE', risk: 'HIGH', covered: true, byCaseIds: ['G1'] },
+        { id: 'otherwise:scn:cancel', obligationFingerprint: `sha256:${'e'.repeat(64)}`,
+          dimension: 'OTHERWISE', risk: 'MEDIUM', covered: false, byCaseIds: [] },
+        { id: 'fault:ins:refund:UNAVAILABLE', obligationFingerprint: `sha256:${'f'.repeat(64)}`,
+          dimension: 'DEPENDENCY_FAULT', risk: 'HIGH', covered: false, byCaseIds: [] },
+      ],
+    });
 
     await render();
 
@@ -193,6 +210,17 @@ describe('CorrectnessStudio', () => {
     expect(host.textContent).toContain('Business Golden');
     expect(host.textContent).toContain('Business Fixtures');
     expect(host.textContent).toContain('取消责任方');
+    expect(coverage).toHaveBeenCalledWith('sol:cancel');
+    const coveragePanel = host.querySelector('[data-testid="business-solution-coverage"]');
+    expect(coveragePanel).not.toBeNull();
+    expect(coveragePanel?.textContent).toContain('1 of 3 covered');
+    expect(coveragePanel?.textContent).toContain('Decision rules');
+    expect(coveragePanel?.textContent).toContain('Fallback paths');
+    expect(coveragePanel?.textContent).toContain('Dependency failures');
+    expect(coveragePanel?.querySelectorAll('[data-coverage="covered"]')).toHaveLength(1);
+    expect(coveragePanel?.querySelectorAll('[data-coverage="uncovered"]')).toHaveLength(2);
+    expect(coveragePanel?.textContent).toContain('rule:scn:cancel:R1');
+    expect(coveragePanel?.textContent).toContain('G1');
     expect(host.textContent).not.toContain('乘客超时取消由乘客承担');
     await click(button('Load protected data'));
     expect(goldenMaterial).toHaveBeenCalledWith('sol:cancel', 'journey:cancel', 'G1');
@@ -205,12 +233,47 @@ describe('CorrectnessStudio', () => {
     expect(window.location.search).toContain('correctnessWorld=legacy');
   });
 
-  async function render() {
+  it('keeps the reviewer credential in page memory and sends it only to business human APIs', async () => {
+    window.history.replaceState({}, '', '/correctness/?correctnessWorld=business'
+      + '&solutionRef=sol%3Acancel&journeyRef=journey%3Acancel');
+    const requests: Array<{ input: string; headers: Headers }> = [];
+    setBlogeApiTransport(async (request, init) => {
+      const input = String(request);
+      requests.push({ input, headers: new Headers(init?.headers) });
+      if (input.includes('/golden-review/')) return jsonResponse({
+        solutionRef: 'sol:cancel', journeyRef: 'journey:cancel', caseSetRef: 'caseSet:cancel',
+        revision: 4, approvalState: 'APPROVED', cases: [],
+      });
+      if (input.includes('/fixtures')) return jsonResponse([]);
+      return jsonResponse({
+        solutionRef: 'sol:cancel', inventoryId: 'solution-coverage:sol:cancel', inventoryRevision: 3,
+        solutionFingerprint: `sha256:${'a'.repeat(64)}`, obligations: [],
+        summary: { total: 0, covered: 0, uncovered: 0, highRiskUncovered: 0 },
+      });
+    });
+    await render(null);
+
+    await change(input('Reviewer credential'), 'reviewer-secret-token');
+    await click(button('Open protected business assets'));
+    await vi.waitFor(() => expect(requests).toHaveLength(3));
+
+    expect(requests.map((request) => request.headers.get('Authorization')))
+      .toEqual(['Bearer reviewer-secret-token', 'Bearer reviewer-secret-token', 'Bearer reviewer-secret-token']);
+    expect(requests.map((request) => request.headers.get('X-Purpose')))
+      .toEqual(['SOLUTION_GOLDEN_REVIEW', 'SOLUTION_GOLDEN_REVIEW', 'SOLUTION_GOLDEN_REVIEW']);
+    expect(window.location.href).not.toContain('reviewer-secret-token');
+    expect([...Array(window.localStorage.length)].map((_, index) => window.localStorage.key(index))
+      .some((key) => window.localStorage.getItem(key ?? '')?.includes('reviewer-secret-token'))).toBe(false);
+    expect(host.textContent).not.toContain('reviewer-secret-token');
+    expect(host.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  async function render(selectedBusinessApi: BusinessSolutionAssetsApi | null = businessApi) {
     await act(async () => {
       root = createRoot(host);
       root.render(
         <I18nProvider>
-          <CorrectnessStudio api={api} businessApi={businessApi}
+          <CorrectnessStudio api={api} businessApi={selectedBusinessApi ?? undefined}
             telemetry={createGuidedAuthoringTelemetry(telemetrySink)} />
         </I18nProvider>,
       );
@@ -238,6 +301,12 @@ async function click(element: HTMLElement) {
     element.click();
     await Promise.resolve();
     await Promise.resolve();
+  });
+}
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200, headers: { 'Content-Type': 'application/json' },
   });
 }
 

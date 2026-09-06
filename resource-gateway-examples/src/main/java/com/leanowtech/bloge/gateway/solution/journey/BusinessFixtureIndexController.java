@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.solution.journey;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -35,8 +37,17 @@ public final class BusinessFixtureIndexController {
     public ResponseEntity<List<BusinessFixtureIndexService.CapabilityFixtures>> list(
             @PathVariable String solutionRef, @RequestHeader HttpHeaders headers) {
         var identity = authenticator.authenticate(
-                headers, IntegrationOperation.AGENT_TDD_GOVERNED_WRITE);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                headers, IntegrationOperation.SOLUTION_GOLDEN_REVIEW);
+        boolean humanReviewer = "HUMAN".equals(identity.actorType())
+                && identity.groups().stream().anyMatch(
+                        BusinessGoldenReviewService.REVIEWER_GROUP::equalsIgnoreCase);
+        if (!humanReviewer) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.SOLUTION.FIXTURE_INDEX.HUMAN_REVIEW_FORBIDDEN",
+                    "Solution Fixture metadata requires an authorized human reviewer.",
+                    identity.correlationId(), java.util.Map.of()));
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore().cachePrivate())
                 .header(HttpHeaders.PRAGMA, "no-cache")
                 .body(index.listForSolution(solutionRef, identity));
     }
