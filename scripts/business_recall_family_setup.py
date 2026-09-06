@@ -397,7 +397,7 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
         api, fixture["preflightQueries"]["assumption-ambiguity"])
     observed_assumptions = [candidate for candidate in assumption_candidates
                             if any(matches_asset(candidate, seed) for seed in assumption_seeds)]
-    if assumption_data.get("status") != "INCOMPLETE" \
+    if assumption_data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \
             or len(observed_assumptions) != 2 \
             or len({candidate.get("businessName") for candidate in observed_assumptions}) != 1:
         raise SetupFailure("assumption preflight did not observe two same-name seeded actions")

@@ -271,7 +271,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                 {"familyId": "legacy-feature-partial", "status": "AMBIGUOUS",
                  "observedRoles": ["legacyPartial"], "outcome": "PARTIAL_VISIBLE",
                  "target": None},
-                {"familyId": "assumption-ambiguity", "status": "INCOMPLETE",
+                {"familyId": "assumption-ambiguity", "status": "AMBIGUOUS",
                  "observedRoles": ["assumptionAmbiguityA", "assumptionAmbiguityB"],
                  "outcome": "SAME_NAME_VISIBLE", "target": None},
                 {"familyId": "semantic-drift", "status": "STALE",

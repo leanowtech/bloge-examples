@@ -71,7 +71,7 @@ SETUP_PREFLIGHT_STATUSES = {
     "multiple-exact": frozenset({"AMBIGUOUS"}),
     "legacy-feature-partial": frozenset({"INCOMPLETE", "AMBIGUOUS"}),
     "semantic-drift": frozenset({"STALE"}),
-    "assumption-ambiguity": frozenset({"INCOMPLETE"}),
+    "assumption-ambiguity": frozenset({"INCOMPLETE", "AMBIGUOUS"}),
 }
 
 

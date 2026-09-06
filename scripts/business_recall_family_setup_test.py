@@ -210,6 +210,23 @@ class BusinessRecallSetupTest(unittest.TestCase):
             near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
             MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
 
+    def test_assumption_preflight_accepts_two_same_name_actions_in_ambiguous_results(self) -> None:
+        class AmbiguousAssumptionApi(FakeApi):
+            def mcp(self, tool: str, arguments: dict, *, purpose: str, surface: str) -> dict:
+                result = super().mcp(tool, arguments, purpose=purpose, surface=surface)
+                if tool == "rg.capability.search" and arguments["query"].get("intent") == "执行退款":
+                    return {**result, "status": "AMBIGUOUS"}
+                return result
+
+        api = AmbiguousAssumptionApi()
+        near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
+        manifest = MODULE.manifest(api, self.fixture, MODULE.PHASE_REMAINING, near)
+        assumption = next(item for item in manifest["preflights"]
+                          if item["familyId"] == "assumption-ambiguity")
+
+        self.assertEqual("AMBIGUOUS", assumption["status"])
+        self.assertEqual("SAME_NAME_VISIBLE", assumption["outcome"])
+
     def test_near_phase_seeds_only_its_distractor_and_runs_preflight(self) -> None:
         api = FakeApi()
         near = MODULE.manifest(api, self.fixture, MODULE.PHASE_NEAR, primary=self.primary)
