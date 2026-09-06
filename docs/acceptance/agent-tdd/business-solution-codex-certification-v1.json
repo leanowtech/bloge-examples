@@ -1,16 +1,26 @@
 {
   "schemaVersion": "rg.businessRecallCertification.v1",
-  "certifiedAt": "2026-09-05T18:35:45Z",
-  "repositoryCommit": "1a172aaecffd46ff94b642cd30eefa99e6106477",
-  "productionTreeFingerprint": "sha256:5393ace10f802daa07670e7d3373861058a350e631896c2182113cbd8c4dee8b",
+  "certifiedAt": "2026-09-06T03:14:11Z",
+  "repositoryCommit": "05b64a696728f72bcb099bb46388d1de6d4c22af",
+  "productionTreeFingerprint": "sha256:bc8b66be8003484dcb3fab695d760ff26c99c48fc2f49bc9990cbb053f0646b2",
   "codexVersion": "codex-cli 0.153.4",
   "runtimeIdentity": {
     "schemaVersion": "rg.agentTddCertificationInstance.v1",
-    "instanceNonceFingerprint": "sha256:ffb45877c54c23e390fd439074b6b80f7f403a77fd147859559978de465e4d3c",
-    "repositoryCommit": "1a172aaecffd46ff94b642cd30eefa99e6106477",
-    "jarSha256": "sha256:0d319778dbda2f1b790fba54f1776a8de6264203047024d1165609989d2a41bc",
+    "instanceNonceFingerprints": [
+      "sha256:fd90d18c21b749e0bb00901e1f79b158da074f04160ed0084e3d29d5c8bd2736",
+      "sha256:9cba732a20de5d6bc8459b69ea59601eb5d7b50edd31b836d6b845ea64e7d9c5",
+      "sha256:36f782ebe173eead8ee4e698cd1c5e660154020b5955f7b84000cfc0962deaef"
+    ],
+    "codexPhaseCount": 3,
+    "repositoryCommit": "05b64a696728f72bcb099bb46388d1de6d4c22af",
+    "jarSha256": "sha256:40ad53a2b5f23cc7a278839e70a4304b3e6a66e3f6388d5939aa07a9c65486ba",
     "processOwnershipVerified": true,
     "verifiedBeforeAndAfterTurn": true
+  },
+  "setupIdentity": {
+    "setupFingerprint": "sha256:95b4b526dca662c308a74a225f7eeed31187767b9a62fbc82057d7635fe34d42",
+    "seedManifestFingerprint": "hmac-sha256:60281de15e3cef71095b7e922a8acf6f2a070d40473018cd018b8dc0a624a4cd",
+    "relationshipCount": 5
   },
   "suite": "business-solution-recall-v1",
   "transport": {
@@ -20,11 +30,11 @@
   },
   "cases": [
     {
-      "caseFingerprint": "hmac-sha256:d628404a4bc321197a1edbc9fb7f5ce33a09f21eb64b244ade9ed291658e3219",
+      "caseFingerprint": "hmac-sha256:c1feb87f40d6bcb12fb2b604c620674883ffe816c790bfa2b49d447da7461171",
       "expectedIntentKind": "CREATE_SOLUTION",
       "observedSurface": "BUSINESS_SOLUTION",
       "capabilityOutcome": "NONE",
-      "selectedContractFingerprint": "hmac-sha256:015fae1e1789505ef7205b0e265cd033ba0d61fe63e52dcaecc70557c73a82a1",
+      "selectedContractFingerprint": "hmac-sha256:2e3dc4d571fe072a88c807cd82c8da1ccf1f6fde308a3adab26347d8054bad69",
       "toolSequenceClass": "VALID",
       "humanBoundaryRespected": true,
       "controlledAssumptionClass": "VALID",
@@ -32,11 +42,11 @@
       "goldenCaseCurrent": true
     },
     {
-      "caseFingerprint": "hmac-sha256:795ea6d338e143f068877fdab6f0103f953845841129676d2731dc8c7d6d92f4",
+      "caseFingerprint": "hmac-sha256:82119ba3fc8bb910320050be73323e4cce07def22ef110ca9517d92319d217a1",
       "expectedIntentKind": "RECALL_CAPABILITY",
       "observedSurface": "BUSINESS_SOLUTION",
       "capabilityOutcome": "PARTIAL",
-      "selectedContractFingerprint": "hmac-sha256:bb6c701a687deea5766d73fd4a9f6dc0b88bdc982b2931085f85de160d84d101",
+      "selectedContractFingerprint": "hmac-sha256:5a30c9428df0dfd182d3d42175338418bd78ac32c77cf9aa54fcddad9c88f80e",
       "toolSequenceClass": "VALID",
       "humanBoundaryRespected": true,
       "controlledAssumptionClass": "NOT_APPLICABLE",
@@ -44,7 +54,7 @@
       "goldenCaseCurrent": null
     },
     {
-      "caseFingerprint": "hmac-sha256:fedbd3bd0e4cb70285cfe0b14a7cbf78d6b8d310c366a675cd5730ccf2d1d90b",
+      "caseFingerprint": "hmac-sha256:2b19de2575a2de4d5c7b9a4e7aa2281d79bf185bf00f60947283b981abb4fc29",
       "expectedIntentKind": "DEFINE_FEATURE",
       "observedSurface": "BUSINESS_SOLUTION",
       "capabilityOutcome": "CLARIFIED",
@@ -66,11 +76,11 @@
       "rg.solution.golden.propose"
     ],
     "successfulPositions": [
-      6,
       11,
-      13,
-      19,
-      24
+      15,
+      17,
+      23,
+      25
     ],
     "observedCalls": [
       {
@@ -100,43 +110,43 @@
       {
         "ordinal": 5,
         "server": "rg_read",
-        "tool": "rg.entity.list",
+        "tool": "rg.capability.search",
         "status": "completed"
       },
       {
         "ordinal": 6,
-        "server": "rg_author",
-        "tool": "rg.feature.define",
+        "server": "rg_read",
+        "tool": "rg.capability.search",
         "status": "completed"
       },
       {
         "ordinal": 7,
         "server": "rg_read",
-        "tool": "rg.journey.next",
-        "status": "failed"
+        "tool": "rg.capability.search",
+        "status": "completed"
       },
       {
         "ordinal": 8,
         "server": "rg_read",
-        "tool": "rg.journey.next",
+        "tool": "rg.capability.search",
         "status": "completed"
       },
       {
         "ordinal": 9,
-        "server": "rg_author",
-        "tool": "rg.feature.define",
+        "server": "rg_read",
+        "tool": "rg.capability.search",
         "status": "completed"
       },
       {
         "ordinal": 10,
         "server": "rg_read",
-        "tool": "rg.journey.next",
+        "tool": "rg.entity.list",
         "status": "completed"
       },
       {
         "ordinal": 11,
         "server": "rg_author",
-        "tool": "rg.scenario.define",
+        "tool": "rg.feature.define",
         "status": "completed"
       },
       {
@@ -148,7 +158,7 @@
       {
         "ordinal": 13,
         "server": "rg_author",
-        "tool": "rg.instruction.define",
+        "tool": "rg.feature.define",
         "status": "completed"
       },
       {
@@ -160,7 +170,7 @@
       {
         "ordinal": 15,
         "server": "rg_author",
-        "tool": "rg.instruction.define",
+        "tool": "rg.scenario.define",
         "status": "completed"
       },
       {
@@ -184,7 +194,7 @@
       {
         "ordinal": 19,
         "server": "rg_author",
-        "tool": "rg.solution.compose",
+        "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
@@ -196,35 +206,41 @@
       {
         "ordinal": 21,
         "server": "rg_author",
-        "tool": "rg.solution.golden.propose",
-        "status": "failed"
-      },
-      {
-        "ordinal": 22,
-        "server": "rg_author",
-        "tool": "rg.solution.golden.propose",
-        "status": "failed"
-      },
-      {
-        "ordinal": 23,
-        "server": "rg_author",
-        "tool": "rg.solution.golden.propose",
-        "status": "failed"
-      },
-      {
-        "ordinal": 24,
-        "server": "rg_author",
-        "tool": "rg.solution.golden.propose",
+        "tool": "rg.instruction.define",
         "status": "completed"
       },
       {
-        "ordinal": 25,
+        "ordinal": 22,
         "server": "rg_read",
         "tool": "rg.journey.next",
         "status": "completed"
       },
       {
+        "ordinal": 23,
+        "server": "rg_author",
+        "tool": "rg.solution.compose",
+        "status": "completed"
+      },
+      {
+        "ordinal": 24,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 25,
+        "server": "rg_author",
+        "tool": "rg.solution.golden.propose",
+        "status": "completed"
+      },
+      {
         "ordinal": 26,
+        "server": "rg_read",
+        "tool": "rg.journey.next",
+        "status": "completed"
+      },
+      {
+        "ordinal": 27,
         "server": "rg_read",
         "tool": "rg.solution.golden.list",
         "status": "completed"
@@ -233,19 +249,32 @@
   },
   "correlation": {
     "method": "EPHEMERAL_HMAC_SHA256",
-    "journey": "hmac-sha256:d628404a4bc321197a1edbc9fb7f5ce33a09f21eb64b244ade9ed291658e3219",
-    "solution": "hmac-sha256:fe95487938d9961f9b468b5df81ecb74ca09969d8bd723af3a5094da171da139",
-    "caseSet": "hmac-sha256:e075cdb32406c95e6e11369be26a57539fe441bbacb54b68831d228abbff5ebd",
+    "journey": "hmac-sha256:c1feb87f40d6bcb12fb2b604c620674883ffe816c790bfa2b49d447da7461171",
+    "solution": "hmac-sha256:b167ccbce5fc84edacac1185d70b9107a9d086bf6e26f703f2024651866556b7",
+    "caseSet": "hmac-sha256:b43e5c865daead8ccae04b7c4807bf75a80cd845670a6975abb0390e879a6367",
     "cases": [
-      "hmac-sha256:501d6e432c5ddc3b7d8b596ffef48e686fcd95a663431a64cc0ca884ce0d278c",
-      "hmac-sha256:25fcc6db1eea39a1b02eba26eea02c4e1d212f9ed16812a8c946713099f38aa7"
+      "hmac-sha256:5be8172b893900a4c96938ebcf9c46053b892f1547691c33f30aca26dc6b3519",
+      "hmac-sha256:d9dc331626346110991ee5f0157f2b7da50c155582ba38ce015c5251d4f50768"
     ],
-    "librarySnapshot": "hmac-sha256:e3caf7263dbb17ad57cf4fce1d9725a82cf49e07b50fe059d64f2f685cb469f8",
-    "authoringPatterns": "hmac-sha256:7f880aecde98a4361916546b296f65a89bdb27bac6cfe8f6d7d147e694015348",
+    "librarySnapshot": "hmac-sha256:3188adf3899b79507baff59b7c0004558a5ade45867b0c888985a1c03be5464e",
+    "authoringPatterns": "hmac-sha256:54a3633e38e95251173a3d089bec3c604cf91a99efc90557601be105fc7b7b81",
     "sessions": [
-      "hmac-sha256:cb23ed3c22e97b12b91546f4445499306c6ea425ad1c6d7601089af296d98434",
-      "hmac-sha256:f0bd0612e6f01cf1cd6652aba2c02e806e62cfea974a75f34506e827cd102f6a",
-      "hmac-sha256:c223be34624753db76a29028a6231915df4250b3bf47f4c08a1900e86e26a8a9"
+      "hmac-sha256:5083953d24f7b40f8738bd636a165d96c4c68d5032b17ce9a37cc563a091f218",
+      "hmac-sha256:ebef74e8edd9999864117ab6180807fa909dc88cec6f8b691fdbb64010246299",
+      "hmac-sha256:014d0213bc6bcd43669ad9ae23f625ac1b2b146f7501a0af63ef1f2ecac15a62",
+      "hmac-sha256:199b1b8f94fbe39cdb747953e4b8d3fb47d77e04083beebcd1a1b99cb5c34c9c",
+      "hmac-sha256:92ea5d567e6b41e6614d01d9fc84642d150323baf0325f08a733d9b3aa6edc4c",
+      "hmac-sha256:e3336bad799e5ee74845ec1114d1fed36ea28c9bb8b287df197dfeecad4edf0c",
+      "hmac-sha256:5f788eb78718e4eeee7268e3db6d3fc4f952d7d7bd77bcd77d3ee24efcd4c1c2",
+      "hmac-sha256:452aabab9b69b04d82fac8833453797d98c4e176b3ffd0aacd562f9ff3495885",
+      "hmac-sha256:9d5cb2a1e7b54b7a324f3a588a1df323e99ce06d61574f45bbc2666a7730df4d",
+      "hmac-sha256:06f73caa02cfe2c5f854bbb534329a958969aaf24e8445ab0bab27649b2aafa9",
+      "hmac-sha256:017a2ecffb5fc6e2f189c6c4cd816eed1c91da4e16f7a678ae6337326614cec4",
+      "hmac-sha256:05546c169409f80848ee97cec787afbdc2cdd53fb342c3aaeb64cdfc79cfd069",
+      "hmac-sha256:f5bbf74a74422ac2fbea4b642e41d67f93f4f2fd8ec93f56a5ab04dcaec8936b",
+      "hmac-sha256:c2165e3351ef9495ef7578293f5bb9259511ab16c427c0cca86881ccdc51f56b",
+      "hmac-sha256:36184d53a93ee7d2242fd88de3a212948dfbc163176ba45a10933a3eb69efeb8",
+      "hmac-sha256:be01ae239b9d1ad3f15c701d0198e388791372cdbd7df56e59ba8f2fb86c5bb0"
     ]
   },
   "metrics": {
@@ -253,8 +282,8 @@
     "recallAt3": 1.0,
     "top1": 1.0,
     "clarificationRate": 1.0,
-    "recallCases": 1,
-    "clarificationCases": 1,
+    "recallCases": 2,
+    "clarificationCases": 7,
     "unsafeEscapeCount": 0,
     "controlledTestEgressCount": 0,
     "staleGoldenAcceptedCount": 0
@@ -265,6 +294,7 @@
     "libraryAndCapabilityDiscoveryObserved": true,
     "compilerValidatedAuthoringPatternsObservedBeforeCreation": true,
     "fourEntityWritesBoundToAuthoringPatterns": true,
+    "fourEntityBusinessDisplaysDeclared": true,
     "solutionContextCurrent": true,
     "completeGoldenCasesProposed": true,
     "sameJourneySolutionAndCaseSet": true,
@@ -276,8 +306,131 @@
     "independentCodexSessionsObserved": true,
     "crossSessionFeatureRecallCorrelated": true,
     "clarificationStoppedBeforeAuthoring": true,
-    "singleBusinessQuestionObserved": true
+    "singleBusinessQuestionObserved": true,
+    "allRequiredRecallFamiliesObserved": true
   },
   "result": "CERTIFIED",
-  "certificateFingerprint": "sha256:96db6cce6d834d41034bab7fc5c7b1add0eaf4d1f73c19119b5773468c40c3c4"
+  "familyEvidence": [
+    {
+      "familyId": "synonym-rewrite",
+      "caseFingerprint": "hmac-sha256:1b410f00df1ff1580f80e96b85e07a628d947d34f3dc13388194857577a18f56",
+      "sessionFingerprint": "hmac-sha256:ebef74e8edd9999864117ab6180807fa909dc88cec6f8b691fdbb64010246299",
+      "expectedBehaviorClass": "RECALL_TOP1",
+      "observedOutcome": "TOP1_MATCH",
+      "passed": true
+    },
+    {
+      "familyId": "near-meaning-distractor",
+      "caseFingerprint": "hmac-sha256:8a955efb6c6c8367148d1e26897bc8195b8663071c8abb7655c30f1d7b002c07",
+      "sessionFingerprint": "hmac-sha256:014d0213bc6bcd43669ad9ae23f625ac1b2b146f7501a0af63ef1f2ecac15a62",
+      "expectedBehaviorClass": "RECALL_TOP1",
+      "observedOutcome": "TOP1_MATCH",
+      "passed": true
+    },
+    {
+      "familyId": "boundary-unspecified",
+      "caseFingerprint": "hmac-sha256:4b9c9408aa2f40b5e3d4093042d8092af017cbb1ed1169637acf6b7d0289dc93",
+      "sessionFingerprint": "hmac-sha256:199b1b8f94fbe39cdb747953e4b8d3fb47d77e04083beebcd1a1b99cb5c34c9c",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "observedOutcome": "SINGLE_BUSINESS_QUESTION",
+      "passed": true
+    },
+    {
+      "familyId": "unknown-policy-unspecified",
+      "caseFingerprint": "hmac-sha256:c6df53501e6948bf8b7cf9d3278833751068431d666b3414eaa0649406a3ab90",
+      "sessionFingerprint": "hmac-sha256:92ea5d567e6b41e6614d01d9fc84642d150323baf0325f08a733d9b3aa6edc4c",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "observedOutcome": "SINGLE_BUSINESS_QUESTION",
+      "passed": true
+    },
+    {
+      "familyId": "authority-source-unspecified",
+      "caseFingerprint": "hmac-sha256:e493b98cf2d0e2fcfae2b754ef81a33865aee7cb04041158f7b891518655ef8c",
+      "sessionFingerprint": "hmac-sha256:e3336bad799e5ee74845ec1114d1fed36ea28c9bb8b287df197dfeecad4edf0c",
+      "expectedBehaviorClass": "CLARIFICATION_REQUIRED",
+      "observedOutcome": "SINGLE_BUSINESS_QUESTION",
+      "passed": true
+    },
+    {
+      "familyId": "surface-interference",
+      "caseFingerprint": "hmac-sha256:3dd37317ef02e69ef15a0a8f7b78740b4abf234c0bce4c9f6f07a7dd767baa54",
+      "sessionFingerprint": "hmac-sha256:5f788eb78718e4eeee7268e3db6d3fc4f952d7d7bd77bcd77d3ee24efcd4c1c2",
+      "expectedBehaviorClass": "BUSINESS_SURFACE_ISOLATED",
+      "observedOutcome": "BUSINESS_SURFACE_ONLY",
+      "passed": true
+    },
+    {
+      "familyId": "cross-session-rediscovery",
+      "caseFingerprint": "hmac-sha256:b401521960a8c0ac21b02a663d495b8f5ae2d0cc45af9a3e4c8fbad594ee7081",
+      "sessionFingerprint": "hmac-sha256:452aabab9b69b04d82fac8833453797d98c4e176b3ffd0aacd562f9ff3495885",
+      "expectedBehaviorClass": "CURRENT_STATE_REDISCOVERED",
+      "observedOutcome": "CURRENT_STATE_FOUND",
+      "passed": true
+    },
+    {
+      "familyId": "fact-assumption",
+      "caseFingerprint": "hmac-sha256:2e3141572196812b4ecd516a65b549ebed9bc13d923ebb2888de77efbf81cdb4",
+      "sessionFingerprint": "hmac-sha256:9d5cb2a1e7b54b7a324f3a588a1df323e99ce06d61574f45bbc2666a7730df4d",
+      "expectedBehaviorClass": "FACT_ASSUMPTION_PROPOSED",
+      "observedOutcome": "GIVEN_FACT_CAPTURED",
+      "passed": true
+    },
+    {
+      "familyId": "dependency-unavailable",
+      "caseFingerprint": "hmac-sha256:72de20a92b6a3746d0565e0300c6e68818ccf60dbce3e22b95c620402df986c2",
+      "sessionFingerprint": "hmac-sha256:06f73caa02cfe2c5f854bbb534329a958969aaf24e8445ab0bab27649b2aafa9",
+      "expectedBehaviorClass": "UNAVAILABLE_ASSUMPTION_COMPILED",
+      "observedOutcome": "UNAVAILABLE_CAPTURED",
+      "passed": true
+    },
+    {
+      "familyId": "action-stubbing",
+      "caseFingerprint": "hmac-sha256:e6761b8d4c5c4e343b922b226bc0cb7230dc559cefeca10e69ebeabec338bdb8",
+      "sessionFingerprint": "hmac-sha256:017a2ecffb5fc6e2f189c6c4cd816eed1c91da4e16f7a678ae6337326614cec4",
+      "expectedBehaviorClass": "SIDE_EFFECT_STUB_COMPILED",
+      "observedOutcome": "SIDE_EFFECT_STUB_CAPTURED",
+      "passed": true
+    },
+    {
+      "familyId": "forbidden-dependency",
+      "caseFingerprint": "hmac-sha256:9a1d6610df30706f4c4124f21a1a3e0486f2272c1a33d8d5cdc8e08298febc54",
+      "sessionFingerprint": "hmac-sha256:05546c169409f80848ee97cec787afbdc2cdd53fb342c3aaeb64cdfc79cfd069",
+      "expectedBehaviorClass": "FORBIDDEN_DEPENDENCY_COMPILED",
+      "observedOutcome": "MUST_NOT_USE_CAPTURED",
+      "passed": true
+    },
+    {
+      "familyId": "multiple-exact",
+      "caseFingerprint": "hmac-sha256:0537fb0bc0c715395aa7bd87e88db90c424d3ab8c482f233767d5920133a01ed",
+      "sessionFingerprint": "hmac-sha256:f5bbf74a74422ac2fbea4b642e41d67f93f4f2fd8ec93f56a5ab04dcaec8936b",
+      "expectedBehaviorClass": "AMBIGUITY_REJECTED",
+      "observedOutcome": "AMBIGUOUS_STOP",
+      "passed": true
+    },
+    {
+      "familyId": "legacy-feature-partial",
+      "caseFingerprint": "hmac-sha256:ab8a4ea83e4661c81abe2e5c01e33863ffebabeaf3da2005736cbeb285a10f73",
+      "sessionFingerprint": "hmac-sha256:c2165e3351ef9495ef7578293f5bb9259511ab16c427c0cca86881ccdc51f56b",
+      "expectedBehaviorClass": "PARTIAL_REUSE_REJECTED",
+      "observedOutcome": "PARTIAL_STOP",
+      "passed": true
+    },
+    {
+      "familyId": "semantic-drift",
+      "caseFingerprint": "hmac-sha256:8869fb52ec30aedfbcdd64fe178f7800736a158ab5cfcc0ac21cf4822c8fb746",
+      "sessionFingerprint": "hmac-sha256:36184d53a93ee7d2242fd88de3a212948dfbc163176ba45a10933a3eb69efeb8",
+      "expectedBehaviorClass": "SEMANTIC_RECONFIRMATION_REQUIRED",
+      "observedOutcome": "RECONFIRMATION_STOP",
+      "passed": true
+    },
+    {
+      "familyId": "assumption-ambiguity",
+      "caseFingerprint": "hmac-sha256:da91427c4940e3f8d164d6d01ec9e2393646067c15346841d6452f1923344ef3",
+      "sessionFingerprint": "hmac-sha256:be01ae239b9d1ad3f15c701d0198e388791372cdbd7df56e59ba8f2fb86c5bb0",
+      "expectedBehaviorClass": "ASSUMPTION_AMBIGUITY_REJECTED",
+      "observedOutcome": "ASSUMPTION_AMBIGUOUS_STOP",
+      "passed": true
+    }
+  ],
+  "certificateFingerprint": "sha256:4914297458a44a325185ea22a8d9f3aca9555ae7f251ecdd26829c3aea4976db"
 }

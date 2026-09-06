@@ -193,9 +193,10 @@ class AgentTddCodexCertificationArtifactTest {
 
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
-                certificate.path("repositoryCommit").asText(), "26", "2 + 1 + 3",
+                certificate.path("repositoryCommit").asText(), "27", "2 + 1 + 3", "15 / 15",
                 "两条完整标准案例", "服务端模板先读", "写入已绑定",
-                "未批准、未执行、未发布", "Recall@3", "Top-1", "业务澄清");
+                "未批准、未执行、未发布", "Recall@3", "Top-1",
+                "16 个会话身份互不相同", "3 个实例身份互不相同", "UNAVAILABLE");
         var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
         assertThat(screenshot).isNotNull();
         assertThat(screenshot.getWidth()).isEqualTo(1440);
@@ -228,7 +229,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not open the required private persistent state store",
                 "--production-tree-fingerprint", "PRODUCTION_TREE_FINGERPRINT",
                 "--family-manifest", "FAMILY_SUITE_FILE", "FAMILY_RUN_INDEX",
-                "near-meaning-distractor", "boundary-unspecified",
+                "near-meaning-distractor", "--phase ambiguity", "assumption-ambiguity",
                 "--board-projection", "/api/agent-tdd/board", "X-Purpose: AGENT_TDD_READ",
                 "X-RG-Surface\"=\"BUSINESS_SOLUTION",
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
@@ -262,7 +263,7 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 52 tests", "OK");
+        assertThat(output).contains("Ran 56 tests", "OK");
     }
 
     private String productionTreeFingerprint(String commit) throws Exception {
