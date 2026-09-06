@@ -502,7 +502,7 @@ def load_surface_proof(value: dict[str, Any], runtime_nonce: str) -> dict[str, A
         "read": ("AGENT_TDD_READ", {"rg.library.overview.get", "rg.capability.search"},
                  "rg.dsl.reference.get"),
         "authoring": ("AGENT_TDD_AUTHORING", {"rg.journey.start", "rg.feature.define"},
-                      "rg.tool.compose"),
+                      "rg.library.upsert"),
     }
     if not isinstance(purpose_proofs, dict) or set(purpose_proofs) != set(expected):
         raise CertificationFailure("business surface proof does not cover both MCP purposes")

@@ -32,7 +32,7 @@ def surface_proof() -> dict:
                      "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE"},
             "authoring": {"purpose": "AGENT_TDD_AUTHORING",
                           "visibleToolNames": ["rg.journey.start", "rg.feature.define"],
-                          "hiddenTool": "rg.tool.compose", "rejectionCode": -32031,
+                          "hiddenTool": "rg.library.upsert", "rejectionCode": -32031,
                           "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE"},
         },
     }

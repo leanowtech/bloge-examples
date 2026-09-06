@@ -59,7 +59,8 @@ def certify_surface(endpoint: str, token: str, runtime_nonce: str,
         ("read", "AGENT_TDD_READ", {"rg.library.overview.get", "rg.capability.search"},
          "rg.dsl.reference.get", {"libraryRefs": []}),
         ("authoring", "AGENT_TDD_AUTHORING", {"rg.journey.start", "rg.feature.define"},
-         "rg.tool.compose", {}),
+         "rg.library.upsert", {"libraryYaml": "library: hidden-surface-probe",
+                               "idempotencyKey": "surface-hidden-probe"}),
     )
     for label, purpose, required, hidden_tool, arguments in configurations:
         listed = _exchange(endpoint, token, purpose, f"surface-{label}-list", "tools/list", {}, opener)
