@@ -137,6 +137,7 @@ class BusinessCapabilityIndexTest {
         assertThat(result.path("candidates")).hasSize(2);
         assertThat(result.at("/candidates/0/assetRef").asText()).isEqualTo("feature:cancel-party");
         assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("EXACT");
+        assertThat(result.at("/candidates/0/reuseAllowed").asBoolean()).isTrue();
         assertThat(result.at("/candidates/1/assetRef").asText()).isEqualTo("feature:traffic-accident");
         assertThat(result.at("/candidates/1/matchType").asText()).isEqualTo("CONFLICT");
     }
@@ -331,9 +332,7 @@ class BusinessCapabilityIndexTest {
         semantics.put("description", "判断订单取消责任");
         ObjectNode contract = mapper.createObjectNode();
         contract.set("businessSemantics", semantics);
-        ObjectNode current = businessDefinition.deepCopy();
-        current.put("lifecycle", "ACTIVE");
-        contract.set("businessDefinition", current);
+        contract.set("businessDefinition", businessDefinition.deepCopy());
         contract.put("evaluationKind", "API");
         contract.putObject("output").put("type", "string");
         ObjectNode data = mapper.createObjectNode();

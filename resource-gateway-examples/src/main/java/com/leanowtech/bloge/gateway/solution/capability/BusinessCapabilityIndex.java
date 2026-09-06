@@ -174,8 +174,7 @@ public final class BusinessCapabilityIndex {
     }
 
     private Map<String, Object> candidate(Card card, BusinessContractMatcher.Match match) {
-        boolean activeSemanticKey = "ACTIVE".equals(card.business()
-                .at("/businessDefinition/lifecycle").asText());
+        boolean activeSemanticKey = activeSemanticKey(card);
         String matchType = match.exact() && !activeSemanticKey ? "PARTIAL" : match.type().name();
         List<String> missing = match.exact() && !activeSemanticKey
                 ? List.of("semanticLifecycle") : match.missingFacets();
@@ -183,8 +182,7 @@ public final class BusinessCapabilityIndex {
                 "businessName", card.display().path("businessName").asText(card.assetRef()),
                 "matchType", matchType, "matchedFacets", match.matchedFacets(),
                 "missingFacets", missing, "conflicts", match.conflicts(),
-                "reuseAllowed", match.exact() && activeSemanticKey
-                        && List.of("READY", "PUBLISHED").contains(card.lifecycle()),
+                "reuseAllowed", match.exact() && activeSemanticKey,
                 "contractFingerprint", card.contractFingerprint(), "lifecycle", card.lifecycle());
     }
 
