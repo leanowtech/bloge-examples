@@ -49,7 +49,9 @@ class McpAgentInstructionRendererTest {
                         "primary active journey", "rg.journey.next",
                         "do not start another journey first",
                         "reuse that journey when it allows the requested action",
-                        "bind its targetRef to the exact entity already read")
+                        "bind its targetRef to the exact entity already read",
+                        "copy its display.businessName verbatim into factName or capabilityName",
+                        "Never paraphrase that name or append words such as service")
                 .doesNotContain("rg.dsl.reference.get", "rg.tool.compose");
         assertThat(platform).contains("rg.dsl.reference.get", "rg.readiness.get")
                 .doesNotContain("rg.feature.handoff", "rg.solution.compose");

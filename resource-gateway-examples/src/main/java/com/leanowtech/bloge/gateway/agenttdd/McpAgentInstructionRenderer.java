@@ -104,7 +104,11 @@ public final class McpAgentInstructionRenderer {
                 + "For an unimplemented WRITE result, call " + name(McpToolCatalog.ENGINEERING_HANDOFF)
                 + " and stop at the accountable engineering boundary. Propose complete business examples with "
                 + name(McpToolCatalog.GOLDEN_PROPOSE) + " including the assumed fact values, dependency outcomes, "
-                + "expected result, explanation class, and accountable Oracle owner; never approve them. Do not "
+                + "expected result, explanation class, and accountable Oracle owner. Before proposing an example, "
+                + "read every referenced Feature or Instruction with " + name(McpToolCatalog.ENTITY_GET)
+                + " and copy its display.businessName verbatim into factName or capabilityName. Never paraphrase "
+                + "that name or append words such as service; if there is no unique exact entity, ask one business "
+                + "question and stop. Never approve proposed examples. Do not "
                 + "expose internal fixture, stub, node, graph, or binding fields. Never invent runtime bindings, "
                 + "approval, GREEN, attestation, or signoff "
                 + "evidence. Call " + name(McpToolCatalog.READINESS)
