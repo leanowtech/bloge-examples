@@ -108,7 +108,9 @@ public final class McpAgentInstructionRenderer {
                 + "read every referenced Feature or Instruction with " + name(McpToolCatalog.ENTITY_GET)
                 + " and copy its display.businessName verbatim into factName or capabilityName. Never paraphrase "
                 + "that name or append words such as service; if there is no unique exact entity, ask one business "
-                + "question and stop. Never approve proposed examples. Do not "
+                + "question and stop. Include a dependency value only for RETURNS; omit value for UNAVAILABLE, "
+                + "SUCCEEDS_WITHOUT_EFFECT, FAILS_WITHOUT_EFFECT, and MUST_NOT_BE_USED because the server derives "
+                + "those controlled results. Never approve proposed examples. Do not "
                 + "expose internal fixture, stub, node, graph, or binding fields. Never invent runtime bindings, "
                 + "approval, GREEN, attestation, or signoff "
                 + "evidence. Call " + name(McpToolCatalog.READINESS)

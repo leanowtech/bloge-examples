@@ -176,6 +176,55 @@ class McpToolCatalogTest {
     }
 
     @Test
+    void goldenAssumptionSchemaRequiresValuesOnlyForReturnedResults() {
+        McpToolDefinition propose = new McpToolCatalog().require(McpToolCatalog.GOLDEN_PROPOSE);
+        SchemaEnvelope input = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA, "2020-12", propose.inputSchema());
+        Map<String, Object> base = Map.of(
+                "journeyRef", "journey:test",
+                "expectedJourneyRevision", 1,
+                "solutionRef", "solution:test",
+                "idempotencyKey", "golden-test",
+                "cases", List.of(Map.of(
+                        "caseId", "case-a",
+                        "businessIntent", "verify one governed outcome",
+                        "givenFacts", List.of(),
+                        "dependencyAssumptions", List.of(Map.of(
+                                "capabilityName", "refund action",
+                                "outcome", "SUCCEEDS_WITHOUT_EFFECT")),
+                        "expectedOutcome", Map.of(
+                                "result", "RETAIN", "reasoningClass", "PASSENGER_RESPONSIBLE"),
+                        "oracleOwner", "business-owner")));
+
+        assertThat(VisualSchemaValidator.validateValue(input, base, "/golden")).isEmpty();
+
+        Map<String, Object> statusWithValue = new java.util.LinkedHashMap<>(base);
+        statusWithValue.put("cases", List.of(Map.of(
+                "caseId", "case-a", "businessIntent", "verify one governed outcome",
+                "givenFacts", List.of(),
+                "dependencyAssumptions", List.of(Map.of(
+                        "capabilityName", "refund action",
+                        "outcome", "SUCCEEDS_WITHOUT_EFFECT", "value", Map.of("result", "OK"))),
+                "expectedOutcome", Map.of(
+                        "result", "RETAIN", "reasoningClass", "PASSENGER_RESPONSIBLE"),
+                "oracleOwner", "business-owner")));
+        assertThat(VisualSchemaValidator.validateValue(input, statusWithValue, "/golden"))
+                .isNotEmpty();
+
+        Map<String, Object> returnsWithoutValue = new java.util.LinkedHashMap<>(base);
+        returnsWithoutValue.put("cases", List.of(Map.of(
+                "caseId", "case-a", "businessIntent", "verify one governed outcome",
+                "givenFacts", List.of(),
+                "dependencyAssumptions", List.of(Map.of(
+                        "capabilityName", "responsibility fact", "outcome", "RETURNS")),
+                "expectedOutcome", Map.of(
+                        "result", "RETAIN", "reasoningClass", "PASSENGER_RESPONSIBLE"),
+                "oracleOwner", "business-owner")));
+        assertThat(VisualSchemaValidator.validateValue(input, returnsWithoutValue, "/golden"))
+                .isNotEmpty();
+    }
+
+    @Test
     void schemasDescribeStrictAuthoringAndEveryExecutionEnvelopeField() {
         McpToolCatalog catalog = new McpToolCatalog();
 

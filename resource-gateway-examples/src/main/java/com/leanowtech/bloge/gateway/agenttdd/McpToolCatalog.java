@@ -939,10 +939,16 @@ public final class McpToolCatalog {
     private static Map<String, Object> businessGoldenCase() {
         Map<String, Object> fact = structuredObject(props(
                 "factName", string(), "value", anyJson()), List.of("factName", "value"));
-        Map<String, Object> assumption = structuredObject(props(
-                "capabilityName", string(), "outcome", enumString("RETURNS", "UNAVAILABLE",
-                        "SUCCEEDS_WITHOUT_EFFECT", "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED"),
-                "value", anyJson()), List.of("capabilityName", "outcome"));
+        Map<String, Object> returns = described(structuredObject(props(
+                "capabilityName", string(), "outcome", enumString("RETURNS"),
+                "value", anyJson()), List.of("capabilityName", "outcome", "value")),
+                "RETURNS requires a contract-valid value.");
+        Map<String, Object> noValue = described(structuredObject(props(
+                "capabilityName", string(), "outcome", enumString("UNAVAILABLE",
+                        "SUCCEEDS_WITHOUT_EFFECT", "FAILS_WITHOUT_EFFECT", "MUST_NOT_BE_USED")),
+                List.of("capabilityName", "outcome")),
+                "Controlled status outcomes derive their result on the server and must omit value.");
+        Map<String, Object> assumption = Map.of("oneOf", List.of(returns, noValue));
         Map<String, Object> expected = structuredObject(props(
                 "result", anyJson(), "reasoningClass", string()), List.of("result", "reasoningClass"));
         return structuredObject(props(
