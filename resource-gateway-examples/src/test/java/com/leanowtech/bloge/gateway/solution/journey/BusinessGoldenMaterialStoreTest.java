@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePayloadProtector;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Receipt;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.DatabaseProtectedFixtureMaterialRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 
@@ -73,6 +75,32 @@ class BusinessGoldenMaterialStoreTest {
                 mapper.createObjectNode(), identity()))
                 .isInstanceOfSatisfying(AgentTddToolException.class,
                         failure -> assertThat(failure.code()).isEqualTo("FIXTURE_MATERIAL_UNAVAILABLE"));
+    }
+
+    @Test
+    void renewsDraftMaterialIntoARecoverableExactActiveRevision() throws Exception {
+        JsonNode payload = mapper.valueToTree(Map.of("given", Map.of("party", "passenger"),
+                "expect", Map.of("decision", "UPHELD")));
+        String fingerprint = "sha256:" + "a".repeat(64);
+        Receipt draft = mapper.treeToValue(store.write(
+                "sol:cancel", 1, fingerprint, "g1", fingerprint,
+                "sha256:" + "b".repeat(64), payload, identity()), Receipt.class);
+
+        assertThat(draft.retention().policyVersion()).isEqualTo("rg.businessGolden.lifecycle");
+        assertThat(draft.retention().retentionDays()).isEqualTo(365);
+
+        Receipt active = mapper.treeToValue(store.renew(mapper.valueToTree(draft), identity()), Receipt.class);
+        assertThat(active.materialRef().revision()).isEqualTo(2);
+        assertThat(active.payloadFingerprint()).isEqualTo(draft.payloadFingerprint());
+        assertThat(active.lineageRefs()).containsExactly(draft.materialRef());
+        assertThat(active.retention().policyVersion()).isEqualTo("rg.businessGolden.lifecycle");
+        assertThat(active.retention().retentionDays()).isEqualTo(365);
+        assertThat(active.retention().expiresAt()).isAfter(Instant.now().plusSeconds(364L * 24 * 60 * 60));
+        assertThat(store.read(mapper.valueToTree(active), identity())).isEqualTo(payload);
+
+        Receipt recovered = mapper.treeToValue(
+                store.renew(mapper.valueToTree(draft), identity()), Receipt.class);
+        assertThat(recovered).isEqualTo(active);
     }
 
     private static IntegrationRequestContext identity() {

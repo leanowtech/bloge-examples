@@ -299,6 +299,8 @@ public enum IntegrationOperation {
     AGENT_TDD_INSTRUCTION_ENG(Set.of("AGENT_TDD_INSTRUCTION_ENG")),
     /** Binds and verifies design-only Feature evaluators outside the Agent MCP catalog. */
     AGENT_TDD_FEATURE_ENG(Set.of("AGENT_TDD_FEATURE_ENG")),
+    /** Allows a separately authenticated human to review protected business GOLDEN material. */
+    SOLUTION_GOLDEN_REVIEW(Set.of("SOLUTION_GOLDEN_REVIEW")),
     AGENT_TDD_GOVERNED_WRITE(Set.of("AGENT_TDD_GOVERNANCE"));
 
     private final Set<String> acceptedPurposes;

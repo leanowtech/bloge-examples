@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.config;
 
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenReviewService;
+
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -556,10 +558,12 @@ public class GatewayConfiguration {
         IntegrationWorkloadIdentity identity = new IntegrationWorkloadIdentity(identityId, tenantId,
                 organizationId, projectId, environmentId, region, "WORKLOAD", actorId, "", purposes,
                 Instant.MAX, true, commaSeparated(groups), clearance, "", Instant.MAX);
+        Set<String> reviewerGroups = new LinkedHashSet<>(commaSeparated(groups));
+        reviewerGroups.add(BusinessGoldenReviewService.REVIEWER_GROUP);
         IntegrationWorkloadIdentity reviewer = new IntegrationWorkloadIdentity("demo-human-reviewer", tenantId,
                 organizationId, projectId, environmentId, region, "HUMAN", reviewerActorId, "",
-                Set.of("AGENT_TDD_READ", "AGENT_TDD_GOVERNANCE"), Instant.MAX, true,
-                commaSeparated(groups), clearance, "", Instant.MAX);
+                Set.of("AGENT_TDD_READ", "AGENT_TDD_GOVERNANCE", "SOLUTION_GOLDEN_REVIEW"),
+                Instant.MAX, true, Set.copyOf(reviewerGroups), clearance, "", Instant.MAX);
         IntegrationWorkloadIdentity featureEngineer = new IntegrationWorkloadIdentity(
                 "demo-feature-engineer", tenantId, organizationId, projectId, environmentId, region,
                 "USER", featureEngineerActorId, "", Set.of("AGENT_TDD_READ", "AGENT_TDD_FEATURE_ENG"),

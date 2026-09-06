@@ -96,6 +96,7 @@ class AgentTddReviewBusinessGoldenTest {
         assertThat(approved.data().at("/rows/0/proposedOracle/status").asText())
                 .isEqualTo("APPROVED");
         assertThat(approved.data().at("/rows/0").has("expect")).isFalse();
+        assertThat(approved.data().at("/rows/0/materialReceipt/revision").asLong()).isEqualTo(2);
     }
 
     @Test
@@ -276,12 +277,19 @@ class AgentTddReviewBusinessGoldenTest {
                               String caseId, String goldenFingerprint, String proposalFingerprint,
                               JsonNode payload, IntegrationRequestContext caller) {
             payloads.put(goldenFingerprint, payload.deepCopy());
-            return mapper.valueToTree(Map.of("fingerprint", goldenFingerprint));
+            return mapper.valueToTree(Map.of("fingerprint", goldenFingerprint, "revision", 1));
         }
 
         @Override
         public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
             return payloads.get(receiptNode.path("fingerprint").asText()).deepCopy();
+        }
+
+        @Override
+        public JsonNode renew(JsonNode receiptNode, IntegrationRequestContext caller) {
+            ObjectNode successor = (ObjectNode) receiptNode.deepCopy();
+            successor.put("revision", receiptNode.path("revision").asLong() + 1);
+            return successor;
         }
 
         private JsonNode onlyPayload() {

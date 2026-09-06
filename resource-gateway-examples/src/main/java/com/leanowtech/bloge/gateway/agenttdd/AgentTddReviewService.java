@@ -66,6 +66,8 @@ public final class AgentTddReviewService {
             throw new AgentTddToolException("DRAFT_NOT_FOUND", "Pending GOLDEN case was not found.");
         }
         JsonNode proposal = selected.path("proposedOracle");
+        requireIndependentHuman(identity, proposal.path("proposedBy").asText());
+        requireProposalFingerprint(proposal, proposalFingerprint);
         JsonNode material = protectedMaterial(selected, identity);
         boolean completeBusinessCase = material != null && material.path("businessIntent").isTextual()
                 && material.path("givenFacts").isArray()
@@ -78,11 +80,18 @@ public final class AgentTddReviewService {
             throw new AgentTddToolException("GOLDEN_REQUIRES_APPROVAL",
                     "The GOLDEN case has no pending Oracle proposal.");
         }
-        requireIndependentHuman(identity, proposal.path("proposedBy").asText());
-        requireProposalFingerprint(proposal, proposalFingerprint);
         if (!completeBusinessCase) selected.set("expect", materialProposal.path("expect").deepCopy());
         selected.put("oracleOwner", proposal.path("oracleOwner").asText());
         selected.put("lifecycle", "ACTIVE");
+        if (completeBusinessCase) {
+            /*
+             * The vault and case-set repository cannot share an atomic transaction. renew()
+             * writes an immutable direct successor first and recovers that exact successor on
+             * retry; only this following case-set CAS makes the renewed receipt authoritative.
+             */
+            selected.set("materialReceipt",
+                    goldenMaterials.renew(selected.path("materialReceipt"), identity));
+        }
         ((ObjectNode) proposal).put("status", "APPROVED");
         ((ObjectNode) proposal).put("approvedBy", identity.actorId());
         ObjectNode approved = selected;

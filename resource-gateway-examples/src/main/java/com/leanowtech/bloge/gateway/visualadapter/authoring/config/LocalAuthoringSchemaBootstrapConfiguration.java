@@ -59,7 +59,8 @@ public class LocalAuthoringSchemaBootstrapConfiguration {
             "V20260901_016__standalone_flow_fixture_sets.sql",
             "V20260901_017__fixture_share_requests.sql",
             "V20260901_018__fixture_review_completion.sql",
-            "V20260902_019__standalone_component_fixture_subjects.sql");
+            "V20260902_019__standalone_component_fixture_subjects.sql",
+            "V20260906_021__business_golden_review_audit.sql");
 
     private static final String MIGRATION_ROOT = "db/postgresql/";
     private static final String MIGRATION_BEAN = "localAuthoringSchemaMigration";
