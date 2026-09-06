@@ -182,7 +182,7 @@ class SolutionTestingServiceTest {
                         new ScenarioContract.Outlet(ScenarioContract.OutletKind.INSTRUCTION,
                                 "ins:refund", Map.of("orderId", "orderId"), ""))),
                 new ScenarioContract.Outlet(
-                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+                        ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "REVIEW")));
 
         protectedTesting.baseline(SCOPE, "sol:cancel", "caseSet:cancel", "GREEN", readIdentity());
         String recompiledPlan = states.find(

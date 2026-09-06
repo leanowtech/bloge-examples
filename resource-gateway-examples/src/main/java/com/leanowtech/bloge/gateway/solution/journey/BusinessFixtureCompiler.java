@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
+import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
@@ -29,8 +30,10 @@ import java.util.Set;
 /**
  * Compiles business-language facts and dependency outcomes against one revision-locked Solution
  * closure. Every Feature, Scenario, Instruction and Solution is decoded exactly once from its
- * locked persisted revision. The compiler never performs a second mutable-registry lookup after
- * name resolution, so one proposal cannot combine contracts from different revisions.
+ * locked persisted revision. Independent display rows are also locked and attached to that
+ * decoded closure for business-name and alias resolution, but remain outside execution and
+ * contract fingerprints. The compiler never performs a second mutable-registry lookup after name
+ * resolution, so one proposal cannot combine contracts from different revisions.
  *
  * <p>The compiler opens an atomic read boundary. {@link BusinessGoldenService} invokes it inside
  * the wider idempotent proposal transaction, so the locks remain held through protected-material
@@ -193,10 +196,63 @@ public final class BusinessFixtureCompiler {
                 || data.path("contractFingerprint").asText().isBlank()) throw unresolved();
         try {
             T contract = mapper.treeToValue(data.path("contract"), contractType);
+            contract = attachLockedDisplay(
+                    scope, data.path("entityKind").asText(), ref, contract, contractType);
             return new FrozenEntity<>(ref, locked.revision(),
                     data.path("contractFingerprint").asText(), contract);
         } catch (JsonProcessingException | IllegalArgumentException failure) {
             throw unresolved();
+        }
+    }
+
+    /**
+     * Attaches one independently revisioned display to a locked executable contract.
+     *
+     * <p>The display participates only in business-language lookup. Its revision and fingerprint
+     * are deliberately omitted from the controlled execution plan, so wording changes do not
+     * invalidate approved business contracts or GREEN evidence. A malformed optional display
+     * degrades to the contract's compatibility projection; a concurrent display revision fails
+     * the fixture compilation as a stale capability context.</p>
+     */
+    private <T> T attachLockedDisplay(
+            String scope, String entityKind, String ref, T contract, Class<T> contractType) {
+        String displayRef = SolutionEntityRegistry.displayAssetRef(entityKind, ref);
+        java.util.Optional<AgentTddStoredAsset> observed = states.find(
+                scope, SolutionEntityRegistry.CAPABILITY_DISPLAY, displayRef);
+        if (observed.isEmpty()) return contract;
+        AgentTddStoredAsset locked;
+        try {
+            locked = states.lockRevision(scope, SolutionEntityRegistry.CAPABILITY_DISPLAY,
+                    displayRef, observed.get().revision());
+        } catch (AgentTddToolException failure) {
+            if (!"GATE_REJECTED".equals(failure.code())) throw failure;
+            throw new AgentTddToolException("CAPABILITY_CONTEXT_STALE",
+                    "A business capability display changed while the fixture context was being frozen.");
+        }
+        try {
+            JsonNode displayData = locked.data();
+            BusinessCapabilityDisplay display = BusinessCapabilityDisplay.decode(
+                    displayData.path("display"));
+            String expectedFingerprint = fingerprint(display);
+            if (!entityKind.equalsIgnoreCase(displayData.path("entityKind").asText())
+                    || !ref.equals(displayData.path("entityRef").asText())
+                    || !expectedFingerprint.equals(
+                    displayData.path("displayFingerprint").asText())) return contract;
+            if (contract instanceof FeatureContract feature) {
+                return contractType.cast(feature.withDisplay(display));
+            }
+            if (contract instanceof ScenarioContract scenario) {
+                return contractType.cast(scenario.withDisplay(display));
+            }
+            if (contract instanceof InstructionContract instruction) {
+                return contractType.cast(instruction.withDisplay(display));
+            }
+            if (contract instanceof SolutionContract solution) {
+                return contractType.cast(solution.withDisplay(display));
+            }
+            return contract;
+        } catch (IllegalArgumentException failure) {
+            return contract;
         }
     }
 
@@ -464,14 +520,22 @@ public final class BusinessFixtureCompiler {
                                    String inputAlias, String featureRef) {
         return inputAlias.equalsIgnoreCase(name) || featureRef.equalsIgnoreCase(name)
                 || feature.businessSemantics().equalsIgnoreCase(name)
-                || feature.businessDefinition().semanticKey().equalsIgnoreCase(name);
+                || feature.businessDefinition().semanticKey().equalsIgnoreCase(name)
+                || displayMatches(feature.display(), name);
     }
 
     private static boolean instructionMatches(InstructionContract instruction, String name) {
         if (instruction.businessDefinition().semanticKey().equalsIgnoreCase(name)
-                || instruction.businessSemantics().equalsIgnoreCase(name)) return true;
+                || instruction.businessSemantics().equalsIgnoreCase(name)
+                || displayMatches(instruction.display(), name)) return true;
         return instruction.businessDefinition().incompleteLegacyProjection()
                 && instruction.instructionRef().equalsIgnoreCase(name);
+    }
+
+    /** Matches only the explicit display identity, never descriptive prose or usage guidance. */
+    private static boolean displayMatches(BusinessCapabilityDisplay display, String name) {
+        return display.businessName().equalsIgnoreCase(name)
+                || display.aliases().stream().anyMatch(alias -> alias.equalsIgnoreCase(name));
     }
 
     private JsonNode businessCoordinate(

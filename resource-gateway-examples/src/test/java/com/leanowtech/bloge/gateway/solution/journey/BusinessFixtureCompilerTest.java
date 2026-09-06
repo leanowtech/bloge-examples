@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.agenttdd.AgentTddToolException;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.agenttdd.AgentTddStoredAsset;
 import com.leanowtech.bloge.gateway.agenttdd.InMemoryAgentTddStateRepository;
+import com.leanowtech.bloge.gateway.solution.BusinessCapabilityDisplay;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
@@ -119,7 +120,8 @@ class BusinessFixtureCompilerTest {
 
     @Test
     void rejectsARevisionThatDriftsBetweenObservationAndLock() {
-        AgentTddStateRepository drifting = new DriftOnFeatureLockRepository(states);
+        AgentTddStateRepository drifting = new DriftOnLockRepository(
+                states, SolutionEntityRegistry.FEATURE);
         BusinessFixtureCompiler driftingCompiler = new BusinessFixtureCompiler(drifting, mapper);
 
         assertThatThrownBy(() -> driftingCompiler.compile(
@@ -183,6 +185,103 @@ class BusinessFixtureCompilerTest {
                 .isEqualTo("FEATURE");
         assertThat(plan.dependencyAssumptions().at("/feature:party/inputAlias").asText())
                 .isEqualTo("party");
+    }
+
+    @Test
+    void resolvesFactsAndInstructionsByExplicitBusinessDisplay() {
+        FeatureContract party = registry.requireFeature(SCOPE, "feature:party").withDisplay(
+                display("取消归责", List.of("谁导致取消"), "客服确认取消责任方"));
+        InstructionContract balance = registry.requireInstruction(SCOPE, "ins:balance").withDisplay(
+                display("读取账户余额", List.of("查余额"), "读取当前账户余额"));
+        registry.upsertFeature(SCOPE, party);
+        registry.upsertInstruction(SCOPE, balance);
+        ObjectNode fixture = (ObjectNode) fixture("RETURNS", "读取账户余额").deepCopy();
+        fixture.set("givenFacts", mapper.valueToTree(List.of(
+                Map.of("factName", "取消归责", "value", "passenger"))));
+
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
+                SCOPE, "sol:cancel", fixture);
+
+        assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
+        assertThat(plan.dependencyAssumptions().has("ins:balance")).isTrue();
+    }
+
+    @Test
+    void resolvesFactsAndInstructionsByExplicitBusinessAliases() {
+        registry.upsertFeature(SCOPE, registry.requireFeature(SCOPE, "feature:party").withDisplay(
+                display("取消归责", List.of("谁导致取消"), "客服确认取消责任方")));
+        registry.upsertInstruction(SCOPE,
+                registry.requireInstruction(SCOPE, "ins:balance").withDisplay(
+                        display("读取账户余额", List.of("查余额"), "读取当前账户余额")));
+        ObjectNode fixture = (ObjectNode) fixture("RETURNS", "查余额").deepCopy();
+        fixture.set("givenFacts", mapper.valueToTree(List.of(
+                Map.of("factName", "谁导致取消", "value", "passenger"))));
+
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan = compiler.compile(
+                SCOPE, "sol:cancel", fixture);
+
+        assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
+        assertThat(plan.dependencyAssumptions().has("ins:balance")).isTrue();
+    }
+
+    @Test
+    void rejectsADisplayRevisionThatDriftsWhileTheClosureIsFrozen() {
+        registry.upsertFeature(SCOPE, registry.requireFeature(SCOPE, "feature:party").withDisplay(
+                display("取消归责", List.of("谁导致取消"), "客服确认取消责任方")));
+        AgentTddStateRepository drifting = new DriftOnLockRepository(
+                states, SolutionEntityRegistry.CAPABILITY_DISPLAY);
+        BusinessFixtureCompiler driftingCompiler = new BusinessFixtureCompiler(drifting, mapper);
+
+        assertThatThrownBy(() -> driftingCompiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("CAPABILITY_CONTEXT_STALE");
+    }
+
+    @Test
+    void keepsTheControlledPlanStableAcrossDisplayOnlyRevisions() {
+        FeatureContract party = registry.requireFeature(SCOPE, "feature:party").withDisplay(
+                display("取消责任方", List.of("谁导致取消"), "客服确认取消责任方"));
+        registry.upsertFeature(SCOPE, party);
+        BusinessFixtureCompiler.ControlledAssumptionPlan first = compiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE"));
+
+        registry.upsertFeature(SCOPE, party.withDisplay(
+                display("取消责任方", List.of("取消归责"), "业务负责人确认取消责任方")));
+        BusinessFixtureCompiler.ControlledAssumptionPlan second = compiler.compile(
+                SCOPE, "sol:cancel", fixture("UNAVAILABLE"));
+
+        assertThat(second.planFingerprint()).isEqualTo(first.planFingerprint());
+        assertThat(second.frozenContextFingerprint()).isEqualTo(first.frozenContextFingerprint());
+    }
+
+    @Test
+    void rejectsAnAliasSharedByTwoReachableInstructions() {
+        registry.upsertInstruction(SCOPE, readInstruction("ins:balance", "余额查询").withDisplay(
+                display("读取余额", List.of("账户查询"), "读取余额")));
+        registry.upsertInstruction(SCOPE, readInstruction("ins:ledger", "账本查询").withDisplay(
+                display("读取账本", List.of("账户查询"), "读取账本")));
+        registry.upsertScenario(SCOPE, scenario(List.of("ins:balance", "ins:ledger")));
+        registry.upsertSolution(SCOPE, solution(List.of("ins:balance", "ins:ledger")), false);
+
+        assertThatThrownBy(() -> compiler.compile(
+                SCOPE, "sol:cancel", fixture("RETURNS", "账户查询")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_ASSUMPTION_AMBIGUOUS");
+    }
+
+    @Test
+    void doesNotTreatDisplayDescriptionAsACapabilityIdentity() {
+        registry.upsertInstruction(SCOPE, readInstruction("ins:balance", "余额查询").withDisplay(
+                display("读取余额", List.of(), "供客服查询当前账户余额")));
+
+        assertThatThrownBy(() -> compiler.compile(
+                SCOPE, "sol:cancel", fixture("RETURNS", "供客服查询当前账户余额")))
+                .isInstanceOf(AgentTddToolException.class)
+                .extracting(failure -> ((AgentTddToolException) failure).code())
+                .isEqualTo("BUSINESS_ASSUMPTION_AMBIGUOUS");
     }
 
     @Test
@@ -285,6 +384,13 @@ class BusinessFixtureCompilerTest {
                 "operator:" + ref, null, semantics);
     }
 
+    private BusinessCapabilityDisplay display(
+            String businessName, List<String> aliases, String description) {
+        return new BusinessCapabilityDisplay(
+                BusinessCapabilityDisplay.SCHEMA_VERSION, businessName, description,
+                aliases, List.of("取消费争议"), List.of("处理取消费争议"), List.of());
+    }
+
     private ScenarioContract scenario(List<String> instructions) {
         List<ScenarioContract.Rule> rules = instructions.stream().map(ref -> new ScenarioContract.Rule(
                 "rule:" + ref, mapper.valueToTree(Map.of("party", Map.of("eq", "passenger"))),
@@ -317,13 +423,15 @@ class BusinessFixtureCompilerTest {
                 "dependencyAssumptions", List.of(dependency)));
     }
 
-    /** Test repository that simulates a committed Feature edit immediately before row locking. */
-    private static final class DriftOnFeatureLockRepository implements AgentTddStateRepository {
+    /** Test repository that simulates a committed edit immediately before a selected row locks. */
+    private static final class DriftOnLockRepository implements AgentTddStateRepository {
         private final AgentTddStateRepository delegate;
+        private final String driftingKind;
         private boolean drifted;
 
-        private DriftOnFeatureLockRepository(AgentTddStateRepository delegate) {
+        private DriftOnLockRepository(AgentTddStateRepository delegate, String driftingKind) {
             this.delegate = delegate;
+            this.driftingKind = driftingKind;
         }
 
         @Override
@@ -355,7 +463,7 @@ class BusinessFixtureCompilerTest {
         @Override
         public AgentTddStoredAsset lockRevision(String scopeKey, String kind, String assetRef,
                                                 long expectedRevision) {
-            if (!drifted && SolutionEntityRegistry.FEATURE.equals(kind)) {
+            if (!drifted && driftingKind.equals(kind)) {
                 drifted = true;
                 JsonNode current = delegate.find(scopeKey, kind, assetRef).orElseThrow().data();
                 delegate.save(scopeKey, kind, assetRef, current);

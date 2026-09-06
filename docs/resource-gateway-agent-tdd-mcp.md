@@ -150,7 +150,7 @@ tool_timeout_sec = 120
 
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
 
-跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、显示契约、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。中文长句会生成重叠的双字召回词，短业务名称和近义干扰项都能进入候选集；只有后续结构化契约比较可以把候选提升为 EXACT。复用可用性以服务器注册表的 READY/PUBLISHED 状态为准，不采信作者在业务定义中自行填写的 lifecycle 文本。四实体的显示契约使用独立 revision 和 fingerprint。它只影响名称、别名和适用场景召回，不进入业务契约、实现指纹或执行证据 currentness。旧实体缺少独立显示契约时返回 `displayRevision=0` 和 `legacyDisplayProjection=true`。
+跨会话继续工作时，先调用 `rg.entity.list` 或用业务意图调用 `rg.capability.search`。列表游标绑定 scope、查询条件和完整能力快照；任一实体、显示契约、算子库、运行时资源、GraphDraft 或发布物变化都会返回 `CAPABILITY_CONTEXT_STALE`，此时从第一页重新读取。中文长句会生成重叠的双字召回词，短业务名称和近义干扰项都能进入候选集；只有后续结构化契约比较可以把候选提升为 EXACT。复用可用性以服务器注册表的 READY/PUBLISHED 状态为准，不采信作者在业务定义中自行填写的 lifecycle 文本。四实体的显示契约使用独立 revision 和 fingerprint。`businessName` 与 `aliases` 同时用于能力召回和标准案例中的唯一能力绑定；`description`、标签和适用场景只用于召回，不作为精确身份。显示内容不进入业务契约、实现指纹、受控计划或执行证据 currentness。旧实体缺少独立显示契约时返回 `displayRevision=0` 和 `legacyDisplayProjection=true`。
 
 能力召回分两次搜索。Codex 先判断当前是在找事实、决策、处置还是完整解法；已知类型时，
 第一次搜索只传业务意图和对应的一种 `assetKinds`。第一次结果只用于发现候选，不能根据 Top-1

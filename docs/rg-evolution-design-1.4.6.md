@@ -683,7 +683,7 @@ Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协�
 
 上述枚举是业务测试语义，不等于底层 `NodeFixture.DependencyBehaviorKind`。服务器可以将其编译为 Feature 值、Instruction 测试替身或 Graph fixture，但 MCP 契约不暴露该映射。
 
-提议时，服务器根据同一冻结上下文解析全部业务名称。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
+提议时，服务器根据同一冻结上下文解析全部业务名称。Feature 和 Instruction 的 `display.businessName`、`display.aliases` 是正式业务标识；`description`、标签和适用场景只参与召回，不参与精确绑定。显示行与实体行在同一事务内按 revision 锁定，但显示 revision 不进入业务契约、执行计划或证据 currentness。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
 
 人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `caseId + businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 只包含案例引用的实体类型、稳定引用、semantic key 和业务契约指纹，不包含 evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。该向量随 case-set 安全元数据持久化，人工审阅、journey 派生和 baseline 都按当前注册表重新核对。aliases 或显示名称变化但 semantic key 和业务契约不变时，批准保持有效。
 
@@ -711,7 +711,7 @@ Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协�
 原始事实值、预期结果和依赖返回值只存在于受控案例存储和当前执行内存，不进入计划投影。编译流程如下：
 
 1. 锁定 journey revision、case-set revision 和 Solution revision。
-2. 从同一 `BusinessCapabilitySnapshot` 解析 `givenFacts` 和 `dependencyAssumptions`。
+2. 从同一 `BusinessCapabilitySnapshot` 解析 `givenFacts` 和 `dependencyAssumptions`；业务名称与 aliases 必须唯一命中，描述文本不得作为隐式身份。
 3. 确认每个事实只映射到当前 Solution 声明的一个 Feature 输入。
 4. 确认每个动作只映射到当前 Scenario 可达的一个 Instruction。
 5. 校验事实值、依赖结果和预期结果符合当前业务契约。
@@ -1383,7 +1383,7 @@ gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；独立 display 资产行进入 generation vector；索引按 businessName、aliases、tags、whenToUse 和 whenNotToUse 召回；同一 alias 命中多个 ACTIVE semantic key 时返回 AMBIGUOUS，且候选不升格为 EXACT；范围隔离、确定性去重、排序、游标绑定与 stale 失败关闭均有测试 |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile 和独立 `BusinessCapabilityDisplay`；journey 新写入拒绝缺少 display 的结构化定义；未知字段和超界列表失败关闭；旧版 UNKNOWN/PARTIAL 和 legacy display 只读兼容；matcher 按 profile 比较封闭业务维度；实现 binding 排除于业务身份；display-only 修订不改变 contract fingerprint、implementation fingerprint、主资产 revision 或证据 currentness；服务端四实体模板提供完整 display 构造 |
-| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，锁定独立 display 行并以业务名称/aliases 唯一绑定受控假设，描述文本不参与身份匹配，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
 | P5 真实召回认证 | 已完成 | 当前干净提交已通过三个独立真实 Codex 会话：“业务创作→新会话同义召回→缺字段时单问题澄清”；三个 thread identity 仅以一次性 HMAC 留存且必须互不相同；召回候选与主链 Feature 按真实引用和契约指纹关联，目标位于 Top-1/Top-3；澄清会话可见业务写面但写调用为零；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板和库快照，Schema 直接编码 §14.4 的非零样本与指标门；37 个证书正反例通过；JSON、可视化过程报告和 1440×1440 截图留存。§14.3 的 15 类语义反例由 matcher、surface、journey、currentness 和受控假设测试逐类失败关闭，真实 Codex 证书保留三类代表性端到端会话 |
 
 ## 21. 审阅决策点
