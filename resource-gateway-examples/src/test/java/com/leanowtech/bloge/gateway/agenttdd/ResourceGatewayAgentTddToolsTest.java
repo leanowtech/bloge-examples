@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.coverage.SolutionCoverageService;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureControlledSuiteService;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.RiskLevel;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CoverageInventory.ObligationDimension;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
@@ -151,6 +152,28 @@ class ResourceGatewayAgentTddToolsTest {
                         "inventoryId", "payload");
     }
 
+    @Test
+    void returnsOnlyPayloadFreeFeatureSuiteCoordinates() {
+        FeatureControlledSuiteService suites = mock(FeatureControlledSuiteService.class);
+        var summary = new FeatureControlledSuiteService.SuiteSummary(
+                "feature:responsibility", 4, "PASSED", "sha256:" + "a".repeat(64),
+                "sha256:" + "b".repeat(64), 3, 5);
+        IntegrationRequestContext readIdentity = identity("AGENT_TDD_READ");
+        when(suites.summary("feature:responsibility", readIdentity)).thenReturn(summary);
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                new InMemoryOperatorLibraryRegistry(), new InMemoryGraphDraftRepository(), mapper, suites);
+
+        JsonNode response = mapper.valueToTree(tools.invoke(
+                McpToolCatalog.FEATURE_SUITE_GET,
+                mapper.valueToTree(Map.of("featureRef", "feature:responsibility")), readIdentity));
+
+        assertThat(response.path("ok").asBoolean()).isTrue();
+        assertThat(response.path("data").path("revision").asLong()).isEqualTo(4);
+        assertThat(response.toString())
+                .contains("definitionFingerprint", "evidenceFingerprint", "caseCount")
+                .doesNotContain("givenInputs", "expectedOutput", "nodeBehaviors", "evaluationRef");
+    }
+
     private static OperatorDefinition designOperator(String ref) {
         return new OperatorDefinition(
                 "bloge.visualOperator.v1", ref, "1.0.0",
@@ -180,8 +203,12 @@ class ResourceGatewayAgentTddToolsTest {
     }
 
     private static IntegrationRequestContext identity() {
+        return identity("AGENT_TDD_READ");
+    }
+
+    private static IntegrationRequestContext identity(String purpose) {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "project-a", "test", "sg", "WORKLOAD", "agent-1",
-                "", "AGENT_TDD_READ", "corr-1");
+                "", purpose, "corr-1");
     }
 }

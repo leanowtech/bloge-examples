@@ -37,6 +37,14 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_EXECUTION"))).isFalse();
         assertThat(policy.visible(catalog.require("rg.scenario.test"),
                 McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_EXECUTION"))).isTrue();
+        assertThat(policy.visible(catalog.require(McpToolCatalog.FEATURE_SUITE_UPSERT),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_AUTHORING"))).isTrue();
+        assertThat(policy.visible(catalog.require(McpToolCatalog.FEATURE_SUITE_RUN),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_EXECUTION"))).isTrue();
+        assertThat(policy.visible(catalog.require(McpToolCatalog.FEATURE_SUITE_GET),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_READ"))).isTrue();
+        assertThat(policy.visible(catalog.require(McpToolCatalog.FEATURE_SUITE_GET),
+                McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isFalse();
     }
 
     @Test

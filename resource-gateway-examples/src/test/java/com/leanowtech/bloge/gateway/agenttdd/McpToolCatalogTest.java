@@ -26,7 +26,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(51);
+        assertThat(catalog.all()).hasSize(54);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.overview.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.capability.search").impact()).isEqualTo(McpToolImpact.READ);
@@ -42,6 +42,12 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.feature.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.feature.handoff").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.feature.evaluate").impact()).isEqualTo(McpToolImpact.EXECUTE);
+        assertThat(catalog.require(McpToolCatalog.FEATURE_SUITE_UPSERT).impact())
+                .isEqualTo(McpToolImpact.DRAFT_WRITE);
+        assertThat(catalog.require(McpToolCatalog.FEATURE_SUITE_RUN).impact())
+                .isEqualTo(McpToolImpact.EXECUTE);
+        assertThat(catalog.require(McpToolCatalog.FEATURE_SUITE_GET).impact())
+                .isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.scenario.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.instruction.define").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
         assertThat(catalog.require("rg.solution.compose").impact()).isEqualTo(McpToolImpact.DRAFT_WRITE);
@@ -65,6 +71,38 @@ class McpToolCatalogTest {
                 .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST,
                         IntegrationOperation.AGENT_TDD_WRITE_EXEC,
                         IntegrationOperation.AGENT_TDD_FEATURE_ENG);
+    }
+
+    @Test
+    void publishesClosedPayloadFreeFeatureSuiteContracts() {
+        McpToolCatalog catalog = new McpToolCatalog();
+        McpToolDefinition upsert = catalog.require(McpToolCatalog.FEATURE_SUITE_UPSERT);
+        McpToolDefinition run = catalog.require(McpToolCatalog.FEATURE_SUITE_RUN);
+
+        assertThat(upsert.inputSchema().get("additionalProperties")).isEqualTo(false);
+        Map<?, ?> cases = (Map<?, ?>) ((Map<?, ?>) upsert.inputSchema().get("properties")).get("cases");
+        Map<?, ?> testCase = (Map<?, ?>) cases.get("items");
+        assertThat(testCase.get("additionalProperties")).isEqualTo(false);
+        assertThat(stringKeys((Map<?, ?>) testCase.get("properties")))
+                .containsExactlyInAnyOrder("caseId", "intent", "givenInputs", "nodeBehaviors",
+                        "expectedOutput", "coverageTargets");
+
+        Map<?, ?> summary = dataProperties(upsert);
+        assertThat(stringKeys(summary)).containsExactlyInAnyOrder(
+                "featureRef", "revision", "status", "definitionFingerprint",
+                "evidenceFingerprint", "caseCount", "coverageTargetCount")
+                .doesNotContain("givenInputs", "expectedOutput", "nodeBehaviors", "evaluationRef");
+        assertThat(schemaProperty(upsert.outputSchema(), "data").get("additionalProperties"))
+                .isEqualTo(false);
+
+        Map<?, ?> evidence = dataProperties(run);
+        assertThat(stringKeys(evidence)).containsExactlyInAnyOrder(
+                "featureRef", "suiteRevision", "status", "evidenceFingerprint",
+                "executionEvidenceFingerprint", "evaluationRefFingerprint", "caseCount",
+                "passedCount", "failedCount", "realExternalCalls", "coverage")
+                .doesNotContain("givenInputs", "expectedOutput", "nodeBehaviors", "evaluationRef");
+        assertThat(schemaProperty(run.outputSchema(), "data").get("additionalProperties"))
+                .isEqualTo(false);
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.agenttdd.EngineeringHandoffController;
 import com.leanowtech.bloge.gateway.solution.feature.FeatureHandoffController;
 import com.leanowtech.bloge.gateway.solution.board.BoardProjectionController;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureIndexController;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenReviewController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
@@ -88,7 +89,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         EngineeringHandoffController.class,
         FeatureHandoffController.class,
         BoardProjectionController.class,
-        BusinessFixtureIndexController.class
+        BusinessFixtureIndexController.class,
+        BusinessGoldenReviewController.class
 })
 public class IntegrationProblemHandler {
 

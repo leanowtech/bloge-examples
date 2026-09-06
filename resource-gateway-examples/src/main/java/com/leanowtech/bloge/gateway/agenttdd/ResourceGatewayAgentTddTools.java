@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.capability.BusinessCapabilityIndex;
 import com.leanowtech.bloge.gateway.solution.coverage.SolutionCoverageService;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureControlledSuiteDefinition;
+import com.leanowtech.bloge.gateway.solution.feature.FeatureControlledSuiteService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
@@ -56,6 +58,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final BusinessJourneyService journeys;
     private final BusinessGoldenService businessGolden;
     private final SolutionCoverageService solutionCoverage;
+    private final FeatureControlledSuiteService featureSuites;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -72,7 +75,18 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this(libraries, drafts, mapper, null, null, null, null, null,
                 null, null, null, AgentTddAuthoringTelemetry.noop(),
                 null, null, null, null, null, null, null, null, null,
-                solutionCoverage);
+                solutionCoverage, null);
+    }
+
+    /** Creates a focused facade for protected Feature suite contract tests. */
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        FeatureControlledSuiteService featureSuites) {
+        this(libraries, drafts, mapper, null, null, null, null, null,
+                null, null, null, AgentTddAuthoringTelemetry.noop(),
+                null, null, null, null, null, null, null, null, null,
+                null, featureSuites);
     }
 
     /** Creates a focused facade with contract-aware DSL and simulation services. */
@@ -205,12 +219,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         BusinessJourneyService journeys,
                                         BusinessGoldenService businessGolden,
                                         BusinessGoldenMaterialStore goldenMaterials,
-                                        ObjectProvider<SolutionCoverageService> solutionCoverages) {
+                                        ObjectProvider<SolutionCoverageService> solutionCoverages,
+                                        ObjectProvider<FeatureControlledSuiteService> featureSuites) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
                 writeRunners.getIfUnique(), libraryOverview, capabilityIndex, journeys, businessGolden,
-                goldenMaterials, solutionCoverages.getIfAvailable());
+                goldenMaterials, solutionCoverages.getIfAvailable(), featureSuites.getIfAvailable());
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -231,7 +246,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          SolutionWriteExecutionRunner writeRunner) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
-                tokenKeys, writeRunner, null, null, null, null, null, null);
+                tokenKeys, writeRunner, null, null, null, null, null, null, null);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -255,7 +270,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          BusinessJourneyService journeys,
                                          BusinessGoldenService businessGolden,
                                          BusinessGoldenMaterialStore goldenMaterials,
-                                         SolutionCoverageService solutionCoverage) {
+                                         SolutionCoverageService solutionCoverage,
+                                         FeatureControlledSuiteService featureSuites) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -280,6 +296,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.journeys = journeys;
         this.businessGolden = businessGolden;
         this.solutionCoverage = solutionCoverage;
+        this.featureSuites = featureSuites;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
                 states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner,
                 goldenMaterials);
@@ -387,6 +404,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                     ? execution().rehearse(safeArguments, identity)
                     : workflow.recordEvidence("rg.feature.rehearse", featureArguments(safeArguments),
                             execution().rehearse(safeArguments, identity), identity));
+            case "rg.feature.controlledSuite.upsert" -> executionSuccess(featureSuites().upsert(
+                    controlledSuite(safeArguments), identity));
+            case "rg.feature.controlledSuite.run" -> executionSuccess(featureSuites().run(
+                    requiredText(safeArguments, "featureRef"),
+                    safeArguments.path("expectedRevision").asLong(-1), identity));
+            case "rg.feature.controlledSuite.get" -> executionSuccess(featureSuites().summary(
+                    requiredText(safeArguments, "featureRef"), identity));
             case "rg.tool.baseline" -> executionSuccess(baseline(safeArguments, identity));
             case "rg.fixture.promote" -> executionSuccess(workflow().promoteFixture(safeArguments, identity));
             case "rg.fixture.provide" -> executionSuccess(workflow().provideFixture(safeArguments, identity));
@@ -439,6 +463,21 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         if (solutionCoverage == null) throw new AgentTddToolException(
                 "GATE_REJECTED", "Solution coverage is unavailable.");
         return solutionCoverage;
+    }
+
+    private FeatureControlledSuiteService featureSuites() {
+        if (featureSuites == null) throw new AgentTddToolException(
+                "GATE_REJECTED", "Feature controlled suite services are unavailable.");
+        return featureSuites;
+    }
+
+    private FeatureControlledSuiteDefinition controlledSuite(JsonNode arguments) {
+        try {
+            return mapper.treeToValue(arguments, FeatureControlledSuiteDefinition.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException failure) {
+            throw new AgentTddToolException(
+                    "SCHEMA_NONCONFORMANT", "The Feature suite request is invalid.");
+        }
     }
 
     private Map<String, Object> journeyAction(String name, JsonNode arguments,

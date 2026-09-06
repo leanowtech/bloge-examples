@@ -39,7 +39,9 @@ public final class McpSurfacePolicy {
             "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
             "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
             "rg.scenario.setDependencyBehavior", "rg.scenario.test", "rg.dsl.preview", "rg.gate.check",
-            "rg.feature.rehearse", "rg.tool.baseline", "rg.simulate",
+            "rg.feature.rehearse", McpToolCatalog.FEATURE_SUITE_UPSERT,
+            McpToolCatalog.FEATURE_SUITE_RUN, McpToolCatalog.FEATURE_SUITE_GET,
+            "rg.tool.baseline", "rg.simulate",
             "rg.fixture.promote", "rg.fixture.provide", "rg.tool.publishSpec",
             "rg.tool.publish", "rg.readiness.get");
     private static final Set<String> OPERATIONS = Set.of(

@@ -24,6 +24,9 @@ public final class McpToolCatalog {
     public static final String GOLDEN_PROPOSE = "rg.solution.golden.propose";
     public static final String GOLDEN_LIST = "rg.solution.golden.list";
     public static final String SOLUTION_COVERAGE = "rg.solution.coverage";
+    public static final String FEATURE_SUITE_UPSERT = "rg.feature.controlledSuite.upsert";
+    public static final String FEATURE_SUITE_RUN = "rg.feature.controlledSuite.run";
+    public static final String FEATURE_SUITE_GET = "rg.feature.controlledSuite.get";
     public static final String FEATURE_HANDOFF = "rg.feature.handoff";
     public static final String ENGINEERING_HANDOFF = "rg.engineering.handoff";
     public static final String DSL_REFERENCE = "rg.dsl.reference.get";
@@ -227,6 +230,23 @@ public final class McpToolCatalog {
                 McpToolImpact.EXECUTE,
                 props("featureRef", string(), "libraryRefs", stringArray(), "cases", casesEnvelope()),
                 List.of("featureRef", "libraryRefs", "cases")));
+        values.add(tool(FEATURE_SUITE_UPSERT, "Save controlled Feature suite",
+                "Store one revision-fenced Feature suite in the protected material vault.",
+                McpToolImpact.DRAFT_WRITE,
+                props("featureRef", string(), "evaluationRef", string(),
+                        "expectedRevision", integer(), "libraryRefs", stringArray(),
+                        "requiredCoverageTargets", stringArray(),
+                        "cases", arrayOf(featureControlledCase())),
+                List.of("featureRef", "evaluationRef", "expectedRevision", "libraryRefs",
+                        "requiredCoverageTargets", "cases")));
+        values.add(tool(FEATURE_SUITE_RUN, "Run controlled Feature suite",
+                "Run one exact protected Feature suite revision with zero external calls.",
+                McpToolImpact.EXECUTE,
+                props("featureRef", string(), "expectedRevision", integer()),
+                List.of("featureRef", "expectedRevision")));
+        values.add(tool(FEATURE_SUITE_GET, "Get controlled Feature suite",
+                "Read payload-free current Feature suite metadata and evidence coordinates.",
+                McpToolImpact.READ, props("featureRef", string()), List.of("featureRef")));
         values.add(tool("rg.tool.baseline", "Baseline tool", "Run multi-case, multi-round business baseline.",
                 McpToolImpact.EXECUTE,
                 props("toolRef", string(), "libraryRefs", stringArray(), "caseSetRef", string(), "cases", casesEnvelope(),
@@ -732,6 +752,8 @@ public final class McpToolCatalog {
                     "approvalState", enumString("PENDING", "APPROVED")),
                     List.of("caseSetRef", "revision", "caseSummaries", "approvalState"));
             case SOLUTION_COVERAGE -> solutionCoverage();
+            case FEATURE_SUITE_UPSERT, FEATURE_SUITE_GET -> featureSuiteSummary();
+            case FEATURE_SUITE_RUN -> featureSuiteEvidence();
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
                     "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
@@ -866,6 +888,45 @@ public final class McpToolCatalog {
                     List.of("toolRef", "state", "publishable", "attestation"));
             default -> businessObject();
         };
+    }
+
+    private static Map<String, Object> featureControlledCase() {
+        Map<String, Object> nodeBehavior = structuredObject(props(
+                "nodeId", string(), "behavior", businessObject()),
+                List.of("nodeId", "behavior"));
+        return structuredObject(props(
+                "caseId", string(), "intent", string(), "givenInputs", businessObject(),
+                "nodeBehaviors", arrayOf(nodeBehavior), "expectedOutput", anyJson(),
+                "coverageTargets", stringArray()),
+                List.of("caseId", "intent", "givenInputs", "nodeBehaviors",
+                        "expectedOutput", "coverageTargets"));
+    }
+
+    private static Map<String, Object> featureSuiteSummary() {
+        return structuredObject(props(
+                "featureRef", string(), "revision", integer(),
+                "status", enumString("DRAFT", "PASSED", "FAILED_CLOSED"),
+                "definitionFingerprint", string(), "evidenceFingerprint", string(),
+                "caseCount", integer(), "coverageTargetCount", integer()),
+                List.of("featureRef", "revision", "status", "definitionFingerprint",
+                        "evidenceFingerprint", "caseCount", "coverageTargetCount"));
+    }
+
+    private static Map<String, Object> featureSuiteEvidence() {
+        Map<String, Object> coverage = structuredObject(props(
+                "targetsTotal", integer(), "targetsCovered", integer(), "percent", integer(),
+                "requiredPercent", integer()),
+                List.of("targetsTotal", "targetsCovered", "percent", "requiredPercent"));
+        return structuredObject(props(
+                "featureRef", string(), "suiteRevision", integer(),
+                "status", enumString("PASSED", "FAILED_CLOSED"),
+                "evidenceFingerprint", string(), "executionEvidenceFingerprint", string(),
+                "evaluationRefFingerprint", string(), "caseCount", integer(),
+                "passedCount", integer(), "failedCount", integer(),
+                "realExternalCalls", integer(), "coverage", coverage),
+                List.of("featureRef", "suiteRevision", "status", "evidenceFingerprint",
+                        "executionEvidenceFingerprint", "evaluationRefFingerprint", "caseCount",
+                        "passedCount", "failedCount", "realExternalCalls", "coverage"));
     }
 
     /** Strict Agent projection that cannot carry rule ids, case ids or business payloads. */
