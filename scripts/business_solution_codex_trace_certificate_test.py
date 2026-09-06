@@ -550,6 +550,18 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.CertificationFailure, "intent-appropriate first tool"):
             self.certify_aux(family_overrides={"synonym-rewrite": events})
 
+    def test_accepts_family_reads_through_the_authoring_server(self) -> None:
+        events = family_events("synonym-rewrite")
+        for event in events:
+            item = event.get("item", {})
+            if item.get("tool") in MODULE.READ_TOOLS:
+                item["server"] = "rg_author"
+
+        certificate = self.certify_aux(family_overrides={"synonym-rewrite": events})
+        synonym = next(item for item in certificate["familyEvidence"]
+                       if item["familyId"] == "synonym-rewrite")
+        self.assertEqual("TOP1_MATCH", synonym["observedOutcome"])
+
     def test_rejects_remaining_families_split_across_runtime_phases(self) -> None:
         def split_runtime(manifest: dict) -> None:
             target = next(item for item in manifest["families"]

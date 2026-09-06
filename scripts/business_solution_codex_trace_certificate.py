@@ -600,7 +600,8 @@ def require_family_surface(calls: list[dict[str, Any]], family_id: str) -> None:
     """Fail when one family turn observes a tool outside the business surface."""
     for call in calls:
         passive = call["server"] == "codex" and call["tool"] in CODEX_MCP_DISCOVERY_CALLS
-        business_read = call["server"] == "rg_read" and call["tool"] in READ_TOOLS
+        business_read = call["server"] in {"rg_read", "rg_author"} \
+            and call["tool"] in READ_TOOLS
         business_write = call["server"] == "rg_author" and call["tool"] in AUTHORING_TOOLS
         if not passive and not business_read and not business_write:
             raise CertificationFailure(f"family {family_id} escaped the business surface")
