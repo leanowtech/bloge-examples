@@ -5755,6 +5755,9 @@ accepts only ACTIVE GOLDEN rows, locks both the case-set and Solution revisions 
 evidence transaction, stubs WRITE results from their declared output contracts, and persists the
 layer summary plus business backlog with `realExternalCalls=0`. A passing GREEN row advances to
 READY in that same transaction; an unapproved, stale, or concurrently changed line fails closed.
+Legacy platform-authoring rows may use an explicit Instruction-ref `RETURN`, `ERROR`, `TIMEOUT`, or
+`MUST_NOT_CALL` stub through the same case-scoped adapter. An empty or unsupported legacy stub never
+restores the governed READ dispatch channel.
 
 1. Start the demo and open `http://localhost:8080/author/`.
 2. Load one of the built-in complex canvas examples. Its graph Contract and table cases are

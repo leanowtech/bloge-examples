@@ -723,7 +723,7 @@ Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协�
 
 `FeatureEvaluationBackend`、`InstructionDispatchChannel` 和 Graph `NodeFixture` 是可复用执行缝，不是完整产品能力。实现必须新增 case-scoped adapter，不能替换 Spring 全局 backend，也不能把业务名称直接写入 `nodeId`。
 
-受控 baseline 不持有运行时 `InstructionDispatchChannel`。没有显式假设的 READ Instruction 使用拒绝通道并返回 `CONTROLLED_TEST_EGRESS_DENIED`；WRITE Instruction 使用契约形状桩；Feature 和显式依赖假设使用 case-scoped adapter。不得调用默认 channel 后再用 `realExternalCalls=0` 声称零外呼。
+受控 baseline 不持有运行时 `InstructionDispatchChannel`。没有显式假设的 READ Instruction 使用拒绝通道并返回 `CONTROLLED_TEST_EGRESS_DENIED`；WRITE Instruction 使用契约形状桩；Feature 和显式依赖假设使用 case-scoped adapter。`PLATFORM_AUTHORING` 旧 case-set 中以 Instruction ref 为键的显式 `RETURN`、`ERROR`、`TIMEOUT`、`MUST_NOT_CALL` stub 只转换为同一 case-scoped adapter，不恢复运行时 channel；未支持的旧行为失败关闭。不得调用默认 channel 后再用 `realExternalCalls=0` 声称零外呼。
 
 ### 7.9 Journey action envelope
 
@@ -1328,6 +1328,7 @@ gateway:
 4. HUMAN/USER 在 no-store 审阅面重新核对完整案例并批准 `goldenCaseFingerprint`。
 5. 任何重新发布、修改后发布或新 Solution 引用旧案例，都必须完成该迁移。
 6. 关闭受控业务测试开关不会把新案例降级写回旧行结构。
+7. 兼容读取旧行时，只有以当前冻结 Instruction ref 为键的显式 `RETURN`、`ERROR`、`TIMEOUT` 或 `MUST_NOT_CALL` stub 可以进入受控 adapter；空 stub 或其他行为不能授权 READ dispatch。
 
 迁移不自动批准，不从历史 GREEN 推断业务负责人认可，也不允许管理员批量补造批准指纹。
 

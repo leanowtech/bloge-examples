@@ -218,6 +218,39 @@ class SolutionTestingServiceTest {
     }
 
     @Test
+    void adaptsAnExplicitLegacyReadStubWithoutRetainingTheRuntimeChannel() {
+        storeCases("ACTIVE", Map.of("result", Map.of("decision", "FIXTURE")));
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of(
+                        "result", Map.of("type", Map.of("fields", Map.of(
+                                "decision", Map.of("enum", List.of("FIXTURE"))))),
+                        "reasoning", "required")), InstructionContract.Effect.READ,
+                "operator:refund-read", null));
+        AgentTddStoredAsset stored = states.find(
+                SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel").orElseThrow();
+        ObjectNode revised = (ObjectNode) stored.data().deepCopy();
+        ObjectNode row = (ObjectNode) revised.path("rows").get(0);
+        row.withObject("stubs").set("ins:refund", mapper.valueToTree(Map.of(
+                "behavior", "RETURN", "value", Map.of(
+                        "result", Map.of("decision", "FIXTURE"), "reasoning", "controlled fixture"))));
+        states.saveIfRevision(SCOPE, AgentTddMutationService.CASE_SET,
+                "caseSet:cancel", stored.revision(), revised);
+        AtomicInteger runtimeCalls = new AtomicInteger();
+        SolutionTestingService guarded = new SolutionTestingService(
+                states, registry, mapper, (instruction, values, context) -> {
+                    runtimeCalls.incrementAndGet();
+                    return Map.of("result", Map.of("decision", "REAL"), "reasoning", "runtime");
+                });
+
+        Map<String, Object> result = guarded.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(runtimeCalls).hasValue(0);
+    }
+
+    @Test
     void recompilesApprovedBusinessMaterialAfterAnImplementationRevision() {
         JsonNode businessCase = mapper.valueToTree(Map.ofEntries(
                 Map.entry("caseId", "g-business"),

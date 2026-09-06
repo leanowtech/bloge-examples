@@ -31,6 +31,8 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isFalse();
         assertThat(policy.visible(catalog.require("rg.scenario.upsertCases"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_EXECUTION"))).isFalse();
+        assertThat(policy.visible(catalog.require("rg.scenario.test"),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_EXECUTION"))).isTrue();
     }
 
     @Test
@@ -80,7 +82,7 @@ class McpSurfacePolicyTest {
         McpSurfacePolicy rolledBack = new McpSurfacePolicy(AgentTddAuthoringTelemetry.noop(), properties);
 
         assertThat(rolledBack.visibleDefinitions(catalog.all(), McpSurfacePolicy.Surface.LEGACY_ALL,
-                identity("AGENT_TDD_READ"))).hasSize(41);
+                identity("AGENT_TDD_READ"))).hasSize(catalog.all().size() - 8);
         assertThat(rolledBack.visible(catalog.require("rg.capability.search"),
                 McpSurfacePolicy.Surface.LEGACY_ALL, identity("AGENT_TDD_READ"))).isFalse();
         assertThat(rolledBack.visible(catalog.require("rg.contract.get"),

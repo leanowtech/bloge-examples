@@ -323,9 +323,15 @@ class CancelDisputeSolutionOperationalJourneyTest {
 
     private static Map<String, Object> golden(String id, String party, boolean free,
                                                String orderId, String decision, String intent) {
+        Map<String, Object> stubs = "UPHELD".equals(decision)
+                ? Map.of("ins:uphold-v145", Map.of(
+                "behavior", "RETURN", "value", Map.of(
+                        "result", Map.of("decision", "UPHELD"),
+                        "reasoning", "受控标本要求维持原收费")))
+                : Map.of();
         return Map.of("caseId", id, "category", "GOLDEN", "layer", "integration",
                 "given", Map.of("party", party, "withinFree", free, "orderId", orderId),
-                "stubs", Map.of(), "expect", Map.of("result", Map.of("decision", decision)),
+                "stubs", stubs, "expect", Map.of("result", Map.of("decision", decision)),
                 "intent", intent, "oracleOwner", "customer-experience-owner");
     }
 

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
+import com.leanowtech.bloge.gateway.solution.InstructionContract;
+import com.leanowtech.bloge.gateway.solution.InstructionStubFactory;
 import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
@@ -202,7 +204,7 @@ public final class SolutionTestingService {
             controlledPlans.add(Map.entry(caseId, compiledPlan.isBlank()
                     ? VisualBundleFingerprint.fromCanonicalValue(mapper,
                     Map.of("caseId", caseId, "controlledAssumptions",
-                            row.path("controlledAssumptions")), MAX_BYTES)
+                            row.path("controlledAssumptions"), "legacyStubs", row.path("stubs")), MAX_BYTES)
                     : compiledPlan));
             SolutionExecutionService.ExecutionResult result;
             try {
@@ -216,9 +218,18 @@ public final class SolutionTestingService {
                             : controlledExecution(row).simulateControlledPublished(
                             scopeKey, executable.contracts(), features.values());
                 } else {
-                    egressGuard.verifyBeforeCase();
-                    result = controlledExecution(row).simulatePublished(
-                            scopeKey, executable.contracts(), row.path("given"));
+                    ObjectNode legacyAssumptions = legacyInstructionAssumptions(
+                            row, executable.contracts());
+                    if (legacyAssumptions.isEmpty()) {
+                        egressGuard.verifyBeforeCase();
+                        result = controlledExecution(row).simulatePublished(
+                                scopeKey, executable.contracts(), row.path("given"));
+                    } else {
+                        egressGuard.verifyBeforeCase();
+                        result = legacyControlledExecution(legacyAssumptions)
+                                .simulateControlledPublished(
+                                        scopeKey, executable.contracts(), row.path("given"));
+                    }
                 }
             } catch (SolutionContractException failure) {
                 throw new AgentTddToolException(failure.code(), failure.getMessage());
@@ -414,6 +425,50 @@ public final class SolutionTestingService {
                 registry, mapper, egressGuard.deniedInstructionChannel());
         return new SolutionExecutionService(
                 registry, mapper, new ControlledInstructionAdapter(assumptions, mapper));
+    }
+
+    /** Keeps unstubbed WRITE behavior contract-shaped while every unstubbed READ remains denied. */
+    private SolutionExecutionService legacyControlledExecution(ObjectNode assumptions) {
+        ControlledInstructionAdapter adapter = new ControlledInstructionAdapter(assumptions, mapper);
+        InstructionDispatchChannel denied = egressGuard.deniedInstructionChannel();
+        return new SolutionExecutionService(registry, mapper, (instruction, values, context) -> {
+            if (assumptions.has(instruction.instructionRef())) {
+                return adapter.execute(instruction, values, context);
+            }
+            if (instruction.effect() == InstructionContract.Effect.WRITE) {
+                return InstructionStubFactory.from(instruction);
+            }
+            return denied.execute(instruction, values, context);
+        });
+    }
+
+    /** Converts explicit legacy Instruction stubs into the same case-scoped no-egress channel. */
+    private ObjectNode legacyInstructionAssumptions(
+            JsonNode row, com.leanowtech.bloge.gateway.solution.PublishedSolutionSnapshot executable) {
+        ObjectNode assumptions = mapper.createObjectNode();
+        JsonNode stubs = row.path("stubs");
+        if (!stubs.isObject()) return assumptions;
+        executable.instructions().keySet().stream().sorted().forEach(instructionRef -> {
+            JsonNode stub = stubs.path(instructionRef);
+            if (!stub.isObject()) return;
+            String behavior = stub.path("behavior").asText().toUpperCase(java.util.Locale.ROOT);
+            ObjectNode assumption = assumptions.putObject(instructionRef);
+            assumption.put("assetKind", "INSTRUCTION");
+            switch (behavior) {
+                case "RETURN" -> {
+                    if (!stub.has("value")) throw new AgentTddToolException(
+                            "SCHEMA_NONCONFORMANT", "A RETURN Instruction stub requires a value.");
+                    assumption.put("outcome", "RETURNS");
+                    assumption.set("value", stub.path("value").deepCopy());
+                }
+                case "ERROR", "TIMEOUT" -> assumption.put("outcome", "FAILS_WITHOUT_EFFECT");
+                case "MUST_NOT_CALL" -> assumption.put("outcome", "MUST_NOT_BE_USED");
+                default -> throw new AgentTddToolException(
+                        "CONTROLLED_ASSUMPTION_REQUIRED",
+                        "The selected Instruction requires a supported controlled dependency behavior.");
+            }
+        });
+        return assumptions;
     }
 
     /** Read-only adapter that prevents existing registry decoders from escaping one asset snapshot. */
