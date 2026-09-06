@@ -12,7 +12,7 @@ and reuse.
 The interesting part is not "calling HTTP". The interesting part is making API
 integration something the business flow can see, reason about, test, and change.
 
-Resource Gateway 1.4.6 also exposes an authenticated, stateless MCP Agent TDD surface at
+Resource Gateway 1.4.7 also exposes an authenticated, stateless MCP Agent TDD surface at
 `POST /mcp`. It supports contract-first library and Tool authoring, approved GOLDEN
 cases, isolated zero-egress RED/GREEN execution, content-addressed evidence history, governed Fixture
 promotion, immutable Tool publication, and a structure-only review board with separately authenticated
@@ -41,7 +41,7 @@ authoring plus 15 business-language recall and clarification families. The check
 [six-image process manifest](../docs/acceptance/agent-tdd/business-solution-codex-process-v1.json)
 are bound to the certified production tree and certification inputs. The process images are
 payload-free renders of real trace events, not native Codex UI screenshots.
-The 50-tool catalog includes the business-first `rg.library.overview.get`, `rg.dsl.reference.get`,
+The 54-tool catalog includes the business-first `rg.library.overview.get`, `rg.dsl.reference.get`,
 and the four-entity solution authoring
 operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
 `rg.solution.compose`. Each mutation uses the existing exact-response idempotency authority and
@@ -76,8 +76,12 @@ channel, while WRITE dependencies remain contract-shaped stubs.
 Design-only platform Features follow the same contract-first handoff. An authoring Agent can call
 `rg.feature.handoff` for an unbound Feature, but cannot bind its evaluator. A separately authenticated
 feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil` with purpose
-`AGENT_TDD_FEATURE_ENG`; Resource Gateway records `IMPLEMENTED`, validates the controlled fixture output
-against the declared Feature type, and promotes only a passing implementation to `VERIFIED` / `READY`.
+`AGENT_TDD_FEATURE_ENG`. Before fulfillment, a platform-authoring Agent stores protected branch cases with
+`rg.feature.controlledSuite.upsert` and runs them with `rg.feature.controlledSuite.run`. Resource Gateway
+requires every case to pass, zero external calls, and the configured coverage threshold; fulfillment binds
+the evaluator only to that current suite evidence and then promotes the Feature to `VERIFIED` / `READY`.
+Suite inputs, dependency values, and expected outputs stay in the encrypted material vault; MCP returns only
+revisions, counts, status, coverage, and fingerprints.
 Interactive user Features remain ready through their native component or conversation contract and do not
 receive an evaluator binding.
 Design-only WRITE Instructions use the same separation. The Agent may create
@@ -93,13 +97,21 @@ governance credential. The no-store response joins the approved business cases w
 execution evidence and returns five business panels: rule matrix, dispositions, red/green cases,
 Feature cards, and publication gates. It never returns DSL, graph drafts, evaluator references, or
 Instruction bindings.
+Correctness Studio now also has a Business Solution world at
+`/correctness/?correctnessWorld=business&solutionRef=...&journeyRef=...`. A reviewer enters the
+separate HUMAN credential in a password field held only in component memory. The no-store APIs expose
+Business Golden material, governed Fixture descriptors, and grouped Solution coverage; the token is
+cleared after submission and is never copied to the URL, browser storage, or visible DOM. The Agent MCP
+surface remains payload-free.
 The `/workbench/?create=business-solution` entry is the business-first Solution surface. It starts
 in guided mode, asks only for decision facts, rules, and dispositions, preserves answers when the
 owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is
 delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
 is rejected before a result can become `READY_FOR_TEST`.
-The final v1.4.6 repository gate is `mvn -f resource-gateway-examples/pom.xml clean verify` with
-`Tests run: 8,724; failures: 0; errors: 0; skipped: 39`. The cancellation-dispute operational
+The last accepted v1.4.6 repository gate was `mvn -f resource-gateway-examples/pom.xml clean verify` with
+`Tests run: 8,724; failures: 0; errors: 0; skipped: 39`. The v1.4.7 gate adds protected business
+asset review, Feature controlled suites, Solution coverage, and an HTTP/MCP four-journey test; its
+final aggregate is recorded after the last serial `clean verify`. The cancellation-dispute operational
 journey itself is `1/1` with no skip and covers real HTTP MCP lifecycle calls, isolated engineering
 identities, four approved GOLDEN cases, zero-egress GREEN, platform write reconciliation, real Chrome
 five-panel signoff, publication, live invocation, operations aggregation, and Feature-token tamper rejection.
@@ -123,7 +135,7 @@ round-trip, stale-context, and limiter-rejection measurements. Labels are restri
 diagnostic codes, and catalog tool names; identity, source, fingerprints, operator references, and exception prose
 are never metric labels. Cross-call repair rounds remain a Codex trace-certificate fact rather than creating
 session state in the stateless MCP server.
-Resource Gateway 1.4.6 accepts `X-RG-Surface=BUSINESS_SOLUTION|PLATFORM_AUTHORING|OPERATIONS`.
+Resource Gateway 1.4.7 accepts `X-RG-Surface=BUSINESS_SOLUTION|PLATFORM_AUTHORING|OPERATIONS`.
 The same server-side policy filters both discovery and direct calls, then intersects visibility with the
 authenticated purpose. The checked-in Codex configuration uses only `BUSINESS_SOLUTION`, so a business
 conversation cannot discover or bypass into DSL, Graph/Tool, fixture, stub, or low-level scenario-test tools.
@@ -134,7 +146,7 @@ tools, mandatory surface headers, journey envelopes, controlled business baselin
 The checked-in defaults keep the completed business workflow active while retaining the headerless and legacy
 Feature compatibility paths. MCP initialization exposes these low-cardinality effective states under
 `capabilities.experimental["rg.semanticRecall"]`. `semantic-ranker-enabled` remains a readiness-only request in
-1.4.6: the server reports `semanticRankerEffective=false` and continues to use deterministic contract matching.
+1.4.7: the server reports `semanticRankerEffective=false` and continues to use deterministic contract matching.
 Sandbox attestation also rejects stable or mixed DNS answers in private and RFC special-purpose ranges, including
 documentation, benchmark, protocol-assignment, discard-only, transition and reserved addresses.
 The board derives each Tool's position and next business action along the five-act journey from

@@ -2,7 +2,7 @@
 
 本文是一份可直接照做的本地运营手册。目标是在 Codex Desktop、CLI 或 IDE 插件中，让 Agent 通过 MCP 完成世界观与积木发现、资源登记、样例提供、Tool 编排、业务用例提议、RED/GREEN 零外呼验证、平台实景验证、人工 Oracle 审批、人工发布签署和不可变发布。
 
-业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.6 会在 MCP 初始化说明中要求 Codex 先按业务语言补齐目标、判断依据、规则、兜底处置与代表案例，再自行建立 Feature（事实契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合）。只有处理底层 Tool DSL 时才读取当前 DSL 参考、预览并按服务端安全诊断修正；业务人员不承担这些技术步骤。
+业务人员只需要说明业务目标、事实来源、规则和标准答案。业务提示词不应包含 BLOGE DSL、Schema、binding、节点、端口或 MCP 参数。Resource Gateway 1.4.7 会在 MCP 初始化说明中要求 Codex 先按业务语言补齐目标、判断依据、规则、兜底处置与代表案例，再自行建立 Feature（事实契约）、Scenario（纯决策）、Instruction（结果与推理）和 Solution（纯函数组合）。平台创作会话处理底层 Feature/Tool DSL 时读取当前 DSL 参考、预览并按服务端安全诊断修正；业务人员不承担这些技术步骤。
 
 需要准备现场演示时，使用 [Resource Gateway Agent TDD 演示导演脚本](resource-gateway-agent-tdd-demo-script.md)。该脚本以“不写代码的客服政策负责人”为主角，按五幕业务旅程组织自然语言对话、看板核对、人工停点、成功信号和失败回退。第 1 幕先盘点业务能力库，再用多轮业务对话逐项确认事实含义、所需上下文、结果范围、不可判断处理和取值责任。只有这些维度完全一致的库内能力才可复用；缺失事实先建立业务契约与工程交接。工程履约后，Codex 必须重新读取能力库和当前契约，并确认业务定义没有漂移；所有必需能力就绪后，才能继续规则、案例、验证和发布。业务画面只显示事实定义、能力状态与下一责任方，算子契约和绑定只出现在技术幕后。前一幕的交接门未通过时不得继续。
 
@@ -104,7 +104,7 @@ enabled_tools = [
   "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
   "rg.journey.next", "rg.solution.golden.list",
   "rg.solution.getContract",
-  "rg.solution.readiness", "rg.solution.performance"
+  "rg.solution.readiness", "rg.solution.performance", "rg.solution.coverage"
 ]
 required = true
 startup_timeout_sec = 10
@@ -147,6 +147,43 @@ tool_timeout_sec = 120
 ```
 
 上面的项目配置固定使用 `BUSINESS_SOLUTION`。服务端在 `tools/list` 和 `tools/call` 两处执行同一可见性判定，并与已认证 purpose 取交集。业务会话不会列出，也不能直接调用 DSL、Graph/Tool、fixture、stub 或底层 `rg.scenario.test`。需要维护算子库或底层 Tool 时，应在独立 Codex 会话中把 Header 改为 `PLATFORM_AUTHORING`，并只启用该任务需要的工具；不要在业务会话中同时配置两个 surface。只读运维会话使用 `OPERATIONS`。
+
+平台研发加工 Feature 时，使用另一份项目配置并从独立 Codex 实例启动。仓库提供可复制的 [`.codex/config.platform-authoring.example.toml`](../.codex/config.platform-authoring.example.toml)。不要把下面三组 server 与业务会话配置放在同一个 Codex 实例中：
+
+```toml
+[mcp_servers.rg_platform_read]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = [
+  "rg.library.overview.get", "rg.capability.list", "rg.contract.get",
+  "rg.dsl.reference.get", "rg.feature.controlledSuite.get"
+]
+required = true
+
+[mcp_servers.rg_platform_author]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = [
+  "rg.library.upsert", "rg.resource.declare", "rg.feature.compose",
+  "rg.dsl.preview", "rg.gate.check", "rg.feature.define", "rg.feature.handoff",
+  "rg.feature.controlledSuite.upsert"
+]
+required = true
+
+[mcp_servers.rg_platform_execute]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = ["rg.feature.rehearse", "rg.feature.controlledSuite.run"]
+required = true
+tool_timeout_sec = 120
+```
+
+这三个入口形成受控 Feature 流程：Codex 先读取积木和 DSL 参考，登记只读资源并完成 Feature 图预览；再用 `rg.feature.controlledSuite.upsert` 保存覆盖分支的受保护用例；最后调用 `rg.feature.controlledSuite.run`。运行结果必须为 `status=PASSED`、`realExternalCalls=0` 且覆盖率达到部署阈值。MCP 响应只返回 revision、计数与指纹；样例输入、桩值和期望结果只进入加密 material vault。Feature 工程履约使用这次运行返回的 `evidenceFingerprint`，不再用单条 fixture 冒充覆盖验证。
+
+同一 RG 服务可以同时承载两个 surface，但两个 Codex 进程必须隔离。业务项目继续使用仓库 `.codex/config.toml`；平台项目复制 platform 示例为自己的 `.codex/config.toml`。两个进程都只继承 Agent token，不继承 reviewer、feature-engineer 或 instruction-engineer token。`rg.feature.controlledSuite.get` 只读回摘要，不能把受保护用例正文带回 Codex。
 
 `rg.library.overview.get` 已进入 READ 目录。Codex 应在业务创作开始时调用它，而不是访问看板 HTTP 接口或猜测库内容。输入省略 `includeSamples` 时不返回样例描述；只有需要确认已治理样例是否存在时才传 `true`。输出中的 `snapshotFingerprint` 绑定当前 tenant、project、environment、业务积木和世界模型。上下文变化后必须重新读取，不能把旧快照当作当前目录。
 
@@ -205,7 +242,11 @@ Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_
 
 ### 3.2 两类工程交接怎么完成
 
-Codex 遇到缺少求值实现的业务事实时，应创建特征交接单并停在“等待特征工程”，不能向业务负责人索要接口或自行填写 evaluator。保障人员在独立终端使用 feature-engineer token 调用：
+Codex 遇到缺少求值实现的业务事实时，应创建特征交接单并停在“等待特征工程”，不能向业务负责人索要接口或自行填写 evaluator。平台 Codex 先在 `PLATFORM_AUTHORING` 会话中为该 Feature 建立受控套件并运行。平台研发只描述需要覆盖的业务分支和依赖失败情形；Codex 自行生成套件中的输入、依赖行为、期望输出和覆盖目标。
+
+保存后的套件可以继续累积。运行输出只显示 `featureRef`、`suiteRevision`、`status`、证据指纹、案例计数、通过/失败计数、`realExternalCalls` 和 coverage。样例输入、桩值与期望输出不会从 MCP 返回。`status` 不是 `PASSED`、`realExternalCalls` 不是 `0`、覆盖率未达阈值时，工程履约必须停止。
+
+通过后，保障人员在独立终端使用 feature-engineer token，把真实 evaluator 与本次运行的当前 `evidenceFingerprint` 绑定：
 
 ```bash
 printf 'Feature engineer token: '
@@ -217,7 +258,7 @@ curl --fail-with-body -X POST \
   -H 'X-Purpose: AGENT_TDD_FEATURE_ENG' \
   -H 'Content-Type: application/json' \
   http://localhost:8081/api/agent-tdd/feature-handoffs/responsibility.party.v145/fulfil \
-  -d '{"evaluationRef":"demo:ride-responsibility-v1","fixtureInputs":{"orderId":"O-FREE-NONE"}}'
+  -d '{"evaluationRef":"demo:ride-responsibility-v1","suiteEvidenceRef":"<responsibility-suite-evidenceFingerprint>"}'
 
 # 第二项事实用同一工程身份履约。
 curl --fail-with-body -X POST \
@@ -225,10 +266,12 @@ curl --fail-with-body -X POST \
   -H 'X-Purpose: AGENT_TDD_FEATURE_ENG' \
   -H 'Content-Type: application/json' \
   http://localhost:8081/api/agent-tdd/feature-handoffs/cancel.withinFree.v145/fulfil \
-  -d '{"evaluationRef":"demo:cancel-within-free-v1","fixtureInputs":{"orderId":"O-FREE-NONE"}}'
+  -d '{"evaluationRef":"demo:cancel-within-free-v1","suiteEvidenceRef":"<within-free-suite-evidenceFingerprint>"}'
 
 unset RG_FEATURE_ENGINEER_TOKEN
 ```
+
+服务端会再次核对 suite revision、Feature 业务契约、evaluation ref、图和库指纹。套件、Feature 或实现任一变化后，旧证据不能履约。兼容参数 `fixtureInputs` 只有显式开启 `gateway.agent-tdd.feature-controlled-suite.legacy-single-fixture-enabled=true` 才生效；默认关闭。既有已验证 Feature 不追溯失效，但再次履约或修改契约时必须补当前套件。
 
 写处置缺少实现时，Codex 只创建写工程交接单。通用工程师从交接单确认业务结果、下游系统与对账键后，以 instruction-engineer token 逐项绑定已部署实现：
 
@@ -304,6 +347,14 @@ tail -80 target/example-logs/resource-gateway.log
 看板列表仍是 `STRUCTURE_ONLY`；payload-bearing 详情只在人工治理端点按需读取，响应带 `no-store`，不会进入 MCP。批准同时绑定 `expectedRevision` 和详情的 `proposalFingerprint`；如果 Agent 在评审期间修改了用例，服务端会拒绝，必须刷新后重审。提议者与 reviewer 是同一 actor 时也会拒绝。
 
 批准后，让 Agent 调用 `rg.scenario.listCases`，确认该行是 `ACTIVE`。
+
+四实体业务解法使用新的 Correctness Studio 业务面：
+
+```text
+http://localhost:8081/correctness/?correctnessWorld=business&solutionRef=<solutionRef>&journeyRef=<journeyRef>
+```
+
+输入 reviewer token 后，页面加载 Business Golden、Business Fixtures 和 Solution Coverage。reviewer token 只保存在当前 React 组件内存，请求完成后清空，不进入 URL、`localStorage`、`sessionStorage` 或可见 DOM。业务 Agent 不能调用这些 HUMAN 端点；其 MCP 只得到案例计数、生命周期、覆盖状态和不可逆指纹。
 
 ### 4.3 第二段：RED、GREEN 和发布前检查
 
@@ -585,7 +636,7 @@ code-mode host 只负责组织已配置 MCP 调用；除这两个固定二进制
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslAuthoringRepairMatrixTest,DslReferenceCertificationTest,AgentTddCodexCertificationArtifactTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
+  -Dtest='V147McpOperationalJourneyTest,AgentTddMcpOperationalWorkflowTest,AgentDslAuthoringSupportTest,DslAuthoringRepairMatrixTest,DslReferenceCertificationTest,AgentTddCodexCertificationArtifactTest,McpProtocolControllerTest,McpRequestLimiterTest,AgentTddEgressHostPolicyTest,AgentTddAttestationServiceTest,VisualOperatorFixtureSchemaSourceTest,LocalAuthoringSchemaBootstrapConfigurationTest,DatabaseAgentTddStateRepositoryPostgresCertificationTest,DslImportServiceTest,GraphDraftDslGeneratorTest,ExampleServicesScriptTest' \
   test
 
 python3 -m unittest scripts/business_solution_codex_trace_certificate_test.py
@@ -593,7 +644,7 @@ python3 -m unittest scripts/business_solution_codex_trace_certificate_test.py
 mvn -f resource-gateway-examples/pom.xml clean verify
 ```
 
-`AgentTddMcpOperationalWorkflowTest` 使用真实 Spring 服务、HTTP `/mcp`、Bearer/purpose 鉴权、独立 WORKLOAD/HUMAN 凭据、人工详情与批准 HTTP、H2 持久化、零外呼 RED/GREEN、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务。新增业务 surface 用例从 initialize 开始，贯穿 journey、Feature/Scenario/Instruction/Solution、受保护 GOLDEN、HUMAN 批准与 GREEN；正式验收必须确认该类 6 个测试全部执行且 `skipped=0`。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
+`V147McpOperationalJourneyTest` 使用真实 Spring 服务和 HTTP `/mcp`，先在 `PLATFORM_AUTHORING` 完成 DSL reference→preview/gate→Feature compose→controlled suite→工程 fulfil，再在 `BUSINESS_SOLUTION` 完成四实体、受保护 GOLDEN、HUMAN material、批准、覆盖和零外呼 GREEN。它同时证明业务 Agent 调 Feature fulfil 得到 403、两个 surface 的 `tools/list` 不互相泄漏。`AgentTddMcpOperationalWorkflowTest` 继续覆盖 Bearer/purpose 鉴权、独立 WORKLOAD/HUMAN 凭据、H2 持久化、平台自动实景读取、Oracle 复核、真实 Chrome 看板失败重跑和发布服务；正式验收必须确认两类测试都实际执行且 `skipped=0`。真实读取只访问同一测试进程内的 demo upstream，不访问外部业务系统。`AgentTddAttestationServiceTest` 覆盖平台身份、prod、写操作、host 白名单、transport dispatch 计数、进程丢失后的新人工 attempt 和 exact replay；`GatewayHttpClientRedirectPolicyTest` 证明生产 transport 不会跟随到第二主机；`HttpResourceOperatorTest` 证明 descriptor 在白名单校验后发生替换时不会发送请求，也不会产生 transport dispatch。`DatabaseAgentTddStateRepositoryTest` 证明未完成的外呼 reservation 跨 repository restart 仍失败关闭；`DatabaseAgentTddStateRepositoryPostgresCertificationTest` 会启动原生 PostgreSQL，验证 migration、并发 reservation、事务健康和 exact replay。这些测试不能替代生产身份提供方、生产数据库部署和发布责任人的验收证据。
 
 ## 9. 完成判据
 

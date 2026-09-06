@@ -1,4 +1,4 @@
-# Resource Gateway v1.4.6 business Solution connection.
+# Resource Gateway v1.4.7 business Solution connection.
 # The process that launches Codex must provide RG_MCP_TOKEN; never place reviewer or engineer
 # credentials in this file or in the Codex process environment.
 
@@ -10,7 +10,7 @@ enabled_tools = [
   "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
   "rg.journey.next", "rg.solution.golden.list",
   "rg.solution.getContract",
-  "rg.solution.readiness", "rg.solution.performance"
+  "rg.solution.readiness", "rg.solution.performance", "rg.solution.coverage"
 ]
 required = true
 startup_timeout_sec = 10

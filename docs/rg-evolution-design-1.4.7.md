@@ -1,7 +1,8 @@
 # Resource Gateway v1.4.7 详细技术方案
 ## 核心资产可见 · 端到端剧本贯通
 
-> **文档性质**:自包含详细技术设计,供实施团队直接开发。阅读本文无需参与过任何前置设计讨论;所有系统概念、数据模型、接口、既有实现在首次出现处给出定义与文件位置。
+> **文档性质**:已实施技术设计与验收基线。本文同时保留问题背景、设计决策、落地偏差和可复核证据。
+> **实施状态**:A0–A4、B1–B3、C1–C2、D1–D2 已落码；正在执行最终真实 Codex 复认证和仓库全量门。只有 §8 记录为“已完成”的能力可视为当前实现。
 > **范围**:`resource-gateway-examples` 工程的后端 Java(`solution`、`agenttdd`、`testing.correctness` 包)与前端 `src/main/frontend`。不改 BLOGE 图引擎、DSL 编译器内核、四实体语义。
 > **不做**:重写既有加密存储;替换既有 fixture 目录;改动 v1.4.6 的 Agent 面零载荷契约。
 
@@ -72,7 +73,7 @@ RG 现有两套彼此独立的测试/资产体系:
 **世界一 · 遗留 Correctness Studio(服务 Tool/Graph 图)**——成熟且可见:
 
 | 组件 | 职责 | 文件 |
-|---|---|---|
+|---|---|---|---|
 | fixture 目录服务 | fixture 描述符生命周期 DRAFT→PROPOSED→APPROVED→ACTIVE | `FixtureCatalogService.java` |
 | fixture 目录存储 | heads + revisions + 使用索引 + outbox | `DatabaseFixtureAssetRepository.java` |
 | fixture 载荷保险库 | 加密读写 + 密级 + 保留期 + 访问审计 | `FixtureMaterialService.java` |
@@ -83,7 +84,7 @@ RG 现有两套彼此独立的测试/资产体系:
 **世界二 · v1.4.6 四实体业务测试**——无人类可见面:
 
 | 组件 | 职责 | 文件 |
-|---|---|---|
+|---|---|---|---|
 | 业务 golden 服务 | 提议/列出业务 golden 案例(given 事实 + 依赖假设 + 期望结果) | `BusinessGoldenService.java` |
 | 业务 golden 载荷存储 | 写入**同一** vault;失败即拒,绝不明文回退 | `BusinessGoldenMaterialStore.java` |
 | 受控编译 | 冻结解法闭包→受控计划,egress=DENY_ALL | `BusinessFixtureCompiler.java` |
@@ -115,7 +116,7 @@ RG 现有两套彼此独立的测试/资产体系:
 ## 3. 解决这些问题创造的价值
 
 | 价值 | 机理 | 受益角色 |
-|---|---|---|
+|---|---|---|---|
 | 信任可挣得 | 业务负责人不盲信 AI 草案;看到 golden 验证集内容与红绿结果,逐条确认应然,信任逐案累积 | 业务负责人(用户) |
 | 资产可累积 | fixture 数据与 golden 集成为可浏览、可长期保留的资产,跨解法/跨迭代复用;切换成本形成护城河复利 | 平台/组织 |
 | 剧本无断点 | 平台研发的特征验证证据直接成为特征 VERIFIED 依据,业务侧复用时可信;四步贯通 | 平台研发 + 业务 |
@@ -157,7 +158,7 @@ RG 现有两套彼此独立的测试/资产体系:
 业务 golden 载荷是**审定后的资产记录**,区别于短期 captured fixture。修改 `BusinessGoldenMaterialStore.write` 的保留策略:
 
 | 项 | 现状 | 改为 |
-|---|---|---|
+|---|---|---|---|
 | retention profile | `rg.businessGolden.30d` 固定 30 天 | `rg.businessGolden.lifecycle` 绑生命周期 |
 | expiresAt | `now + 30d` | golden `DRAFT/PROPOSED` 期取上限 365 天;转 `ACTIVE` 时由治理路径**续期**(重写受保护记录,保留期滚动至下一上限);`RETIRED` 后进入 30 天宽限再到期 |
 | 依据 | `FixtureMaterialService` 硬上限 365 天不变 | 用**续期**而非"一次性长保留"绕过 365 天硬约束,保持既有安全不变 |
@@ -236,6 +237,8 @@ return projectHumanView(payload);   // 投影为 given/expected/assumptions
 #### A2 业务 fixture 目录投影
 
 平台研发/业务在受控测试中积累两类替身:依赖行为假设(`dependencyAssumptions`)与提供的样本 fixture(`rg.fixture.provide`)。把它们投影为可浏览目录。
+
+落地时没有把 fixture usage 当成单向的“能力→fixture”查询。实现先冻结 Solution 四实体闭包，再把闭包中的 Feature/Instruction 与 fixture descriptor 的 `sourceRef`、usage 的 consumer ref 做有界连接。单次扫描上限为 10,000 个 head；超限失败关闭。这样既覆盖直接来源，也覆盖被解法闭包消费的共享 fixture。
 
 **判断**:样本 fixture 已经过世界一 `FixtureCatalogService`(`rg.fixture.provide`/`rg.fixture.promote` 写入 `rg_fixture_asset_heads`),本就可见于 Correctness Studio 的 Fixtures 面板。缺的是**业务解法维度的归集视图**——按 solution/feature 列出其关联 fixture。
 
@@ -319,10 +322,10 @@ return projectHumanView(payload);   // 投影为 given/expected/assumptions
 
 #### C1 决策表覆盖义务派生 + golden 覆盖反馈
 
-**判断**:覆盖度存储模型已存在(`rg_coverage_inventory_heads` + `rg_coverage_obligation_index`,字段含 `dimension/risk/owner/lifecycle/source`);决策场景枚举器已存在(`AgentTddDecisionScenarioEnumerator`,把决策表规则/阈值/枚举展开为代表用例)。缺的是把二者接到业务 golden。
+**判断**:覆盖度存储模型已存在(`rg_coverage_inventory_heads` + `rg_coverage_obligation_index`,字段含 `dimension/risk/owner/lifecycle/source`)。四实体 Scenario 的结构化规则已经是权威覆盖来源，不需要把 Graph/Tool 的场景枚举器强行复用到 Solution。
 
 **新增** `SolutionCoverageService.derive(solutionRef)`:
-1. 取解法根场景决策表,用 `AgentTddDecisionScenarioEnumerator` 派生覆盖义务:
+1. 冻结解法的完整 Scenario/Feature/Instruction 闭包，从结构化 Scenario 直接派生覆盖义务:
    - 每条规则(`rules[]`)→ 一条义务(dimension=RULE)。
    - `otherwise` → 一条义务(dimension=OTHERWISE)。
    - 每条指令的依赖失败路径(WRITE 指令的 UNAVAILABLE/FAILS_WITHOUT_EFFECT)→ 义务(dimension=DEPENDENCY_FAULT)。
@@ -448,39 +451,39 @@ flowchart TD
 
 ## 6. 工程实施计划
 
-三阶段可并行启动,阶段内有序。
+实施按受保护资产边界、受控执行闭环、覆盖反馈、贯通验收的顺序推进。下表同时记录当前状态。
 
 ### 阶段 A · 业务资产控制台
 
-| 任务 | 产物 | 依赖 |
+| 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
-| A0 保留期修正 | `BusinessGoldenMaterialStore.write` 保留策略改生命周期绑定;新增 `renew(...)`;治理路径(golden 批准/发布)接续期 | 无 |
-| A1 只读投影 + 授权查看 | 新增 `BusinessGoldenReviewService` + `BusinessGoldenReviewController`(仿 `FixtureMaterialController`);新增 `IntegrationOperation.SOLUTION_GOLDEN_REVIEW`;新增审计表 `rg_business_golden_review_audit` + migration | A0 |
-| A2 业务 fixture 归集 | 新增 `BusinessFixtureIndexService.listForSolution`(复用 `DatabaseFixtureAssetRepository.usages/listHeads` + `BusinessFixtureCompiler` 闭包冻结) | 无 |
-| A3 红绿板修正 | `BoardProjectionService.redGreen` 改零载荷 + 按需授权解载荷 | A1 |
-| A4 前端 | Correctness Studio 增 Business Golden / Business Fixtures 面板;`fetchBusinessGoldenMaterial` API;业务/遗留切换 | A1、A2 |
+| A0 保留期修正 | 已完成 | `BusinessGoldenMaterialStore` 增加 365 天生命周期续期、直接后继恢复和批准 revision CAS | 无 |
+| A1 只读投影 + 授权查看 | 已完成 | `BusinessGoldenReviewService` + `BusinessGoldenReviewController`;`SOLUTION_GOLDEN_REVIEW`;独立人类审计表和 migration | A0 |
+| A2 业务 fixture 归集 | 已完成 | `BusinessFixtureIndexService.listForSolution` 以冻结 Solution 闭包对 source/usage 做至多 10,000 项的有界连接 | 无 |
+| A3 红绿板修正 | 已完成 | `BoardProjectionService.redGreen` 只投影计数、状态和指纹;受保护材料只从 A1 人类边界读取 | A1 |
+| A4 前端 | 已完成 | Correctness Studio 增业务/遗留世界切换、Business Golden、Business Fixtures、Solution Coverage 和内存态复核凭据 | A1、A2 |
 
 ### 阶段 B · 特征级受控测试统一
 
-| 任务 | 产物 | 依赖 |
+| 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
-| B1 特征套件 | 新增 `FeatureControlledSuiteService` + `FEATURE_CONTROLLED_SUITE` 资产种类;复用 `rg.feature.rehearse` 执行路径 + vault 载荷 | 无 |
-| B2 VERIFIED 升级 | 改 `FeatureHandoffService.fulfil` 依据套件证据 + 覆盖阈值;灰度开关保留单 fixture 快路径 | B1 |
-| B3 端到端接线 | 剧本 1 走查脚本(declare→compose→define→suite→fulfil,`realExternalCalls=0`) | B1、B2 |
+| B1 特征套件 | 已完成 | `FeatureControlledSuiteService` + `FEATURE_CONTROLLED_SUITE`;`rg.feature.controlledSuite.upsert/run/get`;受保护材料入 vault | 无 |
+| B2 VERIFIED 升级 | 已完成 | `FeatureHandoffService.fulfil` 只接受当前套件证据、全通过、零外呼和覆盖阈值;旧单 fixture 路径默认关闭 | B1 |
+| B3 端到端接线 | 已完成 | 独立 `PLATFORM_AUTHORING` profile 走 reference→preview→gate→compose→suite→fulfil;业务 Agent 调 fulfil 必须 403 | B1、B2 |
 
 ### 阶段 C · 覆盖度可见
 
-| 任务 | 产物 | 依赖 |
+| 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
-| C1 覆盖派生 | 新增 `SolutionCoverageService.derive/status`(接 `AgentTddDecisionScenarioEnumerator` + `rg_coverage_inventory`) | 无 |
-| C2 覆盖工具/呈现 | 新增 MCP 工具 `rg.solution.coverage`(READ,零载荷);控制台覆盖面板 | C1、A4 |
+| C1 覆盖派生 | 已完成 | `SolutionCoverageService` 从冻结的结构化四实体闭包派生 RULE、OTHERWISE、WRITE DEPENDENCY_FAULT 义务并写入 coverage inventory | 无 |
+| C2 覆盖工具/呈现 | 已完成 | `rg.solution.coverage` 返回零载荷义务摘要;人类控制台返回分组、风险和覆盖案例引用 | C1、A4 |
 
 ### 阶段 D · 贯通与文档
 
-| 任务 | 产物 | 依赖 |
+| 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
-| D1 端到端验证 | 四剧本贯通测试(平台→业务→打包→可见);断言两条边界(人类解载荷 / Agent 零载荷) | A、B、C |
-| D2 文档 | `docs/rg-evolution-design-1.4.7.md` 落地(需切实施模式) | D1 |
+| D1 端到端验证 | 已完成 | 真实 HTTP MCP 四剧本测试;断言 platform/business surface 隔离、HUMAN 解载荷、Agent 零载荷和 Feature fulfil 权限隔离 | A、B、C |
+| D2 文档 | 已完成，待填最终全量总数 | 本文、MCP 操作手册、业务演示剧本、Codex 双 profile 示例和工程 README 同步 | D1 |
 
 ### 落地文件汇总
 
@@ -499,7 +502,7 @@ flowchart TD
 - `McpToolCatalog.java`:增 `rg.solution.coverage`
 - `McpSurfacePolicy`:覆盖工具归 BUSINESS_SOLUTION 面
 
-**验证命令**:`mvn -f `pom.xml` clean verify`;前端 `npm test`(Correctness Studio 业务面板渲染 + no-store 头断言 + Agent 零载荷断言)。
+**验证命令**:`mvn -f resource-gateway-examples/pom.xml clean verify`;前端在 `resource-gateway-examples/src/main/frontend` 执行 `npm test`、`npx tsc --noEmit` 和 `npm run build`。
 
 ---
 
@@ -507,11 +510,59 @@ flowchart TD
 
 | 编号 | 落地后仍存/新暴露 | 预计解法 | 分期 |
 |---|---|---|---|
-| L1 | 业务 golden 载荷入 vault + 元数据入 `agent_tdd` **非同一事务**(跨数据源);material 先写、元数据后写,靠内容寻址 + 失败即拒兜底,存在孤儿 material(惰性、可回收) | 加"无孤儿 material / 无虚假元数据"对账任务 + 定期 GC;或引入 outbox 关联清理 | 1.4.7 收尾 |
-| L2 | A0 续期把 golden 载荷长期留存,增大加密数据留存面与合规审查范围 | 明确 golden 载荷保留合规基线(密级=INTERNAL、访问全审计、RETIRED 宽限销毁);法务复核 | 1.4.7 前置确认 |
-| L3 | B2 提高特征 VERIFIED 门槛,**既有已 VERIFIED 特征**无套件证据 | 灰度:既有特征标 `LEGACY_SINGLE_FIXTURE`,不追溯失效;下次改动或治理触发时要求补套件 | 1.4.7 灰度 |
-| L4 | 覆盖义务对 **opaque 谓词 / 子场景递归 / combinatorial 爆炸** 的覆盖定义有边界(不可枚举时覆盖率不可判) | opaque→标 `UNPROVABLE` 义务需 authorSamples;子场景→有界递归展开(深度上限);combinatorial→封顶 fail-closed(复用枚举器既有上限) | 1.4.7 |
-| L5 | 两世界前端信息架构合并后,遗留 Correctness 用户与业务用户**术语混用**风险 | 顶层世界切换 + 术语分层(业务面用"业务情况/处置/验证集",遗留面保留"图/节点/fixture") | 1.4.7 前端 |
-| L6 | 业务 fixture 归集(A2)反查依赖 fixture usage 索引的**及时性**(outbox 异步) | 归集视图标"索引时间";必要时同步反查兜底 | 观察后定 |
+| L1 | 跨存储写入可能留下孤儿 material 或缺失 material 的 suite 元数据 | **已缓解**:`FeatureControlledSuiteReconciliationService` 定期对账;损坏 suite 标 `FAILED_CLOSED` 并清旧证据;仅回收到期、无引用的直接后继孤儿，保留 lineage/audit | 已实施 |
+| L2 | A0 续期把 ACTIVE golden 载荷长期留存,增大加密数据留存面与合规审查范围 | **已编码基线**:密级 `INTERNAL`、每次读取双重审计、365 天滚动续期、RETIRED 后宽限销毁;生产法务复核仍属于部署责任 | 部署验收 |
+| L3 | B2 提高特征 VERIFIED 门槛,既有已 VERIFIED 特征无套件证据 | **已实施灰度**:既有 VERIFIED 不追溯失效;任何再次 fulfil 或契约修改要求当前 suite;`legacy-single-fixture-enabled` 默认 `false` | 已实施 |
+| L4 | 覆盖义务对 opaque 谓词和组合爆炸仍不可证明 | 本版只从结构化 Scenario 闭包派生可证明 RULE/OTHERWISE/WRITE fault 义务;不可证明结构不伪造 100%，后续引入 authorSamples 与有界展开 | 1.4.8 |
+| L5 | 两世界前端信息架构合并后可能术语混用 | **已实施**:顶层“业务解法/遗留图测试”切换;业务面只显示业务验证集、样例和覆盖义务 | 已实施 |
+| L6 | 业务 fixture 归集反查 usage 索引存在时效窗口 | 本版读取冻结 Solution 闭包并做有界连接;结果是读取时点快照，不承诺跨数据源线性一致;超出 10,000 项失败关闭 | 运行观察 |
 | L7 | 覆盖反馈只覆盖**设计态** golden,与**运行时**真实命中分布(运营态)未合流 | 后续把运营命中分布(`OperationsInsight` 信号)叠加到覆盖矩阵,形成"设计覆盖 + 真实覆盖"双视图 | 1.4.8 |
 | L8 | 人类复核载荷查看的**权限模型**(owner/reviewer/密级)本期取"oracleOwner 或复核角色 + 密级",细粒度(字段级脱敏、按域授权)未做 | 引入字段级 redaction 视图 + 按业务域的复核授权矩阵 | 1.4.8 |
+
+---
+
+## 8. 实施结果与验收基线
+
+### 8.1 已形成的完整业务闭环
+
+1. 平台研发使用独立 `PLATFORM_AUTHORING` Codex profile 读取库、资源契约和 DSL 参考，自行生成 Feature 图，经 preview/gate 后提交。
+2. 同一 profile 用受保护业务案例建立 Feature controlled suite。明文只进入加密 vault，运行结果只返回案例数、通过数、覆盖率、零外呼和指纹。
+3. 独立特征工程身份用当前 suite evidence 履行 Feature；业务 Agent 的 WORKLOAD token 调同一 HTTP 入口得到 403。
+4. 业务 Codex 使用 `BUSINESS_SOLUTION` profile 读取服务端四实体模板，按 journey revision 写 Feature、Scenario、Instruction 和 Solution，并提出标准案例。
+5. 业务负责人使用独立 HUMAN 凭据在 Correctness Studio 查看标准案例明文、样例资产和覆盖义务；批准过程写入人类审计。凭据只保存在页面组件内存，请求后清空，不进入 URL、DOM 文本或浏览器存储。
+6. Agent 只能读取案例计数、生命周期、覆盖摘要和指纹。ACTIVE 案例再由冻结 Solution 闭包执行零外呼 baseline，后续仍沿用既有签署、发布和运营门禁。
+
+### 8.2 关键不变量
+
+| 不变量 | 实现保证 | 主要证明 |
+|---|---|---|
+| 业务 Agent 不可见受保护载荷 | MCP output schema 与 dispatcher 只返回摘要;material endpoint 要求 HUMAN、专用 purpose、owner/reviewer group 和 clearance | payload-free MCP 断言 + 人类 endpoint 正反例 |
+| 业务与平台创作面隔离 | `tools/list` 与 `tools/call` 同时执行 `McpSurfacePolicy`;平台 profile 单独保存，不能与业务 profile 合并 | surface policy 测试 + D1 真实 `/mcp` 旅程 |
+| Feature VERIFIED 不能靠单样例 | fulfil 核对当前 suite revision、Feature 契约、evaluation/graph/library 指纹、全通过、覆盖阈值和 `realExternalCalls=0` | suite/handoff 服务测试 |
+| 受控套件不接触真实后端 | 执行复用 rehearsal 编译/模拟内核;依赖材料形成 case-scoped adapter;任何真实外呼计数非零即失败关闭 | runner 测试 + D1 真实旅程 |
+| 覆盖率不是 Agent 自报 | 服务端从冻结四实体闭包派生结构化义务，并用 ACTIVE golden 覆盖 | `SolutionCoverageServiceTest` + MCP/HTTP 投影测试 |
+| 载荷跨存储故障不会留下可信证据 | 对账服务将缺失或错配 material 的 suite 标 `FAILED_CLOSED` 并清 evidence;GC 只删到期无引用直接后继 | reconciliation + vault/H2 测试 |
+| Codex 四实体创作来自当前服务端模板 | 每次写入携带同一 `authoringPatternsFingerprint`;真实 Codex 证书绑定模板快照、生产源码树、16 个独立会话和 4 个服务实例 | §8.4 证书与过程截图 |
+
+### 8.3 实施偏差
+
+- A2 没有复制一套 fixture 目录。实现读取冻结 Solution 闭包，并把现有 fixture source/usage 索引做有界连接；这保持单一资产真相。
+- B1 对外提供 `upsert/run/get` 三个工具，而不是把套件塞进 `rg.feature.rehearse` 的参数。这样 DRAFT、运行证据和只读摘要拥有独立 schema 与 purpose。
+- C1 不复用面向决策表枚举的旧分析器。实现直接读取冻结的 Feature/Scenario/Instruction/Solution 结构，避免把 Solution 冒充 Graph，也能明确产生 WRITE 失败义务。
+- A3 不在红绿板按需解密。板面保持零载荷；受保护正文只从 A1 HUMAN endpoint 读取，避免同一 DTO 混合两条信任边界。
+
+### 8.4 可审阅的 Codex 创作证据
+
+真实 Codex 认证不是截图自证。机器证书、严格 Schema、脱敏 trace 投影和图像必须同时成立：
+
+- [机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)
+- [可视化总览](acceptance/agent-tdd/business-solution-codex-certification-v1.html)
+- [总览截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png)
+- [六图回链 manifest](acceptance/agent-tdd/business-solution-codex-process-v1.json)
+- [业务积木](acceptance/agent-tdd/business-solution-codex-process-01.png)、[业务事实](acceptance/agent-tdd/business-solution-codex-process-02.png)、[业务规则](acceptance/agent-tdd/business-solution-codex-process-03.png)、[业务动作](acceptance/agent-tdd/business-solution-codex-process-04.png)、[业务解法](acceptance/agent-tdd/business-solution-codex-process-05.png)、[标准案例](acceptance/agent-tdd/business-solution-codex-process-06.png)
+
+六张过程图只显示真实 trace 中的工具名、顺序和完成状态。`AgentTddCodexCertificationArtifactTest` 把每张图的 `traceOrdinal/tool/status` 反查到机器证书，防止用静态示意图冒充过程证据。图片不保存参数、结果、业务样本或模型推理。
+
+### 8.5 测试记录
+
+当前聚焦证据包括：A/B/C 联合服务测试 58/58、Feature suite MCP 30/30、material 对账与 GC 14/14、业务资产 HTTP 控制器 6/6、D1 与 surface/audit 联合 11/11、条件装配回归 14/14，全部无失败且无跳过。前端全量为 163 个文件、1,242/1,242；生产构建、TypeScript、i18n、UX、host 和 route bundle 预算全部通过。最终后端总数在真实 Codex 复认证后由最后一次串行 `clean verify` 填写，不能用聚焦结果替代。

@@ -1,0 +1,37 @@
+# Resource Gateway v1.4.7 platform Feature authoring profile.
+# Copy this file to an isolated Codex project's `.codex/config.toml`. Do not merge it with the
+# BUSINESS_SOLUTION profile. The launching process supplies only RG_MCP_TOKEN.
+
+[mcp_servers.rg_platform_read]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_READ", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = [
+  "rg.library.overview.get", "rg.capability.list", "rg.contract.get",
+  "rg.dsl.reference.get", "rg.feature.controlledSuite.get"
+]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.rg_platform_author]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_AUTHORING", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = [
+  "rg.library.upsert", "rg.resource.declare", "rg.feature.compose",
+  "rg.dsl.preview", "rg.gate.check", "rg.feature.define", "rg.feature.handoff",
+  "rg.feature.controlledSuite.upsert"
+]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.rg_platform_execute]
+url = "http://localhost:8081/mcp"
+bearer_token_env_var = "RG_MCP_TOKEN"
+http_headers = { "X-Purpose" = "AGENT_TDD_EXECUTION", "X-RG-Surface" = "PLATFORM_AUTHORING" }
+enabled_tools = ["rg.feature.rehearse", "rg.feature.controlledSuite.run"]
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 120

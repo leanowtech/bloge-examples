@@ -1,6 +1,6 @@
 # 用业务语言把取消费政策变成可信业务能力
 
-这是一份面向业务人员的 v1.4.6 现场演示导演脚本。主角是客服政策负责人小李。她不写代码，也不需要理解 MCP、DSL、YAML、Schema、binding、接口地址或内部标识。她只负责业务目标、判断依据、政策规则和标准答案。
+这是一份面向业务人员的 v1.4.7 现场演示导演脚本。主角是客服政策负责人小李。她不写代码，也不需要理解 MCP、DSL、YAML、Schema、binding、接口地址或内部标识。她只负责业务目标、判断依据、政策规则和标准答案。
 
 Codex 负责把小李的表达翻译为平台中的事实、场景、处置和解法；平台负责校验、留证和守门；工程师只履行平台生成的交接单；人工负责人保留标准答案批准和上线签署权。
 
@@ -192,13 +192,36 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 - Codex 没有询问接口地址、字段类型、DSL 或 YAML。
 - 若业务含义不完整，Codex 只问业务问题；若平台工具缺失，明确报平台维护待办并停止。
 
+### 幕间一：平台研发把事实能力做成可验证资产
+
+这一段由平台研发与独立的 Platform Codex 完成。业务投屏只显示两张 Feature 状态卡，不展示 DSL、节点或接口。平台研发对 Codex 说：
+
+```text
+请把“判断责任方”和“判断免费取消时段”两个已确认事实接入平台。
+
+先读取当前算子库、资源契约和 DSL 参考。缺少只读资源时建立资源声明；已有契约必须精确复用。根据服务端模板完成两个 Feature 后端图并反复预览，直到编译和门禁通过。不要让我编写 DSL。
+
+然后分别建立受控测试套件。责任方至少覆盖无人担责、司机、乘客、平台、缺失和冲突；免费时段至少覆盖时段内、时段外、取消时间缺失、政策缺失和政策冲突。所有外部读取都用受控返回或失败行为替代。运行套件后只汇报：案例数、通过数、失败数、覆盖率、真实外呼数和是否可以工程履约。
+```
+
+Platform Codex 后台顺序为：
+
+1. `rg.library.overview.get`、`rg.capability.list`、`rg.contract.get` 读取当前积木与资源契约。
+2. `rg.dsl.reference.get` 读取当前语法、算子端口和示例；自行生成并修正 Feature DSL。
+3. `rg.dsl.preview`、`rg.gate.check` 取得服务端编译反馈，只有门禁通过才 `rg.feature.compose`。
+4. `rg.feature.controlledSuite.upsert` 保存受保护用例，`rg.feature.controlledSuite.run` 运行零外呼套件。
+5. 套件必须全通过、`realExternalCalls=0`、覆盖率达到配置阈值；否则回到第 4 步补案例。
+6. 特征工程师持独立身份，将 evaluator 与当前 suite evidence 绑定。Agent token 请求履约端点必须得到 403。
+
+受保护的输入、依赖返回值和期望输出只进入加密 vault。Platform Codex 只能看到指纹、计数、状态和覆盖率。工程师不能用单条成功样例替代整套证据。
+
 ### 幕间停点：事实能力就绪
 
 特征工程师履行交接后，Codex 必须重新读取业务能力库和两项事实的当前契约，并确认履约没有改变小李确认的业务定义。只有“判断责任方”和“判断免费取消时段”都显示已验证，才能进入规则设计。这里的“已验证”只证明获取实现可运行且结果符合契约形状；事实口径和整条政策是否正确，仍要由后续标准案例证明。仍未就绪或契约发生变化时应停止，并明确等待哪个责任方，不得用样例、固定值或同名能力替代。
 
 ## 6. 第二幕：工程履行事实，再由小李确认规则
 
-幕间由保障人员按操作手册第 3.1 节履行两个特征交接。看板应把两项事实从“设计态”更新为“已验证/就绪”。Agent token 调同一履约地址必须得到 403。Codex 随后重新读取业务能力库和当前契约，再向小李确认规则设计可以开始。
+幕间由保障人员按操作手册第 3.2 节履行两个特征交接。看板应把两项事实从“设计态”更新为“已验证/就绪”，并显示各自受控套件的案例数、覆盖率和零外呼状态。Agent token 调同一履约地址必须得到 403。Codex 随后重新读取业务能力库和当前契约，再向小李确认规则设计可以开始。
 
 ### 小李输入
 
@@ -270,7 +293,15 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 
 小李在看板逐条打开详情，核对“前提事实、期望处置、业务意图、负责人”，再批准。审批期间如案例被修改，服务端拒绝旧 revision，必须刷新重审。
 
-成功信号：四条案例均为 ACTIVE；Codex 不能用 Agent token 调批准接口；看板能在独立 HUMAN 会话中解密展示完整案例，业务 MCP 只能看到安全摘要；看板能显示规则矩阵、处置清单、事实卡和四条案例。
+业务资产入口为：
+
+```text
+http://localhost:8081/correctness/?correctnessWorld=business&solutionRef=<当前解法>&journeyRef=<当前旅程>
+```
+
+页面要求单独输入 reviewer token。凭据只保存在当前页面组件内存，请求完成后清空；不会写入 URL、`localStorage`、`sessionStorage` 或可见 DOM。页面同时展示业务验证集、受治理样例和规则/兜底/写依赖失败覆盖义务。不要把 reviewer token 交给 Codex，也不要从启动业务 Codex 的终端打开该页面。
+
+成功信号：四条案例均为 ACTIVE；Codex 不能用 Agent token 调批准接口；看板能在独立 HUMAN 会话中解密展示完整案例，业务 MCP 只能看到安全摘要；看板能显示规则矩阵、处置清单、事实卡和四条案例；覆盖面板列出每条规则、兜底和写依赖失败义务，未覆盖项会引导 Codex补提议，不能靠口头声称“高覆盖”。
 
 ## 8. 第四幕：GREEN、受控写对账与上线签署
 
@@ -384,4 +415,4 @@ Codex 的后台顺序必须是：
 
 本地取消费适配器使用预置的原子订单事实。它能证明事实契约、工程交接、取值签名和发布门禁可以贯通，但不能证明生产系统已经正确实现“选择最新生效判责”或“按取消时点匹配历史政策”。现场应把这两项描述为已经确认并受治理交接的业务定义，不得描述为生产口径已经通过认证。接入生产来源前，还需要以特征级业务样例验证缺失、冲突、订单切换和时点边界。
 
-这份自动验收证明平台路径可运行。`AgentTddMcpOperationalWorkflowTest.businessSurfaceRunsProtectedGoldenThroughTheRealMcpLifecycle` 还从真实 MCP lifecycle 证明 `BUSINESS_SOLUTION` surface 的 journey、受保护 GOLDEN、独立批准和零外呼 GREEN。`./scripts/certify-agent-tdd-codex.sh` 则在隔离且看不到仓库的当前 Codex 中执行第一幕到人工案例确认停点；两类证据必须分别成立，不能互相冒充。
+这份自动验收证明平台路径可运行。`V147McpOperationalJourneyTest` 真实贯穿独立 platform/business surface、Feature 图创作、受控套件、工程履约、四实体 Solution、HUMAN 解密审阅、覆盖反馈与零外呼 GREEN；`AgentTddMcpOperationalWorkflowTest.businessSurfaceRunsProtectedGoldenThroughTheRealMcpLifecycle` 继续证明完整业务 MCP lifecycle。`./scripts/certify-agent-tdd-codex.sh` 则在隔离且看不到仓库的真实 Codex 中执行第一幕到人工案例确认停点。自动旅程、浏览器资产面和真实 Codex 过程证书必须分别成立，不能互相冒充。
