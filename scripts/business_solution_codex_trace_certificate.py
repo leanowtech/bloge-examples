@@ -730,8 +730,11 @@ def require_family_trace(entry: dict[str, Any], chain: dict[str, Any],
         require_business_question(calls, final_message, family_id)
         outcome = "PARTIAL_STOP"
     elif family_id == "surface-interference":
+        feature_lists = [call for call in successful(calls, "rg.entity.list")
+                         if call["arguments"].get("entityKinds") == ["FEATURE"]]
         if not successful(calls, "rg.library.overview.get") \
-                and not successful(calls, "rg.capability.search"):
+                and not successful(calls, "rg.capability.search") \
+                and not feature_lists:
             raise CertificationFailure("family surface-interference did not inspect the business library")
         outcome = "BUSINESS_SURFACE_ONLY"
     elif family_id == "cross-session-rediscovery":

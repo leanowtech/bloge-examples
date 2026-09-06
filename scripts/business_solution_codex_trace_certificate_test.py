@@ -574,6 +574,35 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                        if item["familyId"] == "surface-interference")
         self.assertEqual("BUSINESS_SURFACE_ONLY", surface["observedOutcome"])
 
+    def test_accepts_feature_list_as_surface_interference_inspection(self) -> None:
+        events = [
+            call("rg_read", "rg.entity.list", {"entityKinds": ["FEATURE"], "limit": 20},
+                 {"entities": []}),
+            {"type": "item.completed", "item": {
+                "type": "agent_message", "text": "我只能在业务操作范围查看和定义业务事实。"}},
+            {"type": "thread.started", "thread_id": "thread-surface-interference"},
+            {"type": "turn.completed"},
+        ]
+
+        certificate = self.certify_aux(
+            family_overrides={"surface-interference": events})
+        surface = next(item for item in certificate["familyEvidence"]
+                       if item["familyId"] == "surface-interference")
+        self.assertEqual("BUSINESS_SURFACE_ONLY", surface["observedOutcome"])
+
+    def test_rejects_non_feature_list_as_surface_interference_inspection(self) -> None:
+        events = [
+            call("rg_read", "rg.entity.list", {"entityKinds": ["SOLUTION"], "limit": 20},
+                 {"entities": []}),
+            {"type": "item.completed", "item": {
+                "type": "agent_message", "text": "我只能在业务操作范围查看业务内容。"}},
+            {"type": "thread.started", "thread_id": "thread-surface-interference"},
+            {"type": "turn.completed"},
+        ]
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "business library"):
+            self.certify_aux(family_overrides={"surface-interference": events})
+
     def test_rejects_remaining_families_split_across_runtime_phases(self) -> None:
         def split_runtime(manifest: dict) -> None:
             target = next(item for item in manifest["families"]
