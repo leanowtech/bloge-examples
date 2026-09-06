@@ -39,6 +39,8 @@
 
 Reducer 不接受调用方自报的观察结果。它从真实 trace 中检查首个业务工具是否符合该话语的只读发现集合、候选排序、匹配类型、阻塞原因、标准案例参数、业务操作面边界和 Codex 结束消息。受控案例会话不能把 `golden.propose` 本身当作工具召回成功。近义干扰、多精确项、旧 Feature、语义漂移和同名动作还必须在各自独立 trace 中观察到本轮 setup manifest 记录的实际资产。认证分别用 READ 和 AUTHORING purpose 从实际服务读取 `tools/list`，并在两个 purpose 下各直接调用一个被隐藏工具，均要求服务端返回 `TOOL_NOT_VISIBLE_IN_SURFACE`。任一测试族缺失、重复、分类错误、会话复用、setup/workload 凭据复用、setup 关系被篡改或观察结果不符时，不生成证书。
 
+受控案例会话先读取目标实体的当前业务卡片，再把 `display.businessName` 原样写入事实名或能力名。`RETURNS` 必须携带受契约校验的 `value`；`UNAVAILABLE`、`SUCCEEDS_WITHOUT_EFFECT`、`FAILS_WITHOUT_EFFECT` 和 `MUST_NOT_BE_USED` 不得携带 `value`。这些约束由 MCP Schema 和服务端共同执行，不能依靠 Codex 猜测。
+
 ## 运行
 
 从仓库根目录运行：
@@ -51,6 +53,19 @@ scripts/certify-agent-tdd-codex.sh \
 该命令会构建当前干净提交，并使用同一私有数据库依次运行四个 Codex 实例：主线加同义召回、近义干扰与受控案例表达、多精确项与旧能力及语义漂移、同名动作歧义。脚本只接受 macOS 验签通过、Team ID 为 `2DC432GLL2` 的 OpenAI Codex 可执行文件，并把二进制 SHA-256 和完整 Code Directory hash 写入证书。每次写入测试资产前都切换到独立随机 setup token，写完再切回随机 Codex token。最终 setup manifest 合并三个阶段的全部角色、关系和预检结果，并保存 setup/workload 随机凭据不相同的私有指纹证明。该证明只说明 Codex 不持有 setup 凭据，不把两者描述成不同业务 actor。Reducer 要求四个 Codex 实例身份互不相同。`KEEP_RAW_CODEX_TRACE=true` 只用于批准的本机排障，不能作为正式留存方式。
 
 公开提示集位于 `scripts/business-solution-recall-family-suite-v1.json`，固定测试域预置位于 `scripts/business-recall-platform-fixture-v1.json`。私有运行清单使用 `rg.businessRecallFamilyTraceSet.v1`，只记录测试族、期望分类、临时 trace 路径、退出码、运行实例关联和私有 setup manifest 路径，不记录业务话语内容。
+
+## 过程截图
+
+机器证书通过后，脚本从同一真实 Codex trace 生成 6 张脱敏过程图：
+
+1. [先读业务积木](business-solution-codex-process-01.png)
+2. [定义业务事实](business-solution-codex-process-02.png)
+3. [定义业务规则](business-solution-codex-process-03.png)
+4. [定义业务动作](business-solution-codex-process-04.png)
+5. [组合业务解法](business-solution-codex-process-05.png)
+6. [提交标准案例](business-solution-codex-process-06.png)
+
+[过程图 manifest](business-solution-codex-process-v1.json) 绑定证书指纹、认证基准提交、真实 trace 序号、文件名和 SHA-256。每张图为 1440×900，只展示工具名、调用序号和完成状态。过程图不是 Codex 原生界面截图，不包含参数、结果、内部引用、模型消息或业务样本。
 
 ## 验收门
 

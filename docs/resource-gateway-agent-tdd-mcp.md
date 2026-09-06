@@ -187,7 +187,9 @@ Codex Desktop 应通过系统的安全环境注入方式只获得同名 `RG_MCP_
 
 ### 3.1 业务 journey 怎么推进
 
-业务 Solution 会话先调用 `rg.journey.start`。后续每次写入都带上返回的
+全新的业务目标先调用 `rg.journey.start`。继续、修订或为已有解法补充案例时，先通过 `rg.entity.list`、`rg.capability.search` 和 `rg.entity.get` 找到实体及其 `primary=true`、`status=ACTIVE` 的 journey，再调用 `rg.journey.next`。不要为同一业务对象重新创建 journey。
+
+后续每次写入都带上返回的
 `journeyRef` 和当前 `revision`（字段名为 `expectedJourneyRevision`），并且只调用
 `rg.journey.next.allowedNextTools` 中列出的工具。组合 Solution 时，把 `next` 返回的
 `solutionContextFingerprint` 原样交给 `rg.solution.compose`。服务端会在同一 revision
@@ -404,11 +406,14 @@ implementation fingerprint 一致的不可变 publication；草稿存在不等�
 - Solution 使用同一个 `rg.scenario.upsertCases`，但 `toolRef` 填 Solution ref；服务端会在当前作用域解析它，不需要伪造一个同名 Tool draft。
 - `rg.scenario.test` 只钉定特征值并断言规则出口；`rg.solution.baseline` 才断言最终 `result + reasoning`。
 - `rg.solution.baseline` 只接受已人工批准为 `ACTIVE` 的 GOLDEN。业务旅程中的案例必须同时具有完整案例指纹和受保护 material receipt；执行时才在服务端内存中恢复 `given`、依赖假设和 Oracle。旧明文或仅有 `expect` 批准的行不能推进新旅程，返回 `LEGACY_GOLDEN_REAPPROVAL_REQUIRED`。
-- `dependencyAssumptions` 可以按业务名称指向当前 Solution 输入 Feature 或可达 Instruction。`RETURNS` 的值必须符合当前 Feature 输出或 Instruction `result + reasoning` 契约；`UNAVAILABLE` 和 `FAILS_WITHOUT_EFFECT` 分别产生稳定的 `dependencyStatus=UNAVAILABLE`、`dependencyStatus=FAILED_WITHOUT_EFFECT` 业务结果，由批准的 `expectedOutcome` 显式匹配。`MUST_NOT_BE_USED` 只在规则路径实际使用目标能力时失败。
+- 提议业务案例前，Codex 先用 `rg.entity.get` 读取当前业务卡片，把 `display.businessName` 原样写入 `givenFacts[].factName` 或 `dependencyAssumptions[].capabilityName`。不要改写名称或追加“服务”等后缀。服务端仍支持唯一 alias 匹配；零个或多个候选时整批拒绝。
+- `dependencyAssumptions` 可以按业务名称指向当前 Solution 输入 Feature 或可达 Instruction。`RETURNS` 必须提供 `value`，且该值必须符合当前 Feature 输出或 Instruction `result + reasoning` 契约。`UNAVAILABLE`、`SUCCEEDS_WITHOUT_EFFECT`、`FAILS_WITHOUT_EFFECT`、`MUST_NOT_BE_USED` 不得提供 `value`。`UNAVAILABLE` 和 `FAILS_WITHOUT_EFFECT` 分别产生稳定的 `dependencyStatus=UNAVAILABLE`、`dependencyStatus=FAILED_WITHOUT_EFFECT` 业务结果，由批准的 `expectedOutcome` 显式匹配。`MUST_NOT_BE_USED` 只在规则路径实际使用目标能力时失败。
 - 受控 Feature adapter 不持有真实 `FeatureEvaluationBackend`，受控 Instruction adapter 不持有真实 `InstructionDispatchChannel`。测试进程触达 HTTP、真实 Feature 后端或真实 Instruction 通道时，服务端在保存 GREEN evidence 前返回 `CONTROLLED_TEST_EGRESS_DENIED`。
-- 业务旅程的 baseline 响应返回 `journeyRevision`、`solutionContextFingerprint`、`planFingerprint`、`compilerVersion` 和 `egressPolicy=DENY_ALL`。持久 evidence 还绑定当前 scope、排序后的 GOLDEN 指纹以及冻结的 Feature/Instruction revision 与契约指纹。任一坐标变化后，旧 evidence 不能推进签署或发布。
+- 人工批准的业务契约向量按 `{assetKind, assetRef, semanticKey, contractFingerprint}` 精确绑定，不含 revision。当前性只核对同一 `assetKind + assetRef`，不会用 semantic key 相同的另一实体替换。纯实现 revision 变化不使业务批准失效，但会使旧执行证据失效。
+- baseline 通过一次 `AssetReadSnapshot` 建立只读注册表，递归冻结 Solution、Scenario、Feature、Instruction 完整执行闭包，再锁定每个实体的精确 revision 和契约指纹。实现指纹、执行和证据只消费该冻结闭包。无显式假设的 READ Instruction 使用拒绝通道；WRITE Instruction 使用契约形状桩。
+- 业务旅程的 baseline 响应返回 `journeyRevision`、`solutionContextFingerprint`、`planFingerprint`、`compilerVersion` 和 `egressPolicy=DENY_ALL`。持久 evidence 还绑定当前 scope、排序后的 GOLDEN 指纹、实现指纹以及冻结的 Solution、递归 Scenario、Feature、Instruction 全部坐标。任一坐标变化后，旧 evidence 不能推进签署或发布。
 - GREEN 后需要执行受治理 WRITE 时，平台执行器使用同一 material receipt 在进程内恢复已批准案例，再完成写入与读后对账。执行器不从 case-set 元数据猜测 `given` 或 `expect`，也不把解密后的事实值、期望结果或依赖返回值写入 reconciliation 证据。receipt 缺失、内容指纹不一致或业务契约已变化时，执行停止。
-- Solution baseline 在同一事务中锁定 case-set revision 和 Solution revision；两者任一并发变更都不会留下旧证据或部分 READY 状态。
+- Solution baseline 在同一事务中锁定 case-set revision 和完整执行闭包；任一实体并发变更都不会让新闭包混入本次执行，也不会留下旧证据或部分 READY 状态。
 
 WRITE Instruction 在 GREEN baseline 中始终使用服务端从输出契约合成的桩，`realExternalCalls=0`。
 若 WRITE 还没有 `bindingRef`，Codex 调用 `rg.engineering.handoff` 生成工程交接单；交接单只含输入、
@@ -555,11 +560,11 @@ nonce 指纹，以及使用一次性随机密钥生成的 HMAC 关联指纹。16
 或业务值。证书不保留参数、结果、消息和业务载荷。已审核样例见
 [`docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json`](acceptance/agent-tdd/business-solution-codex-certification-v1.json)，
 严格 Schema 见
-[`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。认证脚本完成主创作后，继续以 15 条纯业务话语分别启动独立 Codex 会话。16 个会话必须具有互不相同的 thread identity；三个 fixture 阶段必须来自互不相同的服务实例 nonce。Reducer 用一次性 HMAC 关联主创作、目标能力、阶段 manifest 和各会话观察结果。任一话语族缺失、身份重复、召回目标不在 Top-1/Top-3、澄清越过停点、受控测试发生外呼、过期 GOLDEN 被接受或指标低于门槛时，严格 Schema 都拒绝 `CERTIFIED`。当前样例包含 2 个召回样本和 7 个澄清样本，Recall@3、Top-1 和澄清率均为 `1.0`；15 个话语族全部通过。它证明当前固定测试域话语集通过，不代表任意自然语言表达均达到 100%。`productionTreeFingerprint` 绑定证书提交中的 `resource-gateway-examples/src/main`，后续仅文档或测试提交不会冒充生产实现变化。
+[`docs/schemas/resource-gateway-business-recall-certification-v1.schema.json`](schemas/resource-gateway-business-recall-certification-v1.schema.json)。认证脚本完成主创作后，继续以 15 条纯业务话语分别启动独立 Codex 会话。16 个会话必须具有互不相同的 thread identity；主线、近义阶段、剩余干扰阶段和同名动作阶段分别使用 4 个不同的服务实例 nonce。Reducer 用一次性 HMAC 关联主创作、目标能力、阶段 manifest 和各会话观察结果。任一话语族缺失、身份重复、召回目标不在 Top-1/Top-3、澄清越过停点或指标低于门槛时，严格 Schema 都拒绝 `CERTIFIED`。当前样例包含 2 个召回样本和 7 个澄清样本，工具召回率、Recall@3、Top-1 和澄清率均为 `1.0`；15 个话语族全部通过。四类受控假设会话只证明 Codex 正确提交业务假设；证书不执行 baseline，因此 `controlledTestEgressCount` 和 `staleGoldenAcceptedCount` 为 `null`。受控编译、零外呼和过期批准拒绝由服务级测试独立证明。该证书只证明固定测试域话语集，不代表任意自然语言表达均达到 100%。`productionTreeFingerprint` 绑定证书基准提交中的 `resource-gateway-examples/src/main`；`certificationInputsFingerprint` 绑定认证脚本和严格 Schema。待验收 HEAD 只能在其后增加不改变这些对象的文档或测试提交。
 
-15 类认证的 fixture 分三次加入。同义召回后只加入近义干扰项；缺字段澄清、跨会话恢复、事实假设和三类受控依赖完成后，才加入多个 EXACT、旧 Feature 和语义漂移资产；两个同名“退款执行”动作只在最后一个歧义会话前加入。后置资产不能提前改变主解法的能力绑定。第三次加入使用当前第三个服务实例的受控脚本调用，不重启实例，也不把 fixture 数量、引用或预期状态写进业务提示词。最终 reducer 要求私有 manifest 同时证明三次有序写入和全部资产关系。
+15 类认证的 fixture 分三次加入。同义召回后只加入近义干扰项；缺字段澄清、跨会话恢复、事实假设和三类受控依赖完成后，才加入多个 EXACT、旧 Feature 和语义漂移资产；两个同名“退款执行”动作只在最后一个歧义会话前加入。后置资产不能提前改变主解法的能力绑定。每次写入使用独立 setup 凭据，并在下一组 Codex 会话前切回 workload 凭据；fixture 数量、引用和预期状态不会进入业务提示词。最终 reducer 要求私有 manifest 同时证明三次有序写入和全部资产关系。
 
-仓库留存当前通过证据：[机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)、[可视化过程报告](acceptance/agent-tdd/business-solution-codex-certification-v1.html) 和 [过程截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png)。截图从同一 payload-free 证书渲染，展示服务端模板先读、四实体写入绑定同一模板、能力发现、两项事实、一个规则场景、三项处置、Solution、两条待确认案例、15 类真实业务话语、16 个独立会话、3 段隔离实例和受控依赖自修正。截图是可追溯的认证过程投影，不冒充 Codex 界面截图；它便于人工审阅，不替代 JSON Schema、模板指纹、JAR 指纹、生产源码树指纹、进程所有权和前后运行身份校验。
+仓库留存当前通过证据：[机器证书](acceptance/agent-tdd/business-solution-codex-certification-v1.json)、[可视化过程报告](acceptance/agent-tdd/business-solution-codex-certification-v1.html)、[总览截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png) 和 [过程图 manifest](acceptance/agent-tdd/business-solution-codex-process-v1.json)。总览展示服务端模板先读、能力发现、两项事实、一个规则场景、三项处置、Solution、两条待确认案例、15 类真实业务话语、16 个独立会话和 4 个隔离实例。6 张 1440×900 过程图分别保存 [业务积木](acceptance/agent-tdd/business-solution-codex-process-01.png)、[业务事实](acceptance/agent-tdd/business-solution-codex-process-02.png)、[业务规则](acceptance/agent-tdd/business-solution-codex-process-03.png)、[业务动作](acceptance/agent-tdd/business-solution-codex-process-04.png)、[业务解法](acceptance/agent-tdd/business-solution-codex-process-05.png) 和 [标准案例](acceptance/agent-tdd/business-solution-codex-process-06.png)。过程图从同一真实 Codex trace 的脱敏事件渲染，只展示工具名、序号和完成状态，不保存参数、结果、内部引用或业务样本。它们是可追溯的过程投影，不冒充 Codex 原生界面截图，也不替代 JSON Schema、模板指纹、JAR 指纹、生产源码树指纹、进程所有权和前后运行身份校验。
 
 脚本已在同一 Shell 完成“构建 → 启动 → 认证 → 停止”。清理 `trap` 在创建第一个临时目录之前
 安装，因此后续 `mktemp`、权限调整、凭据复制、随机量生成、构建或认证任一步失败，均会清理已经

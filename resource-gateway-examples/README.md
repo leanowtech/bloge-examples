@@ -33,6 +33,14 @@ business flow plus a decision table with at least two reviewable branches before
 certificate containing only ephemeral HMAC identities. The reviewed
 example certificate is checked in at
 [`docs/acceptance/agent-tdd/codex-certification-v1.json`](../docs/acceptance/agent-tdd/codex-certification-v1.json).
+The business-solution certification uses 16 independent real Codex sessions across four isolated
+loopback runtimes. It proves server-template-driven Feature, Scenario, Instruction, and Solution
+authoring plus 15 business-language recall and clarification families. The checked-in
+[machine certificate](../docs/acceptance/agent-tdd/business-solution-codex-certification-v1.json),
+[summary](../docs/acceptance/agent-tdd/business-solution-codex-certification-v1.html), and
+[six-image process manifest](../docs/acceptance/agent-tdd/business-solution-codex-process-v1.json)
+are bound to the certified production tree and certification inputs. The process images are
+payload-free renders of real trace events, not native Codex UI screenshots.
 The 50-tool catalog includes the business-first `rg.library.overview.get`, `rg.dsl.reference.get`,
 and the four-entity solution authoring
 operations: `rg.feature.define`, `rg.scenario.define`, `rg.instruction.define`, and
@@ -59,6 +67,12 @@ and independent owner signoff to the current Solution revision, contract fingerp
 fingerprint, and current Instruction implementation fingerprint, so an old reconciliation or signoff cannot
 authorize a changed binding. Compose persists a server-issued authoring receipt, and commit rejects invented or
 stale receipt values.
+Business GOLDEN approvals bind each referenced contract by exact
+`assetKind + assetRef + semanticKey + contractFingerprint`; an equivalent entity cannot replace the
+approved entity. Controlled baselines read and freeze the complete recursive Solution closure once,
+lock every entity revision and contract fingerprint, and use that same immutable closure for the
+implementation fingerprint, execution, and evidence. Unassumed READ dependencies use a denying
+channel, while WRITE dependencies remain contract-shaped stubs.
 Design-only platform Features follow the same contract-first handoff. An authoring Agent can call
 `rg.feature.handoff` for an unbound Feature, but cannot bind its evaluator. A separately authenticated
 feature engineer uses `POST /api/agent-tdd/feature-handoffs/{featureRef}/fulfil` with purpose

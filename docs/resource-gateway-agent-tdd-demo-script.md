@@ -50,7 +50,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 - 场景、处置、解法创作；
 - 标准案例提议、GREEN、readiness 与发布。
 
-如果 Codex 说“没有规则编写入口”，先检查 `.codex/config.toml` 的 `enabled_tools` 是否包含 `rg.journey.start`、`rg.journey.next`、`rg.library.overview.get`、`rg.capability.search`、`rg.feature.handoff`、`rg.scenario.define`、`rg.instruction.define`、`rg.solution.compose` 和 `rg.solution.golden.propose`，并确认 Header 为 `BUSINESS_SOLUTION`，然后彻底重启 Codex。不要让小李补写 DSL。
+如果 Codex 说“没有规则编写入口”，先检查 `.codex/config.toml` 的 `enabled_tools` 是否包含 `rg.journey.start`、`rg.journey.next`、`rg.library.overview.get`、`rg.capability.search`、`rg.feature.define`、`rg.feature.handoff`、`rg.scenario.define`、`rg.instruction.define`、`rg.solution.compose` 和 `rg.solution.golden.propose`，并确认 Header 为 `BUSINESS_SOLUTION`，然后彻底重启 Codex。不要让小李补写 DSL。
 
 ## 4. 开场约定
 
@@ -61,7 +61,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 
 我只负责说明业务目标、判断依据、规则和标准答案。请你使用已经连接的业务工具平台，自行完成能力发现、契约设计、实现草稿、检查和修正。
 
-和我沟通时只使用业务语言，不展示代码、配置、数据结构、内部标识或技术诊断。收到业务目标后先启动一条新的业务旅程；每次继续前读取平台给出的当前阶段、阻塞原因和允许动作，只在允许范围内推进。缺少业务含义时可以问我一个明确问题；缺少系统实现时请建立工程交接，不要让我提供技术方案。每完成一幕就停下来让我核对。不要替我批准标准答案，不要替我签署上线，也不要发布未经签署的内容。
+和我沟通时只使用业务语言，不展示代码、配置、数据结构、内部标识或技术诊断。收到业务目标后先判断它是全新目标，还是继续、修订已有解法。只有全新目标才启动新的业务旅程；已有解法要先从平台重新发现并继续其当前旅程。每次继续前读取平台给出的当前阶段、阻塞原因和允许动作，只在允许范围内推进。缺少业务含义时可以问我一个明确问题；缺少系统实现时请建立工程交接，不要让我提供技术方案。每完成一幕就停下来让我核对。不要替我批准标准答案，不要替我签署上线，也不要发布未经签署的内容。
 
 请用一句话复述我们的分工，然后等我提出业务目标。
 ```
@@ -157,7 +157,7 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 - 创建本次变更的业务旅程。后续每项写入都携带同一旅程和当前 revision；不得凭提示词记忆跳过阶段。
 - 先读取当前作用域的业务能力库概览；发现可能复用的能力时，再读取其当前业务契约。
 - 从库概览提供的创作说明中自行生成 Feature、Scenario、Instruction 和 Solution 定义；这些说明只供 Coding Agent 使用，不向小李展示。
-- 演示后可用 [真实 Codex 业务创作过程截图](acceptance/agent-tdd/business-solution-codex-certification-v1.png) 复盘完整链路；截图来自 payload-free 机器证书，不展示案例原文、内部参数或模型推理。
+- 演示后可用 [真实 Codex 业务创作总览](acceptance/agent-tdd/business-solution-codex-certification-v1.png) 和 6 张分步过程图复盘完整流程：[业务积木](acceptance/agent-tdd/business-solution-codex-process-01.png)、[业务事实](acceptance/agent-tdd/business-solution-codex-process-02.png)、[业务规则](acceptance/agent-tdd/business-solution-codex-process-03.png)、[业务动作](acceptance/agent-tdd/business-solution-codex-process-04.png)、[业务解法](acceptance/agent-tdd/business-solution-codex-process-05.png)、[标准案例](acceptance/agent-tdd/business-solution-codex-process-06.png)。这些图来自真实 Codex trace 的脱敏投影，不展示案例原文、内部参数、结果或模型推理，也不冒充 Codex 原生界面截图。
 - 不能只凭名称相似复用。业务含义、所需上下文、可能结果、不可判断情形和取值责任必须全部一致。
 - 每轮保留待确认的事实定义摘要；只有小李确认三项定义后，才写入或复用权威契约。
 - 建立“责任方”“是否在免费取消时段”“当前选择的争议订单”三项事实契约。
@@ -260,6 +260,8 @@ Codex 负责把小李的表达翻译为平台中的事实、场景、处置和�
 ### Codex 应完成
 
 - 提议四条完整 GOLDEN 标准案例，分别保留小李给出的业务意图、给定事实、依赖结果假设、期望处置、解释类别和标准答案负责人。
+- 提议前重新读取相关事实和处置的当前业务卡片，并使用卡片中的精确业务名称。不要改写名称或追加“服务”等后缀。
+- 只有“返回指定结果”的假设携带返回值；“不可用”“无副作用成功”“无副作用失败”和“禁止使用”不携带返回值。
 - 标准答案保持独立，不根据实现结果改写。
 - 平台把事实值、依赖返回值和预期结果写入加密 material；案例列表和 MCP 响应只显示计数、生命周期与指纹，不返回案例正文。
 - 告诉小李需要到看板逐条确认，并停止在人工停点。

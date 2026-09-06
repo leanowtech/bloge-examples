@@ -40,7 +40,7 @@ v1.4.6 的目标是把“模型大概率选对”提升为“平台返回可复�
 | P2 统一能力索引 | 四实体和算子分散、跨会话不可发现 | capability search、entity list/get、冻结快照 | 所有资产可在同一 scope 搜索并抵抗上下文漂移 |
 | P3 结构化业务语义 | 名称和自由文本不能证明业务一致 | 语义契约族、semantic key、字段级 matcher | EXACT、PARTIAL、CONFLICT 可解释且可测试 |
 | P4 Journey 与受控测试 | 顺序依赖提示词记忆；业务假设依赖底层 stub | start/next、状态派生、业务 GOLDEN、受控假设编译、原子 association | 前置条件不满足时拒绝推进；测试执行无法外呼 |
-| P5 真实召回认证 | 单一旧证书不能证明当前主线 | 业务话语集、干扰项、跨会话、假设测试、当前 HEAD 证书 | §14.4 指标全部通过 |
+| P5 真实召回认证 | 单一旧证书不能证明当前主线 | 业务话语集、干扰项、跨会话、假设测试、与待验收 HEAD 同生产树和认证输入的证书 | §14.4 指标全部通过 |
 
 实施严格按 P0 → P5 推进。每阶段独立提交、独立验证；后阶段不得用提示词补丁掩盖前阶段尚未完成的服务端契约。
 
@@ -675,17 +675,17 @@ Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协�
 
 `dependencyAssumptions[].outcome` 使用业务结果枚举：
 
-- `RETURNS`：受控事实返回指定值。
+- `RETURNS`：受控事实或业务动作返回指定值；必须提供 `value`。
 - `UNAVAILABLE`：受控依赖返回稳定的不可用结果。
 - `SUCCEEDS_WITHOUT_EFFECT`：业务动作返回契约形状的成功结果，不产生真实副作用。
 - `FAILS_WITHOUT_EFFECT`：业务动作返回稳定的失败结果，不产生真实副作用。
 - `MUST_NOT_BE_USED`：执行路径一旦使用该能力，本案例失败。
 
-上述枚举是业务测试语义，不等于底层 `NodeFixture.DependencyBehaviorKind`。服务器可以将其编译为 Feature 值、Instruction 测试替身或 Graph fixture，但 MCP 契约不暴露该映射。
+除 `RETURNS` 外，其余结果不得携带 `value`。上述枚举是业务测试语义，不等于底层 `NodeFixture.DependencyBehaviorKind`。服务器可以将其编译为 Feature 值、Instruction 测试替身或 Graph fixture，但 MCP 契约不暴露该映射。
 
-提议时，服务器根据同一冻结上下文解析全部业务名称。Feature 和 Instruction 的 `display.businessName`、`display.aliases` 是正式业务标识；`description`、标签和适用场景只参与召回，不参与精确绑定。显示行与实体行在同一事务内按 revision 锁定，但显示 revision 不进入业务契约、执行计划或证据 currentness。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
+提议前，Codex 必须用 `rg.entity.get` 读取候选的当前业务卡片，并把 `display.businessName` 原样写入 `factName` 或 `capabilityName`，不能改写名称或附加服务后缀。服务器根据同一冻结上下文解析全部业务名称；`display.aliases` 只保留兼容性唯一匹配能力，`description`、标签和适用场景只参与召回，不参与精确绑定。显示行与实体行在同一事务内按 revision 锁定，但显示 revision 不进入业务契约、执行计划或证据 currentness。出现零个或多个候选时，整次提议失败，不保存部分案例。响应只返回 caseId、数量、批准状态和安全指纹，不回显事实值、预期值或依赖返回值。
 
-人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `caseId + businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 只包含案例引用的实体类型、稳定引用、semantic key 和业务契约指纹，不包含 evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。该向量随 case-set 安全元数据持久化，人工审阅、journey 派生和 baseline 都按当前注册表重新核对。aliases 或显示名称变化但 semantic key 和业务契约不变时，批准保持有效。
+人工批准绑定 `goldenCaseFingerprint`。服务器先将 `factName` 和 `capabilityName` 规范化为唯一 semantic key，再计算 `caseId + businessIntent + canonicalGivenFacts + canonicalDependencyAssumptions + expectedOutcome + oracleOwner + referencedBusinessContractVector` 的指纹。`referencedBusinessContractVector` 的每项是精确四元组 `{assetKind, assetRef, semanticKey, contractFingerprint}`，不包含 revision、evaluation binding、Instruction dispatch binding、Scenario 实现 revision 或 Solution 实现 revision。人工审阅、journey 派生和 baseline 只按该精确 `assetKind + assetRef` 重查当前契约，禁止用 semantic key 相同的另一实体替代原批准实体。aliases、显示名称或纯实现 revision 变化但四元组不变时，批准保持有效。
 
 任何案例字段或所引用业务契约变化都使批准失效。Coding Agent 修正规则、组合逻辑或实现 binding 时，业务定义不变则保留批准，但旧 `ControlledAssumptionPlan`、RED/GREEN evidence 和 signoff 失效。现有只覆盖 `expect` 的 Oracle 指纹不能作为新业务入口的批准坐标。
 
@@ -710,18 +710,20 @@ Codex 自行生成 `schemaVersion`、`semanticKey`、`assetKinds` 和其他协�
 
 原始事实值、预期结果和依赖返回值只存在于受控案例存储和当前执行内存，不进入计划投影。编译流程如下：
 
-1. 锁定 journey revision、case-set revision 和 Solution revision。
-2. 从同一 `BusinessCapabilitySnapshot` 解析 `givenFacts` 和 `dependencyAssumptions`；业务名称与 aliases 必须唯一命中，描述文本不得作为隐式身份。
-3. 确认每个事实只映射到当前 Solution 声明的一个 Feature 输入。
-4. 确认每个动作只映射到当前 Scenario 可达的一个 Instruction。
-5. 校验事实值、依赖结果和预期结果符合当前业务契约。
-6. 生成预采集 Feature 值、Instruction 测试替身和禁止调用断言。
-7. 安装 `DENY_ALL` 外呼权限，执行 Scenario 和 Solution。
-8. 根据当前锁定 revision 保存证据；任一 revision 漂移时放弃整次结果。
+1. 锁定 journey revision 和 case-set revision。
+2. 通过一次 `AssetReadSnapshot` 读取 Feature、Scenario、Instruction、Solution，建立只读注册表，并递归冻结 Solution 的完整可执行闭包。
+3. 锁定闭包内每个实体的精确 `assetKind + assetRef + revision + contractFingerprint`；漂移时整次 baseline 失败。
+4. 从该闭包解析 `givenFacts` 和 `dependencyAssumptions`；业务名称与 aliases 必须唯一命中，描述文本不得作为隐式身份。
+5. 确认每个事实只映射到当前 Solution 声明的一个 Feature 输入。
+6. 确认每个动作只映射到当前 Scenario 可达的一个 Instruction。
+7. 校验事实值、依赖结果和预期结果符合当前业务契约。
+8. 生成预采集 Feature 值、Instruction 测试替身和禁止调用断言。
+9. 安装 `DENY_ALL` 外呼权限，并只用冻结闭包执行 Scenario 和 Solution。
+10. 保存闭包内 Solution、递归 Scenario、Feature、Instruction 的全部精确坐标和实现指纹；任一锁定失败时不保存 GREEN evidence。
 
 `FeatureEvaluationBackend`、`InstructionDispatchChannel` 和 Graph `NodeFixture` 是可复用执行缝，不是完整产品能力。实现必须新增 case-scoped adapter，不能替换 Spring 全局 backend，也不能把业务名称直接写入 `nodeId`。
 
-SIMULATE 模式当前只自动桩化 WRITE Instruction。P4 必须把所有可能离开进程的 READ/WRITE Instruction 和 Feature 后端放入受控适配器。缺少明确假设时返回 `CONTROLLED_ASSUMPTION_REQUIRED`；不得调用默认 channel 后再用 `realExternalCalls=0` 声称零外呼。
+受控 baseline 不持有运行时 `InstructionDispatchChannel`。没有显式假设的 READ Instruction 使用拒绝通道并返回 `CONTROLLED_TEST_EGRESS_DENIED`；WRITE Instruction 使用契约形状桩；Feature 和显式依赖假设使用 case-scoped adapter。不得调用默认 channel 后再用 `realExternalCalls=0` 声称零外呼。
 
 ### 7.9 Journey action envelope
 
@@ -820,6 +822,8 @@ journey association 存在业务资产外层元数据，不进入四实体业务
 `stage`、`blockingReasons`、readiness 和 allowed tools 不持久化，每次从 association 指向的当前资产重新派生。association revision 只记录最近一次确认坐标；资产当前 revision 变化时触发重新读取和阶段回退。
 
 跨会话重新发现四实体时，`rg.entity.get` 从同一冻结能力快照返回该实体关联的 payload-free journey 坐标：`journeyRef`、当前 `revision`、`intentKind`、`status` 和 `primary`。Codex 对主 ACTIVE journey 调用 `rg.journey.next` 后才能报告当前阶段。journey 资产 revision 进入能力索引 generation vector；实体详情和 journey 坐标不能来自两个读点。
+
+只有全新的业务目标可以直接调用 `rg.journey.start`。继续、修订或为已有解法补充案例时，Codex 必须先用 `rg.entity.list`、`rg.capability.search` 和 `rg.entity.get` 重新发现实体及其主 ACTIVE journey，再调用 `rg.journey.next`；不得为同一业务对象另建一条无关 journey 来绕过当前阶段。
 
 ### 8.5 业务案例生命周期
 
@@ -1127,7 +1131,7 @@ surface 过滤发生在目录返回和调用分发之前；purpose 鉴权继续�
 | 受控测试真实外呼 | 0 |
 | 案例或业务契约变化后旧批准仍有效 | 0 |
 | Solution 实现变化后旧证据仍有效 | 0 |
-| 当前 HEAD 真实 Codex 认证 | 必须通过 |
+| 真实 Codex 认证基准提交的生产树、认证脚本和 Schema 与待验收 HEAD 一致 | 必须通过 |
 
 Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单次 PARTIAL、CONFLICT 或多 EXACT 仍必须失败关闭。
 
@@ -1135,7 +1139,7 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
 
 干扰项在同一隔离阶段共存时，搜索总状态可能由某一候选的 `INCOMPLETE` 上升为 `AMBIGUOUS`。认证按实体类型、受保护引用和契约指纹核对目标候选的 `matchType`，不以全局状态替代候选关系；`rg.feature.compose` 形成的旧版 Feature 必须仍从 Feature surface 可见并保持 `PARTIAL`，两个同名动作必须同时可见且名称一致，不得因其他干扰项存在而误判。
 
-认证 fixture 按可观察边界分三次写入，并保持三个 Codex 运行实例：同义召回完成后只加入近义干扰项；近义召回、缺字段澄清、跨会话恢复、事实假设和三类受控依赖完成后，再加入多个 EXACT、旧 Feature 和语义漂移资产；这些干扰项验收完成后，才在同一第三运行实例中加入两个同名动作，并立即执行歧义预检和最后一个 Codex 会话。后置干扰资产不得提前污染主解法的唯一能力绑定。最终私有 manifest 必须按 `near-meaning → remaining → ambiguity` 顺序关联全部资产、关系和预检，缺少或调换任一阶段均拒绝认证。
+认证 fixture 按可观察边界分三次写入，并保持四个 Codex 运行实例：主创作和同义召回使用无 seed 的第一实例；只加入近义干扰项后，在第二实例完成近义召回、缺字段澄清、跨会话恢复、事实假设和三类受控依赖；再加入多个 EXACT、旧 Feature 和语义漂移资产，在第三实例完成对应测试；最后加入两个同名动作，并在第四实例执行歧义预检和最后一个 Codex 会话。后置干扰资产不得提前污染主解法的唯一能力绑定。最终私有 manifest 必须按 `near-meaning → remaining → ambiguity` 顺序关联全部资产、关系和预检，缺少或调换任一阶段均拒绝认证。
 
 新证书只保存安全证明：
 
@@ -1154,24 +1158,27 @@ Top-1 是产品质量指标，不是治理依据。即使达到 95%，任何单�
       "selectedContractFingerprint": "hmac-sha256:...",
       "toolSequenceClass": "VALID",
       "humanBoundaryRespected": true,
-      "controlledAssumptionClass": "VALID",
+      "controlledAssumptionClass": "NOT_OBSERVED",
       "egressDeniedCount": 0,
       "goldenCaseCurrent": true
     }
   ],
   "metrics": {
+    "toolRecallRate": 1.0,
     "recallAt3": 1.0,
-    "top1": 0.97,
+    "top1": 1.0,
     "clarificationRate": 1.0,
     "unsafeEscapeCount": 0,
-    "controlledTestEgressCount": 0,
-    "staleGoldenAcceptedCount": 0
+    "controlledTestEgressCount": null,
+    "staleGoldenAcceptedCount": null
   }
 }
 ```
 
 证书不得保存原始 prompt、arguments、structuredContent、业务样本、DSL 或模型推理。服务端返回给 Coding Agent 的四实体创作模板必须由生产解码器逐份验证；字段说明或未经编译的示意文本不能作为创作参考。overview 必须返回覆盖四份模板的 `authoringPatternsFingerprint`，并将模板纳入 `snapshotFingerprint`。Feature、Scenario、Instruction、Solution 的 journey 写入必须携带该模板指纹；服务端必须在落库前与当前模板校验，缺失或过期时返回 `CAPABILITY_CONTEXT_STALE`。真实 Codex 证书必须证明 overview 先于首个实体写入、四次写入绑定同一模板指纹，并以不可逆关联指纹保存当次模板与库快照身份。Codex 自动发起的 MCP resource 探测只作为被动协议动作记录，不计入召回成功，也不允许扩展业务 surface。
-创作认证停在人工批准之前，不生成受控执行计划，因此不声明 `executionPlanCurrent`。受控执行当前性和零外呼由真实 HTTP 主线与服务级并发测试证明。`CERTIFIED` 只用于同时包含主创作、跨会话召回和缺字段澄清的完整套件；`recallAt3=1.0`、`top1>=0.95`、`clarificationRate=1.0`，且召回和澄清样本数都不得为零。只运行主创作的诊断不能生成认证证书。
+创作认证停在人工批准之前，不生成受控执行计划，因此不声明 `executionPlanCurrent`。四类受控假设会话只证明 Codex 使用业务语言正确提交假设；受控编译、当前性和零外呼由真实 HTTP 主线与服务级并发测试证明。证书中的 `controlledTestEgressCount` 和 `staleGoldenAcceptedCount` 为 `null`，不能改写为 0。`CERTIFIED` 只用于同时包含主创作、跨会话召回和缺字段澄清的完整套件；`toolRecallRate=1.0`、`recallAt3=1.0`、`top1>=0.95`、`clarificationRate=1.0`，且召回和澄清样本数都不得为零。只运行主创作的诊断不能生成认证证书。
+
+过程证据除机器证书外，还包含 6 张 1440×900 脱敏截图，分别对应「先读业务积木、定义业务事实、定义业务规则、定义业务动作、组合业务解法、提交标准案例」。每张图只展示真实 trace 中的工具名、调用序号和完成状态；manifest 绑定证书指纹、基准提交、文件名和 SHA-256。截图不是 Codex 原生界面截图，不保存参数、结果、内部引用或业务样本。
 
 ## 15. 实施计划
 
@@ -1262,11 +1269,11 @@ P4a 可以先作为只读建议发布。P4b 和 P4c 未通过验收前，不得�
 - 建立业务话语、同义改写、干扰能力、歧义和跨会话测试集。
 - 增加事实假设、依赖不可用、无副作用成功、禁止调用和假设歧义话语集。
 - 扩展真实 Codex trace reducer 和证书 Schema。
-- 当前 HEAD 重新认证，旧证书只保留历史用途或归档。
+- 从干净提交重新认证；待验收 HEAD 的生产树、认证脚本和 Schema 必须与证书基准一致。旧证书只保留历史用途或归档。
 - 更新业务演示剧本：业务专家只说业务意图，Codex 通过新前门完成发现和导航。
 - 更新启动、Codex 配置、故障排查和停服手册。
 
-完成标准：§14.4 全部指标通过；证书绑定当前 HEAD；演示不再预置工具名、资产引用、DSL 或契约字段。
+完成标准：§14.4 全部指标通过；证书绑定的生产树和认证输入与待验收 HEAD 一致；演示不再预置工具名、资产引用、DSL 或契约字段。
 
 建议独立提交：`test(resource-gateway): certify business semantic recall journey` 和 `docs(resource-gateway): update business recall runbook`。
 
@@ -1383,7 +1390,7 @@ gateway:
 
 ## 20. 实施追踪
 
-本节在代码实施时逐项更新。只有代码、测试、文档和当前 HEAD 真实认证同时成立，状态才能改为“已完成”。
+本节在代码实施时逐项更新。只有代码、测试、文档和真实认证同时成立，状态才能改为“已完成”。真实认证可以固定在较早的干净基准提交，但证书绑定的生产源码树、认证脚本和证书 Schema 必须与待验收 HEAD 一致；只允许其后出现不改变这些对象的文档或测试提交。
 
 | 阶段 | 当前状态 | 完成证据 |
 |---|---|---|
@@ -1391,8 +1398,8 @@ gateway:
 | P1 surface 隔离 | 已完成 | `X-RG-Surface` 三面策略；list/call 双重过滤；purpose 交集；surface 专属初始化说明；legacy 指标；业务 Codex 配置不含底层工具；`require-surface` 与 8 项新增工具回滚在同一服务端策略生效 |
 | P2 统一能力索引 | 已完成 | 四实体、算子库、运行时资源、GraphDraft、发布物统一业务投影；双重完整物化稳定快照；独立 display 资产行进入 generation vector；索引按 businessName、aliases、tags、whenToUse 和 whenNotToUse 召回；同一 alias 命中多个 ACTIVE semantic key 时返回 AMBIGUOUS，且候选不升格为 EXACT；范围隔离、确定性去重、排序、游标绑定与 stale 失败关闭均有测试 |
 | P3 四实体业务语义契约族 | 已完成 | Feature、Scenario、Instruction、Solution 各有结构化语义 profile 和独立 `BusinessCapabilityDisplay`；journey 新写入拒绝缺少 display 的结构化定义；未知字段和超界列表失败关闭；旧版 UNKNOWN/PARTIAL 和 legacy display 只读兼容；matcher 按 profile 比较封闭业务维度；实现 binding 排除于业务身份；display-only 修订不改变 contract fingerprint、implementation fingerprint、主资产 revision 或证据 currentness；服务端四实体模板提供完整 display 构造 |
-| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，锁定独立 display 行并以业务名称/aliases 唯一绑定受控假设，描述文本不参与身份匹配，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；case-scoped Feature/Instruction adapter 不持有真实后端，依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
-| P5 真实召回认证 | 已完成 | 提交 `05b64a696728f72bcb099bb46388d1de6d4c22af` 已通过 16 个独立真实 Codex 会话和 3 段隔离服务实例；主创作链包含 27 次 MCP 调用，完成 2 项 Feature、1 个 Scenario、3 项 Instruction、1 个 Solution 和 2 条待人工确认的完整 GOLDEN 案例；15 类业务话语逐类形成真实端到端证据，覆盖 2 个召回样本、7 个澄清样本、4 类受控假设及当前性和 surface 隔离；Recall@3、Top-1、澄清率均为 100%，外部动作逃逸、受控测试外呼和过期 GOLDEN 接受数均为 0；16 个 thread identity 和 3 个实例 nonce 只以一次性 HMAC/指纹留存且必须互不相同；机器证书绑定独立 JAR、进程身份、生产源码树、服务端模板、库快照和三阶段 fixture manifest；证书 reducer 的 56 个组合正反例及业务 reducer 的 40 个专项用例通过；JSON、可视化过程报告和 1440×1440 截图留存。证书固定测试域话语集，不把该结果外推为任意自然语言的普遍准确率 |
+| P4 journey 与受控测试 | 已完成 | journey start/next、资产派生阶段、revision lock、allowed tools、业务 compose context、完整 GOLDEN 提议/人工批准、受保护 material receipt、无明文降级、旧 GOLDEN 重提议门；批准引用按 `{assetKind, assetRef, semanticKey, contractFingerprint}` 精确绑定，不含 revision，也不允许等价实体替换；`AssetReadSnapshot` 以 JDBC 单查询或内存单互斥区冻结 journey、四实体、case-set、evidence、signoff 和 publication，阶段派生与 currentness 校验不再读取可变仓储；`CANCELLED` 在资产解释前进入终态，只允许 `rg.journey.next`，所有写动作失败关闭；测试覆盖旧 journey revision、资产读点漂移、`BLOCKED` 恢复和取消后写守卫；独立 `BusinessFixtureCompiler` 在同一冻结闭包内解析 Feature 与 Instruction 依赖，锁定独立 display 行并以业务名称/aliases 唯一绑定受控假设，描述文本不参与身份匹配，校验受控返回和预期处置契约，并编译确定性 `ControlledAssumptionPlan`；baseline 通过一次 `AssetReadSnapshot` 冻结 Solution、递归 Scenario、Feature、Instruction 完整闭包，锁定全部 revision/contract fingerprint 后只执行该闭包，证据保存完整坐标和实现指纹；case-scoped Feature/Instruction adapter 不持有真实后端，无显式假设的 READ 使用拒绝通道，WRITE 使用契约桩；依赖失败形成可由 Oracle 显式匹配的闭集业务结果，`MUST_NOT_BE_USED` 仅在路径触达时失败；`DENY_ALL` 探针在 HTTP、Feature 或 Instruction 外呼前返回 `CONTROLLED_TEST_EGRESS_DENIED`，且不保存 GREEN evidence；统一 currentness verifier 同时校验 scope、journey、Solution 实现、case-set、受控计划、冻结 Feature/Scenario/Instruction、编译器版本和 `DENY_ALL`；平台 WRITE 执行器按 receipt 在内存解析同一受保护案例并对账，case-set 和 evidence 不落明文；零外呼测试及真实 HTTP MCP 主线认证 |
+| P5 真实召回认证 | 已完成 | 基准提交 `e1a3cbecadb946aae83d97ee6ee47285a3395ac3` 已通过 16 个独立真实 Codex 会话和 4 个隔离服务实例；主创作链包含 31 次 MCP 调用，完成 2 项 Feature、1 个 Scenario、3 项 Instruction、1 个 Solution 和 2 条待人工确认的完整 GOLDEN 案例；15 类业务话语逐类形成真实端到端证据，覆盖 2 个召回样本、7 个澄清样本、4 类受控假设表达及当前性和 surface 隔离；工具召回率、Recall@3、Top-1、澄清率均为 100%，外部动作逃逸数为 0；受控测试外呼和过期 GOLDEN 接受不在该证书内执行，字段为 `null`，由服务级测试独立证明；16 个 thread identity 和 4 个实例 nonce 只以一次性 HMAC/指纹留存且必须互不相同；机器证书绑定 OpenAI 签名 Codex 二进制、独立 JAR、进程身份、生产源码树、服务端模板、库快照和三阶段 fixture manifest；72 个认证脚本行为测试通过；JSON、可视化汇总、1440×1440 总览图、6 张 1440×900 真实 trace 脱敏过程图及哈希 manifest 已留存。证书只证明固定测试域话语集，不外推为任意自然语言的普遍准确率 |
 
 ## 21. 审阅决策点
 
