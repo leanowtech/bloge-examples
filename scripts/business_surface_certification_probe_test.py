@@ -62,6 +62,23 @@ class SurfaceProbeTest(unittest.TestCase):
         self.assertEqual({"read", "authoring"}, set(result["purposeProofs"]))
         self.assertRegex(result["proofFingerprint"], r"^sha256:[0-9a-f]{64}$")
 
+    def test_accepts_the_payload_free_solution_coverage_tool(self):
+        responses = iter([
+            Response({"result": {"tools": [
+                {"name": "rg.library.overview.get"}, {"name": "rg.capability.search"},
+                {"name": "rg.solution.coverage"}]}}),
+            Response({"error": {"code": -32031, "message": "TOOL_NOT_VISIBLE_IN_SURFACE"}}),
+            Response({"result": {"tools": [
+                {"name": "rg.journey.start"}, {"name": "rg.feature.define"}]}}),
+            Response({"error": {"code": -32031, "message": "TOOL_NOT_VISIBLE_IN_SURFACE"}}),
+        ])
+
+        result = probe.certify_surface("http://127.0.0.1/mcp", "secret", "a" * 64,
+                                       lambda *_args, **_kwargs: next(responses))
+
+        self.assertIn("rg.solution.coverage",
+                      result["purposeProofs"]["read"]["visibleToolNames"])
+
     def test_rejects_client_or_server_catalog_leak(self):
         responses = iter([Response({"result": {"tools": [
             {"name": "rg.library.overview.get"}, {"name": "rg.capability.search"},

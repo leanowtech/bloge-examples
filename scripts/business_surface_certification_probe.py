@@ -23,7 +23,8 @@ BUSINESS_SURFACE_TOOLS = {
     "rg.feature.evaluate", "rg.scenario.define", "rg.instruction.define",
     "rg.engineering.handoff", "rg.solution.compose", "rg.solution.getContract",
     "rg.solution.invoke", "rg.solution.baseline", "rg.solution.commit",
-    "rg.solution.readiness", "rg.solution.performance", "rg.solution.publish",
+    "rg.solution.readiness", "rg.solution.performance", "rg.solution.coverage",
+    "rg.solution.publish",
 }
 
 
