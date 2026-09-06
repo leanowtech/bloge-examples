@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -365,7 +367,10 @@ class AgentTddCodexCertificationArtifactTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 72 tests", "OK");
+        Matcher count = Pattern.compile("Ran (\\d+) tests").matcher(output);
+        assertThat(count.find()).as(output).isTrue();
+        assertThat(Integer.parseInt(count.group(1))).as(output).isGreaterThanOrEqualTo(74);
+        assertThat(output).contains("OK").doesNotContain("FAILED", "Traceback");
     }
 
     private String productionTreeFingerprint(String commit) throws Exception {
