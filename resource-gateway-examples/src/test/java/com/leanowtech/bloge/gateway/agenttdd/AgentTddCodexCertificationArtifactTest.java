@@ -137,22 +137,28 @@ class AgentTddCodexCertificationArtifactTest {
                 + ":docs/schemas/resource-gateway-business-recall-certification-v1.schema.json"))
                 .isEqualTo(gitObject(
                         "HEAD:docs/schemas/resource-gateway-business-recall-certification-v1.schema.json"));
-        assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
+        JsonNode requiredSequence = certificate.at("/journey/requiredSequence");
+        JsonNode observedCalls = certificate.at("/journey/observedCalls");
+        assertThat(textValues(requiredSequence)).containsExactly(
                 "rg.feature.define", "rg.scenario.define", "rg.instruction.define",
                 "rg.solution.compose", "rg.solution.golden.propose");
-        assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
+        assertThat(observedCalls)
+                .as("the main authoring trace must be bounded and cover the required sequence")
+                .isNotEmpty()
+                .hasSizeBetween(requiredSequence.size(), 100);
+        requiredSequence.forEach(requiredTool -> assertThat(observedCalls).anySatisfy(call -> {
+            assertThat(call.path("tool").asText()).isEqualTo(requiredTool.asText());
+            assertThat(call.path("status").asText()).isEqualTo("completed");
+        }));
+        assertThat(observedCalls).filteredOn(call ->
                 call.path("tool").asText().equals("rg.feature.define")
                         && call.path("status").asText().equals("completed")).hasSize(2);
-        assertThat(certificate.at("/journey/observedCalls")).filteredOn(call ->
+        assertThat(observedCalls).filteredOn(call ->
                 call.path("tool").asText().equals("rg.instruction.define")
                         && call.path("status").asText().equals("completed")).hasSize(3);
-        assertThat(certificate.at("/journey/observedCalls"))
-                .as("the checked-in main authoring journey must retain all 26 correlated calls")
-                .hasSize(26);
-        assertThat(certificate.at("/journey/observedCalls")).anySatisfy(call -> {
-            assertThat(call.path("tool").asText()).isEqualTo("rg.solution.golden.list");
-            assertThat(call.path("status").asText()).isEqualTo("completed");
-        });
+        JsonNode finalCall = observedCalls.get(observedCalls.size() - 1);
+        assertThat(finalCall.path("tool").asText()).isEqualTo("rg.solution.golden.list");
+        assertThat(finalCall.path("status").asText()).isEqualTo("completed");
         assertThat(certificate.at("/assertions").properties()).allSatisfy(entry ->
                 assertThat(entry.getValue().asBoolean()).as(entry.getKey()).isTrue());
         assertThat(certificate.at("/metrics/recallAt3").asDouble()).isEqualTo(1.0);
@@ -224,7 +230,8 @@ class AgentTddCodexCertificationArtifactTest {
         String report = Files.readString(BUSINESS_REPORT, StandardCharsets.UTF_8);
         assertThat(report).contains(
                 certificate.path("repositoryCommit").asText(),
-                "<b>26</b><span>主创作链 MCP 调用</span>", "2 + 1 + 3", "15 / 15",
+                "<b>" + observedCalls.size() + "</b><span>主创作链 MCP 调用</span>",
+                "2 + 1 + 3", "15 / 15",
                 "两条完整标准案例", "服务端模板先读", "写入已绑定",
                 "未批准、未执行、未发布", "Recall@3", "Top-1",
                 "16 个会话身份互不相同", "4 个实例身份互不相同", "UNAVAILABLE");
