@@ -81,6 +81,8 @@ class FeatureControlledSuiteReconciliationServiceTest {
         suites.run(FEATURE_REF, draft.revision(), executor());
         AgentTddStoredAsset before = currentSuite();
         Receipt receipt = receipt(before);
+        assertThat(receipt.payloadFingerprint())
+                .isEqualTo(before.data().path("definitionFingerprint").asText());
         jdbc.update("DELETE FROM rg_fixture_material_v2_revisions WHERE fixture_asset_id = ?",
                 receipt.fixtureAssetId());
 
@@ -224,7 +226,8 @@ class FeatureControlledSuiteReconciliationServiceTest {
 
     private String definitionFingerprint() {
         return com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint.fromCanonicalValue(
-                mapper, definition(0).protectedMaterial(), 16 * 1024 * 1024);
+                mapper, mapper.convertValue(definition(0).protectedMaterial(), Object.class),
+                16 * 1024 * 1024);
     }
 
     private String featureFingerprint() {

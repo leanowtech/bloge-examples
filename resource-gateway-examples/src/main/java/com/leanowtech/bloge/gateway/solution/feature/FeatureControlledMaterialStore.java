@@ -161,7 +161,9 @@ public final class FeatureControlledMaterialStore {
             FeatureControlledSuiteDefinition definition = read(
                     receiptNode, asMaterialReader(caller));
             boolean payloadMatches = definition.featureRef().equals(expectedFeatureRef)
-                    && fingerprint(definition.protectedMaterial()).equals(expectedDefinitionFingerprint);
+                    && fingerprint(mapper.convertValue(
+                    definition.protectedMaterial(), Object.class))
+                    .equals(expectedDefinitionFingerprint);
             return new MaterialVerification(payloadMatches ? "CURRENT" : "PAYLOAD_MISMATCH",
                     refFingerprint, receiptFingerprint);
         } catch (AgentTddToolException unavailable) {

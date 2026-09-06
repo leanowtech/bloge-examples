@@ -89,7 +89,8 @@ public final class FeatureControlledSuiteService {
         FeatureContract feature = requireFeature(scope, definition.featureRef());
         AgentTddStoredAsset featureAsset = featureAsset(scope, definition.featureRef());
         String featureFingerprint = featureContractFingerprint(featureAsset);
-        String definitionFingerprint = fingerprint(definition.protectedMaterial());
+        String definitionFingerprint = fingerprint(
+                mapper.convertValue(definition.protectedMaterial(), Object.class));
         long nextRevision = definition.expectedRevision() + 1;
         JsonNode receipt = materials.write(definition.featureRef(), featureAsset.revision(),
                 featureFingerprint, nextRevision, definitionFingerprint, definition, identity);
