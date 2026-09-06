@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.solution.FeatureEvaluationBackend;
 import com.leanowtech.bloge.gateway.solution.FeatureTokenKeyProvider;
 import com.leanowtech.bloge.gateway.solution.InstructionDispatchChannel;
 import com.leanowtech.bloge.gateway.solution.capability.BusinessCapabilityIndex;
+import com.leanowtech.bloge.gateway.solution.coverage.SolutionCoverageService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessJourneyService;
@@ -54,12 +55,24 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
     private final BusinessCapabilityIndex capabilityIndex;
     private final BusinessJourneyService journeys;
     private final BusinessGoldenService businessGolden;
+    private final SolutionCoverageService solutionCoverage;
 
     /** Creates the Agent tool facade over authoritative RG repositories. */
     public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
                                         GraphDraftRepository drafts,
                                         ObjectMapper mapper) {
         this(libraries, drafts, mapper, null, null, null, null, null, null, null, null);
+    }
+
+    /** Creates a focused READ facade for strict payload-free Solution coverage tests. */
+    public ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
+                                        GraphDraftRepository drafts,
+                                        ObjectMapper mapper,
+                                        SolutionCoverageService solutionCoverage) {
+        this(libraries, drafts, mapper, null, null, null, null, null,
+                null, null, null, AgentTddAuthoringTelemetry.noop(),
+                null, null, null, null, null, null, null, null, null,
+                solutionCoverage);
     }
 
     /** Creates a focused facade with contract-aware DSL and simulation services. */
@@ -191,12 +204,13 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                         BusinessCapabilityIndex capabilityIndex,
                                         BusinessJourneyService journeys,
                                         BusinessGoldenService businessGolden,
-                                        BusinessGoldenMaterialStore goldenMaterials) {
+                                        BusinessGoldenMaterialStore goldenMaterials,
+                                        ObjectProvider<SolutionCoverageService> solutionCoverages) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry,
                 featureBackends.getIfUnique(), instructionChannels.getIfUnique(), tokenKeys.getIfUnique(),
                 writeRunners.getIfUnique(), libraryOverview, capabilityIndex, journeys, businessGolden,
-                goldenMaterials);
+                goldenMaterials, solutionCoverages.getIfAvailable());
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -217,7 +231,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          SolutionWriteExecutionRunner writeRunner) {
         this(libraries, drafts, mapper, projection, simulation, states, authoring, workflow,
                 catalog, declarations, attestations, telemetry, featureBackend, instructionChannel,
-                tokenKeys, writeRunner, null, null, null, null, null);
+                tokenKeys, writeRunner, null, null, null, null, null, null);
     }
 
     private ResourceGatewayAgentTddTools(OperatorLibraryRegistry libraries,
@@ -240,7 +254,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
                                          BusinessCapabilityIndex capabilityIndex,
                                          BusinessJourneyService journeys,
                                          BusinessGoldenService businessGolden,
-                                         BusinessGoldenMaterialStore goldenMaterials) {
+                                         BusinessGoldenMaterialStore goldenMaterials,
+                                         SolutionCoverageService solutionCoverage) {
         this.libraries = Objects.requireNonNull(libraries, "libraries");
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
@@ -264,6 +279,7 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         this.capabilityIndex = capabilityIndex;
         this.journeys = journeys;
         this.businessGolden = businessGolden;
+        this.solutionCoverage = solutionCoverage;
         this.solutionTools = states == null ? null : new SolutionAgentTools(
                 states, mapper, projection, featureBackend, instructionChannel, tokenKeys, writeRunner,
                 goldenMaterials);
@@ -296,6 +312,8 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
             case "rg.solution.golden.propose" -> executionSuccess(journeyAction(name, safeArguments, identity,
                     () -> businessGolden().propose(safeArguments, identity)));
             case "rg.solution.golden.list" -> success(businessGolden().list(safeArguments, identity));
+            case "rg.solution.coverage" -> success(solutionCoverage().status(
+                    identity, requiredText(safeArguments, "solutionRef")).agentProjection());
             case "rg.contract.get" -> contract(safeArguments, identity);
             case "rg.tool.getInstruction" -> executionSuccess(mutations().getInstruction(safeArguments, identity));
             case "rg.scenario.listCases" -> executionSuccess(mutations().listCases(safeArguments, identity));
@@ -415,6 +433,12 @@ public final class ResourceGatewayAgentTddTools implements McpToolInvoker {
         if (businessGolden == null) throw new AgentTddToolException(
                 "GATE_REJECTED", "Business GOLDEN authoring is unavailable.");
         return businessGolden;
+    }
+
+    private SolutionCoverageService solutionCoverage() {
+        if (solutionCoverage == null) throw new AgentTddToolException(
+                "GATE_REJECTED", "Solution coverage is unavailable.");
+        return solutionCoverage;
     }
 
     private Map<String, Object> journeyAction(String name, JsonNode arguments,

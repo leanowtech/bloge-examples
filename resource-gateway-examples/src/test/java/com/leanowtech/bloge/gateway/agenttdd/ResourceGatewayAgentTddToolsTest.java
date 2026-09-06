@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.agenttdd;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.solution.coverage.SolutionCoverageService;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.RiskLevel;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CoverageInventory.ObligationDimension;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
@@ -17,6 +20,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** Verifies READ tools against the existing RG catalog and draft authorities. */
 class ResourceGatewayAgentTddToolsTest {
@@ -115,6 +120,35 @@ class ResourceGatewayAgentTddToolsTest {
         assertThat(response.path("data").path("worldModel").isObject()).isTrue();
         assertThat(response.path("data").path("samples")).isEmpty();
         assertThat(response.path("data").path("snapshotFingerprint").asText()).startsWith("sha256:");
+    }
+
+    @Test
+    void returnsOnlyThePayloadFreeSolutionCoverageProjection() {
+        SolutionCoverageService coverage = mock(SolutionCoverageService.class);
+        var status = new SolutionCoverageService.CoverageStatus(
+                "solution-coverage:sol:cancel", 3,
+                "sha256:" + "a".repeat(64),
+                List.of(new SolutionCoverageService.CoverageItem(
+                        "rule:scn:cancel:R1", "sha256:" + "b".repeat(64),
+                        ObligationDimension.RULE, RiskLevel.HIGH, true,
+                        List.of("G-sensitive-business-case"))),
+                new SolutionCoverageService.CoverageSummary(1, 1, 0, 0));
+        when(coverage.status(identity(), "sol:cancel")).thenReturn(status);
+        ResourceGatewayAgentTddTools tools = new ResourceGatewayAgentTddTools(
+                new InMemoryOperatorLibraryRegistry(), new InMemoryGraphDraftRepository(),
+                mapper, coverage);
+
+        JsonNode response = mapper.valueToTree(tools.invoke(
+                McpToolCatalog.SOLUTION_COVERAGE,
+                mapper.valueToTree(Map.of("solutionRef", "sol:cancel")), identity()));
+
+        assertThat(response.path("ok").asBoolean()).isTrue();
+        assertThat(response.path("data").path("obligations").get(0).path("covered").asBoolean())
+                .isTrue();
+        assertThat(response.toString())
+                .contains("obligationFingerprint", "dimension", "risk", "covered", "summary")
+                .doesNotContain("rule:scn", "G-sensitive", "byCaseIds", "solutionFingerprint",
+                        "inventoryId", "payload");
     }
 
     private static OperatorDefinition designOperator(String ref) {

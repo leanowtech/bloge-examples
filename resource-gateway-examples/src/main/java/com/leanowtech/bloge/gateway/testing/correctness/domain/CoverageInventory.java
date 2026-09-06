@@ -36,8 +36,11 @@ public record CoverageInventory(
     public static final String SCHEMA_VERSION = "bloge.coverageInventory.v1";
 
     public enum InventoryLifecycle { DRAFT, FROZEN, SUPERSEDED }
-    public enum ObligationDimension { CONTRACT, PATH, POLICY, RISK, INCIDENT, BOUNDARY }
-    public enum ObligationSource { AUTOMATED, BUSINESS, INCIDENT, MIGRATED }
+    public enum ObligationDimension {
+        CONTRACT, PATH, POLICY, RISK, INCIDENT, BOUNDARY,
+        RULE, OTHERWISE, DEPENDENCY_FAULT
+    }
+    public enum ObligationSource { AUTOMATED, BUSINESS, INCIDENT, MIGRATED, SOLUTION_DECISION }
     public enum ObligationLifecycle { PROPOSED, FROZEN, WAIVED, RETIRED }
 
     public CoverageInventory {

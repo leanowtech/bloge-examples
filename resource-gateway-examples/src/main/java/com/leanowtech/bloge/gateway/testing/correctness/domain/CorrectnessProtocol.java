@@ -15,7 +15,7 @@ public final class CorrectnessProtocol {
     private CorrectnessProtocol() {
     }
 
-    public enum TargetKind { GRAPH, OPERATOR, FUNCTION }
+    public enum TargetKind { GRAPH, OPERATOR, FUNCTION, SOLUTION }
     public enum PrincipalKind { USER, TEAM, SERVICE }
     public enum ReviewStatus { PENDING, APPROVED, REJECTED }
     public enum RiskLevel { LOW, MEDIUM, HIGH, CRITICAL }

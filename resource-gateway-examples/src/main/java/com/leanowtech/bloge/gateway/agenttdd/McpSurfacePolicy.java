@@ -24,6 +24,7 @@ public final class McpSurfacePolicy {
             "rg.capability.search", "rg.entity.list", "rg.entity.get",
             "rg.journey.start", "rg.journey.next",
             "rg.solution.golden.propose", "rg.solution.golden.list",
+            "rg.solution.coverage",
             "rg.feature.define", "rg.feature.handoff", "rg.feature.evaluate",
             "rg.scenario.define", "rg.instruction.define", "rg.engineering.handoff",
             "rg.solution.compose", "rg.solution.getContract", "rg.solution.invoke",

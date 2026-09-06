@@ -23,6 +23,7 @@ public final class McpToolCatalog {
     public static final String JOURNEY_NEXT = "rg.journey.next";
     public static final String GOLDEN_PROPOSE = "rg.solution.golden.propose";
     public static final String GOLDEN_LIST = "rg.solution.golden.list";
+    public static final String SOLUTION_COVERAGE = "rg.solution.coverage";
     public static final String FEATURE_HANDOFF = "rg.feature.handoff";
     public static final String ENGINEERING_HANDOFF = "rg.engineering.handoff";
     public static final String DSL_REFERENCE = "rg.dsl.reference.get";
@@ -80,6 +81,10 @@ public final class McpToolCatalog {
                 McpToolImpact.READ,
                 props("journeyRef", string(), "solutionRef", string(), "lifecycle", string()),
                 List.of("journeyRef", "solutionRef")));
+        values.add(tool(SOLUTION_COVERAGE, "Get solution coverage",
+                "Read payload-free rule, otherwise and controlled dependency-fault coverage.",
+                McpToolImpact.READ,
+                props("solutionRef", string()), List.of("solutionRef")));
         values.add(tool("rg.contract.get", "Get business contract", "Read the business contract for an asset.",
                 McpToolImpact.READ, props("assetRef", string()), List.of("assetRef")));
         values.add(tool("rg.tool.getInstruction", "Get tool instruction", "Read the Agent-facing tool contract.",
@@ -726,6 +731,7 @@ public final class McpToolCatalog {
                     "caseSummaries", arrayOf(businessGoldenSummary()),
                     "approvalState", enumString("PENDING", "APPROVED")),
                     List.of("caseSetRef", "revision", "caseSummaries", "approvalState"));
+            case SOLUTION_COVERAGE -> solutionCoverage();
             case "rg.contract.get" -> structuredObject(props("assetRef", string(), "kind", string(),
                     "inputs", arrayOf(businessObject()), "outputs", arrayOf(businessObject()), "effect", string(),
                     "owner", string(), "bindingRef", string(), "sourceKind", string(), "runtimeState", string(),
@@ -860,6 +866,23 @@ public final class McpToolCatalog {
                     List.of("toolRef", "state", "publishable", "attestation"));
             default -> businessObject();
         };
+    }
+
+    /** Strict Agent projection that cannot carry rule ids, case ids or business payloads. */
+    private static Map<String, Object> solutionCoverage() {
+        Map<String, Object> obligation = structuredObject(props(
+                "obligationFingerprint", string(),
+                "dimension", enumString("RULE", "OTHERWISE", "DEPENDENCY_FAULT"),
+                "risk", enumString("LOW", "MEDIUM", "HIGH", "CRITICAL"),
+                "covered", bool()),
+                List.of("obligationFingerprint", "dimension", "risk", "covered"));
+        Map<String, Object> summary = structuredObject(props(
+                "total", integer(), "covered", integer(), "uncovered", integer(),
+                "highRiskUncovered", integer()),
+                List.of("total", "covered", "uncovered", "highRiskUncovered"));
+        return structuredObject(props(
+                "obligations", arrayOf(obligation), "summary", summary),
+                List.of("obligations", "summary"));
     }
 
     /** Strict payload-free schema for the business library overview. */

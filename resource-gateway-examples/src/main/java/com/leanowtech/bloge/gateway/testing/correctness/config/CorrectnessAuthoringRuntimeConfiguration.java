@@ -1,7 +1,11 @@
 package com.leanowtech.bloge.gateway.testing.correctness.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.agenttdd.AgentTddStateRepository;
 import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
+import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.coverage.SolutionCoverageService;
+import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationService;
@@ -82,6 +86,20 @@ public class CorrectnessAuthoringRuntimeConfiguration {
             CorrectnessAuthoringSchemaReadiness readiness
     ) {
         return new DatabaseCoverageInventoryRepository(jdbc, mapper);
+    }
+
+    /** Connects four-entity Solution coverage to the existing governed Inventory authority. */
+    @Bean
+    @ConditionalOnMissingBean
+    SolutionCoverageService solutionCoverageService(
+            SolutionEntityRegistry registry,
+            AgentTddStateRepository states,
+            CoverageInventoryRepository inventories,
+            ObjectMapper mapper,
+            BusinessGoldenMaterialStore goldenMaterials
+    ) {
+        return new SolutionCoverageService(
+                registry, states, inventories, mapper, goldenMaterials);
     }
 
     @Bean

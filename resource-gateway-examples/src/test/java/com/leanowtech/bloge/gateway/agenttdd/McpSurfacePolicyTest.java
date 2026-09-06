@@ -25,6 +25,10 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.OPERATIONS, identity("AGENT_TDD_READ"))).isTrue();
         assertThat(policy.visible(catalog.require("rg.solution.compose"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_AUTHORING"))).isTrue();
+        assertThat(policy.visible(catalog.require("rg.solution.coverage"),
+                McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isTrue();
+        assertThat(policy.visible(catalog.require("rg.solution.coverage"),
+                McpSurfacePolicy.Surface.PLATFORM_AUTHORING, identity("AGENT_TDD_READ"))).isFalse();
         assertThat(policy.visible(catalog.require("rg.tool.compose"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_AUTHORING"))).isFalse();
         assertThat(policy.visible(catalog.require("rg.dsl.reference.get"),

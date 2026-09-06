@@ -26,7 +26,7 @@ class McpToolCatalogTest {
     void exposesTheCompleteFiveStageCatalogWithHonestImpactLevels() {
         McpToolCatalog catalog = new McpToolCatalog();
 
-        assertThat(catalog.all()).hasSize(50);
+        assertThat(catalog.all()).hasSize(51);
         assertThat(catalog.require("rg.capability.list").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.library.overview.get").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.capability.search").impact()).isEqualTo(McpToolImpact.READ);
@@ -58,12 +58,34 @@ class McpToolCatalogTest {
         assertThat(catalog.require("rg.engineering.handoff").impact()).isEqualTo(McpToolImpact.PROPOSE);
         assertThat(catalog.require("rg.solution.readiness").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.solution.performance").impact()).isEqualTo(McpToolImpact.READ);
+        assertThat(catalog.require("rg.solution.coverage").impact()).isEqualTo(McpToolImpact.READ);
         assertThat(catalog.require("rg.solution.publish").impact()).isEqualTo(McpToolImpact.GOVERNED_WRITE);
         assertThat(catalog.all()).extracting(McpToolDefinition::name).doesNotHaveDuplicates();
         assertThat(catalog.all()).extracting(definition -> definition.impact().operation())
                 .doesNotContain(IntegrationOperation.AGENT_TDD_ATTEST,
                         IntegrationOperation.AGENT_TDD_WRITE_EXEC,
                         IntegrationOperation.AGENT_TDD_FEATURE_ENG);
+    }
+
+    @Test
+    void publishesAStrictPayloadFreeSolutionCoverageContract() {
+        McpToolDefinition coverage = new McpToolCatalog().require(McpToolCatalog.SOLUTION_COVERAGE);
+
+        assertThat(stringKeys((Map<?, ?>) coverage.inputSchema().get("properties")))
+                .containsExactly("solutionRef");
+        assertThat(((List<?>) coverage.inputSchema().get("required")).stream()
+                .map(Object::toString).toList()).containsExactly("solutionRef");
+        Map<?, ?> data = dataProperties(coverage);
+        assertThat(stringKeys(data)).containsExactlyInAnyOrder("obligations", "summary");
+        Map<?, ?> obligation = (Map<?, ?>) ((Map<?, ?>) data.get("obligations")).get("items");
+        assertThat(stringKeys((Map<?, ?>) obligation.get("properties")))
+                .containsExactlyInAnyOrder(
+                        "obligationFingerprint", "dimension", "risk", "covered")
+                .doesNotContain("id", "ruleId", "instructionRef", "caseId", "byCaseIds",
+                        "given", "expected", "payload");
+        assertThat(obligation.get("additionalProperties")).isEqualTo(false);
+        assertThat(schemaProperty(coverage.outputSchema(), "data").get("additionalProperties"))
+                .isEqualTo(false);
     }
 
     @Test
