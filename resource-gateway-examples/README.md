@@ -108,10 +108,11 @@ in guided mode, asks only for decision facts, rules, and dispositions, preserves
 owner switches to expert free text, and renders a no-code four-entity draft preview. Compilation is
 delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
 is rejected before a result can become `READY_FOR_TEST`.
-The last accepted v1.4.6 repository gate was `mvn -f resource-gateway-examples/pom.xml clean verify` with
-`Tests run: 8,724; failures: 0; errors: 0; skipped: 39`. The v1.4.7 gate adds protected business
-asset review, Feature controlled suites, Solution coverage, and an HTTP/MCP four-journey test; its
-final aggregate is recorded after the last serial `clean verify`. The cancellation-dispute operational
+The accepted v1.4.7 repository gate is `mvn -f resource-gateway-examples/pom.xml clean verify` with
+`Tests run: 8,758; failures: 0; errors: 0; skipped: 39` and `BUILD SUCCESS`. It includes protected
+business asset review, Feature controlled suites, Solution coverage, and the real HTTP MCP journey.
+The v1.4.7 journey, the Agent TDD operational workflow, and the native PostgreSQL certification all ran
+without skips. The cancellation-dispute operational
 journey itself is `1/1` with no skip and covers real HTTP MCP lifecycle calls, isolated engineering
 identities, four approved GOLDEN cases, zero-egress GREEN, platform write reconciliation, real Chrome
 five-panel signoff, publication, live invocation, operations aggregation, and Feature-token tamper rejection.

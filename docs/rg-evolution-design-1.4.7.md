@@ -483,7 +483,7 @@ flowchart TD
 | 任务 | 状态 | 产物 | 依赖 |
 |---|---|---|
 | D1 端到端验证 | 已完成 | 真实 HTTP MCP 四剧本测试;断言 platform/business surface 隔离、HUMAN 解载荷、Agent 零载荷和 Feature fulfil 权限隔离 | A、B、C |
-| D2 文档 | 已完成，待填最终全量总数 | 本文、MCP 操作手册、业务演示剧本、Codex 双 profile 示例和工程 README 同步 | D1 |
+| D2 文档 | 已完成并验收 | 本文、MCP 操作手册、业务演示剧本、Codex 双 profile 示例和工程 README 同步 | D1 |
 
 ### 落地文件汇总
 
@@ -565,4 +565,6 @@ flowchart TD
 
 ### 8.5 测试记录
 
-当前聚焦证据包括：A/B/C 联合服务测试 58/58、Feature suite MCP 30/30、material 对账与 GC 14/14、业务资产 HTTP 控制器 6/6、D1 与 surface/audit 联合 11/11、条件装配回归 14/14，全部无失败且无跳过。前端全量为 163 个文件、1,242/1,242；生产构建、TypeScript、i18n、UX、host 和 route bundle 预算全部通过。最终后端总数在真实 Codex 复认证后由最后一次串行 `clean verify` 填写，不能用聚焦结果替代。
+当前聚焦证据包括：A/B/C 联合服务测试 58/58、Feature suite MCP 30/30、material 对账与 GC 14/14、业务资产 HTTP 控制器 6/6、D1 与 surface/audit 联合 11/11、条件装配回归 14/14，全部无失败且无跳过。前端全量为 163 个文件、1,242/1,242；生产构建、TypeScript、i18n、UX、host 和 route bundle 预算全部通过。
+
+最终串行执行 `mvn -f resource-gateway-examples/pom.xml clean verify`，结果为 8,758 项测试、0 项失败、0 项错误、39 项条件跳过，`BUILD SUCCESS`，耗时 13 分 7 秒。v1.4.7 真实 HTTP MCP 主线为 1/1、Agent TDD 运营流为 6/6、原生 PostgreSQL 认证为 2/2，均未跳过。真实 Codex 复认证覆盖 15/15 个业务话语族、16 个独立会话、4 个隔离服务实例和 32 次主创作 MCP 调用；机器证书绑定提交 `e800b8c461f2fdb5f0142fa5dc83ffec21463285` 与生产源码树指纹 `sha256:16d4e787d67cfc2b7fe3c72081366b29379a5de945690e35d83ed1043875f775`。
