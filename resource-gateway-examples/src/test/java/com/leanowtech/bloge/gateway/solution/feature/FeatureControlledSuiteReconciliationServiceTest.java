@@ -68,7 +68,7 @@ class FeatureControlledSuiteReconciliationServiceTest {
         FeatureControlledSuiteProperties properties = new FeatureControlledSuiteProperties();
         suites = new FeatureControlledSuiteService(states, registry, materials,
                 (request, identity) -> new FeatureControlledCaseRunner.RunResult(
-                        "sha256:" + "e".repeat(64), 3,
+                        "sha256:" + "e".repeat(64), request.expectedGraphRevision(),
                         List.of(new FeatureControlledCaseRunner.CaseResult(
                                 "inside-window", "RED_PASS", List.of("node:within-window"))), 0),
                 mapper, properties);
