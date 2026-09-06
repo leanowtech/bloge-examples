@@ -4,6 +4,9 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -26,7 +29,7 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_AUTHORING"))).isFalse();
         assertThat(policy.visible(catalog.require("rg.dsl.reference.get"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_READ"))).isFalse();
-        assertThat(policy.visible(catalog.require("rg.scenario.test"),
+        assertThat(policy.visible(catalog.require("rg.scenario.upsertCases"),
                 McpSurfacePolicy.Surface.BUSINESS_SOLUTION, identity("AGENT_TDD_EXECUTION"))).isFalse();
     }
 
@@ -38,6 +41,15 @@ class McpSurfacePolicyTest {
                 McpSurfacePolicy.Surface.OPERATIONS, identity("AGENT_TDD_READ"))).isTrue();
         assertThat(policy.visible(catalog.require("rg.solution.publish"),
                 McpSurfacePolicy.Surface.OPERATIONS, identity("AGENT_TDD_GOVERNANCE"))).isFalse();
+    }
+
+    @Test
+    void everyCatalogToolRequiresAnExplicitProductSurfaceClassification() {
+        Set<String> catalogTools = catalog.all().stream()
+                .map(McpToolDefinition::name)
+                .collect(Collectors.toSet());
+
+        assertThat(McpSurfacePolicy.explicitlyClassifiedTools()).containsExactlyInAnyOrderElementsOf(catalogTools);
     }
 
     @Test
@@ -68,7 +80,7 @@ class McpSurfacePolicyTest {
         McpSurfacePolicy rolledBack = new McpSurfacePolicy(AgentTddAuthoringTelemetry.noop(), properties);
 
         assertThat(rolledBack.visibleDefinitions(catalog.all(), McpSurfacePolicy.Surface.LEGACY_ALL,
-                identity("AGENT_TDD_READ"))).hasSize(42);
+                identity("AGENT_TDD_READ"))).hasSize(41);
         assertThat(rolledBack.visible(catalog.require("rg.capability.search"),
                 McpSurfacePolicy.Surface.LEGACY_ALL, identity("AGENT_TDD_READ"))).isFalse();
         assertThat(rolledBack.visible(catalog.require("rg.contract.get"),

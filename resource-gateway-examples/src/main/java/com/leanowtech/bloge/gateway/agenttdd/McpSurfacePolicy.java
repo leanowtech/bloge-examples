@@ -29,6 +29,18 @@ public final class McpSurfacePolicy {
             "rg.solution.compose", "rg.solution.getContract", "rg.solution.invoke",
             "rg.solution.baseline", "rg.solution.commit", "rg.solution.readiness",
             "rg.solution.performance", "rg.solution.publish");
+    private static final Set<String> PLATFORM_AUTHORING = Set.of(
+            "rg.capability.list", "rg.library.get", "rg.library.list",
+            "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",
+            "rg.journey.start", "rg.journey.next",
+            "rg.contract.get", "rg.tool.getInstruction", "rg.scenario.listCases",
+            "rg.verdict.get", "rg.evidence.get", "rg.dsl.reference.get",
+            "rg.library.upsert", "rg.resource.declare", "rg.feature.compose", "rg.tool.compose",
+            "rg.tool.setInstruction", "rg.scenario.upsertCases", "rg.oracle.propose",
+            "rg.scenario.setDependencyBehavior", "rg.dsl.preview", "rg.gate.check",
+            "rg.feature.rehearse", "rg.tool.baseline", "rg.simulate",
+            "rg.fixture.promote", "rg.fixture.provide", "rg.tool.publishSpec",
+            "rg.tool.publish", "rg.readiness.get");
     private static final Set<String> OPERATIONS = Set.of(
             "rg.contract.get", "rg.verdict.get", "rg.evidence.get", "rg.readiness.get",
             "rg.capability.search", "rg.entity.list", "rg.entity.get",
@@ -106,7 +118,7 @@ public final class McpSurfacePolicy {
         if (!definition.impact().operation().accepts(identity.purpose())) return false;
         return switch (surface) {
             case BUSINESS_SOLUTION -> BUSINESS_SOLUTION.contains(definition.name());
-            case PLATFORM_AUTHORING -> platformAuthoring(definition.name());
+            case PLATFORM_AUTHORING -> PLATFORM_AUTHORING.contains(definition.name());
             case OPERATIONS -> OPERATIONS.contains(definition.name());
             case LEGACY_ALL -> true;
         };
@@ -129,13 +141,18 @@ public final class McpSurfacePolicy {
         }
     }
 
-    private static boolean platformAuthoring(String name) {
-        return name != null && !name.startsWith("rg.solution.")
-                && !name.equals("rg.feature.define")
-                && !name.equals("rg.feature.handoff")
-                && !name.equals("rg.feature.evaluate")
-                && !name.equals("rg.scenario.define")
-                && !name.equals("rg.instruction.define")
-                && !name.equals("rg.engineering.handoff");
+    /**
+     * Returns every tool that has been deliberately assigned to at least one explicit product surface.
+     *
+     * <p>The catalog consistency test consumes this closed classification. A newly added tool therefore
+     * remains invisible until its product owner assigns it to a surface instead of inheriting access from
+     * a negative prefix rule.</p>
+     */
+    static Set<String> explicitlyClassifiedTools() {
+        java.util.LinkedHashSet<String> classified = new java.util.LinkedHashSet<>();
+        classified.addAll(BUSINESS_SOLUTION);
+        classified.addAll(PLATFORM_AUTHORING);
+        classified.addAll(OPERATIONS);
+        return Set.copyOf(classified);
     }
 }
