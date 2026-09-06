@@ -250,6 +250,11 @@ class BusinessRecallSetupTest(unittest.TestCase):
             self.assertEqual("BUSINESS_SOLUTION", surface)
             self.assertRegex(arguments.get("journeyRef", ""), r"^journey:")
             self.assertIsInstance(arguments.get("expectedJourneyRevision"), int)
+        preflight_kinds = [arguments.get("assetKinds") for tool, arguments, _purpose, _surface
+                           in api.calls if tool == "rg.capability.search"
+                           and arguments.get("query", {}).get("intent") in {"取消归责", "执行退款"}
+                           and arguments.get("assetKinds")]
+        self.assertEqual([["FEATURE"], ["INSTRUCTION"]], preflight_kinds)
         revised = [arguments for tool, arguments, _purpose, _surface in api.calls
                    if tool == "rg.feature.define"
                    and arguments["idempotencyKey"].endswith("feature-after")]

@@ -309,9 +309,13 @@ def seed_drift(api: HttpApi, spec: dict[str, Any], patterns: str) -> list[dict[s
     ]
 
 
-def candidates_for(api: HttpApi, query: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def candidates_for(api: HttpApi, query: dict[str, Any],
+                   asset_kinds: list[str] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Search one business query and return only structurally valid candidates."""
-    data = api.mcp("rg.capability.search", {"query": query, "limit": 100},
+    arguments: dict[str, Any] = {"query": query, "limit": 100}
+    if asset_kinds:
+        arguments["assetKinds"] = asset_kinds
+    data = api.mcp("rg.capability.search", arguments,
                    purpose="AGENT_TDD_READ", surface="BUSINESS_SOLUTION")
     candidates = [item for item in data.get("candidates", []) if isinstance(item, dict)]
     return data, candidates
@@ -378,7 +382,7 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
     exact_a = by_role["multipleExactA"]
     exact_b = by_role["multipleExactB"]
     exact_data, exact_candidates = candidates_for(
-        api, entity_business_query(api, exact_a["assetRef"]))
+        api, entity_business_query(api, exact_a["assetRef"]), ["FEATURE"])
     if exact_data.get("status") != "AMBIGUOUS" or not all(
             any(matches_asset(candidate, seed) and candidate.get("matchType") == "EXACT"
                 for candidate in exact_candidates) for seed in (exact_a, exact_b)):
@@ -386,7 +390,7 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
 
     legacy = by_role["legacyPartial"]
     legacy_data, legacy_candidates = candidates_for(
-        api, fixture["preflightQueries"]["legacy-feature-partial"])
+        api, fixture["preflightQueries"]["legacy-feature-partial"], ["FEATURE"])
     if legacy_data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \
             or not any(matches_asset(candidate, legacy) and candidate.get("matchType") == "PARTIAL"
                        for candidate in legacy_candidates):
@@ -394,7 +398,7 @@ def preflight_remaining(api: HttpApi, fixture: dict[str, Any],
 
     assumption_seeds = [by_role["assumptionAmbiguityA"], by_role["assumptionAmbiguityB"]]
     assumption_data, assumption_candidates = candidates_for(
-        api, fixture["preflightQueries"]["assumption-ambiguity"])
+        api, fixture["preflightQueries"]["assumption-ambiguity"], ["INSTRUCTION"])
     observed_assumptions = [candidate for candidate in assumption_candidates
                             if any(matches_asset(candidate, seed) for seed in assumption_seeds)]
     if assumption_data.get("status") not in {"INCOMPLETE", "AMBIGUOUS"} \

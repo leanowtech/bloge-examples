@@ -181,6 +181,40 @@ class BusinessCapabilityIndexTest {
     }
 
     @Test
+    void exposesAComposedFeatureDraftThroughTheFeatureRecallFilter() {
+        InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
+        OperatorLibraryRegistry libraries = mock(OperatorLibraryRegistry.class);
+        VisualOperatorCatalog catalog = mock(VisualOperatorCatalog.class);
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualGraphPublicationRepository publications = mock(VisualGraphPublicationRepository.class);
+        when(libraries.all()).thenReturn(List.of());
+        when(catalog.list(any())).thenReturn(List.of());
+        when(publications.all()).thenReturn(List.of());
+        GraphDraft feature = new GraphDraft("", "feature:旧版取消归责事实测试", 1,
+                "legacyCancelResponsibilityTest",
+                "tenant-a", "project-a", "test", "DRAFT", SchemaEnvelope.opaque(), List.of(),
+                List.of(), Map.of("agentTdd", Map.of("assetKind", "FEATURE")),
+                GraphDraft.OutputSelection.empty());
+        when(drafts.all()).thenReturn(List.of(feature));
+        BusinessCapabilityIndex index = new BusinessCapabilityIndex(
+                states, libraries, catalog, drafts, publications, mapper);
+
+        assertThat(index.freeze(identity("project-a")).capabilities())
+                .extracting(BusinessCapabilityIndex.Card::assetKind)
+                .containsExactly("FEATURE");
+
+        JsonNode result = mapper.valueToTree(index.search(mapper.valueToTree(Map.of(
+                "query", Map.of("intent", "以前定义的取消归责事实"),
+                "assetKinds", List.of("FEATURE"), "limit", 10)), identity("project-a")));
+
+        assertThat(result.path("candidates")).hasSize(1);
+        assertThat(result.at("/candidates/0/assetRef").asText())
+                .isEqualTo("feature:旧版取消归责事实测试");
+        assertThat(result.at("/candidates/0/assetKind").asText()).isEqualTo("FEATURE");
+        assertThat(result.at("/candidates/0/matchType").asText()).isEqualTo("PARTIAL");
+    }
+
+    @Test
     void ranksAllMatchesBeforeApplyingTheResponseLimit() throws Exception {
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         saveFeature(states, scope(identity("project-a")), "feature:a-partial", 0);

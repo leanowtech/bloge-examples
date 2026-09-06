@@ -332,8 +332,7 @@ public final class BusinessCapabilityIndex {
     }
 
     private Card draftCard(GraphDraft draft) {
-        String kind = String.valueOf(draft.visualLayout().getOrDefault("assetKind", "TOOL"))
-                .toUpperCase(Locale.ROOT);
+        String kind = draftAssetKind(draft);
         ObjectNode display = mapper.createObjectNode();
         display.put("businessName", draft.graphName());
         display.put("description", "");
@@ -346,6 +345,27 @@ public final class BusinessCapabilityIndex {
         return new Card(draft.draftId(), kind, display, business, "DRAFT", true, draft.status(), "",
                 fingerprint(draftIdentity(draft)), draft.revision(), 0, fingerprint(display), false,
                 new Source("GRAPH_DRAFT", false));
+    }
+
+    /**
+     * Reads the asset kind from the governed authoring envelope written by compose.
+     *
+     * <p>The top-level field and reference fallback retain compatibility with graph drafts written
+     * before the Agent TDD envelope existed. Unknown values remain tools and cannot enter the
+     * business Feature recall surface accidentally.</p>
+     */
+    private static String draftAssetKind(GraphDraft draft) {
+        Object agentTdd = draft.visualLayout().get("agentTdd");
+        if (agentTdd instanceof Map<?, ?> values) {
+            String nested = Objects.toString(values.get("assetKind"), "")
+                    .trim().toUpperCase(Locale.ROOT);
+            if (List.of("FEATURE", "TOOL").contains(nested)) return nested;
+        }
+        String legacy = Objects.toString(draft.visualLayout().get("assetKind"), "")
+                .trim().toUpperCase(Locale.ROOT);
+        if (List.of("FEATURE", "TOOL").contains(legacy)) return legacy;
+        return draft.draftId().toLowerCase(Locale.ROOT).startsWith("feature:")
+                ? "FEATURE" : "TOOL";
     }
 
     private Card publicationCard(VisualGraphPublication publication) {
