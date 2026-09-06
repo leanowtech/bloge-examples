@@ -62,8 +62,10 @@ class BusinessFixtureCompilerTest {
                     .isEqualTo(outcome);
             assertThat(plan.businessContractVector()).hasSize(2);
             assertThat(plan.businessContractVector())
-                    .allSatisfy(coordinate -> assertThat(coordinate.path("revision").asLong())
-                            .isPositive());
+                    .allSatisfy(coordinate -> assertThat(
+                            coordinate.propertyStream().map(Map.Entry::getKey).toList())
+                            .containsExactlyInAnyOrder(
+                                    "assetKind", "assetRef", "semanticKey", "contractFingerprint"));
             assertThat(plan.businessContractVector().getLast().path("semanticKey").asText())
                     .startsWith("legacy:");
             assertThat(plan.solutionRevision()).isPositive();
@@ -73,6 +75,29 @@ class BusinessFixtureCompilerTest {
             assertThat(plan.frozenContextFingerprint()).startsWith("sha256:");
             assertThat(plan.planFingerprint()).startsWith("sha256:");
         }
+    }
+
+    @Test
+    void usesTheSameExactStableCoordinatesForApprovalAndControlledExecution() {
+        ObjectNode businessCase = (ObjectNode) fixture("UNAVAILABLE").deepCopy();
+        businessCase.set("expectedOutcome", mapper.valueToTree(Map.of(
+                "result", Map.of("dependencyStatus", "UNAVAILABLE"),
+                "reasoningClass", "CONTROLLED_DEPENDENCY_UNAVAILABLE")));
+
+        BusinessFixtureCompiler.BusinessCaseValidation validation =
+                compiler.validateBusinessCase(SCOPE, "sol:cancel", businessCase);
+        BusinessFixtureCompiler.ControlledAssumptionPlan plan =
+                compiler.compile(SCOPE, "sol:cancel", businessCase);
+
+        assertThat(validation.businessContractVector())
+                .containsExactlyElementsOf(plan.businessContractVector());
+        assertThat(validation.businessContractVector()).allSatisfy(coordinate -> {
+            assertThat(coordinate.path("assetKind").asText()).isIn("FEATURE", "INSTRUCTION");
+            assertThat(coordinate.path("assetRef").asText()).isNotBlank();
+            assertThat(coordinate.path("semanticKey").asText()).isNotBlank();
+            assertThat(coordinate.path("contractFingerprint").asText()).startsWith("sha256:");
+            assertThat(coordinate.has("revision")).isFalse();
+        });
     }
 
     @Test
@@ -94,7 +119,7 @@ class BusinessFixtureCompilerTest {
                 .filter(value -> "FEATURE".equals(value.path("assetKind").asText()))
                 .findFirst().orElseThrow();
 
-        assertThat(secondFeature.path("revision").asLong()).isEqualTo(2);
+        assertThat(secondFeature.has("revision")).isFalse();
         assertThat(secondFeature.path("contractFingerprint").asText())
                 .isEqualTo(firstFeatureContract);
         assertThat(second.frozenContextFingerprint()).isNotEqualTo(first.frozenContextFingerprint());
@@ -110,12 +135,12 @@ class BusinessFixtureCompilerTest {
         ((com.fasterxml.jackson.databind.node.ObjectNode) plan.dependencyAssumptions())
                 .remove("ins:refund");
         ((com.fasterxml.jackson.databind.node.ObjectNode) plan.businessContractVector().getFirst())
-                .put("revision", 999);
+                .put("assetRef", "mutated");
 
         assertThat(plan.given().path("party").asText()).isEqualTo("passenger");
         assertThat(plan.dependencyAssumptions().has("ins:refund")).isTrue();
-        assertThat(plan.businessContractVector().getFirst().path("revision").asLong())
-                .isNotEqualTo(999);
+        assertThat(plan.businessContractVector().getFirst().path("assetRef").asText())
+                .isNotEqualTo("mutated");
     }
 
     @Test

@@ -73,9 +73,10 @@ public final class BusinessFixtureCompiler {
      * Resolves and validates a proposed business case without creating an execution plan.
      *
      * <p>This operation exists for the pre-approval boundary. It checks unique business-name
-     * resolution, value schemas and dependency outcomes, but returns only stable semantic keys and
-     * business contract fingerprints. Solution aliases, entity references, revisions and compiled
-     * dependency maps are not part of the approval subject.</p>
+     * resolution, value schemas and dependency outcomes, but returns only exact stable business
+     * coordinates. Each coordinate contains the entity kind, entity reference, semantic key and
+     * business contract fingerprint. Revisions and compiled dependency maps are not part of the
+     * approval subject.</p>
      *
      * @param scope server-derived integration scope
      * @param solutionRef current Solution selected by the journey
@@ -105,7 +106,7 @@ public final class BusinessFixtureCompiler {
         validateExpectedOutcome(fixtureCase, closure);
         List<JsonNode> stableVector = vector.stream()
                 .map(value -> (JsonNode) value.deepCopy())
-                .sorted(Comparator.comparing(BusinessFixtureCompiler::semanticCoordinateOrder))
+                .sorted(Comparator.comparing(BusinessFixtureCompiler::coordinateOrder))
                 .toList();
         return new BusinessCaseValidation(stableVector, closure.solution().contract().solutionRef(),
                 closure.solution().revision(), closure.solution().contractFingerprint());
@@ -275,7 +276,7 @@ public final class BusinessFixtureCompiler {
         }
         if (given.has(match.alias())) throw duplicateAssumption();
         given.set(match.alias(), fact.path("value").deepCopy());
-        vector.add(businessCoordinate("FEATURE", match.feature(),
+        vector.add(stableBusinessCoordinate("FEATURE", match.feature(),
                 match.feature().contract().businessDefinition().semanticKey()));
     }
 
@@ -295,8 +296,8 @@ public final class BusinessFixtureCompiler {
             throw new AgentTddToolException("BUSINESS_ASSUMPTION_SCHEMA_INVALID",
                     "A supplied business fact value does not match its current contract.");
         }
-        vector.add(stableBusinessCoordinate(match.feature().contract()
-                .businessDefinition().semanticKey(), match.feature().contractFingerprint()));
+        vector.add(stableBusinessCoordinate("FEATURE", match.feature(),
+                match.feature().contract().businessDefinition().semanticKey()));
         return match.feature().ref();
     }
 
@@ -319,7 +320,7 @@ public final class BusinessFixtureCompiler {
             given.set(target.inputAlias(), assumption.path("value").deepCopy());
         }
         FrozenEntity<?> entity = target.feature() == null ? target.instruction() : target.feature();
-        vector.add(businessCoordinate(target.kind(), entity, target.semanticKey()));
+        vector.add(stableBusinessCoordinate(target.kind(), entity, target.semanticKey()));
     }
 
     private void validateDependency(
@@ -329,7 +330,7 @@ public final class BusinessFixtureCompiler {
         validateDependencyOutcome(assumption, target);
         if (!suppliedTargets.add(target.kind() + ':' + target.ref())) throw duplicateAssumption();
         FrozenEntity<?> entity = target.feature() == null ? target.instruction() : target.feature();
-        vector.add(stableBusinessCoordinate(target.semanticKey(), entity.contractFingerprint()));
+        vector.add(stableBusinessCoordinate(target.kind(), entity, target.semanticKey()));
     }
 
     private DependencyTarget resolveDependency(FrozenClosure closure, JsonNode assumption) {
@@ -538,21 +539,13 @@ public final class BusinessFixtureCompiler {
                 || display.aliases().stream().anyMatch(alias -> alias.equalsIgnoreCase(name));
     }
 
-    private JsonNode businessCoordinate(
+    private JsonNode stableBusinessCoordinate(
             String kind, FrozenEntity<?> entity, String semanticKey) {
         ObjectNode coordinate = mapper.createObjectNode();
         coordinate.put("assetKind", kind);
         coordinate.put("assetRef", entity.ref());
-        coordinate.put("revision", entity.revision());
         coordinate.put("semanticKey", semanticKey);
         coordinate.put("contractFingerprint", entity.contractFingerprint());
-        return coordinate;
-    }
-
-    private JsonNode stableBusinessCoordinate(String semanticKey, String contractFingerprint) {
-        ObjectNode coordinate = mapper.createObjectNode();
-        coordinate.put("semanticKey", semanticKey);
-        coordinate.put("contractFingerprint", contractFingerprint);
         return coordinate;
     }
 
@@ -573,11 +566,6 @@ public final class BusinessFixtureCompiler {
         return coordinate.path("semanticKey").asText() + '\u001f'
                 + coordinate.path("assetKind").asText() + '\u001f'
                 + coordinate.path("assetRef").asText();
-    }
-
-    private static String semanticCoordinateOrder(JsonNode coordinate) {
-        return coordinate.path("semanticKey").asText() + '\u001f'
-                + coordinate.path("contractFingerprint").asText();
     }
 
     private static AgentTddToolException ambiguous(String kind) {
@@ -630,7 +618,7 @@ public final class BusinessFixtureCompiler {
     /**
      * Immutable pre-approval validation result without any controlled execution plan.
      *
-     * @param businessContractVector stable semantic keys and business contract fingerprints
+     * @param businessContractVector exact stable entity and business-contract coordinates
      * @param solutionRef internal protected-material target
      * @param solutionRevision internal protected-material target revision
      * @param solutionContractFingerprint internal protected-material target fingerprint
@@ -665,7 +653,7 @@ public final class BusinessFixtureCompiler {
      *
      * @param given canonical Feature values keyed by Solution input aliases
      * @param dependencyAssumptions case-scoped Instruction outcomes keyed by internal reference
-     * @param businessContractVector frozen semantic contract coordinates and locked revisions
+     * @param businessContractVector frozen semantic contract coordinates without mutable revisions
      * @param solutionRef Solution whose locked closure was compiled
      * @param solutionRevision locked Solution revision
      * @param solutionContractFingerprint locked Solution contract fingerprint

@@ -9,8 +9,11 @@ import java.util.Objects;
 
 /**
  * Validates that a protected business case still names the exact current business contracts.
- * Entity revisions are deliberately ignored: mutable implementation bindings may advance while
- * the stable semantic key and business contract fingerprint remain approved.
+ *
+ * <p>Every approved coordinate must bind an entity kind and reference to its semantic key and
+ * business contract fingerprint. Entity revisions are deliberately ignored: mutable
+ * implementation bindings may advance while the same referenced business contract remains
+ * approved. The guard never searches for a substitute entity with matching semantic material.</p>
  */
 public final class BusinessGoldenContractGuard {
     private BusinessGoldenContractGuard() { }
@@ -18,8 +21,8 @@ public final class BusinessGoldenContractGuard {
     /**
      * Returns true only when every recorded Feature or Instruction business identity is current.
      *
-     * @return {@code false} for a changed semantic key or business contract fingerprint, regardless
-     * of whether the entity reference remained stable
+     * @return {@code false} for an incomplete coordinate, a missing exact entity, a changed
+     * semantic key or a changed business contract fingerprint
      */
     public static boolean isCurrent(AgentTddStateRepository states, String scopeKey, JsonNode row) {
         Objects.requireNonNull(states, "states");
@@ -34,17 +37,11 @@ public final class BusinessGoldenContractGuard {
             String ref = coordinate.path("assetRef").asText();
             String semanticKey = coordinate.path("semanticKey").asText();
             String fingerprint = coordinate.path("contractFingerprint").asText();
-            if (semanticKey.isBlank() || fingerprint.isBlank()) return false;
-            if (!kind.isBlank() && !ref.isBlank()) {
-                if (states.find(scopeKey, kind, ref)
-                        .filter(asset -> matches(asset, semanticKey, fingerprint)).isEmpty()) return false;
-                continue;
+            if (kind.isBlank() || ref.isBlank() || semanticKey.isBlank() || fingerprint.isBlank()) {
+                return false;
             }
-            boolean current = java.util.stream.Stream.concat(
-                            states.list(scopeKey, SolutionEntityRegistry.FEATURE).stream(),
-                            states.list(scopeKey, SolutionEntityRegistry.INSTRUCTION).stream())
-                    .anyMatch(asset -> matches(asset, semanticKey, fingerprint));
-            if (!current) return false;
+            if (states.find(scopeKey, kind, ref)
+                    .filter(asset -> matches(asset, semanticKey, fingerprint)).isEmpty()) return false;
         }
         return true;
     }

@@ -71,12 +71,13 @@ class AgentTddReviewBusinessGoldenTest {
                 "businessContractVector", "controlledAssumptionPlanFingerprint");
         JsonNode metadata = states.find(SCOPE, AgentTddMutationService.CASE_SET, caseSetRef)
                 .orElseThrow().data().at("/rows/0");
-        assertThat(metadata.toString()).doesNotContain("ins:refund", "scn:cancel")
+        assertThat(metadata.toString()).doesNotContain("scn:cancel", "party=")
                 .doesNotContain("controlledAssumptionPlanFingerprint", "featureValuesFingerprint",
                         "dependencyPlanFingerprint", "frozenContextFingerprint");
         assertThat(metadata.path("businessContractVector")).allSatisfy(coordinate ->
                 assertThat(coordinate.propertyStream().map(Map.Entry::getKey).toList())
-                        .containsExactlyInAnyOrder("semanticKey", "contractFingerprint"));
+                        .containsExactlyInAnyOrder(
+                                "assetKind", "assetRef", "semanticKey", "contractFingerprint"));
 
         AgentTddStoredAsset approved = reviews.approveOracle(caseSetRef, "g1", 1,
                 review.get("proposalFingerprint").toString(), reviewer());
@@ -104,6 +105,37 @@ class AgentTddReviewBusinessGoldenTest {
 
         registry.upsertInstruction(
                 SCOPE, instruction("operator:refund-v3", "维持取消费", "UPHELD"));
+        assertThat(BusinessGoldenContractGuard.isCurrent(states, SCOPE, row)).isFalse();
+    }
+
+    @Test
+    void rejectsChangedReferencedContractEvenWhenAnotherEntityRetainsItsOldIdentity() {
+        Map<String, Object> proposed = golden.propose(proposal(), agent());
+        String caseSetRef = proposed.get("caseSetRef").toString();
+        Map<String, Object> review = reviews.oracleReview(caseSetRef, "g1", 1, reviewer());
+        JsonNode row = reviews.approveOracle(caseSetRef, "g1", 1,
+                review.get("proposalFingerprint").toString(), reviewer()).data().at("/rows/0");
+        JsonNode approvedCoordinate = row.path("businessContractVector").valueStream()
+                .filter(value -> "FEATURE".equals(value.path("assetKind").asText())
+                        && "responsibility.party".equals(value.path("assetRef").asText()))
+                .findFirst().orElseThrow();
+
+        ObjectNode substitute = mapper.createObjectNode();
+        substitute.put("entityKind", "FEATURE");
+        substitute.put("ref", "responsibility.party.substitute");
+        substitute.set("contract", states.find(
+                        SCOPE, SolutionEntityRegistry.FEATURE, "responsibility.party")
+                .orElseThrow().data().path("contract").deepCopy());
+        substitute.put("contractFingerprint",
+                approvedCoordinate.path("contractFingerprint").asText());
+        states.save(SCOPE, SolutionEntityRegistry.FEATURE,
+                "responsibility.party.substitute", substitute);
+
+        registry.upsertFeature(SCOPE, new FeatureContract(
+                "responsibility.party", mapper.valueToTree(Map.of("type", "string")),
+                FeatureContract.EvaluationKind.API, FeatureContract.Determinism.DETERMINISTIC,
+                mapper.valueToTree(Map.of("orderId", "string")), "", "", "", "新的取消责任方"));
+
         assertThat(BusinessGoldenContractGuard.isCurrent(states, SCOPE, row)).isFalse();
     }
 
