@@ -1,8 +1,8 @@
 {
   "schemaVersion": "rg.businessCodexProcessEvidence.v1",
   "evidenceKind": "REDACTED_REAL_CODEX_TRACE_RENDER",
-  "repositoryCommit": "e1a3cbecadb946aae83d97ee6ee47285a3395ac3",
-  "certificateFingerprint": "sha256:1555c8cb0a5c5eeee34abc12806b6377780cb3c8154f037ee1840fb964076afd",
+  "repositoryCommit": "b72fa544fe30985c90cc809d62efab5d9e5944cb",
+  "certificateFingerprint": "sha256:64ce9617b275d6faf244e9c68b3ac765fb019239a2ee622b78269d8e2fb5c4e3",
   "images": [
     {
       "stage": "01",
@@ -10,47 +10,47 @@
       "tool": "rg.library.overview.get",
       "traceOrdinal": 2,
       "file": "business-solution-codex-process-01.png",
-      "sha256": "sha256:4dc17c7cbbf754ff6b6bd989581b198fcf01fafa6b56cad9b95d26f28e8d6edc"
+      "sha256": "sha256:173b1bd66883d269752b4a148d7206cd71ed332957a15257d36df5a8abfe09f8"
     },
     {
       "stage": "02",
       "title": "定义业务事实",
       "tool": "rg.feature.define",
-      "traceOrdinal": 10,
+      "traceOrdinal": 7,
       "file": "business-solution-codex-process-02.png",
-      "sha256": "sha256:763bd85147103d9424fb71e0de46265cbc60cc734bea5da86a3c88fea074c78c"
+      "sha256": "sha256:84d7a9f4a778110d0ef68697a6fd560d4158483eba9f33f28fbc8662c8089397"
     },
     {
       "stage": "03",
       "title": "定义业务规则",
       "tool": "rg.scenario.define",
-      "traceOrdinal": 16,
+      "traceOrdinal": 12,
       "file": "business-solution-codex-process-03.png",
-      "sha256": "sha256:d5abd227d2b074c69814df64548a47572af088bd5449e239c0f7e2feeca4f59e"
+      "sha256": "sha256:f4e1624541f2adc29575117b35464c8e42fbb604ea62eb39463e4dbf8f7f80c5"
     },
     {
       "stage": "04",
       "title": "定义业务动作",
       "tool": "rg.instruction.define",
-      "traceOrdinal": 18,
+      "traceOrdinal": 14,
       "file": "business-solution-codex-process-04.png",
-      "sha256": "sha256:0c9ad999383799c958e22d4189c9407be2e480e21cd895d3776e96b8e62e28a6"
+      "sha256": "sha256:e23758bb72e5b455996b95f302149f559d150cd76e6f8650ff6ff8ae31829383"
     },
     {
       "stage": "05",
       "title": "组合业务解法",
       "tool": "rg.solution.compose",
-      "traceOrdinal": 24,
+      "traceOrdinal": 18,
       "file": "business-solution-codex-process-05.png",
-      "sha256": "sha256:d00212097f0534d566918cc7e733c335119952a5dfe45c845ea7c42442987276"
+      "sha256": "sha256:391208e9936f2196df88e873b47572bf512cd1b6efa18f47062e711b17741715"
     },
     {
       "stage": "06",
       "title": "提交标准案例",
       "tool": "rg.solution.golden.propose",
-      "traceOrdinal": 30,
+      "traceOrdinal": 25,
       "file": "business-solution-codex-process-06.png",
-      "sha256": "sha256:146e155cdfc4cc1283f026f988c86579cebc64e38fc05611f2c781d6a88d25d0"
+      "sha256": "sha256:eff6ba8d73ac2d0abaca070e86bddbeabc4d098be85a44f93830f17ac54cbb7a"
     }
   ]
 }
