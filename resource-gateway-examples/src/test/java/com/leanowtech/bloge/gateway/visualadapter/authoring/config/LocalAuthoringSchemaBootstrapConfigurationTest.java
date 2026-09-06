@@ -42,7 +42,7 @@ class LocalAuthoringSchemaBootstrapConfigurationTest {
                     }
                     assertThat(jdbc.queryForObject(
                             "SELECT COUNT(*) FROM rg_local_authoring_schema_migrations",
-                            Integer.class)).isEqualTo(25);
+                            Integer.class)).isEqualTo(26);
                 });
     }
 
@@ -55,7 +55,7 @@ class LocalAuthoringSchemaBootstrapConfigurationTest {
 
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM rg_local_authoring_schema_migrations", Integer.class))
-                .isEqualTo(25);
+                .isEqualTo(26);
         assertThatCode(() -> {
             new CorrectnessAuthoringSchemaReadiness(jdbc);
             new CorrectnessFixtureMaterialSchemaReadiness(jdbc);

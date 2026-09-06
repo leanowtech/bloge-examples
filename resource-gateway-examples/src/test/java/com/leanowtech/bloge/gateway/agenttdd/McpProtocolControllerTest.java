@@ -103,7 +103,8 @@ class McpProtocolControllerTest {
 
         assertThat(response.path("jsonrpc").asText()).isEqualTo("2.0");
         assertThat(response.path("id").asInt()).isEqualTo(7);
-        assertThat(response.path("result").path("tools")).hasSize(50);
+        assertThat(response.path("result").path("tools"))
+                .hasSize(new McpToolCatalog().all().size());
         assertThat(response.path("result").path("tools").toString()).contains("rg.library.overview.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.dsl.reference.get");
         assertThat(response.path("result").path("tools").toString()).contains("rg.fixture.provide");
@@ -129,7 +130,8 @@ class McpProtocolControllerTest {
                 request(8, "tools/list", Map.of()), headers);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().path("result").path("tools")).hasSize(50);
+        assertThat(response.getBody().path("result").path("tools"))
+                .hasSize(new McpToolCatalog().all().size());
         verify(authenticator).authenticate(headers, IntegrationOperation.AGENT_TDD_READ);
     }
 

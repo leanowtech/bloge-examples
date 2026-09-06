@@ -50,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.seed-descriptors=false",
                 "gateway.authoring.local-schema-bootstrap.enabled=true",
                 "gateway.agent-tdd.cancel-dispute-demo.enabled=true",
+                "gateway.agent-tdd.feature-controlled-suite.legacy-single-fixture-enabled=true",
                 "gateway.integration.identity.environment-id=test",
                 "spring.datasource.url=jdbc:h2:mem:cancel-dispute-v145;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })

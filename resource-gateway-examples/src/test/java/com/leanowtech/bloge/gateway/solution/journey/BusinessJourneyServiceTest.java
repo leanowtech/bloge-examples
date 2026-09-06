@@ -371,6 +371,11 @@ class BusinessJourneyServiceTest {
         public JsonNode read(JsonNode receiptNode, IntegrationRequestContext caller) {
             return payloads.get(receiptNode.path("fingerprint").asText()).deepCopy();
         }
+
+        @Override
+        public JsonNode renew(JsonNode receiptNode, IntegrationRequestContext caller) {
+            return receiptNode.deepCopy();
+        }
     }
 
     /** Moves one authoritative asset immediately after the caller's chosen read boundary. */

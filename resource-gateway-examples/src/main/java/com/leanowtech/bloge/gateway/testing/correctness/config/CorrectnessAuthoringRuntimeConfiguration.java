@@ -44,6 +44,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioCorrec
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioV2CoverageFulfillmentSource;
 
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -91,6 +92,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
     /** Connects four-entity Solution coverage to the existing governed Inventory authority. */
     @Bean
     @ConditionalOnMissingBean
+    @ConditionalOnBean({SolutionEntityRegistry.class, AgentTddStateRepository.class,
+            BusinessGoldenMaterialStore.class})
     SolutionCoverageService solutionCoverageService(
             SolutionEntityRegistry registry,
             AgentTddStateRepository states,
