@@ -15,6 +15,7 @@ MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
 FIXTURE = Path(__file__).with_name("business-recall-platform-fixture-v1.json")
+SUITE = Path(__file__).with_name("business-solution-recall-family-suite-v1.json")
 
 
 class FakeApi:
@@ -113,6 +114,16 @@ class FakeApi:
 
 
 class BusinessRecallSetupTest(unittest.TestCase):
+
+    def test_assumption_ambiguity_prompt_requires_discovery_without_revealing_the_fixture(self) -> None:
+        suite = json.loads(SUITE.read_text(encoding="utf-8"))
+        prompt = next(item["prompt"] for item in suite["families"]
+                      if item["familyId"] == "assumption-ambiguity")
+
+        self.assertIn("请先查找", prompt)
+        self.assertNotIn("存在两个", prompt)
+        self.assertNotIn("MCP", prompt)
+        self.assertNotIn("Instruction", prompt)
 
     def test_certification_authors_primary_solution_before_seeding_distractors(self):
         script = Path(__file__).with_name("certify-agent-tdd-codex.sh").read_text(
