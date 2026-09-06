@@ -18,6 +18,7 @@ from typing import Any
 AUTHORING_TOOLS = {
     "rg.journey.start", "rg.feature.define", "rg.feature.handoff", "rg.scenario.define",
     "rg.instruction.define", "rg.solution.compose", "rg.solution.golden.propose",
+    "rg.solution.commit", "rg.engineering.handoff",
 }
 READ_TOOLS = {
     "rg.library.overview.get", "rg.capability.search", "rg.entity.list", "rg.entity.get",

@@ -256,6 +256,34 @@ def family_events(family_id: str) -> list[dict]:
 
 
 class BusinessSolutionCertificateTest(unittest.TestCase):
+    def test_accepts_every_business_tool_exposed_to_the_authoring_purpose(self) -> None:
+        proof = surface_proof()
+        proof["purposeProofs"]["authoring"]["visibleToolNames"] = sorted(
+            MODULE.AUTHORING_TOOLS | MODULE.READ_TOOLS)
+        material = {key: proof[key] for key in (
+            "runtimeInstanceNonce", "purposeProofs")}
+        proof["proofFingerprint"] = "sha256:" + hashlib.sha256(
+            MODULE.canonical_bytes(material)).hexdigest()
+
+        accepted = MODULE.load_surface_proof(proof, MAIN_RUNTIME_NONCE)
+
+        self.assertIn("rg.solution.commit",
+                      accepted["purposeProofs"]["authoring"]["visibleToolNames"])
+        self.assertIn("rg.engineering.handoff",
+                      accepted["purposeProofs"]["authoring"]["visibleToolNames"])
+
+    def test_rejects_platform_tool_exposed_to_the_authoring_purpose(self) -> None:
+        proof = surface_proof()
+        proof["purposeProofs"]["authoring"]["visibleToolNames"].append(
+            "rg.library.upsert")
+        material = {key: proof[key] for key in (
+            "runtimeInstanceNonce", "purposeProofs")}
+        proof["proofFingerprint"] = "sha256:" + hashlib.sha256(
+            MODULE.canonical_bytes(material)).hexdigest()
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "platform tool"):
+            MODULE.load_surface_proof(proof, MAIN_RUNTIME_NONCE)
+
     @staticmethod
     def setup_manifest() -> dict:
         assets = [
