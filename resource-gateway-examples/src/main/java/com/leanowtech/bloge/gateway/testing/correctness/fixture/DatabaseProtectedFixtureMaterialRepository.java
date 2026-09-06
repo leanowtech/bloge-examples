@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -96,6 +97,69 @@ public class DatabaseProtectedFixtureMaterialRepository implements FixtureMateri
                 scope.tenantId(), scope.organizationId(), scope.projectId(), scope.environment(),
                 scope.region(), fixtureAssetId.trim());
         return revision == null ? 0 : revision;
+    }
+
+    /** Returns a bounded, integrity-verified metadata inventory without projecting ciphertext. */
+    @Override
+    public List<StoredFixtureMaterial> listAvailable(
+            EnterpriseScope scope, String fixtureAssetIdPrefix, int limit) {
+        if (scope == null || fixtureAssetIdPrefix == null || fixtureAssetIdPrefix.isBlank()
+                || limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("Valid Fixture material inventory bounds are required");
+        }
+        String prefix = fixtureAssetIdPrefix.trim();
+        return jdbc.query("""
+                        SELECT * FROM rg_fixture_material_v2_revisions
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND fixture_asset_id LIKE ? AND state = 'AVAILABLE'
+                        ORDER BY fixture_asset_id, revision
+                        LIMIT ?
+                        """,
+                (result, row) -> {
+                    StoredFixtureMaterial raw = readUnchecked(result);
+                    return readAndVerify(result, scope, raw.receipt().fixtureAssetId(),
+                            raw.receipt().materialRef().revision()).orElseThrow();
+                }, scope.tenantId(), scope.organizationId(), scope.projectId(), scope.environment(),
+                scope.region(), prefix + "%", limit);
+    }
+
+    /** Conditionally tombstones one exact expired revision and records the administrative action. */
+    @Override
+    @Transactional
+    public boolean expireExactIfDue(
+            EnterpriseScope scope,
+            com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef materialRef,
+            String expectedRecordFingerprint,
+            Instant observedAt,
+            AccessAudit reclaimAudit) {
+        if (scope == null || materialRef == null || expectedRecordFingerprint == null
+                || expectedRecordFingerprint.isBlank() || observedAt == null || reclaimAudit == null
+                || !scope.equals(reclaimAudit.scope()) || !materialRef.equals(reclaimAudit.materialRef())
+                || !"EXPIRE".equals(reclaimAudit.action())) {
+            throw new IllegalArgumentException("Exact Fixture material reclaim coordinate is invalid");
+        }
+        StoredFixtureMaterial current = find(
+                scope, materialRef.id(), materialRef.revision()).orElse(null);
+        if (current == null || !current.receipt().materialRef().equals(materialRef)
+                || !current.recordFingerprint().equals(expectedRecordFingerprint)
+                || !StoredFixtureMaterial.AVAILABLE.equals(current.state())
+                || current.receipt().retention().expiresAt().isAfter(observedAt)) {
+            return false;
+        }
+        StoredFixtureMaterial tombstone = FixtureMaterialIntegrity.attach(mapper, current.expired());
+        int changed = jdbc.update("""
+                        UPDATE rg_fixture_material_v2_revisions
+                        SET state = 'EXPIRED', protected_payload = NULL, record_fingerprint = ?
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ? AND fixture_asset_id = ?
+                          AND revision = ? AND state = 'AVAILABLE' AND record_fingerprint = ?
+                        """,
+                tombstone.recordFingerprint(), scope.tenantId(), scope.organizationId(), scope.projectId(),
+                scope.environment(), scope.region(), materialRef.id(), materialRef.revision(),
+                expectedRecordFingerprint);
+        if (changed == 1) insertAudit(reclaimAudit);
+        return changed == 1;
     }
 
     @Override
@@ -208,4 +272,5 @@ public class DatabaseProtectedFixtureMaterialRepository implements FixtureMateri
             throw new IllegalStateException("Failed to encode Fixture material receipt", failure);
         }
     }
+
 }

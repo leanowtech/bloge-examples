@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /** Encrypted material store with mandatory payload-free access audit. */
@@ -20,6 +21,29 @@ public interface FixtureMaterialRepository {
             long revision);
 
     long latestRevision(EnterpriseScope scope, String fixtureAssetId);
+
+    /**
+     * Lists integrity-verified available material metadata for one bounded id namespace.
+     *
+     * <p>The returned records remain inside the material-store boundary. Callers must project them
+     * to receipts before crossing that boundary so protected payload bytes cannot enter reports.</p>
+     */
+    List<StoredFixtureMaterial> listAvailable(
+            EnterpriseScope scope, String fixtureAssetIdPrefix, int limit);
+
+    /**
+     * Replaces one unchanged, due material revision with a lineage-preserving tombstone.
+     *
+     * <p>The exact material reference, record fingerprint, due time, and AVAILABLE state form one
+     * conditional fence. A concurrent replacement or a material whose retention is still active is
+     * never reclaimed.</p>
+     */
+    boolean expireExactIfDue(
+            EnterpriseScope scope,
+            ExactAssetRef materialRef,
+            String expectedRecordFingerprint,
+            Instant observedAt,
+            AccessAudit reclaimAudit);
 
     void appendAccessAudit(AccessAudit audit);
 
