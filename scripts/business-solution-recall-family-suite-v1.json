@@ -43,17 +43,17 @@
     },
     {
       "familyId": "dependency-unavailable",
-      "expectedBehaviorClass": "UNAVAILABLE_ASSUMPTION_COMPILED",
+      "expectedBehaviorClass": "UNAVAILABLE_ASSUMPTION_CAPTURED",
       "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：如果查询取消责任的服务不可用，预期转人工复核。只表达这个受控假设并提交案例，不进行真实查询，不替我批准、验证或发布。"
     },
     {
       "familyId": "action-stubbing",
-      "expectedBehaviorClass": "SIDE_EFFECT_STUB_COMPILED",
+      "expectedBehaviorClass": "SIDE_EFFECT_STUB_CAPTURED",
       "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：把退还取消费按成功处理，但演练时不能真的退款。只表达这个受控假设并提交案例，不替我批准、验证或发布。"
     },
     {
       "familyId": "forbidden-dependency",
-      "expectedBehaviorClass": "FORBIDDEN_DEPENDENCY_COMPILED",
+      "expectedBehaviorClass": "FORBIDDEN_DEPENDENCY_CAPTURED",
       "prompt": "请为刚才的取消费争议解法补充一条等待确认的标准案例：乘客责任已经明确时，退款动作绝对不能发生。只表达这个受控假设并提交案例，不替我批准、验证或发布。"
     },
     {

@@ -10,6 +10,7 @@ RG_MCP_ENDPOINT="http://127.0.0.1:${RG_CERT_PORT}/mcp"
 RG_INSTANCE_ENDPOINT="${RG_MCP_ENDPOINT%/mcp}/internal/agent-tdd/certification-instance"
 OUTPUT_FILE="${1:-${ROOT_DIR}/resource-gateway-examples/target/business-solution-codex-certification.json}"
 JAVA_BIN="${JAVA_BIN:-java}"
+BROWSER_BIN="${BROWSER_BIN:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 
 usage() {
     cat <<'EOF'
@@ -30,6 +31,10 @@ fi
 if ! [[ "${RG_CERT_PORT}" =~ ^[0-9]+$ ]] || [ "${RG_CERT_PORT}" -lt 1024 ] \
         || [ "${RG_CERT_PORT}" -gt 65535 ]; then
     echo "RG_CERT_PORT must be an unprivileged TCP port." >&2
+    exit 1
+fi
+if [ ! -x "${BROWSER_BIN}" ]; then
+    echo "A Chromium-compatible browser is required to retain the six process screenshots." >&2
     exit 1
 fi
 repository_is_clean() {
@@ -77,6 +82,7 @@ PRIMARY_CONTEXT_FILE=""
 PRIVATE_JAR=""
 TEMP_OUTPUT=""
 SERVICE_PID=""
+SURFACE_PROOF_FILE=""
 
 remove_certification_temp_dir() {
     local directory="${1:-}"
@@ -142,6 +148,7 @@ SERVICE_LOG="${PRIVATE_DIR}/resource-gateway.log"
 SANDBOX_PROFILE="${PRIVATE_DIR}/codex-certification.sb"
 BOARD_FILE="${PRIVATE_DIR}/board.json"
 BOARD_CURL_CONFIG="${PRIVATE_DIR}/board-curl.conf"
+SURFACE_PROOF_FILE="${PRIVATE_DIR}/business-surface-proof.json"
 mkdir -p "${FAMILY_TRACE_DIR}"
 chmod 700 "${FAMILY_TRACE_DIR}"
 touch "${TRACE_FILE}" "${FAMILY_RUN_INDEX}"
@@ -168,6 +175,8 @@ if [ "${AGENT_TOKEN}" = "${REVIEW_TOKEN}" ] || [ "${SETUP_TOKEN}" = "${REVIEW_TO
     echo "Generated demo identities unexpectedly collided." >&2
     exit 1
 fi
+AGENT_ACTOR_FINGERPRINT="sha256:$(printf '%s' "${AGENT_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
+SETUP_ACTOR_FINGERPRINT="sha256:$(printf '%s' "${SETUP_TOKEN}" | openssl dgst -sha256 | awk '{print $2}')"
 
 COMMON_GIT_DIR="$(git -C "${ROOT_DIR}" rev-parse --path-format=absolute --git-common-dir)"
 COMMON_REPOSITORY="$(dirname "${COMMON_GIT_DIR}")"
@@ -217,6 +226,9 @@ REPOSITORY_COMMIT="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
 PRODUCTION_TREE_OBJECT="$(git -C "${ROOT_DIR}" rev-parse \
     "${REPOSITORY_COMMIT}:resource-gateway-examples/src/main")"
 PRODUCTION_TREE_FINGERPRINT="sha256:$(printf '%s' "${PRODUCTION_TREE_OBJECT}" \
+    | openssl dgst -sha256 | awk '{print $2}')"
+CERTIFICATION_INPUTS_MATERIAL="$(git -C "${ROOT_DIR}" rev-parse "${REPOSITORY_COMMIT}:scripts")\n$(git -C "${ROOT_DIR}" rev-parse "${REPOSITORY_COMMIT}:docs/schemas/resource-gateway-business-recall-certification-v1.schema.json")"
+CERTIFICATION_INPUTS_FINGERPRINT="sha256:$(printf '%s' "${CERTIFICATION_INPUTS_MATERIAL}" \
     | openssl dgst -sha256 | awk '{print $2}')"
 "${MVN_BIN}" -f "${ROOT_DIR}/resource-gateway-examples/pom.xml" clean package -DskipTests
 if [ "$(git -C "${ROOT_DIR}" rev-parse HEAD)" != "${REPOSITORY_COMMIT}" ] \
@@ -330,6 +342,10 @@ wait_owned_service() {
 wait_owned_service
 export RG_MCP_TOKEN="${AGENT_TOKEN}"
 curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
+python3 "${ROOT_DIR}/scripts/business_surface_certification_probe.py" \
+    --endpoint "${RG_MCP_ENDPOINT}" --token "${AGENT_TOKEN}" \
+    --runtime-instance-nonce "${INSTANCE_NONCE}" --output "${SURFACE_PROOF_FILE}"
+chmod 600 "${SURFACE_PROOF_FILE}"
 
 BATCH_LABEL="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 cat > "${PROMPT_FILE}" <<EOF
@@ -371,14 +387,12 @@ READ_MCP_ARGS=(
     -c "mcp_servers.rg_read.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_read.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_read.http_headers={"X-Purpose"="AGENT_TDD_READ","X-RG-Surface"="BUSINESS_SOLUTION"}'
-    -c 'mcp_servers.rg_read.enabled_tools=["rg.library.overview.get","rg.capability.search","rg.entity.list","rg.entity.get","rg.journey.next","rg.solution.golden.list"]'
     -c 'mcp_servers.rg_read.required=true'
 )
 AUTHOR_MCP_ARGS=(
     -c "mcp_servers.rg_author.url=\"${RG_MCP_ENDPOINT}\""
     -c 'mcp_servers.rg_author.bearer_token_env_var="RG_MCP_TOKEN"'
     -c 'mcp_servers.rg_author.http_headers={"X-Purpose"="AGENT_TDD_AUTHORING","X-RG-Surface"="BUSINESS_SOLUTION"}'
-    -c 'mcp_servers.rg_author.enabled_tools=["rg.journey.start","rg.feature.define","rg.feature.handoff","rg.scenario.define","rg.instruction.define","rg.solution.compose","rg.solution.golden.propose"]'
     -c 'mcp_servers.rg_author.required=true'
 )
 
@@ -543,21 +557,25 @@ PY
     fi
     if [ "${FAMILY_ID}" = "assumption-ambiguity" ]; then
         # Add the same-name actions only after every controlled dependency family has
-        # completed. The setup call uses the already running workload identity, so the
-        # final Codex turn remains bound to the same third runtime instance.
+        # completed. Seed through the independent setup identity, then run the final
+        # family on a fourth workload runtime.
+        stop_owned_service
+        start_owned_service "${SETUP_TOKEN}"
+        wait_owned_service
         python3 "${ROOT_DIR}/scripts/business_recall_family_setup.py" \
             --endpoint "${RG_MCP_ENDPOINT}" \
-            --author-token "${AGENT_TOKEN}" \
+            --author-token "${SETUP_TOKEN}" \
             --review-token "${REVIEW_TOKEN}" \
             --fixture "${SETUP_FIXTURE_FILE}" \
             --phase ambiguity \
             --existing-manifest "${REMAINING_SETUP_MANIFEST_FILE}" \
             --output "${SETUP_MANIFEST_FILE}"
         chmod 600 "${SETUP_MANIFEST_FILE}"
-        if ! verify_runtime_identity; then
-            echo "The owned Resource Gateway identity changed during ambiguity setup." >&2
-            exit 1
-        fi
+        stop_owned_service
+        start_owned_service "${AGENT_TOKEN}"
+        wait_owned_service
+        export RG_MCP_TOKEN="${AGENT_TOKEN}"
+        curl --fail --silent --show-error "${RG_MCP_ENDPOINT%/mcp}/examples/gateway" >/dev/null
     fi
     FAMILY_PROMPT_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.prompt.txt"
     FAMILY_TRACE_FILE="${FAMILY_TRACE_DIR}/${FAMILY_ID}.trace.jsonl"
@@ -592,7 +610,8 @@ for entry in json.load(open(sys.argv[1], encoding="utf-8"))["families"]:
 PY
 )
 
-python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" "${SETUP_MANIFEST_FILE}" <<'PY'
+python3 - "${FAMILY_RUN_INDEX}" "${FAMILY_MANIFEST_FILE}" "${SETUP_MANIFEST_FILE}" \
+    "${SETUP_ACTOR_FINGERPRINT}" "${AGENT_ACTOR_FINGERPRINT}" <<'PY'
 import json
 import sys
 
@@ -609,7 +628,10 @@ with open(sys.argv[1], encoding="utf-8") as source:
         })
 with open(sys.argv[2], "w", encoding="utf-8") as target:
     json.dump({"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
-               "setupManifestFile": sys.argv[3], "families": families},
+               "setupManifestFile": sys.argv[3],
+               "setupActorFingerprint": sys.argv[4],
+               "workloadActorFingerprint": sys.argv[5],
+               "families": families},
               target, ensure_ascii=False, indent=2)
     target.write("\n")
 PY
@@ -624,15 +646,20 @@ fi
 TEMP_OUTPUT="${OUTPUT_FILE}.tmp.$$"
 python3 "${ROOT_DIR}/scripts/business_solution_codex_trace_certificate.py" "${TRACE_FILE}" \
     --family-manifest "${FAMILY_MANIFEST_FILE}" \
+    --surface-proof "${SURFACE_PROOF_FILE}" \
     --repository-commit "${REPOSITORY_COMMIT}" \
     --codex-version "${CODEX_VERSION}" \
     --certified-at "${CERTIFIED_AT}" \
     --runtime-instance-nonce "${AUTHORING_RUNTIME_NONCE}" \
     --runtime-jar-sha256 "${JAR_SHA256}" \
     --production-tree-fingerprint "${PRODUCTION_TREE_FINGERPRINT}" \
+    --certification-inputs-fingerprint "${CERTIFICATION_INPUTS_FINGERPRINT}" \
     --board-projection "${BOARD_FILE}" \
     --exit-code "${CODEX_EXIT}" > "${TEMP_OUTPUT}"
 chmod 600 "${TEMP_OUTPUT}"
 mv "${TEMP_OUTPUT}" "${OUTPUT_FILE}"
 TEMP_OUTPUT=""
+python3 "${ROOT_DIR}/scripts/render_business_codex_process_evidence.py" \
+    --trace "${TRACE_FILE}" --certificate "${OUTPUT_FILE}" \
+    --output-dir "$(dirname "${OUTPUT_FILE}")" --browser "${BROWSER_BIN}"
 echo "Agent TDD Codex certification passed: ${OUTPUT_FILE}"

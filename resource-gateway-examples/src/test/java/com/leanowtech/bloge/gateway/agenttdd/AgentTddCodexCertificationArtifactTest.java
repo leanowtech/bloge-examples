@@ -120,7 +120,9 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.path("repositoryCommit").asText())
                 .isEqualTo(certificate.at("/runtimeIdentity/repositoryCommit").asText());
         assertThat(certificate.path("productionTreeFingerprint").asText())
-                .isEqualTo(productionTreeFingerprint(certificate.path("repositoryCommit").asText()));
+                .isEqualTo(productionTreeFingerprint());
+        assertThat(certificate.path("certificationInputsFingerprint").asText())
+                .isEqualTo(certificationInputsFingerprint());
         assertThat(textValues(certificate.at("/journey/requiredSequence"))).containsExactly(
                 "rg.feature.define", "rg.scenario.define", "rg.instruction.define",
                 "rg.solution.compose", "rg.solution.golden.propose");
@@ -144,6 +146,10 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(certificate.at("/familyEvidence")).hasSize(15);
         assertThat(certificate.at("/familyEvidence")).allSatisfy(family ->
                 assertThat(family.path("passed").asBoolean()).isTrue());
+        assertThat(certificate.at("/familyEvidence")).allSatisfy(family -> {
+            assertThat(family.path("firstTool").asText()).startsWith("rg.");
+            assertThat(family.path("toolRecallPassed").asBoolean()).isTrue();
+        });
         List<String> familyIds = new ArrayList<>();
         certificate.at("/familyEvidence").forEach(value ->
                 familyIds.add(value.path("familyId").asText()));
@@ -167,10 +173,13 @@ class AgentTddCodexCertificationArtifactTest {
         assertThat(textValues(certificate.at("/correlation/sessions")))
                 .hasSize(16).doesNotHaveDuplicates()
                 .allMatch(value -> value.matches("hmac-sha256:[0-9a-f]{64}"));
-        assertThat(certificate.at("/runtimeIdentity/codexPhaseCount").asInt()).isEqualTo(3);
+        assertThat(certificate.at("/runtimeIdentity/codexPhaseCount").asInt()).isEqualTo(4);
         assertThat(textValues(certificate.at("/runtimeIdentity/instanceNonceFingerprints")))
-                .hasSize(3).doesNotHaveDuplicates()
+                .hasSize(4).doesNotHaveDuplicates()
                 .allMatch(value -> value.matches("sha256:[0-9a-f]{64}"));
+        assertThat(certificate.at("/setupIdentity/actorSeparationVerified").asBoolean()).isTrue();
+        assertThat(certificate.at("/transport/serverListFiltered").asBoolean()).isTrue();
+        assertThat(certificate.at("/transport/directHiddenCallRejected").asBoolean()).isTrue();
         assertThat(certificate.at(
                 "/assertions/compilerValidatedAuthoringPatternsObservedBeforeCreation").asBoolean())
                 .isTrue();
@@ -196,7 +205,7 @@ class AgentTddCodexCertificationArtifactTest {
                 certificate.path("repositoryCommit").asText(), "27", "2 + 1 + 3", "15 / 15",
                 "两条完整标准案例", "服务端模板先读", "写入已绑定",
                 "未批准、未执行、未发布", "Recall@3", "Top-1",
-                "16 个会话身份互不相同", "3 个实例身份互不相同", "UNAVAILABLE");
+                "16 个会话身份互不相同", "4 个实例身份互不相同", "UNAVAILABLE");
         var screenshot = ImageIO.read(BUSINESS_SCREENSHOT.toFile());
         assertThat(screenshot).isNotNull();
         assertThat(screenshot.getWidth()).isEqualTo(1440);
@@ -224,6 +233,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "did not deny non-Codex process execution", "ISOLATED_CODEX_DIR",
                 "sandbox-exec -f \"${SANDBOX_PROFILE}\"",
                 "verify_runtime_identity", "--runtime-instance-nonce", "--runtime-jar-sha256",
+                "business_surface_certification_probe.py", "--surface-proof",
                 "--spring.datasource.url=jdbc:h2:file:${PRIVATE_DIR}/recall-certification",
                 "${PRIVATE_DIR}/recall-certification.mv.db",
                 "did not open the required private persistent state store",
@@ -235,6 +245,7 @@ class AgentTddCodexCertificationArtifactTest {
                 "exec env", "SERVICE_PID=$!", "openssl rand -hex 32",
                 "RG_CORRECTNESS_AUTHORING_ENABLED=true",
                 "PRIVATE_JAR", "chflags uchg", "expected-jar-sha256");
+        assertThat(script).doesNotContain("enabled_tools=");
         assertThat(script).doesNotContain("RG_CORRECTNESS_ENABLED=true");
         assertThat(cleanupTrap).isGreaterThanOrEqualTo(0).isLessThan(firstTemporaryDirectory);
         assertThat(cleanupTrap).isLessThan(authenticationCopy);
@@ -256,24 +267,44 @@ class AgentTddCodexCertificationArtifactTest {
     void certificationReducerExecutesMismatchAcceptanceAndBoundedRepairNegativeCases() throws Exception {
         Process process = new ProcessBuilder("python3", "-m", "unittest",
                 "agent_tdd_codex_trace_certificate_test",
-                "business_solution_codex_trace_certificate_test")
+                "business_solution_codex_trace_certificate_test",
+                "business_surface_certification_probe_test",
+                "render_business_codex_process_evidence_test")
                 .directory(REPOSITORY.resolve("scripts").toFile())
                 .redirectErrorStream(true)
                 .start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
         assertThat(process.waitFor()).as(output).isZero();
-        assertThat(output).contains("Ran 56 tests", "OK");
+        assertThat(output).contains("Ran 62 tests", "OK");
     }
 
-    private String productionTreeFingerprint(String commit) throws Exception {
-        Process process = new ProcessBuilder("git", "rev-parse",
-                commit + ":resource-gateway-examples/src/main")
+    private String productionTreeFingerprint() throws Exception {
+        return gitObjectFingerprint("HEAD:resource-gateway-examples/src/main");
+    }
+
+    private String certificationInputsFingerprint() throws Exception {
+        String scripts = gitObject("HEAD:scripts");
+        String schema = gitObject(
+                "HEAD:docs/schemas/resource-gateway-business-recall-certification-v1.schema.json");
+        return sha256(scripts + "\\n" + schema);
+    }
+
+    private String gitObjectFingerprint(String revisionPath) throws Exception {
+        return sha256(gitObject(revisionPath));
+    }
+
+    private String gitObject(String revisionPath) throws Exception {
+        Process process = new ProcessBuilder("git", "rev-parse", revisionPath)
                 .directory(REPOSITORY.toFile()).redirectErrorStream(true).start();
-        String tree = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-        assertThat(process.waitFor()).as(tree).isZero();
+        String object = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        assertThat(process.waitFor()).as(object).isZero();
+        return object;
+    }
+
+    private static String sha256(String value) throws Exception {
         return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                .digest(tree.getBytes(StandardCharsets.UTF_8)));
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     private static Set<String> toFieldSet(JsonNode node) {

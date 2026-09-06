@@ -19,6 +19,20 @@ SPEC.loader.exec_module(MODULE)
 MAIN_RUNTIME_NONCE = "1" * 64
 NEAR_RUNTIME_NONCE = "2" * 64
 REMAINING_RUNTIME_NONCE = "3" * 64
+AMBIGUITY_RUNTIME_NONCE = "4" * 64
+
+
+def surface_proof() -> dict:
+    material = {
+        "runtimeInstanceNonce": MAIN_RUNTIME_NONCE,
+        "visibleToolNames": ["rg.library.overview.get", "rg.capability.search"],
+        "hiddenTool": "rg.dsl.reference.get",
+        "rejectionCode": -32031,
+        "rejectionReason": "TOOL_NOT_VISIBLE_IN_SURFACE",
+    }
+    return {"schemaVersion": "rg.businessSurfaceProof.v1", **material,
+            "proofFingerprint": "sha256:" + hashlib.sha256(
+                MODULE.canonical_bytes(material)).hexdigest()}
 
 
 def call(server: str, tool: str, arguments: dict, data: dict, status: str = "completed") -> dict:
@@ -107,10 +121,12 @@ def metadata() -> dict:
         "runtimeInstanceNonce": MAIN_RUNTIME_NONCE,
         "runtimeJarSha256": "sha256:" + "c" * 64,
         "productionTreeFingerprint": "sha256:" + "d" * 64,
+        "certificationInputsFingerprint": "sha256:" + "f" * 64,
         "boardProjection": {"payloadPolicy": "STRUCTURE_ONLY", "pendingReviews": [
             {"kind": "ORACLE", "assetRef": "case-set:test", "caseId": "case-a"},
             {"kind": "ORACLE", "assetRef": "case-set:test", "caseId": "case-b"},
         ]},
+        "surfaceProof": surface_proof(),
     }
 
 
@@ -317,7 +333,9 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                         MAIN_RUNTIME_NONCE if family_id == "synonym-rewrite"
                         else NEAR_RUNTIME_NONCE
                         if family_id in MODULE.SECOND_RUNTIME_FAMILIES
-                        else REMAINING_RUNTIME_NONCE),
+                        else REMAINING_RUNTIME_NONCE
+                        if family_id in MODULE.THIRD_RUNTIME_FAMILIES
+                        else AMBIGUITY_RUNTIME_NONCE),
                 })
             setup = self.setup_manifest()
             if setup_mutator is not None:
@@ -326,6 +344,8 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
             setup_path.write_text(json.dumps(setup), encoding="utf-8")
             manifest = {"schemaVersion": "rg.businessRecallFamilyTraceSet.v1",
                         "setupManifestFile": setup_path.name,
+                        "setupActorFingerprint": "sha256:" + "a" * 64,
+                        "workloadActorFingerprint": "sha256:" + "b" * 64,
                         "families": families}
             if manifest_mutator is not None:
                 manifest_mutator(manifest)
@@ -347,8 +367,13 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
         self.assertRegex(certificate["setupIdentity"]["seedManifestFingerprint"],
                          r"^hmac-sha256:")
         self.assertRegex(certificate["setupIdentity"]["setupFingerprint"], r"^sha256:")
-        self.assertEqual(3, certificate["runtimeIdentity"]["codexPhaseCount"])
-        self.assertEqual(3, len(certificate["runtimeIdentity"]["instanceNonceFingerprints"]))
+        self.assertEqual(4, certificate["runtimeIdentity"]["codexPhaseCount"])
+        self.assertEqual(4, len(certificate["runtimeIdentity"]["instanceNonceFingerprints"]))
+        self.assertTrue(certificate["setupIdentity"]["actorSeparationVerified"])
+        self.assertTrue(certificate["transport"]["serverListFiltered"])
+        self.assertTrue(certificate["transport"]["directHiddenCallRejected"])
+        self.assertEqual(1.0, certificate["metrics"]["toolRecallRate"])
+        self.assertTrue(all(item["toolRecallPassed"] for item in certificate["familyEvidence"]))
         self.assertNotIn("private", json.dumps(certificate))
         self.assertNotIn("journey:drift", json.dumps(certificate))
         self.assertNotIn("feature:traffic-accident", json.dumps(certificate))
@@ -496,8 +521,23 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                           if item["familyId"] == "near-meaning-distractor")
             target["runtimeInstanceNonce"] = MAIN_RUNTIME_NONCE
 
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "three isolated"):
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "four isolated"):
             self.certify_aux(manifest_mutator=reuse_runtime)
+
+    def test_rejects_setup_identity_reused_by_workload(self) -> None:
+        def reuse_actor(manifest: dict) -> None:
+            manifest["workloadActorFingerprint"] = manifest["setupActorFingerprint"]
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "independently bound"):
+            self.certify_aux(manifest_mutator=reuse_actor)
+
+    def test_rejects_successful_family_with_wrong_first_workflow_tool(self) -> None:
+        events = family_events("synonym-rewrite")
+        events.insert(0, call("rg_read", "rg.entity.list", {"entityKinds": ["FEATURE"]},
+                              {"entities": []}))
+
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "intent-appropriate first tool"):
+            self.certify_aux(family_overrides={"synonym-rewrite": events})
 
     def test_rejects_remaining_families_split_across_runtime_phases(self) -> None:
         def split_runtime(manifest: dict) -> None:
@@ -505,7 +545,7 @@ class BusinessSolutionCertificateTest(unittest.TestCase):
                           if item["familyId"] == "semantic-drift")
             target["runtimeInstanceNonce"] = "4" * 64
 
-        with self.assertRaisesRegex(MODULE.CertificationFailure, "three isolated"):
+        with self.assertRaisesRegex(MODULE.CertificationFailure, "four isolated"):
             self.certify_aux(manifest_mutator=split_runtime)
 
     def test_rejects_family_trace_that_does_not_observe_its_seeded_assets(self) -> None:
