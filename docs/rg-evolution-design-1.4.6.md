@@ -369,7 +369,7 @@ Scenario、Instruction 和 Solution 的现有契约字段继续是运行时权�
 - 新 draft 首次提出的 key 状态为 `PROPOSED`，只允许在同一 journey 内关联，不能作为其他 journey 的全局 EXACT 候选。
 - 当包含该语义的 Feature 通过业务 GOLDEN 和发布签署后，key 状态变为 `ACTIVE`，可用于跨 journey 精确复用。
 - 被替代的 key 进入 `DEPRECATED`，搜索仍可返回，但 `reuseAllowed=false` 并指向 successor。
-- aliases 和显示信息使用独立 revision；同一 alias 指向多个 ACTIVE key 时，搜索必须返回 AMBIGUOUS。
+- aliases 和显示信息使用独立 revision；同一 alias 指向多个注册表状态为 READY 或 PUBLISHED 的 semantic key 时，搜索必须返回 AMBIGUOUS。是否可复用以注册表状态为准，不信任作者在业务定义中自行声明的 lifecycle 文本。
 - Agent 可以提议新 key 和显示信息，不能把 `PROPOSED` 自行提升为 `ACTIVE`。
 
 ## 6. 统一能力索引

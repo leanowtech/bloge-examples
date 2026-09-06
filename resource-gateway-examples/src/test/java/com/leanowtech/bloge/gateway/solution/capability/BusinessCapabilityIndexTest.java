@@ -116,6 +116,7 @@ class BusinessCapabilityIndexTest {
         InMemoryAgentTddStateRepository states = new InMemoryAgentTddStateRepository();
         ObjectNode target = contract().deepCopy();
         target.put("intent", "由客服人员确认当前争议订单是谁导致取消");
+        target.put("lifecycle", "PROPOSED");
         saveSemanticFeature(states, "feature:cancel-party", target);
         saveDisplay(states, scope(identity("project-a")), "FEATURE", "feature:cancel-party",
                 display("取消责任方", List.of("谁导致取消")));

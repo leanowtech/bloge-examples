@@ -133,7 +133,9 @@ public final class BusinessCapabilityIndex {
      * Recalls candidates from business names, aliases, tags and intent without claiming semantic
      * equivalence. Chinese phrases contribute overlapping two-character recall terms so a longer
      * natural-language sentence can still retrieve a shorter business name. P3's contract matcher
-     * remains the only component allowed to promote a result to EXACT.
+     * remains the only component allowed to promote a result to EXACT. Reuse availability comes
+     * from the registry card's authoritative READY/PUBLISHED lifecycle rather than an author
+     * supplied descriptive lifecycle field inside the semantic definition.
      */
     public Map<String, Object> search(JsonNode arguments, IntegrationRequestContext identity) {
         Snapshot snapshot = freeze(identity);
@@ -384,7 +386,8 @@ public final class BusinessCapabilityIndex {
     }
 
     private static boolean activeSemanticKey(Card card) {
-        return "ACTIVE".equals(card.business().at("/businessDefinition/lifecycle").asText());
+        return !semanticKey(card).isBlank()
+                && List.of("READY", "PUBLISHED").contains(card.lifecycle());
     }
 
     private static String semanticKey(Card card) {
