@@ -95,6 +95,7 @@ public final class BusinessFixtureCompiler {
             String scope, String solutionRef, JsonNode fixtureCase) {
         FrozenClosure closure = freeze(scope, solutionRef);
         List<JsonNode> vector = new ArrayList<>();
+        vector.add(solutionBusinessCoordinate(closure));
         Set<String> suppliedTargets = new LinkedHashSet<>();
         fixtureCase.path("givenFacts").forEach(fact -> {
             String featureRef = validateFact(closure, fact, vector);
@@ -117,6 +118,7 @@ public final class BusinessFixtureCompiler {
         FrozenClosure closure = freeze(scope, solutionRef);
         ObjectNode given = mapper.createObjectNode();
         List<JsonNode> businessVector = new ArrayList<>();
+        businessVector.add(solutionBusinessCoordinate(closure));
         fixtureCase.path("givenFacts")
                 .forEach(fact -> compileFact(closure, fact, given, businessVector));
         ObjectNode dependencies = mapper.createObjectNode();
@@ -547,6 +549,16 @@ public final class BusinessFixtureCompiler {
         coordinate.put("semanticKey", semanticKey);
         coordinate.put("contractFingerprint", entity.contractFingerprint());
         return coordinate;
+    }
+
+    /**
+     * Binds every complete business case to the exact Solution business identity selected by the
+     * journey. Mutable Solution revisions remain outside this coordinate; a change to the stored
+     * business contract fingerprint or semantic key makes the approval stale.
+     */
+    private JsonNode solutionBusinessCoordinate(FrozenClosure closure) {
+        return stableBusinessCoordinate("SOLUTION", closure.solution(),
+                closure.solution().contract().businessDefinition().semanticKey());
     }
 
     private JsonNode closureCoordinate(String kind, FrozenEntity<?> entity) {

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.BusinessFactSemanticContract;
 import com.leanowtech.bloge.gateway.solution.BusinessInstructionSemanticContract;
+import com.leanowtech.bloge.gateway.solution.BusinessSolutionSemanticContract;
 import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.InstructionContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Verifies complete business cases, rather than compiled fixtures, form the human approval. */
 class AgentTddReviewBusinessGoldenTest {
@@ -39,10 +41,8 @@ class AgentTddReviewBusinessGoldenTest {
         registry.upsertFeature(SCOPE, feature("dispute.orderSelected", "争议订单", ""));
         registry.upsertInstruction(SCOPE, instruction("", "维持取消费", "WAIVED"));
         registry.upsertScenario(SCOPE, scenario());
-        registry.upsertSolution(SCOPE, new SolutionContract(
-                "sol:cancel", "处理取消费争议",
-                Map.of("party", "responsibility.party", "orderId", "dispute.orderSelected"),
-                "scn:cancel", List.of("ins:refund"), "caseSet:cancel"), true);
+        registry.upsertSolution(SCOPE, solution("处理取消费争议",
+                List.of("ride.cancel.waive")), true);
     }
 
     @Test
@@ -78,6 +78,17 @@ class AgentTddReviewBusinessGoldenTest {
                 assertThat(coordinate.propertyStream().map(Map.Entry::getKey).toList())
                         .containsExactlyInAnyOrder(
                                 "assetKind", "assetRef", "semanticKey", "contractFingerprint"));
+        assertThat(metadata.path("businessContractVector")).hasSize(4);
+        assertThat(metadata.path("businessContractVector")).anySatisfy(coordinate -> {
+            assertThat(coordinate.path("assetKind").asText()).isEqualTo("SOLUTION");
+            assertThat(coordinate.path("assetRef").asText()).isEqualTo("sol:cancel");
+            assertThat(coordinate.path("semanticKey").asText())
+                    .isEqualTo("ride.cancel.dispute.solution");
+            assertThat(coordinate.path("contractFingerprint").asText())
+                    .isEqualTo(registry.requireRegisteredSolution(
+                            SCOPE, "sol:cancel").contractFingerprint());
+            assertThat(coordinate.has("revision")).isFalse();
+        });
 
         AgentTddStoredAsset approved = reviews.approveOracle(caseSetRef, "g1", 1,
                 review.get("proposalFingerprint").toString(), reviewer());
@@ -106,6 +117,32 @@ class AgentTddReviewBusinessGoldenTest {
         registry.upsertInstruction(
                 SCOPE, instruction("operator:refund-v3", "维持取消费", "UPHELD"));
         assertThat(BusinessGoldenContractGuard.isCurrent(states, SCOPE, row)).isFalse();
+    }
+
+    @Test
+    void keepsApprovalAcrossSolutionRevisionButRejectsChangedSolutionBusinessDefinition() {
+        Map<String, Object> proposed = golden.propose(proposal(), agent());
+        String caseSetRef = proposed.get("caseSetRef").toString();
+        Map<String, Object> review = reviews.oracleReview(caseSetRef, "g1", 1, reviewer());
+        JsonNode row = reviews.approveOracle(caseSetRef, "g1", 1,
+                review.get("proposalFingerprint").toString(), reviewer()).data().at("/rows/0");
+
+        AgentTddStoredAsset current = states.find(
+                SCOPE, SolutionEntityRegistry.SOLUTION, "sol:cancel").orElseThrow();
+        AgentTddStoredAsset rebound = states.save(
+                SCOPE, SolutionEntityRegistry.SOLUTION, "sol:cancel", current.data());
+        assertThat(rebound.revision()).isGreaterThan(current.revision());
+        assertThat(rebound.data().path("contractFingerprint").asText())
+                .isEqualTo(current.data().path("contractFingerprint").asText());
+        assertThat(BusinessGoldenContractGuard.isCurrent(states, SCOPE, row)).isTrue();
+
+        registry.upsertSolution(SCOPE, solution("按修订政策处理取消费争议",
+                List.of("ride.cancel.manual-review")), true);
+
+        assertThat(BusinessGoldenContractGuard.isCurrent(states, SCOPE, row)).isFalse();
+        assertThatThrownBy(() -> BusinessGoldenContractGuard.requireCurrent(states, SCOPE, row))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("GOLDEN_CASE_STALE"));
     }
 
     @Test
@@ -198,6 +235,20 @@ class AgentTddReviewBusinessGoldenTest {
                                 "ins:refund", Map.of("orderId", "orderId"), ""))),
                 new ScenarioContract.Outlet(
                         ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "REVIEW"));
+    }
+
+    private SolutionContract solution(String intent, List<String> dispositionSemanticKeys) {
+        BusinessSolutionSemanticContract definition = new BusinessSolutionSemanticContract(
+                BusinessSolutionSemanticContract.SCHEMA_VERSION,
+                "ride.cancel.dispute.solution", intent, "ride-cancellation", "ride-order",
+                "CANCELLATION_FEE_DISPUTE",
+                List.of("ride.cancel.party", "ride.cancel.order"),
+                "ride.cancel.decision", dispositionSemanticKeys,
+                "AGENT_ASSISTED", "ACTIVE");
+        return new SolutionContract(
+                "sol:cancel", "处理取消费争议",
+                Map.of("party", "responsibility.party", "orderId", "dispute.orderSelected"),
+                "scn:cancel", List.of("ins:refund"), "caseSet:cancel", definition);
     }
 
     private static IntegrationRequestContext agent() {

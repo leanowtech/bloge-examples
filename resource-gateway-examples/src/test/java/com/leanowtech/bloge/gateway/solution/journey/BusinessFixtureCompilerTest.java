@@ -60,14 +60,19 @@ class BusinessFixtureCompilerTest {
             String expectedRef = "RETURNS".equals(outcome) ? "ins:balance" : "ins:refund";
             assertThat(plan.dependencyAssumptions().path(expectedRef).path("outcome").asText())
                     .isEqualTo(outcome);
-            assertThat(plan.businessContractVector()).hasSize(2);
+            assertThat(plan.businessContractVector()).hasSize(3);
             assertThat(plan.businessContractVector())
                     .allSatisfy(coordinate -> assertThat(
                             coordinate.propertyStream().map(Map.Entry::getKey).toList())
                             .containsExactlyInAnyOrder(
                                     "assetKind", "assetRef", "semanticKey", "contractFingerprint"));
-            assertThat(plan.businessContractVector().getLast().path("semanticKey").asText())
-                    .startsWith("legacy:");
+            assertThat(plan.businessContractVector())
+                    .anySatisfy(coordinate -> {
+                        assertThat(coordinate.path("assetKind").asText()).isEqualTo("SOLUTION");
+                        assertThat(coordinate.path("assetRef").asText()).isEqualTo("sol:cancel");
+                        assertThat(coordinate.path("semanticKey").asText())
+                                .isEqualTo("legacy:sol:cancel");
+                    });
             assertThat(plan.solutionRevision()).isPositive();
             assertThat(plan.solutionContractFingerprint()).startsWith("sha256:");
             assertThat(plan.featureValuesFingerprint()).startsWith("sha256:");
@@ -92,7 +97,8 @@ class BusinessFixtureCompilerTest {
         assertThat(validation.businessContractVector())
                 .containsExactlyElementsOf(plan.businessContractVector());
         assertThat(validation.businessContractVector()).allSatisfy(coordinate -> {
-            assertThat(coordinate.path("assetKind").asText()).isIn("FEATURE", "INSTRUCTION");
+            assertThat(coordinate.path("assetKind").asText())
+                    .isIn("FEATURE", "INSTRUCTION", "SOLUTION");
             assertThat(coordinate.path("assetRef").asText()).isNotBlank();
             assertThat(coordinate.path("semanticKey").asText()).isNotBlank();
             assertThat(coordinate.path("contractFingerprint").asText()).startsWith("sha256:");

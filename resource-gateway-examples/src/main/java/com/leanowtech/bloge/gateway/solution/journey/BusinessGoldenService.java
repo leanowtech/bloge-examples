@@ -22,8 +22,9 @@ import java.util.Objects;
 /**
  * Adapts complete business-language GOLDEN cases to the governed case-set authority.
  * MCP responses expose only counts, lifecycle and fingerprints. The protected material contains
- * the original business case, while every implementation-bound controlled plan is ephemeral and
- * can be recompiled after rules or bindings change without changing the business approval.
+ * the original business case and binds its approval to the exact Solution plus referenced fact
+ * and disposition business contracts. Every implementation-bound controlled plan is ephemeral
+ * and can be recompiled after rules or bindings change without changing the business approval.
  */
 @Service
 public final class BusinessGoldenService {

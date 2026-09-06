@@ -19,7 +19,8 @@ public final class BusinessGoldenContractGuard {
     private BusinessGoldenContractGuard() { }
 
     /**
-     * Returns true only when every recorded Feature or Instruction business identity is current.
+     * Returns true only when every recorded Feature, Instruction or Solution business identity is
+     * current.
      *
      * @return {@code false} for an incomplete coordinate, a missing exact entity, a changed
      * semantic key or a changed business contract fingerprint
@@ -32,6 +33,7 @@ public final class BusinessGoldenContractGuard {
             String kind = switch (coordinate.path("assetKind").asText()) {
                 case "FEATURE" -> SolutionEntityRegistry.FEATURE;
                 case "INSTRUCTION" -> SolutionEntityRegistry.INSTRUCTION;
+                case "SOLUTION" -> SolutionEntityRegistry.SOLUTION;
                 default -> "";
             };
             String ref = coordinate.path("assetRef").asText();
