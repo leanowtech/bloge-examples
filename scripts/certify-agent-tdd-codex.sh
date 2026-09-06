@@ -681,5 +681,7 @@ mv "${TEMP_OUTPUT}" "${OUTPUT_FILE}"
 TEMP_OUTPUT=""
 python3 "${ROOT_DIR}/scripts/render_business_codex_process_evidence.py" \
     --trace "${TRACE_FILE}" --certificate "${OUTPUT_FILE}" \
-    --output-dir "$(dirname "${OUTPUT_FILE}")" --browser "${BROWSER_BIN}"
+    --output-dir "$(dirname "${OUTPUT_FILE}")" --browser "${BROWSER_BIN}" \
+    --report "${ROOT_DIR}/docs/acceptance/agent-tdd/business-solution-codex-certification-v1.html" \
+    --summary-screenshot "${ROOT_DIR}/docs/acceptance/agent-tdd/business-solution-codex-certification-v1.png"
 echo "Agent TDD Codex certification passed: ${OUTPUT_FILE}"

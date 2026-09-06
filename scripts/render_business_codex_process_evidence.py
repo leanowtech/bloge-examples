@@ -8,6 +8,7 @@ import hashlib
 import html
 import importlib.util
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -21,6 +22,50 @@ STAGES = [
     ("05", "组合业务解法", "rg.solution.compose", "Codex 将事实、规则和动作组合为 Solution。"),
     ("06", "提交标准案例", "rg.solution.golden.propose", "Codex 提交两条案例并停在业务负责人确认前。"),
 ]
+
+
+def _replace_once(source: str, pattern: str, replacement: str, label: str) -> str:
+    rendered, count = re.subn(pattern, replacement, source, count=1)
+    if count != 1:
+        raise RuntimeError(f"summary report does not contain exactly one {label}")
+    return rendered
+
+
+def render_summary(certificate_path: Path, report: Path, screenshot: Path,
+                   browser: Path) -> None:
+    """Refresh the checked-in summary and screenshot from one payload-free certificate."""
+    certificate = json.loads(certificate_path.read_text(encoding="utf-8"))
+    commit = str(certificate.get("repositoryCommit", ""))
+    fingerprint = str(certificate.get("certificateFingerprint", ""))
+    certified_at = str(certificate.get("certifiedAt", ""))
+    version = str(certificate.get("codexVersion", ""))
+    calls = certificate.get("journey", {}).get("observedCalls")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", fingerprint) \
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", certified_at) \
+            or not version.startswith("codex-cli ") or not isinstance(calls, list):
+        raise RuntimeError("summary certificate metadata is incomplete")
+    source = report.read_text(encoding="utf-8")
+    source = _replace_once(source, r"真实 Codex CLI [^<]+<br>",
+                           f"真实 Codex CLI {html.escape(version.removeprefix('codex-cli '))}<br>",
+                           "Codex version")
+    source = _replace_once(
+        source,
+        r'<div class="metric"><b>\d+</b><span>主创作链 MCP 调用</span></div>',
+        f'<div class="metric"><b>{len(calls)}</b><span>主创作链 MCP 调用</span></div>',
+        "observed-call metric")
+    timestamp = certified_at.removesuffix("Z").replace("T", " ") + " UTC"
+    source = _replace_once(
+        source, r"认证时间：[^<]+ · Commit <code>[0-9a-f]{40}</code>",
+        f"认证时间：{timestamp} · Commit <code>{commit}</code>", "certification footer")
+    abbreviated = fingerprint[:23] + "…" + fingerprint[-8:]
+    source = _replace_once(
+        source, r"Certificate <code>sha256:[0-9a-f]{16}…[0-9a-f]{8}</code>",
+        f"Certificate <code>{abbreviated}</code>", "certificate fingerprint")
+    report.write_text(source, encoding="utf-8")
+    command = [str(browser), "--headless=new", "--disable-gpu", "--hide-scrollbars",
+               "--window-size=1440,1440", f"--screenshot={screenshot}", report.as_uri()]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _load_reducer(script_dir: Path):
@@ -98,8 +143,11 @@ def main() -> int:
     parser.add_argument("--certificate", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--browser", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--summary-screenshot", type=Path, required=True)
     args = parser.parse_args()
     render(args.trace, args.certificate, args.output_dir, args.browser)
+    render_summary(args.certificate, args.report, args.summary_screenshot, args.browser)
     return 0
 
 

@@ -1,40 +1,40 @@
 {
   "schemaVersion": "rg.businessCodexProcessEvidence.v1",
   "evidenceKind": "REDACTED_REAL_CODEX_TRACE_RENDER",
-  "repositoryCommit": "befbd6122e43fd5511c1be1cc16ebb2ec2963f44",
-  "certificateFingerprint": "sha256:0693e39bee9331161b8759ac079c36080a5ea422df5ea575152d0225cb1928a3",
+  "repositoryCommit": "441705ff8225c903e0a00b9d46a17082fadc3277",
+  "certificateFingerprint": "sha256:7dd357ddb87792dbff99e3f844be1c822cf819a5f341fcd54369e63077ea968d",
   "images": [
     {
       "stage": "01",
       "title": "先读业务积木",
       "tool": "rg.library.overview.get",
-      "traceOrdinal": 3,
+      "traceOrdinal": 2,
       "file": "business-solution-codex-process-01.png",
-      "sha256": "sha256:e64801ab2bd40dc1a5c44cb3dec04f05e20a7cc3b10c02817563837324316ff5"
+      "sha256": "sha256:e0dc3583dee89767d939724bf64fd774c1ccb10ca0c637cef0ee4e61b8f6c43a"
     },
     {
       "stage": "02",
       "title": "定义业务事实",
       "tool": "rg.feature.define",
-      "traceOrdinal": 11,
+      "traceOrdinal": 8,
       "file": "business-solution-codex-process-02.png",
-      "sha256": "sha256:55352d5fd70fdd4eb9b9ab3986d886bda23536b664a78e4fc757215faf23c60d"
+      "sha256": "sha256:e9711c62a42ebe4464cd04ec34fd04145a93b533872ddecac1c86b568b81ba85"
     },
     {
       "stage": "03",
       "title": "定义业务规则",
       "tool": "rg.scenario.define",
-      "traceOrdinal": 17,
+      "traceOrdinal": 16,
       "file": "business-solution-codex-process-03.png",
-      "sha256": "sha256:57eab9ed833644e3eebe4f5a334e9d3915c57dad29e4f2956feb77a44b194579"
+      "sha256": "sha256:152099b3ea33e2b8ff62a17a18fc195ac7583189ef26138dc5dff322fc1de725"
     },
     {
       "stage": "04",
       "title": "定义业务动作",
       "tool": "rg.instruction.define",
-      "traceOrdinal": 19,
+      "traceOrdinal": 18,
       "file": "business-solution-codex-process-04.png",
-      "sha256": "sha256:fed7f1910285bcb61ff411329fcd25e0bd372662bd65a25e5dde2310b07cc173"
+      "sha256": "sha256:623fa25d066a93fc22207093086b98297dc7c1a4e05b0d9451a97e9f0f5112b8"
     },
     {
       "stage": "05",
@@ -42,7 +42,7 @@
       "tool": "rg.solution.compose",
       "traceOrdinal": 25,
       "file": "business-solution-codex-process-05.png",
-      "sha256": "sha256:7a56a53fa48ea0d08cacf9f87cd518d6cee74a2abf4d5ac41f8d65c7b43be57e"
+      "sha256": "sha256:586b444e4ccf4eed1ae7850843fa8fb0b770e86289fe818e9999c00efa954b7f"
     },
     {
       "stage": "06",
@@ -50,7 +50,7 @@
       "tool": "rg.solution.golden.propose",
       "traceOrdinal": 32,
       "file": "business-solution-codex-process-06.png",
-      "sha256": "sha256:106eca909740875fe6cdc4fae1b9213f9340b5e5e01dbd40928128d521de0578"
+      "sha256": "sha256:ee12e474e36fa80e80a141d35b1141b4a95d3101103138573e26227caa0ef888"
     }
   ]
 }
