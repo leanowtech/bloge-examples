@@ -61,6 +61,39 @@ public final class SolutionExecutionService {
     }
 
     /**
+     * Simulates one immutable executable closure without consulting the authoring registry.
+     * WRITE Instructions use the built-in contract-shaped stub. A READ Instruction can reach only
+     * the channel supplied when this executor was constructed, which controlled-test callers must
+     * set to a deny-all channel.
+     *
+     * @param scopeKey exact server-derived scope used only for in-process authority
+     * @param snapshot complete frozen Solution contract closure
+     * @param featureValues already-controlled feature values
+     * @return deterministic result derived from the supplied closure
+     */
+    public ExecutionResult simulatePublished(
+            String scopeKey, PublishedSolutionSnapshot snapshot, JsonNode featureValues) {
+        return executePublished(scopeKey, snapshot, featureValues,
+                SolutionExecutionAuthority.Mode.SIMULATE);
+    }
+
+    /**
+     * Executes one immutable closure through a case-scoped controlled Instruction channel.
+     * This path accepts declared dependency failures and no-effect writes but performs no mutable
+     * registry lookup.
+     *
+     * @param scopeKey exact server-derived scope used only for in-process authority
+     * @param snapshot complete frozen Solution contract closure
+     * @param featureValues values resolved from the approved controlled assumptions
+     * @return deterministic controlled-test result derived from the supplied closure
+     */
+    public ExecutionResult simulateControlledPublished(
+            String scopeKey, PublishedSolutionSnapshot snapshot, JsonNode featureValues) {
+        return executePublished(scopeKey, snapshot, featureValues,
+                SolutionExecutionAuthority.Mode.CONTROLLED_TEST);
+    }
+
+    /**
      * Runs a trusted runtime invocation. READ instructions may use the governed dispatch channel;
      * WRITE instructions remain unavailable until the independent WRITE_EXEC boundary authorizes
      * execution and reconciliation.
@@ -92,6 +125,15 @@ public final class SolutionExecutionService {
             JsonNode featureValues,
             IntegrationRequestContext platformIdentity) {
         requireControlledAuthority(scopeKey, platformIdentity);
+        return executePublished(scopeKey, snapshot, featureValues,
+                SolutionExecutionAuthority.Mode.WRITE_EXEC);
+    }
+
+    private ExecutionResult executePublished(
+            String scopeKey,
+            PublishedSolutionSnapshot snapshot,
+            JsonNode featureValues,
+            SolutionExecutionAuthority.Mode mode) {
         SolutionContract solution = Objects.requireNonNull(snapshot, "snapshot").solution();
         if (featureValues == null || !featureValues.isObject()
                 || !iterable(solution.inputs().keySet()).stream().allMatch(featureValues::has)) {
@@ -112,7 +154,7 @@ public final class SolutionExecutionService {
         }
         GraphContext graph = new GraphContext(mapper.convertValue(featureValues, OBJECT_MAP));
         graph.put(SolutionExecutionAuthority.CONTEXT_KEY,
-                SolutionExecutionAuthority.issue(scopeKey, SolutionExecutionAuthority.Mode.WRITE_EXEC));
+                SolutionExecutionAuthority.issue(scopeKey, mode));
         Map<String, Object> output;
         try {
             output = instructionCall.executeResolved(instruction, outcome.bind(),
@@ -124,7 +166,8 @@ public final class SolutionExecutionService {
                     "SOLUTION_EXECUTION_FAILED", "Instruction dispatch failed.");
         }
         return new ExecutionResult(output.get("result"), Objects.toString(output.get("reasoning"), ""),
-                instruction.instructionRef(), outcome.rulePath(), 1);
+                instruction.instructionRef(), outcome.rulePath(),
+                mode == SolutionExecutionAuthority.Mode.WRITE_EXEC ? 1 : 0);
     }
 
     private static void requireControlledAuthority(

@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.solution.FeatureContract;
 import com.leanowtech.bloge.gateway.solution.ScenarioContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.SolutionExecutableSnapshot;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
@@ -127,9 +128,93 @@ class SolutionTestingServiceTest {
                 SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel").orElseThrow().data();
         assertThat(evidence.path("controlledAssumptionPlanFingerprints")).hasSize(1);
         assertThat(evidence.path("frozenFeatureContracts")).hasSize(2);
+        assertThat(evidence.path("frozenScenarioContracts")).hasSize(1);
         assertThat(evidence.path("frozenInstructionContracts")).hasSize(1);
+        assertThat(evidence.path("frozenExecutableContracts")).hasSize(5);
         assertThat(evidence.path("implementationFingerprint").asText()).startsWith("sha256:");
         assertThat(evidence.toString()).doesNotContain("SUCCEEDS_WITHOUT_EFFECT", "O-1");
+    }
+
+    @Test
+    void executesAndAttestsOneFrozenClosureWhenAuthoringContractsChangeAfterFreeze() {
+        storeCases("ACTIVE", Map.of("result", Map.of("decision", "WAIVED")));
+        AgentTddStoredAsset oldScenario = states.find(
+                SCOPE, SolutionEntityRegistry.SCENARIO, "scn:root").orElseThrow();
+        AgentTddStoredAsset oldInstruction = states.find(
+                SCOPE, SolutionEntityRegistry.INSTRUCTION, "ins:refund").orElseThrow();
+        java.util.concurrent.atomic.AtomicReference<SolutionExecutableSnapshot> observed =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        SolutionTestingService frozenTesting = new SolutionTestingService(
+                states, registry, mapper, (instruction, values, context) -> {
+                    throw new AssertionError("A controlled baseline must not retain the runtime channel.");
+                }, null, new ControlledTestEgressGuard(), executable -> {
+                    observed.set(executable);
+                    registry.upsertScenario(SCOPE, new ScenarioContract(
+                            "scn:root", List.of("party"), ScenarioContract.HitPolicy.UNIQUE,
+                            List.of(new ScenarioContract.Rule("R1",
+                                    mapper.valueToTree(Map.of("party", Map.of("eq", "none"))),
+                                    new ScenarioContract.Outlet(
+                                            ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "REVIEW"))),
+                            new ScenarioContract.Outlet(
+                                    ScenarioContract.OutletKind.TERMINAL, "", Map.of(), "ESCALATE")));
+                    registry.upsertInstruction(SCOPE, new InstructionContract(
+                            "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                            mapper.valueToTree(Map.of(
+                                    "result", Map.of("type", Map.of("fields", Map.of(
+                                            "decision", Map.of("enum", List.of("DENIED"))))),
+                                    "reasoning", "required")), InstructionContract.Effect.WRITE, "",
+                            new InstructionContract.WriteGovernance("refund", "orderId", "recon:refund")));
+                });
+
+        Map<String, Object> result = frozenTesting.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(observed).doesNotHaveNullValue();
+        JsonNode evidence = states.find(
+                SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel").orElseThrow().data();
+        assertThat(evidence.path("frozenScenarioContracts").get(0).path("revision").asLong())
+                .isEqualTo(oldScenario.revision());
+        assertThat(evidence.path("frozenInstructionContracts").get(0).path("revision").asLong())
+                .isEqualTo(oldInstruction.revision());
+        assertThat(evidence.path("implementationFingerprint").asText())
+                .isEqualTo(SolutionImplementationIdentity.fingerprint(
+                        mapper, observed.get().contracts()))
+                .isNotEqualTo(SolutionImplementationIdentity.fingerprint(
+                        registry, mapper, SCOPE, registry.requireSolution(SCOPE, "sol:cancel")));
+        assertThat(states.find(SCOPE, SolutionEntityRegistry.SCENARIO, "scn:root")
+                .orElseThrow().revision()).isGreaterThan(oldScenario.revision());
+    }
+
+    @Test
+    void deniesAnUncontrolledReadInstructionWithoutRetainingTheRuntimeChannelOrGreenEvidence() {
+        storeCases("ACTIVE", Map.of("result", Map.of("decision", "REAL")));
+        registry.upsertInstruction(SCOPE, new InstructionContract(
+                "ins:refund", mapper.valueToTree(Map.of("orderId", "string")),
+                mapper.valueToTree(Map.of(
+                        "result", Map.of("type", Map.of("fields", Map.of(
+                                "decision", Map.of("enum", List.of("REAL"))))),
+                        "reasoning", "required")), InstructionContract.Effect.READ,
+                "operator:refund-read", null));
+        ControlledTestEgressGuard guard = new ControlledTestEgressGuard();
+        AtomicInteger runtimeCalls = new AtomicInteger();
+        SolutionTestingService guarded = new SolutionTestingService(
+                states, registry, mapper, (instruction, values, context) -> {
+                    runtimeCalls.incrementAndGet();
+                    return Map.of("result", Map.of("decision", "REAL"), "reasoning", "runtime");
+                }, null, guard);
+
+        assertThatThrownBy(() -> guarded.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN"))
+                .isInstanceOfSatisfying(AgentTddToolException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("CONTROLLED_TEST_EGRESS_DENIED"));
+        assertThat(guard.deniedAttempts()).isEqualTo(1);
+        assertThat(runtimeCalls).hasValue(0);
+        assertThat(states.find(SCOPE, SolutionTestingService.SOLUTION_EVIDENCE, "sol:cancel")).isEmpty();
+        assertThat(states.find(SCOPE, AgentTddMutationService.CASE_SET, "caseSet:cancel")
+                .orElseThrow().data().at("/rows/0/qualityState").asText())
+                .isEqualTo("DESIGNED_NOT_RUN");
     }
 
     @Test
@@ -229,6 +314,35 @@ class SolutionTestingServiceTest {
                         "assetKind", "FEATURE", "inputAlias", "party", "outcome", "UNAVAILABLE")),
                 Map.of("result", Map.of("dependencyStatus", "UNAVAILABLE"),
                         "reasoning", "CONTROLLED_DEPENDENCY_UNAVAILABLE"));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void exercisesAFeatureFailureWithoutEffectAsAnApprovedBusinessFallback() {
+        storeControlledCases(Map.of("responsibility.party", Map.of(
+                        "assetKind", "FEATURE", "inputAlias", "party",
+                        "outcome", "FAILS_WITHOUT_EFFECT")),
+                Map.of("result", Map.of("dependencyStatus", "FAILED_WITHOUT_EFFECT"),
+                        "reasoning", "CONTROLLED_DEPENDENCY_FAILED_WITHOUT_EFFECT"));
+
+        Map<String, Object> result = testing.baseline(
+                SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");
+
+        assertThat(result).containsEntry("status", "GO").containsEntry("realExternalCalls", 0);
+        assertThat(writes).hasValue(0);
+    }
+
+    @Test
+    void exercisesAnInstructionFailureWithoutEffectAsAnApprovedBusinessFallback() {
+        storeControlledCases(Map.of("ins:refund", Map.of(
+                        "assetKind", "INSTRUCTION", "outcome", "FAILS_WITHOUT_EFFECT")),
+                Map.of("result", Map.of("dependencyStatus", "FAILED_WITHOUT_EFFECT"),
+                        "reasoning", "CONTROLLED_DEPENDENCY_FAILED_WITHOUT_EFFECT"));
 
         Map<String, Object> result = testing.baseline(
                 SCOPE, "sol:cancel", "caseSet:cancel", "GREEN");

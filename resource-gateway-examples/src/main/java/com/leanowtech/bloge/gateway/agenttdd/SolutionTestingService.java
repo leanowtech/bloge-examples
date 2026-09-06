@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.solution.ScenarioTreeEvaluator;
 import com.leanowtech.bloge.gateway.solution.SolutionContract;
 import com.leanowtech.bloge.gateway.solution.SolutionContractException;
 import com.leanowtech.bloge.gateway.solution.SolutionEntityRegistry;
+import com.leanowtech.bloge.gateway.solution.SolutionExecutableSnapshot;
 import com.leanowtech.bloge.gateway.solution.SolutionExecutionService;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessFixtureCompiler;
 import com.leanowtech.bloge.gateway.solution.journey.BusinessGoldenMaterialStore;
@@ -23,6 +24,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Runs Scenario contract tests and approved Solution GOLDEN baselines with zero real egress. */
 public final class SolutionTestingService {
@@ -37,9 +41,9 @@ public final class SolutionTestingService {
     private final AgentTddStateRepository states;
     private final SolutionEntityRegistry registry;
     private final ObjectMapper mapper;
-    private final InstructionDispatchChannel fallbackChannel;
     private final BusinessGoldenMaterialStore goldenMaterials;
     private final ControlledTestEgressGuard egressGuard;
+    private final Consumer<SolutionExecutableSnapshot> snapshotObserver;
 
     /** Creates a testing pyramid over the canonical entities and shared approved-case repository. */
     public SolutionTestingService(
@@ -58,7 +62,7 @@ public final class SolutionTestingService {
             InstructionDispatchChannel instructionChannel,
             BusinessGoldenMaterialStore goldenMaterials) {
         this(states, registry, mapper, instructionChannel, goldenMaterials,
-                new ControlledTestEgressGuard());
+                new ControlledTestEgressGuard(), ignored -> { });
     }
 
     /** Creates a testing boundary with an explicit deny-all egress probe. */
@@ -69,12 +73,30 @@ public final class SolutionTestingService {
             InstructionDispatchChannel instructionChannel,
             BusinessGoldenMaterialStore goldenMaterials,
             ControlledTestEgressGuard egressGuard) {
+        this(states, registry, mapper, instructionChannel, goldenMaterials, egressGuard,
+                ignored -> { });
+    }
+
+    /**
+     * Creates a baseline boundary with a package-visible post-freeze observer for race testing.
+     * The runtime channel is accepted for constructor compatibility, validated, then discarded;
+     * no controlled baseline object retains an authority that can perform real dispatch.
+     */
+    SolutionTestingService(
+            AgentTddStateRepository states,
+            SolutionEntityRegistry registry,
+            ObjectMapper mapper,
+            InstructionDispatchChannel instructionChannel,
+            BusinessGoldenMaterialStore goldenMaterials,
+            ControlledTestEgressGuard egressGuard,
+            Consumer<SolutionExecutableSnapshot> snapshotObserver) {
         this.states = Objects.requireNonNull(states, "states");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
-        this.fallbackChannel = Objects.requireNonNull(instructionChannel, "instructionChannel");
+        Objects.requireNonNull(instructionChannel, "instructionChannel");
         this.goldenMaterials = goldenMaterials;
         this.egressGuard = Objects.requireNonNull(egressGuard, "egressGuard");
+        this.snapshotObserver = Objects.requireNonNull(snapshotObserver, "snapshotObserver");
     }
 
     /** Evaluates explicit Feature values against expected Scenario outlet subsets. */
@@ -128,15 +150,9 @@ public final class SolutionTestingService {
                 .filter(asset -> solutionRef.equals(asset.data().path("toolRef").asText()))
                 .orElseThrow(() -> new AgentTddToolException(
                         "DRAFT_NOT_FOUND", "Solution case set was not found."));
-        SolutionEntityRegistry.RegisteredEntity solution;
-        try {
-            solution = registry.requireRegisteredSolution(scopeKey, solutionRef);
-        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
-            throw new AgentTddToolException("REFERENCE_UNRESOLVED", "A Solution is unavailable.");
-        }
         return states.executeAtomically(() -> baselineLocked(
-                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), solution,
-                identity, baselineContext));
+                scopeKey, solutionRef, caseSetRef, normalizedSide, caseSet.revision(), identity,
+                baselineContext));
     }
 
     private Map<String, Object> baselineLocked(
@@ -145,19 +161,12 @@ public final class SolutionTestingService {
             String caseSetRef,
             String normalizedSide,
             long expectedRevision,
-            SolutionEntityRegistry.RegisteredEntity expectedSolution,
             IntegrationRequestContext identity,
             BaselineContext baselineContext) {
         AgentTddStoredAsset caseSet = states.lockRevision(
                 scopeKey, AgentTddMutationService.CASE_SET, caseSetRef, expectedRevision);
         if (!solutionRef.equals(caseSet.data().path("toolRef").asText())) {
             throw new AgentTddToolException("DRAFT_NOT_FOUND", "Solution case set was not found.");
-        }
-        AgentTddStoredAsset solutionAsset = states.lockRevision(scopeKey,
-                SolutionEntityRegistry.SOLUTION, solutionRef, expectedSolution.revision());
-        if (!expectedSolution.contractFingerprint().equals(
-                solutionAsset.data().path("contractFingerprint").asText())) {
-            throw new AgentTddToolException("GATE_REJECTED", "Solution changed during baseline execution.");
         }
         List<JsonNode> golden = new ArrayList<>();
         caseSet.data().path("rows").forEach(row -> {
@@ -167,19 +176,27 @@ public final class SolutionTestingService {
         });
         if (golden.isEmpty()) throw new AgentTddToolException(
                 "GOLDEN_REQUIRES_APPROVAL", "Approved Solution GOLDEN cases are required.");
-        SolutionContract solutionContract = registry.requireSolution(scopeKey, solutionRef);
+        SolutionExecutableSnapshot executable = freezeExecutable(scopeKey, solutionRef);
+        SolutionEntityRegistry.RegisteredEntity expectedSolution = executable.solutionIdentity();
+        SolutionContract solutionContract = executable.contracts().solution();
         String implementationFingerprint = SolutionImplementationIdentity.fingerprint(
-                registry, mapper, scopeKey, solutionContract);
-        List<Map<String, Object>> frozenFeatures = freezeContracts(scopeKey,
-                SolutionEntityRegistry.FEATURE, solutionContract.inputs().values(), baselineContext != null);
-        List<Map<String, Object>> frozenInstructions = freezeContracts(scopeKey,
-                SolutionEntityRegistry.INSTRUCTION, solutionContract.instructions(), true);
+                mapper, executable.contracts());
+        List<Map<String, Object>> frozenFeatures = frozenContracts(
+                executable, SolutionEntityRegistry.FEATURE);
+        List<Map<String, Object>> frozenScenarios = frozenContracts(
+                executable, SolutionEntityRegistry.SCENARIO);
+        List<Map<String, Object>> frozenInstructions = frozenContracts(
+                executable, SolutionEntityRegistry.INSTRUCTION);
+        List<Map<String, Object>> frozenExecutable = frozenContracts(executable, null);
+        List<JsonNode> approvedRows = golden.stream()
+                .map(metadata -> approvedMaterial(scopeKey, solutionRef, metadata, identity))
+                .toList();
+        snapshotObserver.accept(executable);
         List<Map<String, Object>> cases = new ArrayList<>();
         List<Map<String, Object>> backlog = new ArrayList<>();
         List<Map.Entry<String, String>> controlledPlans = new ArrayList<>();
         LinkedHashMap<String, Integer> hitDistribution = new LinkedHashMap<>();
-        for (JsonNode metadata : golden) {
-            JsonNode row = approvedMaterial(scopeKey, solutionRef, metadata, identity);
+        for (JsonNode row : approvedRows) {
             String caseId = requiredText(row, "caseId");
             String compiledPlan = row.path("controlledAssumptionPlanFingerprint").asText();
             controlledPlans.add(Map.entry(caseId, compiledPlan.isBlank()
@@ -196,11 +213,12 @@ public final class SolutionTestingService {
                     result = features.failed()
                             ? new SolutionExecutionService.ExecutionResult(
                             features.failureResult(), features.reasoning(), "", List.of(), 0)
-                            : controlledExecution(row).simulateControlled(
-                            scopeKey, solutionRef, features.values());
+                            : controlledExecution(row).simulateControlledPublished(
+                            scopeKey, executable.contracts(), features.values());
                 } else {
-                    result = controlledExecution(row).simulate(
-                            scopeKey, solutionRef, row.path("given"));
+                    egressGuard.verifyBeforeCase();
+                    result = controlledExecution(row).simulatePublished(
+                            scopeKey, executable.contracts(), row.path("given"));
                 }
             } catch (SolutionContractException failure) {
                 throw new AgentTddToolException(failure.code(), failure.getMessage());
@@ -264,7 +282,9 @@ public final class SolutionTestingService {
                 mapper.valueToTree(controlledPlanFingerprints));
         evidence.put("planFingerprint", planFingerprint);
         evidence.set("frozenFeatureContracts", mapper.valueToTree(frozenFeatures));
+        evidence.set("frozenScenarioContracts", mapper.valueToTree(frozenScenarios));
         evidence.set("frozenInstructionContracts", mapper.valueToTree(frozenInstructions));
+        evidence.set("frozenExecutableContracts", mapper.valueToTree(frozenExecutable));
         evidence.put("compilerVersion", COMPILER_VERSION);
         evidence.put("egressPolicy", EGRESS_POLICY);
         evidence.put("side", normalizedSide);
@@ -301,21 +321,48 @@ public final class SolutionTestingService {
         return Map.copyOf(response);
     }
 
-    private List<Map<String, Object>> freezeContracts(
-            String scopeKey, String kind, java.util.Collection<String> refs, boolean requireAll) {
-        return refs.stream().distinct().sorted().flatMap(ref -> {
-            java.util.Optional<AgentTddStoredAsset> candidate = states.find(scopeKey, kind, ref);
-            if (candidate.isEmpty() && !requireAll) return java.util.stream.Stream.empty();
-            AgentTddStoredAsset observed = candidate.orElseThrow(() -> new AgentTddToolException(
-                    "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable."));
-            AgentTddStoredAsset locked = states.lockRevision(scopeKey, kind, ref, observed.revision());
-            String contractFingerprint = locked.data().path("contractFingerprint").asText();
-            if (contractFingerprint.isBlank()) throw new AgentTddToolException(
-                    "REFERENCE_UNRESOLVED", "A referenced business contract is unavailable.");
-            return java.util.stream.Stream.of(Map.<String, Object>of(
-                    "assetRef", ref, "revision", locked.revision(),
-                    "contractFingerprint", contractFingerprint));
-        }).toList();
+    /**
+     * Captures all four entity stores at one repository read point, resolves the recursive closure
+     * only from that detached view, then locks the exact coordinate vector before execution.
+     */
+    private SolutionExecutableSnapshot freezeExecutable(String scopeKey, String solutionRef) {
+        AgentTddStateRepository.AssetReadSnapshot snapshot = states.readSnapshot(scopeKey, List.of(
+                SolutionEntityRegistry.FEATURE, SolutionEntityRegistry.SCENARIO,
+                SolutionEntityRegistry.INSTRUCTION, SolutionEntityRegistry.SOLUTION));
+        SolutionExecutableSnapshot executable;
+        try {
+            executable = new SolutionEntityRegistry(
+                    new SnapshotStateRepository(snapshot), mapper)
+                    .freezeExecutable(scopeKey, solutionRef);
+        } catch (SolutionEntityRegistry.EntityUnavailableException failure) {
+            throw new AgentTddToolException("REFERENCE_UNRESOLVED",
+                    "A referenced business contract is unavailable.");
+        }
+        executable.coordinates().forEach(coordinate -> {
+            AgentTddStoredAsset locked = states.lockRevision(scopeKey, coordinate.storageKind(),
+                    coordinate.ref(), coordinate.revision());
+            if (!coordinate.contractFingerprint().equals(
+                    locked.data().path("contractFingerprint").asText())) {
+                throw new AgentTddToolException(
+                        "GATE_REJECTED", "Executable Solution closure changed during baseline execution.");
+            }
+        });
+        return executable;
+    }
+
+    /** Projects stable payload-free evidence coordinates without re-reading the registry. */
+    private static List<Map<String, Object>> frozenContracts(
+            SolutionExecutableSnapshot executable, String storageKind) {
+        return executable.coordinates().stream()
+                .filter(coordinate -> storageKind == null || storageKind.equals(coordinate.storageKind()))
+                .sorted(java.util.Comparator.comparing(SolutionExecutableSnapshot.EntityCoordinate::storageKind)
+                        .thenComparing(SolutionExecutableSnapshot.EntityCoordinate::ref))
+                .map(coordinate -> Map.<String, Object>of(
+                        "assetKind", coordinate.storageKind(),
+                        "assetRef", coordinate.ref(),
+                        "revision", coordinate.revision(),
+                        "contractFingerprint", coordinate.contractFingerprint()))
+                .toList();
     }
 
     private JsonNode approvedMaterial(String scopeKey, String solutionRef, JsonNode metadata,
@@ -363,9 +410,76 @@ public final class SolutionTestingService {
     /** Builds a case-scoped channel with no reference to the governed runtime channel. */
     private SolutionExecutionService controlledExecution(JsonNode row) {
         JsonNode assumptions = row.path("controlledAssumptions");
-        if (!assumptions.isObject()) return new SolutionExecutionService(registry, mapper, fallbackChannel);
+        if (!assumptions.isObject()) return new SolutionExecutionService(
+                registry, mapper, egressGuard.deniedInstructionChannel());
         return new SolutionExecutionService(
                 registry, mapper, new ControlledInstructionAdapter(assumptions, mapper));
+    }
+
+    /** Read-only adapter that prevents existing registry decoders from escaping one asset snapshot. */
+    private static final class SnapshotStateRepository implements AgentTddStateRepository {
+        private final AssetReadSnapshot snapshot;
+
+        private SnapshotStateRepository(AssetReadSnapshot snapshot) {
+            this.snapshot = Objects.requireNonNull(snapshot, "snapshot");
+        }
+
+        @Override
+        public Optional<AgentTddStoredAsset> find(String scopeKey, String kind, String assetRef) {
+            return snapshot.scopeKey().equals(scopeKey)
+                    ? snapshot.find(kind, assetRef) : Optional.empty();
+        }
+
+        @Override
+        public List<AgentTddStoredAsset> list(String scopeKey, String kind) {
+            return snapshot.scopeKey().equals(scopeKey) ? snapshot.list(kind) : List.of();
+        }
+
+        @Override
+        public AgentTddStoredAsset save(String scopeKey, String kind, String assetRef, JsonNode data) {
+            throw readOnly();
+        }
+
+        @Override
+        public AgentTddStoredAsset saveIfRevision(
+                String scopeKey, String kind, String assetRef, long expectedRevision, JsonNode data) {
+            throw readOnly();
+        }
+
+        @Override
+        public Optional<JsonNode> replay(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            throw readOnly();
+        }
+
+        @Override
+        public void record(String scopeKey, String operation, String idempotencyKey,
+                           String requestFingerprint, JsonNode response) {
+            throw readOnly();
+        }
+
+        @Override
+        public JsonNode executeOnce(String scopeKey, String operation, String idempotencyKey,
+                                    String requestFingerprint, Supplier<JsonNode> action) {
+            throw readOnly();
+        }
+
+        @Override
+        public ExternalExecutionReservation reserveExternalExecution(
+                String scopeKey, String operation, String idempotencyKey, String requestFingerprint) {
+            throw readOnly();
+        }
+
+        @Override
+        public JsonNode completeExternalExecution(String scopeKey, String operation,
+                                                  String idempotencyKey, String requestFingerprint,
+                                                  JsonNode response) {
+            throw readOnly();
+        }
+
+        private static UnsupportedOperationException readOnly() {
+            return new UnsupportedOperationException("Executable Solution snapshot is read-only");
+        }
     }
 
     private static boolean contains(JsonNode actual, JsonNode expected) {
