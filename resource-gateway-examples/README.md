@@ -86,7 +86,7 @@ requires every case to pass, zero external calls, and the configured coverage th
 the evaluator only to that current suite evidence and then promotes the Feature to `VERIFIED` / `READY`.
 Suite inputs, dependency values, and expected outputs stay in the encrypted material vault; MCP returns only
 revisions, counts, status, coverage, and fingerprints.
-When correctness material is enabled, a bounded platform sweep starts after 60 seconds and repeats every six
+When the correctness runtime is enabled, a bounded platform sweep starts after 60 seconds and repeats every six
 hours. It discovers current suite scopes, removes stale evidence when a receipt is missing or mismatched, and
 reclaims only expired unreferenced direct successors. The interval is configurable through
 `RG_FEATURE_CONTROLLED_SUITE_RECONCILIATION_INITIAL_DELAY_MS` and
