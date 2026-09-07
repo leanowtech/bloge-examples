@@ -83,6 +83,9 @@ gateway:
       legacy-single-fixture-enabled: ${RG_FEATURE_CONTROLLED_SUITE_LEGACY_SINGLE_FIXTURE_ENABLED:false}
       # Percentage of runner-observed controlled coverage obligations required for VERIFIED.
       minimum-coverage-percent: ${RG_FEATURE_CONTROLLED_SUITE_MINIMUM_COVERAGE_PERCENT:100}
+      # Reconcile state receipts with encrypted material after startup and every six hours.
+      reconciliation-initial-delay-ms: ${RG_FEATURE_CONTROLLED_SUITE_RECONCILIATION_INITIAL_DELAY_MS:60000}
+      reconciliation-fixed-delay-ms: ${RG_FEATURE_CONTROLLED_SUITE_RECONCILIATION_FIXED_DELAY_MS:21600000}
     mcp-limits:
       # Per authenticated tenant/project/environment/actor. Preview and gate share one bucket.
       common-per-minute: ${RG_AGENT_TDD_MCP_COMMON_PER_MINUTE:120}

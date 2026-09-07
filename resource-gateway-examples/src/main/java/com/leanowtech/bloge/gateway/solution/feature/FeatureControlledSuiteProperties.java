@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 public final class FeatureControlledSuiteProperties {
     private int minimumCoveragePercent = 100;
     private boolean legacySingleFixtureEnabled;
+    private long reconciliationInitialDelayMs = 60_000;
+    private long reconciliationFixedDelayMs = 21_600_000;
 
     /** @return minimum proved coverage required for a current suite evidence */
     public int getMinimumCoveragePercent() {
@@ -31,5 +33,31 @@ public final class FeatureControlledSuiteProperties {
     /** @param enabled whether accountable engineers may use the legacy single-fixture path */
     public void setLegacySingleFixtureEnabled(boolean enabled) {
         legacySingleFixtureEnabled = enabled;
+    }
+
+    /** @return delay before the first protected-suite reconciliation pass */
+    public long getReconciliationInitialDelayMs() {
+        return reconciliationInitialDelayMs;
+    }
+
+    /** @param value positive delay before the first reconciliation pass */
+    public void setReconciliationInitialDelayMs(long value) {
+        if (value < 1) {
+            throw new IllegalArgumentException("reconciliationInitialDelayMs must be positive");
+        }
+        reconciliationInitialDelayMs = value;
+    }
+
+    /** @return fixed delay between completed protected-suite reconciliation passes */
+    public long getReconciliationFixedDelayMs() {
+        return reconciliationFixedDelayMs;
+    }
+
+    /** @param value positive delay between completed reconciliation passes */
+    public void setReconciliationFixedDelayMs(long value) {
+        if (value < 1) {
+            throw new IllegalArgumentException("reconciliationFixedDelayMs must be positive");
+        }
+        reconciliationFixedDelayMs = value;
     }
 }

@@ -510,7 +510,7 @@ flowchart TD
 
 | 编号 | 落地后仍存/新暴露 | 预计解法 | 分期 |
 |---|---|---|---|
-| L1 | 跨存储写入可能留下孤儿 material 或缺失 material 的 suite 元数据 | **已缓解**:`FeatureControlledSuiteReconciliationService` 定期对账;损坏 suite 标 `FAILED_CLOSED` 并清旧证据;仅回收到期、无引用的直接后继孤儿，保留 lineage/audit | 已实施 |
+| L1 | 跨存储写入可能留下孤儿 material 或缺失 material 的 suite 元数据 | **已缓解**:`FeatureControlledSuiteReconciliationService` 在 Correctness material 启用时按配置周期执行有界跨 scope 对账;损坏 suite 标 `FAILED_CLOSED` 并清旧证据;仅回收到期、无引用的直接后继孤儿，保留 lineage/audit;报告只含计数 | 已实施 |
 | L2 | A0 续期把 ACTIVE golden 载荷长期留存,增大加密数据留存面与合规审查范围 | **已编码基线**:密级 `INTERNAL`、每次读取双重审计、365 天滚动续期、RETIRED 后宽限销毁;生产法务复核仍属于部署责任 | 部署验收 |
 | L3 | B2 提高特征 VERIFIED 门槛,既有已 VERIFIED 特征无套件证据 | **已实施灰度**:既有 VERIFIED 不追溯失效;任何再次 fulfil 或契约修改要求当前 suite;`legacy-single-fixture-enabled` 默认 `false` | 已实施 |
 | L4 | 覆盖义务对 opaque 谓词和组合爆炸仍不可证明 | 本版只从结构化 Scenario 闭包派生可证明 RULE/OTHERWISE/WRITE fault 义务;不可证明结构不伪造 100%，后续引入 authorSamples 与有界展开 | 1.4.8 |

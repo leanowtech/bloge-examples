@@ -273,6 +273,8 @@ unset RG_FEATURE_ENGINEER_TOKEN
 
 服务端会再次核对 suite revision、Feature 业务契约、evaluation ref、图和库指纹。套件、Feature 或实现任一变化后，旧证据不能履约。兼容参数 `fixtureInputs` 只有显式开启 `gateway.agent-tdd.feature-controlled-suite.legacy-single-fixture-enabled=true` 才生效；默认关闭。既有已验证 Feature 不追溯失效，但再次履约或修改契约时必须补当前套件。
 
+启用 Correctness material 后，平台在启动 60 秒后执行第一次 Feature suite material 对账，之后每 6 小时执行一次。对账按受控套件元数据发现 scope；receipt 缺失或错配时清除旧 evidence 并标记 `FAILED_CLOSED`，只回收到期且无引用的直接后继材料。日志与报告只保留计数。使用 `RG_FEATURE_CONTROLLED_SUITE_RECONCILIATION_INITIAL_DELAY_MS` 和 `RG_FEATURE_CONTROLLED_SUITE_RECONCILIATION_FIXED_DELAY_MS` 调整周期；关闭 Correctness material 时不创建该调度器。
+
 写处置缺少实现时，Codex 只创建写工程交接单。通用工程师从交接单确认业务结果、下游系统与对账键后，以 instruction-engineer token 逐项绑定已部署实现：
 
 ```bash

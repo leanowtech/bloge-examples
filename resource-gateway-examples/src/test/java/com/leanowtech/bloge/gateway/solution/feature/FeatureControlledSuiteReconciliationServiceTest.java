@@ -106,6 +106,25 @@ class FeatureControlledSuiteReconciliationServiceTest {
     }
 
     @Test
+    void scheduledSweepDiscoversSuiteScopesAndFailsMissingMaterialClosed() throws Exception {
+        suites.upsert(definition(0), author());
+        Receipt receipt = receipt(currentSuite());
+        jdbc.update("DELETE FROM rg_fixture_material_v2_revisions WHERE fixture_asset_id = ?",
+                receipt.fixtureAssetId());
+
+        var report = reconciliation.reconcileAll(100, 100);
+
+        assertThat(report).isEqualTo(
+                new FeatureControlledSuiteReconciliationService.ScheduledReconciliationReport(
+                        1, 1, 1, 0, 1, 0));
+        assertThat(currentSuite().data().path("status").asText()).isEqualTo("FAILED_CLOSED");
+        assertThat(FeatureControlledSuiteReconciliationService.class
+                .getMethod("scheduledReconciliation")
+                .getAnnotation(org.springframework.scheduling.annotation.Scheduled.class))
+                .isNotNull();
+    }
+
+    @Test
     void marksAReceiptWhoseFeatureTargetFingerprintDoesNotMatchTheSuiteMetadata() {
         suites.upsert(definition(0), author());
         AgentTddStoredAsset original = currentSuite();
