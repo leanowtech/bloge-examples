@@ -19,17 +19,23 @@ class ProcessEvidenceRendererTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             certificate = root / "certificate.json"
+            tools = [item[2] for item in RENDERER.STAGES] + ["rg.solution.golden.list"]
             certificate.write_text(json.dumps({
                 "repositoryCommit": "c" * 40,
                 "certificateFingerprint": "sha256:" + "d" * 64,
                 "certifiedAt": "2026-09-06T15:14:52Z",
                 "codexVersion": "codex-cli 0.153.4",
-                "journey": {"observedCalls": [{"ordinal": value} for value in range(7)]},
+                "journey": {"observedCalls": [
+                    {"ordinal": ordinal, "tool": tool, "status": "completed"}
+                    for ordinal, tool in enumerate(tools, start=1)
+                ]},
             }), encoding="utf-8")
             report = root / "report.html"
             report.write_text(
                 '<span>真实 Codex CLI 0.1.0<br>'
                 '<div class="metric"><b>1</b><span>主创作链 MCP 调用</span></div>'
+                '<div class="events"><div class="event"><em>#99</em>stale</div></div>'
+                '<div class="repair">'
                 '<span>认证时间：2020-01-01 00:00:00 UTC · Commit '
                 '<code>' + "a" * 40 + '</code></span>'
                 '<span>Certificate <code>sha256:' + "b" * 16 + '…' + "b" * 8 + '</code></span>',
@@ -46,6 +52,12 @@ class ProcessEvidenceRendererTest(unittest.TestCase):
             rendered = report.read_text(encoding="utf-8")
             self.assertIn("真实 Codex CLI 0.153.4", rendered)
             self.assertIn('<b>7</b><span>主创作链 MCP 调用</span>', rendered)
+            self.assertIn('<div class="event"><em>#01</em>模板与库快照</div>', rendered)
+            self.assertIn('<div class="event"><em>#02</em>Feature 写入</div>', rendered)
+            self.assertIn(
+                '<div class="event"><em>#05 + #06 + #07</em>Solution、案例提交与读回</div>',
+                rendered)
+            self.assertNotIn("#99", rendered)
             self.assertIn("2026-09-06 15:14:52 UTC", rendered)
             self.assertIn("c" * 40, rendered)
             self.assertIn("sha256:" + "d" * 16 + "…" + "d" * 8, rendered)

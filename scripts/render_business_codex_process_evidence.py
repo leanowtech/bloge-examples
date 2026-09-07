@@ -31,6 +31,37 @@ def _replace_once(source: str, pattern: str, replacement: str, label: str) -> st
     return rendered
 
 
+def _completed_ordinals(calls: list[dict], tool: str) -> list[int]:
+    """Return the trace ordinals of completed calls to one exact MCP tool."""
+    ordinals = [call.get("ordinal") for call in calls
+                if call.get("tool") == tool and call.get("status") == "completed"]
+    if not ordinals or not all(isinstance(value, int) and value > 0 for value in ordinals):
+        raise RuntimeError(f"summary certificate omits a completed {tool} call")
+    return ordinals
+
+
+def _ordinal_label(ordinals: list[int]) -> str:
+    return " + ".join(f"#{value:02d}" for value in ordinals)
+
+
+def _summary_evidence(calls: list[dict]) -> str:
+    """Render the summary evidence ledger from current certificate calls only."""
+    evidence = [
+        (_completed_ordinals(calls, "rg.library.overview.get"), "模板与库快照"),
+        (_completed_ordinals(calls, "rg.feature.define"), "Feature 写入"),
+        (_completed_ordinals(calls, "rg.scenario.define"), "Scenario 写入"),
+        (_completed_ordinals(calls, "rg.instruction.define"), "Instruction 写入"),
+        (_completed_ordinals(calls, "rg.solution.compose")
+         + _completed_ordinals(calls, "rg.solution.golden.propose")
+         + _completed_ordinals(calls, "rg.solution.golden.list"),
+         "Solution、案例提交与读回"),
+    ]
+    rows = "\n".join(
+        f'        <div class="event"><em>{_ordinal_label(ordinals)}</em>{label}</div>'
+        for ordinals, label in evidence)
+    return f'<div class="events">\n{rows}\n      </div>\n      <div class="repair">'
+
+
 def render_summary(certificate_path: Path, report: Path, screenshot: Path,
                    browser: Path) -> None:
     """Refresh the checked-in summary and screenshot from one payload-free certificate."""
@@ -54,6 +85,9 @@ def render_summary(certificate_path: Path, report: Path, screenshot: Path,
         r'<div class="metric"><b>\d+</b><span>主创作链 MCP 调用</span></div>',
         f'<div class="metric"><b>{len(calls)}</b><span>主创作链 MCP 调用</span></div>',
         "observed-call metric")
+    source = _replace_once(
+        source, r'(?s)<div class="events">.*?</div>\s*<div class="repair">',
+        _summary_evidence(calls), "trace-bound evidence ledger")
     timestamp = certified_at.removesuffix("Z").replace("T", " ") + " UTC"
     source = _replace_once(
         source, r"认证时间：[^<]+ · Commit <code>[0-9a-f]{40}</code>",
