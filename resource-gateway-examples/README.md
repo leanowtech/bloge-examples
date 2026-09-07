@@ -119,7 +119,7 @@ owner switches to expert free text, and renders a no-code four-entity draft prev
 delegated through the connected Agent host's `blogeIntentCompiler` bridge; context fingerprint drift
 is rejected before a result can become `READY_FOR_TEST`.
 The accepted v1.4.7 repository gate is `mvn -f resource-gateway-examples/pom.xml clean verify` with
-`Tests run: 8,770; failures: 0; errors: 0; skipped: 39` and `BUILD SUCCESS`. It includes protected
+`Tests run: 8,773; failures: 0; errors: 0; skipped: 39` and `BUILD SUCCESS`. It includes protected
 business asset review, Feature controlled suites, Solution coverage, and the real HTTP MCP journey.
 The v1.4.7 journey, the Agent TDD operational workflow, and the native PostgreSQL certification all ran
 without skips. The cancellation-dispute operational

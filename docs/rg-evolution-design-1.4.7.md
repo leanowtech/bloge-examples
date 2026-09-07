@@ -565,6 +565,6 @@ flowchart TD
 
 ### 8.5 测试记录
 
-当前聚焦证据包括：A/B/C 联合服务测试 58/58、Feature suite MCP 30/30、material 对账与 GC 14/14、业务资产 HTTP 控制器 6/6、D1 与 surface/audit 联合 11/11、条件装配回归 14/14，全部无失败且无跳过。前端全量为 163 个文件、1,242/1,242；生产构建、TypeScript、i18n、UX、host 和 route bundle 预算全部通过。
+当前聚焦证据包括：A/B/C 联合服务测试 58/58、Feature suite MCP 30/30、material 对账与 GC 14/14、周期对账/应用启动/真实 MCP 旅程联合 20/20、业务资产 HTTP 控制器 6/6、D1 与 surface/audit 联合 11/11、条件装配回归 14/14，全部无失败且无跳过。认证脚本、reducer 与截图生成器的 69 个篡改反例/渲染测试，以及 4 个 Java 制品回链测试全部通过。前端全量为 163 个文件、1,242/1,242；生产构建、TypeScript、i18n、UX、host 和 route bundle 预算全部通过。
 
-最终串行执行 `mvn -f resource-gateway-examples/pom.xml clean verify`，结果为 8,770 项测试、0 项失败、0 项错误、39 项条件跳过，`BUILD SUCCESS`，耗时 13 分 23 秒。v1.4.7 真实 HTTP MCP 主线为 1/1、Agent TDD 运营流为 6/6、原生 PostgreSQL 认证为 2/2，均未跳过。真实 Codex 复认证覆盖 15/15 个业务话语族、16 个独立会话、4 个隔离服务实例和 31 次主创作 MCP 调用；机器证书绑定生产提交 `1f5dd3b62d29d7d6d42d4825db3683ad2787f990` 与生产源码树指纹 `sha256:541970632e2706fc4d65c1b7994619fffed6c60ae32e9fac33337b35dd758974`。证书之后的提交只更新认证制品、测试夹具和本段验收记录，不改变该生产源码树。
+最终串行执行 `mvn -f resource-gateway-examples/pom.xml clean verify`，结果为 8,773 项测试、0 项失败、0 项错误、39 项条件跳过，`BUILD SUCCESS`，耗时 12 分 24 秒。v1.4.7 真实 HTTP MCP 主线为 1/1、Agent TDD 运营流为 6/6、原生 PostgreSQL 认证为 2/2、真实浏览器工作流为 1/1，均未跳过。真实 Codex 复认证覆盖 15/15 个业务话语族、16 个独立会话、4 个隔离服务实例和 26 次主创作 MCP 调用；机器证书绑定认证输入提交 `7a9fb3411e0eb9e4b117edbca4aae2b06c66e221` 与生产源码树指纹 `sha256:456ee3b3e7e9472cb8fcbffd391ac8dddaa940d1152694208a917af21cb8f175`。后续提交只更新该证书的当前制品和本段验收记录，不改变认证脚本、严格 Schema 或生产源码树。
